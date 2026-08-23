@@ -1,0 +1,5 @@
+Source deck: 7-slide DPV International English management demo.
+Visual system: 16:9 white canvas; DPV red #C92B2B, navy #18344D, gray and pale blue/amber/green; Aptos typography; 42 px slide titles; thin gray header rule; red title underline; two-digit page numbers.
+Reusable patterns: slide 1 title cover; slide 2 three-stage buyer definition; slide 3 source-to-database process diagram; slide 4 horizontal qualification bars; slide 6 workflow and control gates.
+The source deck has no visible default prompt placeholders. Brand chrome is slide-local and retained through the same source builder helpers.
+Insertion contract: preserve all colors, typography, header spacing, title sizing, border treatment and page-number placement; replace the former timeline with an n8n workflow close.

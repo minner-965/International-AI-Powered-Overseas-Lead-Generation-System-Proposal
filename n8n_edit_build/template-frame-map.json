@@ -1,0 +1,14 @@
+{
+  "outputSlides": [
+    {"outputSlide": 1, "sourceSlide": 1, "narrativeRole": "n8n demo opening", "reuseMode": "source-builder-edit", "editTargets": ["title", "subtitle", "scope line"]},
+    {"outputSlide": 2, "sourceSlide": 2, "narrativeRole": "B2B target definition", "reuseMode": "preserve-slide", "editTargets": []},
+    {"outputSlide": 3, "sourceSlide": 3, "narrativeRole": "n8n division of responsibilities", "reuseMode": "source-builder-edit", "editTargets": ["title", "workflow nodes", "descriptions"]},
+    {"outputSlide": 4, "sourceSlide": 3, "narrativeRole": "customer acquisition node flow", "reuseMode": "source-builder-edit", "editTargets": ["title", "workflow nodes", "sample output"]},
+    {"outputSlide": 5, "sourceSlide": 4, "narrativeRole": "filtering and contact enrichment", "reuseMode": "source-builder-edit", "editTargets": ["title", "bars", "routing callout", "footer"]},
+    {"outputSlide": 6, "sourceSlide": 6, "narrativeRole": "outreach and reply loop", "reuseMode": "source-builder-edit", "editTargets": ["title", "workflow nodes", "stop and handoff controls"]}
+  ],
+  "omittedSourceSlides": [
+    {"sourceSlide": 5, "reason": "lead-profile detail is integrated into the filtering and acquisition slides"},
+    {"sourceSlide": 7, "reason": "eight-week timeline explicitly removed at user request"}
+  ]
+}

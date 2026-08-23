@@ -1,0 +1,6 @@
+Slide 1: reframed as an n8n workflow demonstration and removed the eight-week delivery reference.
+Slide 3: replaced the generic multi-source diagram with a concrete n8n orchestration model.
+Slide 4: added the exact acquisition sequence from trigger to PostgreSQL upsert.
+Slide 5: added decision-maker/contact verification and named IF/Switch/Merge routing logic.
+Slide 6: expanded outreach into approval, send, wait, reply webhook, intent routing and CRM update.
+Source slide 7: removed completely; no implementation timeline remains in the revised deck.

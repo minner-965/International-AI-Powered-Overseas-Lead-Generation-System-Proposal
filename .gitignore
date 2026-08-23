@@ -1,0 +1,47 @@
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials/
+secrets/
+
+# Runtime data
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.n8n/
+postgres-data/
+data/
+logs/
+*.log
+
+# Codex and artifact-tool temporary files
+.codex_cost_review/
+**/*.inspect.ndjson
+**/*.layout.json
+**/source-inspect/
+**/final-renders/
+**/renders/
+
+# Rendered page/slide previews (source documents remain tracked)
+render_*/
+management_demo/*/
+outputs/**/preview_*.png
+
+# Office temporary files
+~$*
+*.tmp
+*.temp
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

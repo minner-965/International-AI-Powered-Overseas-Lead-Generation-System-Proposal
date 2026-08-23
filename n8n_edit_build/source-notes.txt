@@ -1,0 +1,4 @@
+DPV International corporate website and product catalogue: https://dpvinternational.com/
+n8n official documentation: https://docs.n8n.io/
+n8n Gmail message operations and approval documentation: https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/message-operations/
+Illustrative UAE lead counts and company data are demonstration data only, not actual campaign results.
