@@ -108,8 +108,17 @@ PASS
 
 无。
 
+## GITHUB
+
+repository: `https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal`
+branch: `main`
+commit: `2734ed2a0dc2cbfad14e92a4f8e206ca5afefdf2`
+tag: `phase5-v2.3.1`
+push_status: `PASS`
+pushed_at: `2026-08-29T10:16:19+08:00`
+
 ## READY FOR PHASE 6
 
-YES — Phase 5 V2.3.1 验收项已完成；本次没有开始 Phase 6。
+YES — Phase 5 V2.3.1 已完成 GitHub handoff；本次没有开始 Phase 6。
 
 STOP — Phase 6 not started.
