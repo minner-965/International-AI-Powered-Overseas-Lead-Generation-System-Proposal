@@ -1,0 +1,20 @@
+{
+  "metadata": { "version": "baseline-v1" },
+  "nodes": [
+    { "id": "input", "type": "inputNode", "name": "Customer match facts", "position": { "x": 0, "y": 0 }, "content": { "schema": "" } },
+    {
+      "id": "match",
+      "type": "functionNode",
+      "name": "Customer match v1",
+      "position": { "x": 280, "y": 0 },
+      "content": {
+        "source": "export const handler = async (input) => {\n  const maximums = { buyer_business_model_fit: 20, product_category_fit: 20, market_channel_fit: 15, commercial_moq_fit: 15, company_scale_fit: 10, distribution_pattern_fit: 10, historical_win_similarity: 10 };\n  const dimensions = input.dimensions || {};\n  const dimension_scores = {};\n  const reason_codes = [];\n  const evidenceIds = [];\n  let score = 0;\n  let coverage = 0;\n  for (const [key, maximum] of Object.entries(maximums)) {\n    const fact = dimensions[key] || {};\n    const available = fact.available === true;\n    const profileCoverage = Math.max(0, Math.min(100, Number(fact.profile_coverage || 0)));\n    const fit = Math.max(0, Math.min(1, Number(fact.fit || 0)));\n    const ids = Array.isArray(fact.evidence_ids) ? fact.evidence_ids.filter(Boolean) : [];\n    const points = available ? Math.round(maximum * fit) : 0;\n    const covered = available ? maximum * profileCoverage / 100 : 0;\n    score += points;\n    coverage += covered;\n    evidenceIds.push(...ids);\n    const reason = fact.reason_code || (available ? (points > 0 ? key.toUpperCase() + '_MATCH' : key.toUpperCase() + '_NO_MATCH') : key.toUpperCase() + '_DATA_MISSING');\n    reason_codes.push(reason);\n    dimension_scores[key] = { points, maximum, covered_weight: Math.round(covered * 100) / 100, reason_codes: [reason], evidence_ids: ids };\n  }\n  const profileType = String(input.reference_profile_type || 'MANAGEMENT_BASELINE');\n  const profileCoverage = Number(input.profile_feature_coverage || 0);\n  const suppress = profileType === 'HISTORICAL_CUSTOMER_ICP' && profileCoverage < 60;\n  const finalCoverage = Math.round(Math.min(100, coverage) * 100) / 100;\n  const matchScore = suppress ? null : Math.max(0, Math.min(100, score));\n  if (suppress) reason_codes.push('HISTORICAL_PROFILE_COVERAGE_BELOW_60');\n  const dpvHigh = Number(input.dpv_score || 0) >= 55;\n  const matchHigh = matchScore !== null && matchScore >= 60;\n  const opportunity_matrix = dpvHigh && matchHigh ? 'PRIORITY_OPPORTUNITY' : dpvHigh ? 'STRATEGIC_MANUAL_REVIEW' : matchHigh ? 'EVIDENCE_GAP_REVIEW' : 'LOWER_PRIORITY';\n  return {\n    match_score: matchScore,\n    coverage_percent: finalCoverage,\n    reference_profile_type: profileType,\n    profile_version: input.profile_version || 'baseline-v1',\n    display_status: suppress ? 'INSUFFICIENT_PROFILE_DATA' : profileType === 'HISTORICAL_CUSTOMER_ICP' ? 'HISTORICAL_ICP' : 'BASELINE_ICP',\n    opportunity_matrix,\n    dimension_scores,\n    reason_codes: [...new Set(reason_codes)],\n    evidence_ids: [...new Set(evidenceIds)],\n    rule_version: 'baseline-v1'\n  };\n};"
+      }
+    },
+    { "id": "output", "type": "outputNode", "name": "Customer match result", "position": { "x": 600, "y": 0 }, "content": { "schema": "" } }
+  ],
+  "edges": [
+    { "id": "e1", "sourceId": "input", "targetId": "match", "sourceHandle": null, "type": "edge" },
+    { "id": "e2", "sourceId": "match", "targetId": "output", "sourceHandle": null, "type": "edge" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "rule_version": "dpv-score-v1",
+  "effective_date": "2026-08-28",
+  "description": "Versioned DPV evidence-backed 100-point company score.",
+  "weights": {
+    "product_fit": 20,
+    "market_fit": 15,
+    "importer_wholesaler_fit": 15,
+    "chain_supply_evidence": 15,
+    "distribution_scale": 10,
+    "recent_buying_signal": 10,
+    "decision_maker_quality": 10,
+    "contact_validity": 5
+  },
+  "tier_thresholds": { "A": 75, "B": 55, "C": 0 },
+  "created_by": "DPV",
+  "test_fixture_version": "phase5-v1"
+}

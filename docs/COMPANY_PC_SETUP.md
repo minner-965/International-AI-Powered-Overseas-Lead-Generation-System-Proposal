@@ -28,6 +28,24 @@ Copy-Item .env.example .env
 
 Complete `.env` locally with company-approved credentials. The completed file is excluded from Git and must stay on the deployment computer or in the company's secret manager.
 
+Create the Python environment used by the proposal-generation source:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Start the local development services:
+
+```powershell
+docker compose up -d --build
+docker compose ps
+```
+
+Then open `http://localhost:3000` for the demonstration dashboard. Open
+`http://localhost:5678` for n8n and create the local owner account if prompted.
+Keep provider, email and CRM credentials in n8n's credential manager.
+
 ## 4. Confirm the project baseline
 
 Read these files before implementation:
@@ -38,15 +56,15 @@ Read these files before implementation:
 4. n8n management deck in `management_demo/`
 5. Budget workbooks in `outputs/`
 
-## 5. Create the implementation structure
+## 5. Implementation structure
 
-The next development phase should add:
+The development scaffold contains:
 
 ```text
 workflows/      Exported n8n workflow JSON
 database/       PostgreSQL schema and migration files
 services/       Optional API adapters and validation services
-tests/          Workflow fixtures and acceptance checks
+tests/          Live-data acceptance checks
 runbooks/       Operations, backup and incident procedures
 ```
 
@@ -61,5 +79,8 @@ runbooks/       Operations, backup and incident procedures
 
 ## 7. First development checkpoint
 
-The first checkpoint is a no-send workflow that produces a reviewable list of 50 sourced candidate companies for one market and product category. It must show source traceability, deduplication, qualification reasons, contact-verification status and an approval state.
-
+The first checkpoint is implemented as a no-send workflow and dashboard that
+collects real UAE public business records. Verify the live collector with
+`node tests/live_acceptance.mjs`. The dashboard shows source URLs, timestamps,
+deduplication, qualification reasons, contact status, scoring and human approval
+while enforcing `send_status = 'disabled'`.

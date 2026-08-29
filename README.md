@@ -46,9 +46,39 @@ Market and product parameters
 
 Historical document folders are intentionally retained because the repository was created after several proposal revisions. Rendering caches and artifact-inspection intermediates are excluded through `.gitignore`.
 
-## Current implementation status
+## Phase-one two-week demo
 
-The repository currently contains approved planning materials, management demonstrations, budgets and document-generation sources. Production n8n workflow JSON, database migrations and live service integrations are the next development deliverables.
+The local demo is now implemented. It includes PostgreSQL 17, n8n 2.36.7, a
+browser-based human review dashboard, the proposal's eight-part 100-point score,
+source evidence, deterministic deduplication and a credential-free n8n workflow.
+
+The default run collects current public business information from approved UAE
+company websites, the Emirates Online clothing-wholesaler directory and
+OpenStreetMap/Overpass. It stores the original URL and capture time for every
+record, keeps unsupported qualification claims at a lower tier, and explicitly
+rejects OEM/private-label/buying-house records. Every collection is cumulative:
+existing real leads are updated, new leads are appended, and no previous real
+record is deleted. The current target category is women’s apparel, including
+dresses, camisole/slip dresses, tops and skirts.
+
+Outbound sending is not implemented and remains disabled even after human approval.
+
+Start it with:
+
+```powershell
+docker compose up -d --build
+node tests/live_acceptance.mjs
+```
+
+- Review dashboard: <http://localhost:3000>
+- n8n: <http://localhost:5678>
+- Imported workflow: `DPV Phase 1 - Live Public Data Demo`
+
+See [runbooks/LOCAL_DEVELOPMENT.md](runbooks/LOCAL_DEVELOPMENT.md) for operation
+and reset instructions. Live provider, contact-enrichment, LLM, email and CRM
+integrations are deliberately deferred until approved credentials are available.
+Public directory records are candidates, not verified prospects; a human must
+confirm the legal entity, decision-maker and commercial fit before outreach.
 
 ## Security
 
@@ -58,3 +88,5 @@ Do not commit completed `.env` files, API keys, email credentials, n8n credentia
 
 Follow [docs/COMPANY_PC_SETUP.md](docs/COMPANY_PC_SETUP.md), then begin with the first workflow milestone described in [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md).
 
+For an already configured development computer, start Docker Desktop, run
+`docker compose up -d`, and open <http://localhost:3000>.

@@ -1,0 +1,20 @@
+{
+  "metadata": { "version": "qualification-v1" },
+  "nodes": [
+    { "id": "input", "type": "inputNode", "name": "Score context", "position": { "x": 0, "y": 0 }, "content": { "schema": "" } },
+    {
+      "id": "qualification",
+      "type": "functionNode",
+      "name": "Qualification v1",
+      "position": { "x": 280, "y": 0 },
+      "content": {
+        "source": "export const handler = async (input) => {\n  const coverage = Number(input.evidence_coverage || 0);\n  const verification = String(input.verification_status || 'UNKNOWN').toUpperCase();\n  const score = Number(input.final_score || 0);\n  let score_eligibility = 'INSUFFICIENT_EVIDENCE';\n  if (verification === 'VERIFIED_BUSINESS' && coverage >= 60) score_eligibility = 'ELIGIBLE';\n  else if (coverage >= 25 || verification === 'VERIFIED_BUSINESS' || verification === 'REVIEW') score_eligibility = 'PARTIAL_EVIDENCE';\n  const qualification_status = verification === 'REJECTED' ? 'REJECTED' : (score_eligibility === 'ELIGIBLE' && score >= 55 ? 'QUALIFIED' : 'REVIEW');\n  const reason_codes = [score_eligibility === 'ELIGIBLE' ? 'SCORE_EVIDENCE_ELIGIBLE' : score_eligibility === 'PARTIAL_EVIDENCE' ? 'SCORE_EVIDENCE_PARTIAL' : 'SCORE_EVIDENCE_INSUFFICIENT'];\n  if (verification !== 'VERIFIED_BUSINESS') reason_codes.push('BUSINESS_VERIFICATION_NOT_COMPLETE');\n  return { score_eligibility, qualification_status, reason_codes, rule_version: 'qualification-v1' };\n};"
+      }
+    },
+    { "id": "output", "type": "outputNode", "name": "Qualification result", "position": { "x": 600, "y": 0 }, "content": { "schema": "" } }
+  ],
+  "edges": [
+    { "id": "e1", "sourceId": "input", "targetId": "qualification", "sourceHandle": null, "type": "edge" },
+    { "id": "e2", "sourceId": "qualification", "targetId": "output", "sourceHandle": null, "type": "edge" }
+  ]
+}

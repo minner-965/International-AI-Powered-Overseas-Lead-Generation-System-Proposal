@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "version": "dpv-score-v1",
+    "description": "DPV eight-dimension evidence-backed score"
+  },
+  "nodes": [
+    {
+      "id": "input",
+      "type": "inputNode",
+      "name": "DPV facts snapshot",
+      "position": { "x": 0, "y": 0 },
+      "content": { "schema": "" }
+    },
+    {
+      "id": "score",
+      "type": "functionNode",
+      "name": "DPV score v1",
+      "position": { "x": 280, "y": 0 },
+      "content": {
+        "source": "export const handler = async (input) => {\n  const facts = input.facts || {};\n  const specs = {\n    product_fit: { max: 20, values: { VERIFIED: 20, TARGET: 20, SUPPORTED: 12, RELATED: 6 } },\n    market_fit: { max: 15, values: { TARGET: 15, VERIFIED: 15, SUPPORTED: 10, ADJACENT: 8 } },\n    importer_wholesaler_fit: { max: 15, values: { VERIFIED: 15, SUPPORTED: 10, BUSINESS_TRADING: 5 } },\n    chain_supply_evidence: { max: 15, values: { VERIFIED: 15, SUPPORTED: 10, LIMITED: 5 } },\n    distribution_scale: { max: 10, values: { STRONG: 10, LARGE: 10, MEDIUM: 7, LIMITED: 3, SMALL: 3 } },\n    recent_buying_signal: { max: 10, values: { VERIFIED_RECENT: 10, SUPPORTED_RECENT: 5 } },\n    decision_maker_quality: { max: 10, values: { VERIFIED: 10, SUPPORTED: 5 } },\n    contact_validity: { max: 5, values: { DOMAIN_MX_VERIFIED: 5, PUBLICLY_OBSERVED: 3, FORM_OR_PHONE: 2, WEBSITE_ONLY: 1 } }\n  };\n  const dimension_scores = {};\n  const reason_codes = [];\n  const fired_rules = [];\n  const evidenceIds = [];\n  let total = 0;\n  let coveredWeight = 0;\n  for (const [key, spec] of Object.entries(specs)) {\n    const fact = facts[key] || {};\n    const ids = Array.isArray(fact.evidence_ids) ? fact.evidence_ids.filter(Boolean) : [];\n    const hasEvidence = ids.length > 0 && Number(fact.confidence || 0) > 0;\n    let points = 0;\n    let reason = key.toUpperCase() + '_UNKNOWN';\n    if (hasEvidence) {\n      coveredWeight += spec.max;\n      if (key === 'recent_buying_signal' && spec.values[fact.value] && !fact.observed_at) {\n        reason = 'RECENT_SIGNAL_DATE_MISSING';\n      } else {\n        points = spec.values[String(fact.value || '').toUpperCase()] || 0;\n        reason = points > 0 ? key.toUpperCase() + '_' + String(fact.value).toUpperCase() : key.toUpperCase() + '_NO_MATCH';\n      }\n      evidenceIds.push(...ids);\n    } else if (key === 'decision_maker_quality') {\n      reason = 'DECISION_MAKER_NOT_YET_ENRICHED';\n    } else {\n      reason = key.toUpperCase() + '_EVIDENCE_MISSING';\n    }\n    dimension_scores[key] = { points, maximum: spec.max, reason_codes: [reason], evidence_ids: ids };\n    reason_codes.push(reason);\n    if (points > 0) fired_rules.push(key + ':' + String(fact.value).toUpperCase());\n    total += points;\n  }\n  total = Math.max(0, Math.min(100, total));\n  const evidence_coverage = Math.round(coveredWeight * 100) / 100;\n  return {\n    final_score: total,\n    tier: total >= 75 ? 'A' : total >= 55 ? 'B' : 'C',\n    evidence_coverage,\n    dimension_scores,\n    reason_codes: [...new Set(reason_codes)],\n    fired_rules,\n    evidence_ids: [...new Set(evidenceIds)],\n    rule_version: 'dpv-score-v1'\n  };\n};"
+      }
+    },
+    {
+      "id": "output",
+      "type": "outputNode",
+      "name": "DPV score result",
+      "position": { "x": 600, "y": 0 },
+      "content": { "schema": "" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "sourceId": "input", "targetId": "score", "sourceHandle": null, "type": "edge" },
+    { "id": "e2", "sourceId": "score", "targetId": "output", "sourceHandle": null, "type": "edge" }
+  ]
+}

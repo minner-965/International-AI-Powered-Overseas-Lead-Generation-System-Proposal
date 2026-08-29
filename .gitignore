@@ -18,8 +18,19 @@ venv/
 .n8n/
 postgres-data/
 data/
+data/staging/
 logs/
 *.log
+*.dump
+*.bak
+*.backup
+*.sql.gz
+
+# Production exports and local CRM staging
+0828CUSTOMER_EXPORT_56973061_1_1787906139.xlsx
+COMPANY_TRAIL_EXPORT_56973061_7_1787906139.xlsx
+artifacts/okki-staging/
+artifacts/backups/
 
 # Codex and artifact-tool temporary files
 .codex_cost_review/
@@ -33,6 +44,23 @@ logs/
 render_*/
 management_demo/*/
 outputs/**/preview_*.png
+outputs/01a03bb4-41f3-7233-8cf6-1327323057f9/
+artifacts/shared-folder-staging/
+test-artifacts/
+
+# Internal audit reports and screenshots that may contain source inventories,
+# business-contact samples, workstation paths, or company-only review material.
+docs/SHARED_FOLDER_*.md
+docs/HISTORICAL_DATA_READINESS.md
+docs/TF1_DATA_CONTRACT.md
+docs/PHASE1_RESULT.md
+docs/PHASE3_RESULT.md
+docs/PHASE4_RESULT.md
+docs/phase4-*.png
+docs/PHASE5_RESULT.md
+docs/PHASE5_MANAGEMENT_ICP_V2_PATCH_RESULT.md
+docs/PHASE5_V2_3_SHARED_DATA_DEEP_SCAN.md
+docs/PHASE5_V2_DATA_VERIFICATION_STATUS.md
 
 # Office temporary files
 ~$*
