@@ -27,6 +27,10 @@ const GENERIC = Object.freeze({
   marketplaceDomains: ['alibaba.com', 'noon.com', 'aliexpress.com', 'temu.com'],
   marketplaceDomainPrefixes: ['amazon.'],
   pageRoleTerms: ['about', 'company', 'products', 'brands', 'wholesale', 'distribution', 'partners', 'locations', 'contact'],
+  decisionMakerTerms: ['buyer', 'senior buyer', 'head of buying', 'purchasing manager', 'procurement manager', 'category manager', 'merchandising manager', 'sourcing manager', 'import manager', 'commercial director'],
+  procurementDepartmentTerms: ['buying department', 'procurement department', 'purchasing department', 'merchandising department', 'sourcing department'],
+  supplierAccessTerms: ['supplier registration', 'vendor registration', 'become a supplier', 'supplier onboarding', 'procurement portal', 'supplier prequalification', 'approved vendor', 'tender', 'RFQ', 'RFP', 'supplier requirements'],
+  supplierBarrierTerms: ['invitation only', 'exclusive supplier', 'fixed supplier', 'approved vendor list', 'local sourcing only', 'prequalification required', 'supplier code of conduct', 'centralized procurement'],
   locationTerms: [],
   businessEvidenceTerms: Object.freeze({
     importer: ['importer', 'import company', 'importing'],
@@ -56,6 +60,10 @@ const PROFILES = Object.freeze({
     directoryDomains: ['atninfo.com', 'yellowpages.ae', 'emirates-online.net', 'connect.ae'],
     newsDomains: [...GENERIC.newsDomains, 'thenationalnews.com', 'gulfnews.com', 'khaleejtimes.com'],
     pageRoleTerms: [...GENERIC.pageRoleTerms, 'who we are', 'enquiry'],
+    decisionMakerTerms: [...GENERIC.decisionMakerTerms],
+    procurementDepartmentTerms: [...GENERIC.procurementDepartmentTerms],
+    supplierAccessTerms: [...GENERIC.supplierAccessTerms, 'supplier registration UAE', 'vendor registration UAE'],
+    supplierBarrierTerms: [...GENERIC.supplierBarrierTerms],
     locationTerms: ['United Arab Emirates', 'UAE', 'Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Ras Al Khaimah', 'GCC', 'Middle East']
   }),
   BD: Object.freeze({
@@ -115,6 +123,10 @@ const PROFILES = Object.freeze({
     directoryDomains: ['siem.economia.gob.mx', 'seccionamarilla.com.mx'],
     newsDomains: [...GENERIC.newsDomains, 'elfinanciero.com.mx', 'eleconomista.com.mx'],
     pageRoleTerms: [...GENERIC.pageRoleTerms, 'nosotros', 'empresa', 'productos', 'marcas', 'mayoreo', 'distribución', 'contacto'],
+    decisionMakerTerms: [...GENERIC.decisionMakerTerms, 'comprador', 'compras', 'gerente de compras', 'director de compras', 'abastecimiento', 'adquisiciones'],
+    procurementDepartmentTerms: [...GENERIC.procurementDepartmentTerms, 'departamento de compras', 'equipo de compras', 'departamento de adquisiciones', 'área de abastecimiento'],
+    supplierAccessTerms: [...GENERIC.supplierAccessTerms, 'registro de proveedores', 'alta de proveedores', 'quiero ser proveedor', 'portal de proveedores', 'licitación', 'proveedores aprobados', 'requisitos de proveedor'],
+    supplierBarrierTerms: [...GENERIC.supplierBarrierTerms, 'solo por invitación', 'proveedores exclusivos', 'lista cerrada de proveedores', 'abastecimiento local', 'precalificación requerida'],
     locationTerms: ['Mexico', 'México', 'Mexico City', 'Ciudad de México', 'CDMX', 'Guadalajara', 'Monterrey'],
     businessEvidenceTerms: Object.freeze({
       importer: [...GENERIC.businessEvidenceTerms.importer, 'importador', 'importadora', 'importación'],

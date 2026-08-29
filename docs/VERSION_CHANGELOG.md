@@ -1,5 +1,37 @@
 # Version Changelog
 
+## phase6 — 2026-08-29
+
+### Added
+
+- Added ResearchJob-based buyer/procurement enrichment for active AE and MX opportunities.
+- Added normalized decision-maker/department roles, product-specific relevance, public business contact routes and traceable evidence.
+- Added a separate six-dimension cooperation-feasibility score, access matrix and explainable readiness state without changing Phase 5 scores or matches.
+- Added optional Hunter integration with persistent credit controls and a LinkedIn discovery-only reference boundary.
+- Added Phase 6 n8n orchestration, pg-boss work, Express APIs, opportunity filters and bilingual company-detail views.
+
+### Data integrity
+
+- Completed the final acceptance job for 7 eligible companies: AE 6 and MX 1.
+- Persisted 7 conservative department-level routes, 33 public business contact routes, 7 official evidence rows and 33 LinkedIn discovery references.
+- Retained LinkedIn references as review hints with no LinkedIn content fetched.
+- Preserved `collection_runs`, DPV Score, Management Baseline Match, Mexico Historical Match and all historical source rows.
+- Excluded non-target and unsupported company identities without fabricating replacements.
+
+### Verification
+
+- 238 tests executed: 235 passed, 0 failed and 3 conditionally skipped.
+- The final job completed 35/35 company-specific search requests with 0 errors and 0 timeouts.
+- Desktop, mobile, light/dark, native zoom, detail-dialog and focus-restoration checks passed.
+- PostgreSQL, the management dashboard and both Phase 5 and Phase 6 n8n workflows remained operational.
+- No outreach, form submission, supplier registration or LinkedIn content collection was added.
+
+### Current limitations
+
+- The accepted public evidence set contains no verified named buyer or verified buying/procurement department.
+- No public supplier portal or vendor-registration route was found in the final set.
+- Hunter remained disabled and used 0 credits in the final run.
+
 ## phase5-v2.3.1 — 2026-08-29
 
 ### Added
@@ -29,4 +61,4 @@
 - The imported CRM history contains no explicit won/lost outcome dataset.
 - Historical CRM contacts are not treated as independently verified public contacts.
 - Historical lead activity does not establish an order, quotation acceptance or conversion.
-- Phase 6 has not started.
+- At the time of this Phase 5 release, Phase 6 had not started; see the newer `phase6` entry above.

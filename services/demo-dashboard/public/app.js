@@ -16,11 +16,33 @@ import {
 } from './verification-ui.js';
 import { activateView } from './crm-shell.js';
 import { applyMarketVisibility, filterVisibleMarkets, isMarketVisible } from './market-visibility.js';
+import {
+  activeOpportunityFilterCount,
+  barrierSignalLabel,
+  buildOpportunityQuery,
+  contactTypeLabel,
+  contactVerificationLabel as opportunityContactVerificationLabel,
+  cooperationMatrixLabel,
+  enrichmentStatusLabel,
+  feasibilityBandLabel,
+  feasibilityDimensionLabel,
+  feasibilityDimensionStateLabel,
+  feasibilityReasonLabel,
+  normalizedRoleLabel,
+  opportunityReadinessLabel,
+  relationshipStatusLabel,
+  sourceTypeLabel,
+  systemReasonLabel,
+  systemRouteLabel
+} from './opportunity-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const state = {
   selected: null,
   researchPollTimer: null,
+  enrichmentPollTimer: null,
+  enrichmentPollFailures: 0,
+  enrichmentJobId: null,
   verificationJobId: null,
   verificationTrigger: null,
   detailTrigger: null,
@@ -28,6 +50,7 @@ const state = {
   verificationFilters: {},
   leads: [],
   opportunities: [],
+  opportunitiesFromApi: false,
   importBatches: [],
   crmHistory: [],
   crmHistorySelected: null,
@@ -104,7 +127,7 @@ const freshnessLabels = {
 };
 const stateBadge = (code, labels) => {
   const value = String(code || 'UNKNOWN').toUpperCase();
-  const label = labels[value] || [value === 'UNKNOWN' ? '待确认' : value,value === 'UNKNOWN' ? 'Unknown' : value];
+  const label = labels[value] || ['待确认','To confirm'];
   return `<span class="data-state-badge state-${esc(value.toLowerCase())}">${bi(label[0],label[1])}</span>`;
 };
 const verificationBadge = lead => stateBadge(companyVerificationCode(lead),verificationStateLabels);
@@ -112,22 +135,59 @@ const lifecycleBadge = lead => stateBadge(lifecycleCode(lead),lifecycleStateLabe
 const shortDate = value => value ? new Date(value).toLocaleDateString() : '-';
 const sourceCountValue = lead => Number(lead.verification_source_count ?? lead.source_count ?? lead.source_record_count ?? (Array.isArray(lead.sources) ? lead.sources.length : 0)) || 0;
 const productProfileValues = lead => {
-  const values = Array.isArray(lead.product_profiles) ? lead.product_profiles : [lead.product_profile || lead.product_scope].filter(Boolean);
+  const values = [
+    ...(Array.isArray(lead.product_profiles) ? lead.product_profiles : []),
+    lead.product_profile,
+    lead.product_scope
+  ].filter(Boolean);
   return [...new Set(values.map(value=>{
+    const original = String(value || '');
     const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g,'_');
-    if (normalized === 'WOMENSWEAR' || /WOMEN|DRESS|SKIRT|TOP|TROUSER|KNITWEAR|APPAREL/.test(normalized)) return 'WOMENSWEAR';
-    if (normalized === 'GENERAL_MERCHANDISE' || /HOUSEHOLD|HOMEWARE|DAILY_USE|NON_FOOD|GENERAL_MERCHANDISE/.test(normalized)) return 'GENERAL_MERCHANDISE';
+    if (normalized === 'WOMENSWEAR' || /WOMEN|DRESS|SKIRT|TOP|TROUSER|KNITWEAR|APPAREL/.test(normalized) || /女装|连衣裙|上衣|半身裙|裤装|套装|外套|针织衫|内搭/.test(original)) return 'WOMENSWEAR';
+    if (normalized === 'GENERAL_MERCHANDISE' || /HOUSEHOLD|HOMEWARE|DAILY_USE|NON_FOOD|GENERAL_MERCHANDISE/.test(normalized) || /日用|百货|家居|家用/.test(original)) return 'GENERAL_MERCHANDISE';
     return '';
   }).filter(Boolean))];
 };
 const productProfileCode = lead => productProfileValues(lead).length === 1 ? productProfileValues(lead)[0] : '';
 const productProfileLabel = lead => productProfileValues(lead).length > 1
-  ? productProfileValues(lead).map(value=>value === 'GENERAL_MERCHANDISE' ? 'General Merchandise' : value === 'WOMENSWEAR' ? "Full-category Women's Apparel" : humanizeCode(value)).join(' / ')
+  ? bi(
+      productProfileValues(lead).map(value=>value === 'GENERAL_MERCHANDISE' ? '日用百货' : '全品类女装').join(' / '),
+      productProfileValues(lead).map(value=>value === 'GENERAL_MERCHANDISE' ? 'General Merchandise' : "Full-category Women's Apparel").join(' / ')
+    )
   : productProfileCode(lead) === 'GENERAL_MERCHANDISE'
   ? bi('日用百货','General Merchandise')
   : productProfileCode(lead) === 'WOMENSWEAR'
     ? bi('全品类女装',"Full-category Women's Apparel")
     : esc(displayValue(lead.product_category || (Array.isArray(lead.product_categories) ? lead.product_categories.join(', ') : lead.product_categories)) || '-');
+const pairHtml = value => bi(value?.[0] || '待确认',value?.[1] || 'To confirm');
+const enumBadge = (value,tone='unknown') => `<span class="data-state-badge state-${esc(tone)}">${pairHtml(value)}</span>`;
+const valueList = value => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  if (typeof value === 'string' && value.trim().startsWith('[')) {
+    try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter(Boolean) : []; } catch {}
+  }
+  return [value].filter(Boolean);
+};
+const productProfilesCell = lead => {
+  const profiles = productProfileValues(lead);
+  if (!profiles.length) return bi('产品待确认','Product to confirm');
+  return profiles.map(value=>value === 'GENERAL_MERCHANDISE'
+    ? bi('日用百货','General Merchandise')
+    : bi('全品类女装',"Full-category Women's Apparel")).join('');
+};
+const readinessTone = value => ({ SALES_READY:'active',SUPPRESSED:'rejected',EXISTING_CUSTOMER:'superseded',STRATEGIC_LONG_SHOT:'review',NEEDS_DECISION_MAKER:'aging',NEEDS_CONTACT_ROUTE:'aging',NEEDS_VERIFICATION:'review',HISTORICAL_REVIEW:'review',REVIEW:'review' }[String(value || '').toUpperCase()] || 'unknown');
+const feasibilityTone = value => ({ HIGH:'active',MEDIUM:'review',LOW_MEDIUM:'aging',LOW:'rejected' }[String(value || '').toUpperCase()] || 'unknown');
+const verificationTone = value => ({ VERIFIED:'active',VALID:'active',PUBLICLY_OBSERVED:'current',BUSINESS_WHATSAPP_OBSERVED:'current',FORMAT_VALID:'review',ACCEPT_ALL:'review',NOT_VERIFIED:'aging',UNKNOWN:'unknown',INVALID:'rejected',INVALID_FORMAT:'rejected',REJECTED:'rejected' }[String(value || '').toUpperCase()] || 'unknown');
+const relationshipTone = value => ({ NEW_PROSPECT:'active',HISTORICAL_CRM_LEAD:'review',HISTORICAL_CONTACTED_LEAD:'review',INTERNAL_EXISTING_CUSTOMER:'superseded',SUPPRESSED:'rejected',REVIEW:'review' }[String(value || '').toUpperCase()] || 'unknown');
+const contactValueHtml = route => {
+  const value = displayValue(route?.value ?? route?.contact_value_raw ?? route?.best_contact);
+  if (!value) return bi('联系路径待补充','Contact route required');
+  const type = String(route?.contact_type || route?.best_contact_type || '').toUpperCase();
+  const label = pairHtml(contactTypeLabel(type));
+  const url = ['CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION','PUBLIC_PROFILE_URL','OTHER_BUSINESS_ROUTE'].includes(type) ? safeUrl(value) : '#';
+  return `<span class="crm-contact-route-type">${label}</span>${url !== '#' ? `<a class="crm-contact-route-value" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开商务页面','Open business page')}</a>` : `<span class="crm-contact-route-value">${esc(value)}</span>`}`;
+};
 
 async function json(url, options) {
   const response = await fetch(url, { cache: 'no-store', ...options });
@@ -209,7 +269,15 @@ const evidenceTypeLabels = {
   REGIONAL_COVERAGE:['区域覆盖','Regional coverage'], WAREHOUSE:['仓储设施','Warehouse'], LOCATIONS:['经营网点','Locations'],
   EMPLOYEE_SIZE:['员工规模','Employee size'], COMPANY_SCALE:['企业规模','Company scale'], RECENT_ACTIVITY:['近期经营动态','Recent activity'],
   PUBLIC_CONTACT:['商务联系方式','Business contact'], SOCIAL_ACCOUNT:['企业社交账号','Business social account']
+  ,COMPANY_CLAIM:['企业公开资料','Company information'], COMPANY_VERIFICATION:['企业核验资料','Company verification evidence']
 };
+const scoreEligibilityLabels = {
+  ELIGIBLE:['资料满足评分条件','Evidence sufficient for scoring'],
+  PARTIAL_EVIDENCE:['部分资料待补充','Partial evidence'],
+  INELIGIBLE:['暂不满足评分条件','Not currently eligible for scoring'],
+  REVIEW:['待业务复核','Business review']
+};
+const scoreEligibilityLabel = value => scoreEligibilityLabels[String(value || '').toUpperCase()] || ['待业务复核','Business review'];
 const contactTypeLabels = {
   EMAIL:['商务邮箱','Business email'], PHONE:['联系电话','Business phone'], WHATSAPP:['WhatsApp','WhatsApp'],
   CONTACT_FORM:['咨询表单','Enquiry form']
@@ -384,9 +452,9 @@ function renderVerificationDetail(item) {
     <section class="verification-detail-section"><h4>${bi('合作可达性理由','Partnership accessibility reasons')}</h4>${reasonList(item.accessibility_reason_codes)}</section>
     <section class="verification-detail-section"><h4>${bi('中小企业相关性理由','SME relevance reasons')}</h4>${reasonList(item.sme_reason_codes)}</section>
     ${item.strategic_account ? `<section class="verification-detail-section"><h4>${bi('战略客户理由','Strategic account reasons')}</h4>${reasonList(item.strategic_reason_codes)}</section>` : ''}
-    <section class="verification-detail-section"><h4>${bi('商务联系方式','Business contacts')}</h4>${contacts.length ? `<div class="verification-contact-list">${contacts.map(contact => `<div><b>${labelHtml(contactTypeLabels[contact.contact_type] || [contact.contact_type,contact.contact_type])}</b><span>${esc(contact.contact_value)}</span>${sourceLink(contact.source_url)}</div>`).join('')}</div>` : `<p class="verification-empty-inline">${bi('未发现商务联系方式。','No business contact found.')}</p>`}</section>
+    <section class="verification-detail-section"><h4>${bi('商务联系方式','Business contacts')}</h4>${contacts.length ? `<div class="verification-contact-list">${contacts.map(contact => `<div><b>${labelHtml(contactTypeLabels[contact.contact_type] || ['其他商务联系路径','Other business contact route'])}</b><span>${esc(contact.contact_value)}</span>${sourceLink(contact.source_url)}</div>`).join('')}</div>` : `<p class="verification-empty-inline">${bi('未发现商务联系方式。','No business contact found.')}</p>`}</section>
     <section class="verification-detail-section"><h4>${bi('企业社交账号','Business social accounts')}</h4><p class="detail-section-note">${labelHtml(socialEnrichmentLabel(item.social_enrichment_status))}</p>${socials.length ? `<div class="verification-social-list">${socials.map(account => `<a href="${esc(safeUrl(account.profile_url))}" target="_blank" rel="noreferrer">${esc(account.platform)}</a>`).join('')}</div>` : `<p class="verification-empty-inline">${bi('未发现已确认的企业账号。','No confirmed business account found.')}</p>`}</section>
-    <section class="verification-detail-section"><h4>${bi('核验依据','Verification evidence')}</h4>${evidence.length ? `<div class="verification-evidence-list">${evidence.map((record,index) => { const type = evidenceTypeLabels[record.evidence_type] || [record.evidence_type,record.evidence_type]; return `<details${index === 0 ? ' open' : ''}><summary><span>${labelHtml(type)}</span><b>${confidencePercent(record.confidence)}</b></summary><blockquote>${esc(record.evidence_text)}</blockquote><dl><dt>${bi('资料来源','Source')}</dt><dd>${sourceLink(record.source_url)}</dd><dt>${bi('页面标题','Page title')}</dt><dd>${esc(record.source_page_title || '-')}</dd><dt>${bi('记录时间','Captured at')}</dt><dd>${record.captured_at ? esc(new Date(record.captured_at).toLocaleString()) : '-'}</dd></dl></details>`; }).join('')}</div>` : `<p class="verification-empty-inline">${bi('暂无核验依据。','No verification evidence available.')}</p>`}</section>`;
+    <section class="verification-detail-section"><h4>${bi('核验依据','Verification evidence')}</h4>${evidence.length ? `<div class="verification-evidence-list">${evidence.map((record,index) => { const type = evidenceTypeLabels[record.evidence_type] || ['企业资料','Company source']; return `<details${index === 0 ? ' open' : ''}><summary><span>${labelHtml(type)}</span><b>${confidencePercent(record.confidence)}</b></summary><blockquote>${esc(record.evidence_text)}</blockquote><dl><dt>${bi('资料来源','Source')}</dt><dd>${sourceLink(record.source_url)}</dd><dt>${bi('页面标题','Page title')}</dt><dd>${esc(record.source_page_title || '-')}</dd><dt>${bi('记录时间','Captured at')}</dt><dd>${record.captured_at ? esc(new Date(record.captured_at).toLocaleString()) : '-'}</dd></dl></details>`; }).join('')}</div>` : `<p class="verification-empty-inline">${bi('暂无核验依据。','No verification evidence available.')}</p>`}</section>`;
 }
 
 async function openVerificationDetail(candidateId, trigger) {
@@ -587,23 +655,96 @@ function renderOverviewCompanies() {
   host.querySelectorAll('[data-overview-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.overviewId)));
 }
 
+function collectOpportunityFilters() {
+  const form = $('#opportunity-filters');
+  return form ? Object.fromEntries(new FormData(form).entries()) : { sort:$('#opportunity-sort')?.value || 'feasibility_desc' };
+}
+
+function syncOpportunityFilters() {
+  const count = activeOpportunityFilterCount(collectOpportunityFilters());
+  const host = $('#opportunity-filter-count');
+  if (host) {
+    host.textContent = String(count);
+    host.setAttribute('aria-label',count ? `已启用 ${count} 项筛选 ${count} active filters` : '未启用筛选 No active filters');
+  }
+}
+
+function opportunityBuyerCell(item) {
+  const buyer = displayValue(item.buyer_name || item.buyer_department);
+  if (!buyer) return `<span class="crm-cell-empty">${bi('采购人员或部门待补充','Buyer or department required')}</span>`;
+  const buyerPair = systemRouteLabel(buyer);
+  const rawTitle = displayValue(item.buyer_raw_title);
+  const titlePair = systemRouteLabel(rawTitle);
+  const repeated = rawTitle && rawTitle.toLowerCase() === buyer.toLowerCase();
+  return `<strong class="crm-buyer-name">${buyerPair ? pairHtml(buyerPair) : esc(buyer)}</strong>${rawTitle && !repeated ? `<small>${titlePair ? pairHtml(titlePair) : esc(rawTitle)}</small>` : ''}`;
+}
+
+function opportunityRoleCell(item) {
+  if (!item.normalized_role) return `<span class="crm-cell-empty">${bi('角色待确认','Role to confirm')}</span>`;
+  const relevance = relevanceLabel(String(item.role_relevance || 'UNKNOWN').toUpperCase());
+  return `${pairHtml(normalizedRoleLabel(item.normalized_role))}<small>${bi(`相关度：${relevance[0]}`,`Relevance: ${relevance[1]}`)}</small>`;
+}
+
+function opportunityFeasibilityCell(item) {
+  const score = numericValue(item.cooperation_feasibility_score);
+  if (score == null) return `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
+  return `<span class="crm-feasibility-cell"><b>${esc(Math.round(score))}/100</b>${enumBadge(feasibilityBandLabel(item.feasibility_band),feasibilityTone(item.feasibility_band))}</span>`;
+}
+
+function opportunitySupplierCell(item) {
+  const count = Number(item.supplier_route_count || 0);
+  const portal = safeUrl(item.supplier_portal_url);
+  const countLabel = count ? bi(`${count} 条商务路径`,`${count} business ${count === 1 ? 'route' : 'routes'}`) : bi('供应商路径待补充','Supplier route required');
+  return `<span class="crm-supplier-route">${countLabel}${portal !== '#' ? `<a href="${esc(portal)}" target="_blank" rel="noreferrer">${bi('打开供应商入口','Open supplier route')}</a>` : ''}</span>`;
+}
+
+function opportunityBarrierCell(item) {
+  const barriers = valueList(item.barrier_signals);
+  if (!barriers.length) return `<span class="crm-cell-empty">${bi('障碍待确认','Barriers to confirm')}</span>`;
+  const extra = barriers.length > 1 ? `<small>${bi(`另有 ${barriers.length - 1} 项`,`Plus ${barriers.length - 1} more`)}</small>` : '';
+  return `${pairHtml(barrierSignalLabel(barriers[0]))}${extra}`;
+}
+
 function renderOpportunityTable() {
   const host = $('#opportunity-table');
   if (!host) return;
-  const items = sortedLeads(state.opportunities.length ? state.opportunities : state.leads,$('#opportunity-sort')?.value || 'score_desc');
+  const fallback = state.opportunities.length ? state.opportunities : state.leads;
+  const items = state.opportunitiesFromApi ? state.opportunities : sortedLeads(fallback,$('#opportunity-sort')?.value || 'feasibility_desc');
   host.innerHTML = items.length ? items.map(item=>{
-    return `<tr><td><strong>${esc(item.company_name || item.resolved_company_name || '-')}</strong></td><td><button class="btn btn-sm btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看','View')}</button></td><td>${esc(marketValue(item))}</td><td>${bi(companyTypeZh(businessTypeValue(item)),companyTypeEn(businessTypeValue(item)))}</td><td>${verificationBadge(item)}</td><td>${lifecycleBadge(item)}</td><td>${esc(shortDate(item.last_verified_at))}</td><td class="crm-number-cell">${esc(sourceCountValue(item))}</td><td>${matchCell(item)}</td><td>${historicalMatchCell(item)}</td><td>${scoreCell(item)}</td><td>${tierScore(item)}</td></tr>`;
-  }).join('') : `<tr><td colspan="12" class="crm-loading-cell">${bi('当前没有可显示的业务机会。','No opportunities are available.')}</td></tr>`;
+    const contact = { contact_type:item.best_contact_type,value:item.best_contact };
+    const matrix = item.cooperation_matrix ? pairHtml(cooperationMatrixLabel(item.cooperation_matrix)) : `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
+    const contactVerification = item.contact_verification
+      ? enumBadge(opportunityContactVerificationLabel(item.contact_verification),verificationTone(item.contact_verification))
+      : `<span class="crm-cell-empty">${bi('待确认','To confirm')}</span>`;
+    const readiness = item.opportunity_readiness
+      ? enumBadge(opportunityReadinessLabel(item.opportunity_readiness),readinessTone(item.opportunity_readiness))
+      : `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
+    return `<tr>
+      <td class="op-col-company" data-label="公司 / Company"><button class="crm-company-link crm-opportunity-company" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看客户','View prospect')}</span></button></td>
+      <td class="op-col-market-product" data-label="市场与产品 / Market and product"><strong>${esc(marketValue(item))}</strong>${productProfilesCell(item)}</td>
+      <td class="op-col-secondary">${matchCell(item)}</td><td class="op-col-secondary">${historicalMatchCell(item)}</td>
+      <td class="op-col-secondary"><span class="crm-score-tier">${scoreCell(item)}${tierScore(item)}</span></td>
+      <td class="op-col-contact">${opportunityBuyerCell(item)}</td><td class="op-col-secondary">${opportunityRoleCell(item)}</td>
+      <td class="op-col-contact">${contactValueHtml(contact)}</td><td class="op-col-secondary">${contactVerification}</td>
+      <td class="op-col-feasibility" data-label="合作可行性 / Cooperation feasibility">${opportunityFeasibilityCell(item)}</td><td class="op-col-secondary">${matrix}</td>
+      <td class="op-col-secondary">${opportunitySupplierCell(item)}</td><td class="op-col-secondary">${opportunityBarrierCell(item)}</td>
+      <td class="op-col-readiness" data-label="跟进准备状态 / Readiness">${readiness}</td></tr>`;
+  }).join('') : `<tr><td colspan="14" class="crm-loading-cell">${bi(activeOpportunityFilterCount(collectOpportunityFilters()) ? '当前筛选没有业务机会。' : '当前没有可显示的业务机会。',activeOpportunityFilterCount(collectOpportunityFilters()) ? 'No opportunities match the current filters.' : 'No opportunities are available.')}</td></tr>`;
   host.querySelectorAll('[data-opportunity-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.opportunityId)));
 }
 
 async function loadOpportunities() {
+  const host = $('#opportunity-table');
+  const query = buildOpportunityQuery(collectOpportunityFilters(),100);
+  host?.closest('.table-responsive')?.setAttribute('aria-busy','true');
   try {
-    const payload = await json('/api/opportunities?limit=100');
+    const payload = await json(`/api/opportunities?${query}`);
     const opportunities = Array.isArray(payload) ? payload : payload.items || payload.opportunities || [];
     state.opportunities = opportunities.filter(companyMarketIsVisible);
+    state.opportunitiesFromApi = true;
   } catch {
     state.opportunities = [...state.leads];
+    state.opportunitiesFromApi = false;
   }
   if (!$('#tier')?.value && !$('#size')?.value && !$('#verification-filter')?.value && !$('#lifecycle-filter')?.value) {
     const opportunityById = new Map(state.opportunities.map(item=>[String(companyIdFor(item)),item]));
@@ -614,6 +755,8 @@ async function loadOpportunities() {
     renderOverviewCompanies();
   }
   renderOpportunityTable();
+  host?.closest('.table-responsive')?.setAttribute('aria-busy','false');
+  syncOpportunityFilters();
 }
 
 const importStatusLabels = {
@@ -851,7 +994,8 @@ const businessCodePair = value => {
   const text = displayValue(value);
   if (!text) return ['-','-'];
   const code = text.toUpperCase().replace(/[^A-Z0-9]+/g,'_').replace(/^_|_$/g,'');
-  return BUSINESS_CODE_LABELS[code] || [profileCodeText(text),profileCodeText(text)];
+  if (BUSINESS_CODE_LABELS[code]) return BUSINESS_CODE_LABELS[code];
+  return /^[A-Z0-9_ -]+$/.test(text) ? ['待确认','To confirm'] : [text,text];
 };
 const profileTextPair = value => {
   if (Array.isArray(value)) {
@@ -924,7 +1068,7 @@ function icpProfileCard(profile) {
     return display === '-' ? coverageDisplay(featureCoverage(featureKey)) : display;
   };
   const managementFacts = [
-    ['产品画像','Product profile',productName],['画像类型','Profile type',businessCodeHtml(profile?.profile_type || 'MANAGEMENT_BASELINE')],['版本','Version',esc(profile?.version ?? profile?.profile_version ?? '-')],['市场范围','Market scope',profileValueHtml(filterVisibleMarkets(profile?.market_scope || featureValue('markets')?.values || []))],['成功样本','Win sample',esc(profile?.sample_size_wins ?? 0)],['未转化样本','Loss sample',esc(profile?.sample_size_losses ?? 0)],['订单样本','Order sample',esc(profile?.sample_size_orders ?? 0)],['特征覆盖率','Feature coverage',profile?.feature_coverage == null ? '-' : `${esc(profile.feature_coverage)}%`],['启用时间','Activated',esc(profile?.activated_at ? new Date(profile.activated_at).toLocaleString() : '-')],['历史业务资料','Historical data',bi('未载入','Not loaded')]
+    ['产品画像','Product profile',productName],['画像类型','Profile type',businessCodeHtml(profile?.profile_type || 'MANAGEMENT_BASELINE')],['市场范围','Market scope',profileValueHtml(filterVisibleMarkets(profile?.market_scope || featureValue('markets')?.values || []))],['成功样本','Win sample',esc(profile?.sample_size_wins ?? 0)],['未转化样本','Loss sample',esc(profile?.sample_size_losses ?? 0)],['订单样本','Order sample',esc(profile?.sample_size_orders ?? 0)],['特征覆盖率','Feature coverage',profile?.feature_coverage == null ? '-' : `${esc(profile.feature_coverage)}%`],['启用时间','Activated',esc(profile?.activated_at ? new Date(profile.activated_at).toLocaleString() : '-')],['历史业务资料','Historical data',bi('未载入','Not loaded')]
   ];
   const historicalFacts = [
     ['参考市场','Reference market',businessCodeHtml(profile?.reference_market || 'MX')],
@@ -1025,20 +1169,33 @@ function dimensionRows(dimensions, fallback = []) {
 
 function historyTable(items, type) {
   if (!items.length) return `<div class="crm-empty-inline">${bi(type === 'match' ? '暂无客户匹配历史。' : '暂无评分历史。',type === 'match' ? 'No Customer Match history is available.' : 'No score history is available.')}</div>`;
-  return `<div class="table-responsive" role="region" aria-label="${esc(type === 'match' ? '客户匹配历史 Customer Match history' : '评分历史 Score history')}" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi(type === 'match' ? '客户匹配' : 'DPV 评分',type === 'match' ? 'Customer Match' : 'DPV Score')}</th><th>${bi('版本','Version')}</th><th>${bi('资料覆盖率','Evidence coverage')}</th></tr></thead><tbody>${items.map(item=>`<tr><td>${esc(item.calculated_at || item.created_at ? new Date(item.calculated_at || item.created_at).toLocaleString() : '-')}</td><td>${esc(item.match_score ?? item.final_score ?? item.score ?? item.total_score ?? '-')}</td><td>${esc(item.profile_version ?? item.rule_version ?? item.version ?? '-')}</td><td>${esc(item.coverage_percent ?? item.evidence_coverage ?? '-')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-responsive" role="region" aria-label="${esc(type === 'match' ? '客户匹配历史 Customer Match history' : '评分历史 Score history')}" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi(type === 'match' ? '客户匹配' : 'DPV 评分',type === 'match' ? 'Customer Match' : 'DPV Score')}</th><th>${bi('资料覆盖率','Evidence coverage')}</th></tr></thead><tbody>${items.map(item=>`<tr><td>${esc(item.calculated_at || item.created_at ? new Date(item.calculated_at || item.created_at).toLocaleString() : '-')}</td><td>${esc(item.match_score ?? item.final_score ?? item.score ?? item.total_score ?? '-')}</td><td>${esc(item.coverage_percent ?? item.evidence_coverage ?? '-')}</td></tr>`).join('')}</tbody></table></div>`;
 }
+
+const LIFECYCLE_ACTION_LABELS = Object.freeze({
+  STATUS_CHANGED:['状态已更新','Status updated'], VERIFICATION_UPDATED:['核验状态已更新','Verification updated'],
+  SUPERSEDED:['已有替代记录','Superseded'], DUPLICATE:['标记为重复记录','Marked as duplicate'],
+  INVALID:['标记为无效记录','Marked as invalid'], ARCHIVED:['已归档','Archived'],
+  APPROVED:['已批准','Approved'], REJECTED:['已拒绝','Rejected'], REPLACED:['记录已替换','Record replaced']
+});
+const lifecycleActionPair = value => LIFECYCLE_ACTION_LABELS[String(value || '').trim().toUpperCase()] || ['状态已更新','Status updated'];
+const lifecycleReasonHtml = value => {
+  const text = displayValue(value);
+  if (!text) return '-';
+  return /^[A-Z0-9_:-]+$/.test(text) ? pairHtml(reasonCodePair(text)) : esc(text);
+};
 
 function lifecycleHistoryView(payload) {
   const lifecycleEvents = arrayPayload(payload?.lifecycle_events);
   const cleanupEvents = arrayPayload(payload?.cleanup_audit);
   const replacedRecords = arrayPayload(payload?.replaced_records);
   const rows = [
-    ...lifecycleEvents.map(item=>({ date:item.created_at || item.occurred_at || item.changed_at, action:item.event_type || item.action || 'STATUS_CHANGED', reason:item.reason_code || item.reason_text || (item.from_status && item.to_status ? `${item.from_status} -> ${item.to_status}` : ''), related:item.canonical_company_name || item.canonical_entity_id || '' })),
-    ...cleanupEvents.map(item=>({ date:item.performed_at, action:item.action, reason:item.reason_code || item.reason_text, related:item.canonical_company_name || item.canonical_entity_id || '' })),
-    ...replacedRecords.map(item=>({ date:item.updated_at || item.last_verified_at, action:item.lifecycle_status || 'SUPERSEDED', reason:item.company_name || item.reason_code, related:item.replaced_by_company_name || item.replaced_by_company_id || '' }))
+    ...lifecycleEvents.map(item=>({ date:item.created_at || item.occurred_at || item.changed_at, action:item.event_type || item.action || 'STATUS_CHANGED', reason:item.reason_code || item.reason_text || (item.from_status && item.to_status ? 'STATUS_CHANGED' : ''), related:item.canonical_company_name || '' })),
+    ...cleanupEvents.map(item=>({ date:item.performed_at, action:item.action, reason:item.reason_code || item.reason_text, related:item.canonical_company_name || '' })),
+    ...replacedRecords.map(item=>({ date:item.updated_at || item.last_verified_at, action:item.lifecycle_status || 'SUPERSEDED', reason:item.company_name || item.reason_code, related:item.replaced_by_company_name || '' }))
   ].sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
   if (!rows.length) return `<div class="crm-empty-inline">${bi('暂无企业状态变更记录。','No company status history is available.')}</div>`;
-  return `<div class="table-responsive" role="region" aria-label="企业状态历史 Company status history" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi('变更','Change')}</th><th>${bi('原因','Reason')}</th><th>${bi('关联记录','Related record')}</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${esc(item.date ? new Date(item.date).toLocaleString() : '-')}</td><td>${esc(humanizeCode(item.action || '-'))}</td><td>${esc(humanizeCode(item.reason || '-'))}</td><td>${esc(item.related || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-responsive" role="region" aria-label="企业状态历史 Company status history" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi('变更','Change')}</th><th>${bi('原因','Reason')}</th><th>${bi('关联记录','Related record')}</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${esc(item.date ? new Date(item.date).toLocaleString() : '-')}</td><td>${pairHtml(lifecycleActionPair(item.action))}</td><td>${lifecycleReasonHtml(item.reason)}</td><td>${esc(item.related || '-')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function wireDetailTabs(detail) {
@@ -1171,6 +1328,111 @@ function linkedCrmHistoryView(payload) {
   return `<div class="crm-linked-history">${crmHistoryOverview(crm.summary)}<section class="crm-detail-section"><h5>${bi('最近历史活动','Recent historical activities')}</h5>${crmActivityList(crm.activities,{limit:5})}</section></div>`;
 }
 
+function productRelevanceView(items) {
+  const values = arrayPayload(items);
+  if (!values.length) return bi('产品相关度待确认','Product relevance to confirm');
+  return `<div class="crm-product-relevance">${values.map(item=>{
+    const profile = String(item.product_profile || '').toUpperCase() === 'GENERAL_MERCHANDISE'
+      ? bi('日用百货','General Merchandise') : bi('全品类女装',"Full-category Women's Apparel");
+    const relevance = relevanceLabel(String(item.relevance || 'UNKNOWN').toUpperCase());
+    const tone = String(item.relevance || '').toUpperCase() === 'HIGH' ? 'active' : String(item.relevance || '').toUpperCase() === 'LOW' ? 'rejected' : 'review';
+    const reason = systemReasonLabel(item.reason);
+    return `<span>${profile}${enumBadge(relevance,tone)}${item.reason ? `<small>${reason ? pairHtml(reason) : esc(item.reason)}</small>` : ''}</span>`;
+  }).join('')}</div>`;
+}
+
+function routeList(routes, { supplierOnly = false } = {}) {
+  const allowedSupplierTypes = new Set(['SUPPLIER_PORTAL','VENDOR_REGISTRATION','CONTACT_FORM']);
+  const items = arrayPayload(routes).filter(item=>!supplierOnly || allowedSupplierTypes.has(String(item.contact_type || '').toUpperCase()));
+  if (!items.length) return `<div class="crm-empty-inline">${bi(supplierOnly ? '供应商准入路径待补充。' : '商务联系路径待补充。',supplierOnly ? 'Supplier onboarding route required.' : 'Business contact route required.')}</div>`;
+  return `<div class="crm-contact-route-list">${items.map(item=>{
+    const verification = opportunityContactVerificationLabel(item.verification_status);
+    return `<article><div>${contactValueHtml(item)}</div><div class="crm-contact-route-meta">${enumBadge(verification,verificationTone(item.verification_status))}${item.last_verified_at ? `<time datetime="${esc(item.last_verified_at)}">${esc(shortDate(item.last_verified_at))}</time>` : ''}${safeUrl(item.source_url) !== '#' ? `<a href="${esc(safeUrl(item.source_url))}" target="_blank" rel="noreferrer">${bi('查看资料来源','Open source reference')}</a>` : ''}</div></article>`;
+  }).join('')}</div>`;
+}
+
+function decisionMakerSources(items) {
+  const sources = arrayPayload(items).filter(item=>safeUrl(item.url || item.source_url) !== '#');
+  if (!sources.length) return `<div class="crm-empty-inline">${bi('采购角色资料来源待补充。','Buying-role source reference required.')}</div>`;
+  return `<div class="sources crm-decision-source-list">${sources.map(source=>{ const reason = systemReasonLabel(source.evidence_text); return `<a href="${esc(safeUrl(source.url || source.source_url))}" target="_blank" rel="noreferrer"><strong>${pairHtml(sourceTypeLabel(source.source_type))}</strong>${source.evidence_text ? `<span>${reason ? pairHtml(reason) : esc(source.evidence_text)}</span>` : ''}${source.captured_at ? `<time datetime="${esc(source.captured_at)}">${esc(shortDate(source.captured_at))}</time>` : ''}</a>`; }).join('')}</div>`;
+}
+
+function decisionMakerView(payload, contactRoutes) {
+  const items = arrayPayload(payload);
+  if (!items.length) return `<div class="crm-empty-state crm-detail-empty"><i class="ti ti-user-question" aria-hidden="true"></i><h4>${bi('采购人员或部门待补充','Buyer or department required')}</h4><p>${bi('企业仍保留在机会列表，待补充可核验的采购角色和商务路径。','The company remains available for review while buying roles and business routes are completed.')}</p></div>`;
+  return `<div class="crm-decision-maker-list">${items.map(item=>{
+    const name = displayValue(item.person_name || item.department_name) || '-';
+    const namePair = systemRouteLabel(name);
+    const rawTitle = displayValue(item.raw_title);
+    const titlePair = systemRouteLabel(rawTitle);
+    const repeatedTitle = rawTitle && rawTitle.toLowerCase() === name.toLowerCase();
+    const roleVerification = verificationStatusLabel(String(item.verification_status || '').toUpperCase());
+    const relevance = relevanceLabel(String(item.role_relevance || 'UNKNOWN').toUpperCase());
+    return `<article class="crm-decision-maker-card"><header><div><h4>${namePair ? pairHtml(namePair) : esc(name)}</h4>${repeatedTitle ? '' : `<p>${titlePair ? pairHtml(titlePair) : esc(rawTitle || '-')}</p>`}</div><div>${enumBadge(roleVerification,verificationTone(item.verification_status))}${enumBadge(relevance,verificationTone(item.role_relevance))}</div></header>${factRows([
+      ['规范化角色','Normalized role',pairHtml(normalizedRoleLabel(item.normalized_role))],
+      ['角色相关度','Role relevance',pairHtml(relevance)],
+      ['市场','Market',esc(displayValue(item.market_code) || '-')],
+      ['数据状态','Data status',stateBadge(item.lifecycle_status,lifecycleStateLabels)],
+      ['最近核验','Last verified',esc(item.last_verified_at ? new Date(item.last_verified_at).toLocaleString() : '-')],
+      ['产品相关度','Product relevance',productRelevanceView(item.product_relevance)]
+    ])}<section class="crm-detail-section"><h5>${bi('商务联系路径','Business contact routes')}</h5>${routeList(item.contacts)}</section><section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${decisionMakerSources(item.sources)}</section></article>`;
+  }).join('')}<section class="crm-detail-section"><h4>${bi('企业联系路径汇总','Company contact route summary')}</h4>${routeList(contactRoutes)}</section></div>`;
+}
+
+function feasibilityDimensionView(dimensions) {
+  const entries = dimensions && typeof dimensions === 'object' && !Array.isArray(dimensions) ? Object.entries(dimensions) : [];
+  if (!entries.length) return `<div class="crm-empty-inline">${bi('合作可行性维度待评估。','Cooperation feasibility dimensions are not assessed.')}</div>`;
+  return `<div class="crm-dimension-list">${entries.map(([name,item])=>{
+    const label = feasibilityDimensionLabel(name);
+    const state = feasibilityDimensionStateLabel(item?.state);
+    const reason = systemReasonLabel(item?.reason);
+    return `<div class="crm-dimension-row"><div><span>${pairHtml(label)}</span><small>${pairHtml(state)}</small>${item?.reason ? `<small>${reason ? pairHtml(reason) : esc(item.reason)}</small>` : ''}</div><b>${esc(item?.points ?? '-')}/${esc(item?.maximum ?? '-')}</b></div>`;
+  }).join('')}</div>`;
+}
+
+function feasibilityReasonsView(items, emptyZh, emptyEn) {
+  const values = valueList(items);
+  if (!values.length) return `<div class="crm-empty-inline">${bi(emptyZh,emptyEn)}</div>`;
+  return `<ul class="reason-list">${values.map(value=>`<li>${pairHtml(feasibilityReasonLabel(value))}</li>`).join('')}</ul>`;
+}
+
+function barrierList(items) {
+  const values = valueList(items);
+  if (!values.length) return `<div class="crm-empty-inline">${bi('供应障碍待确认。','Supplier barriers to confirm.')}</div>`;
+  return `<ul class="reason-list">${values.map(value=>`<li>${pairHtml(barrierSignalLabel(value))}</li>`).join('')}</ul>`;
+}
+
+function missingEvidenceList(items) {
+  const values = valueList(items);
+  if (!values.length) return `<div class="crm-empty-inline">${bi('当前没有待补资料项。','No missing evidence is recorded.')}</div>`;
+  return `<ul class="reason-list">${values.map(value=>`<li>${pairHtml(feasibilityDimensionLabel(value))}</li>`).join('')}</ul>`;
+}
+
+function feasibilityEvidenceList(items) {
+  const values = arrayPayload(items).filter(item=>safeUrl(item.url || item.source_url) !== '#');
+  if (!values.length) return `<div class="crm-empty-inline">${bi('合作可行性资料来源待补充。','Cooperation feasibility source reference required.')}</div>`;
+  return `<div class="sources">${values.map(source=>`<a href="${esc(safeUrl(source.url || source.source_url))}" target="_blank" rel="noreferrer">${pairHtml(sourceTypeLabel(source.source_type))}${source.captured_at ? `<time datetime="${esc(source.captured_at)}">${esc(shortDate(source.captured_at))}</time>` : ''}</a>`).join('')}</div>`;
+}
+
+function cooperationFeasibilityView(payload, contactRoutes) {
+  const items = arrayPayload(payload);
+  if (!items.length) return `<div class="crm-empty-state crm-detail-empty"><i class="ti ti-building-store" aria-hidden="true"></i><h4>${bi('合作可行性待评估','Cooperation feasibility not assessed')}</h4><p>${bi('可继续查看现有客户匹配与评分，待补充供应商准入和采购部门资料。','Existing Customer Match and DPV Score remain available while supplier-access evidence is completed.')}</p></div>`;
+  return `<div class="crm-feasibility-list">${items.map(item=>{
+    const dimensionEntries = Object.entries(item.dimension_breakdown || {});
+    const positive = dimensionEntries.filter(([,value])=>Number(value?.points || 0) >= Number(value?.maximum || 0) * .6).map(([name,value])=>`${name.toUpperCase()}_${String(value?.state || 'UNKNOWN').toUpperCase()}`);
+    const difficult = dimensionEntries.filter(([,value])=>Number(value?.points || 0) < Number(value?.maximum || 0) * .6).map(([name,value])=>`${name.toUpperCase()}_${String(value?.state || 'UNKNOWN').toUpperCase()}`);
+    return `<article class="crm-feasibility-card"><header><div><p class="crm-context">${productProfilesCell({product_profile:item.product_profile})}</p><h4>${bi('合作可行性','Cooperation Feasibility')}</h4></div><div class="crm-feasibility-score"><b>${esc(item.cooperation_feasibility_score ?? '-')}/100</b>${enumBadge(feasibilityBandLabel(item.feasibility_band),feasibilityTone(item.feasibility_band))}</div></header>${factRows([
+      ['合作机会矩阵','Cooperation matrix',pairHtml(cooperationMatrixLabel(item.access_opportunity_matrix))],
+      ['跟进准备状态','Opportunity readiness',enumBadge(opportunityReadinessLabel(item.opportunity_readiness),readinessTone(item.opportunity_readiness))],
+      ['历史客户关系','Historical CRM status',enumBadge(relationshipStatusLabel(item.relationship_status),relationshipTone(item.relationship_status))],
+      ['供应商路径','Supplier routes',esc(item.supplier_route_count ?? 0)],
+      ['已核验采购角色','Verified buying roles',esc(item.verified_decision_maker_count ?? 0)],
+      ['可用联系路径','Usable contact routes',esc(item.usable_contact_route_count ?? 0)],
+      ['最近评估','Last assessed',esc(item.calculated_at ? new Date(item.calculated_at).toLocaleString() : '-')]
+    ])}<div class="crm-feasibility-explain"><section class="crm-detail-section"><h5>${bi('可能合作的原因','Why this company may cooperate')}</h5>${feasibilityReasonsView(positive,'有利条件待补充。','Favorable conditions to confirm.')}</section><section class="crm-detail-section"><h5>${bi('进入难点','Why it may be difficult')}</h5>${feasibilityReasonsView(difficult,'当前没有明确进入难点。','No specific access difficulty is recorded.')}</section></div><section class="crm-detail-section"><h5>${bi('供应商准入路径','Supplier onboarding route')}</h5>${routeList(contactRoutes,{supplierOnly:true})}</section><section class="crm-detail-section"><h5>${bi('已知供应障碍','Known supplier barriers')}</h5>${barrierList(item.barrier_signals)}</section><section class="crm-detail-section"><h5>${bi('待补资料','Missing evidence')}</h5>${missingEvidenceList(item.missing_evidence)}</section><section class="crm-detail-section"><h5>${bi('可行性维度','Feasibility dimensions')}</h5>${feasibilityDimensionView(item.dimension_breakdown)}</section><section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${feasibilityEvidenceList(item.evidence_sources)}</section></article>`;
+  }).join('')}</div>`;
+}
+
 async function showCrmHistory(id, trigger = null) {
   const detail = $('#detail');
   state.crmHistorySelected = id;
@@ -1245,13 +1507,16 @@ async function showLead(id) {
   const companyId = companyIdFor(lead);
   const matchScope = productProfileCode(lead);
   const matchQuery = matchScope ? `?product_scope=${encodeURIComponent(matchScope)}` : '';
-  const [score,scoreHistoryPayload,match,matchHistoryPayload,lifecycleHistory,linkedCrmHistory] = await Promise.all([
+  const [score,scoreHistoryPayload,match,matchHistoryPayload,lifecycleHistory,linkedCrmHistory,decisionMakersPayload,contactRoutesPayload,feasibilityPayload] = await Promise.all([
     optionalJson(`/api/companies/${encodeURIComponent(companyId)}/score`),
     optionalJson(`/api/companies/${encodeURIComponent(companyId)}/score-history`),
     optionalJson(`/api/companies/${encodeURIComponent(companyId)}/customer-match${matchQuery}`),
     optionalJson(`/api/companies/${encodeURIComponent(companyId)}/customer-match-history${matchQuery}`),
     optionalJson(`/api/companies/${encodeURIComponent(companyId)}/lifecycle-history`),
-    optionalJson(`/api/companies/${encodeURIComponent(companyId)}/crm-history`)
+    optionalJson(`/api/companies/${encodeURIComponent(companyId)}/crm-history`),
+    optionalJson(`/api/leads/${encodeURIComponent(companyId)}/decision-makers`),
+    optionalJson(`/api/leads/${encodeURIComponent(companyId)}/contact-routes`),
+    optionalJson(`/api/companies/${encodeURIComponent(companyId)}/cooperation-feasibility${matchScope ? `?product_profile=${encodeURIComponent(matchScope)}` : ''}`)
   ]);
   const status = approvalLabel(lead.approval_status);
   const verify = verificationLabel(lead);
@@ -1288,6 +1553,10 @@ async function showLead(id) {
   const mexicoHistoricalMatch = historicalMatchRecord(match);
   const currentMatch = matchRecordScore(managementMatch);
   const currentHistoricalMatch = matchRecordScore(mexicoHistoricalMatch);
+  const decisionMakers = arrayPayload(decisionMakersPayload);
+  const contactRoutes = arrayPayload(contactRoutesPayload);
+  const feasibilityItems = arrayPayload(feasibilityPayload);
+  const currentFeasibility = feasibilityItems.find(item=>!matchScope || String(item.product_profile || '').toUpperCase() === matchScope) || feasibilityItems[0] || null;
   const scoreHistory = arrayPayload(scoreHistoryPayload);
   const matchHistory = Array.isArray(matchHistoryPayload) || matchHistoryPayload?.items || matchHistoryPayload?.history || matchHistoryPayload?.results
     ? arrayPayload(matchHistoryPayload)
@@ -1304,24 +1573,25 @@ async function showLead(id) {
     const profileName = isHistorical ? 'Mexico Historical Customer ICP' : 'Management Baseline ICP';
     return `<article class="crm-match-reference"><header><h4>${title}</h4><span class="crm-match-reference-score">${scoreValue == null ? bi('待计算','Not calculated') : `${esc(Math.round(scoreValue))}/100`}</span></header>${factRows([
       ['资料覆盖率','Coverage',coverageValue == null ? '-' : `${esc(coverageValue)}%`],
-      ['参考画像','Reference profile',esc(record?.reference_profile_name || record?.profile_name || profileName)],
-      ['画像版本','Profile version',esc(record?.profile_version ?? '-')]
+      ['参考画像','Reference profile',esc(record?.reference_profile_name || record?.profile_name || profileName)]
     ])}<section class="crm-detail-section"><h4>${bi('匹配维度','Match dimensions')}</h4>${dimensionRows(record?.dimension_scores)}</section>${reasonBlock('匹配理由','Why it matches',matchReasons)}${reasonBlock('不匹配理由','Why it does not match',mismatchReasons)}${reasonBlock('待补充信息','Missing information',missingReasons)}</article>`;
   };
   detail.classList.add('has-detail');
   detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body">
-    <header class="crm-detail-header"><div><p class="crm-context">${bi(`客户等级 ${currentTier || '-'} / ${lead.city || '-'}`,`Tier ${currentTier || '-'} / ${lead.city || '-'}`)}</p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${lifecycleBadge(lead)}${hasLegacyReview ? `<span class="pill ${esc(lead.approval_status)}">${bi(status[0],status[1])}</span>` : ''}${lead.website_url ? `<a href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer">${bi('企业网站','Official website')}</a>` : ''}</div></div><div class="crm-detail-score-set"><div class="crm-detail-score"><b>${esc(currentMatch ?? '-')}</b><span>${bi('管理基准匹配','Management Baseline Match')}</span></div><div class="crm-detail-score"><b>${esc(currentHistoricalMatch ?? '-')}</b><span>${bi('墨西哥历史参考匹配','Mexico Historical Reference Match')}</span></div><div class="crm-detail-score"><b>${esc(currentScore ?? '-')}</b><span>${bi('DPV 评分','DPV Score')}</span></div><div class="crm-detail-score"><b>${esc(currentTier || '-')}</b><span>${bi('等级','Tier')}</span></div></div></header>
+    <header class="crm-detail-header"><div><p class="crm-context">${bi(`客户等级 ${currentTier || '-'} / ${lead.city || '-'}`,`Tier ${currentTier || '-'} / ${lead.city || '-'}`)}</p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${lifecycleBadge(lead)}${currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : ''}${currentFeasibility?.relationship_status ? enumBadge(relationshipStatusLabel(currentFeasibility.relationship_status),relationshipTone(currentFeasibility.relationship_status)) : ''}${hasLegacyReview ? `<span class="pill ${esc(lead.approval_status)}">${bi(status[0],status[1])}</span>` : ''}${lead.website_url ? `<a href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer">${bi('企业网站','Official website')}</a>` : ''}</div></div><div class="crm-detail-score-set"><div class="crm-detail-score"><b>${esc(currentFeasibility?.cooperation_feasibility_score ?? '-')}</b><span>${bi('合作可行性','Cooperation Feasibility')}</span></div><div class="crm-detail-score"><b>${esc(currentMatch ?? '-')}</b><span>${bi('管理基准匹配','Management Baseline Match')}</span></div><div class="crm-detail-score"><b>${esc(currentHistoricalMatch ?? '-')}</b><span>${bi('墨西哥历史参考匹配','Mexico Historical Reference Match')}</span></div><div class="crm-detail-score"><b>${esc(currentScore ?? '-')}</b><span>${bi('DPV 评分','DPV Score')}</span></div><div class="crm-detail-score"><b>${esc(currentTier || '-')}</b><span>${bi('等级','Tier')}</span></div></div></header>
     <div class="crm-detail-tabs" role="tablist" aria-label="客户详情页签 Company detail tabs">
-      ${[['overview','概览','Overview'],['evidence','资料依据','Evidence'],['contacts','联系方式','Contacts'],['social','社交账号','Social'],['matching','客户匹配','Matching'],['scoring','评分','Scoring'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
+      ${[['overview','概览','Overview'],['buying','采购联系人','Buying Contacts'],['feasibility','合作可行性','Cooperation Feasibility'],['evidence','资料依据','Evidence'],['contacts','联系方式','Contacts'],['social','社交账号','Social'],['matching','客户匹配','Matching'],['scoring','评分','Scoring'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
     </div>
     <section id="detail-panel-overview" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-overview">${factRows([
-      ['产品画像','Product profile',productProfileLabel(lead)],['市场','Market',esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')],['核验状态','Verification',verificationBadge(lead)],['数据状态','Data status',lifecycleBadge(lead)],['最近核验','Last verified',esc(lead.last_verified_at ? new Date(lead.last_verified_at).toLocaleString() : '-')],['核验来源','Verification sources',esc(sourceCountValue(lead))],['资料时效','Verification freshness',stateBadge(lead.verification_freshness,freshnessLabels)],['企业规模','Company size',`${bi(size[0],size[1])}<br>${sizeEvidenceDisplay}`],['进口/批发','Importer / wholesaler',`${yesNo(importerWholesalerFit)}<br>${importerWholesalerEvidence}`],['连锁供货','Chain supply',`${yesNo(lead.chain_supply_fit)}<br>${esc(lead.chain_store_supply_evidence || '连锁供货属性待确认 / Chain-supply status to confirm')}`]
+      ['产品画像','Product profile',productProfileLabel(lead)],['市场','Market',esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')],['核验状态','Verification',verificationBadge(lead)],['数据状态','Data status',lifecycleBadge(lead)],['跟进准备状态','Opportunity readiness',currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : bi('待评估','Not assessed')],['合作机会矩阵','Cooperation matrix',currentFeasibility?.access_opportunity_matrix ? pairHtml(cooperationMatrixLabel(currentFeasibility.access_opportunity_matrix)) : bi('待评估','Not assessed')],['最近核验','Last verified',esc(lead.last_verified_at ? new Date(lead.last_verified_at).toLocaleString() : '-')],['核验来源','Verification sources',esc(sourceCountValue(lead))],['资料时效','Verification freshness',stateBadge(lead.verification_freshness,freshnessLabels)],['企业规模','Company size',`${bi(size[0],size[1])}<br>${sizeEvidenceDisplay}`],['进口/批发','Importer / wholesaler',`${yesNo(importerWholesalerFit)}<br>${importerWholesalerEvidence}`],['连锁供货','Chain supply',`${yesNo(lead.chain_supply_fit)}<br>${esc(lead.chain_store_supply_evidence || '连锁供货属性待确认 / Chain-supply status to confirm')}`]
     ])}</section>
-    <section id="detail-panel-evidence" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-evidence" hidden><section class="crm-detail-section"><h4>${bi('资料来源','Source references')}</h4>${sources.length ? `<div class="sources">${sources.map(s=>`<a href="${esc(safeUrl(s.url || s.source_url))}" target="_blank" rel="noreferrer">${esc(s.provider || s.provider_name || '-')} / ${esc(s.evidence_kind || s.evidence_type || '-')} / ${bi('查看来源页面','Open source page')}</a>`).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无来源链接。','No source URL is available.')}</div>`}</section></section>
+    <section id="detail-panel-buying" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-buying" hidden>${decisionMakerView(decisionMakers,contactRoutes)}</section>
+    <section id="detail-panel-feasibility" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-feasibility" hidden>${cooperationFeasibilityView(feasibilityItems,contactRoutes)}</section>
+    <section id="detail-panel-evidence" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-evidence" hidden><section class="crm-detail-section"><h4>${bi('资料来源','Source references')}</h4>${sources.length ? `<div class="sources">${sources.map(s=>{ const kind = evidenceTypeLabels[String(s.evidence_kind || s.evidence_type || '').toUpperCase()] || ['公开企业资料','Public business source']; return `<a href="${esc(safeUrl(s.url || s.source_url))}" target="_blank" rel="noreferrer">${pairHtml(kind)}${bi('查看来源页面','Open source page')}</a>`; }).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无来源链接。','No source URL is available.')}</div>`}</section></section>
     <section id="detail-panel-contacts" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-contacts" hidden>${factRows([['商务邮箱','Business email',esc(email)],['联系电话','Business phone',esc(phone)],['联系方式状态','Contact status',bi(verify[0],verify[1])]])}<div class="safety">${bi('联系前请确认企业信息与业务需求。','Confirm company information and requirements before contact.')}</div></section>
     <section id="detail-panel-social" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-social" hidden>${socialProfiles.length ? `<div class="social-links">${socialProfiles.map(url=>`<a href="${esc(safeUrl(url))}" target="_blank" rel="noreferrer">${esc(socialHost(url))}</a>`).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无企业社交账号。','No business social account is available.')}</div>`}</section>
     <section id="detail-panel-matching" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-matching" hidden><p class="crm-helper crm-match-note">${bi('两项匹配分别展示，供业务团队独立判断。','Review the two match results separately for commercial decisions.')}</p><div class="crm-match-reference-grid">${matchReferencePanel(managementMatch,'management_baseline')}${matchReferencePanel(mexicoHistoricalMatch,'mx_historical_reference')}</div></section>
-    <section id="detail-panel-scoring" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-scoring" hidden>${factRows([['DPV 评分','DPV Score',`<b>${esc(currentScore ?? '-')}/100</b>`],['等级','Tier',esc(currentTier || '-')],['评分资格','Score eligibility',esc(score?.score_eligibility || score?.eligibility || '-')],['规则版本','Rule version',esc(score?.rule_version || '-')],['资料覆盖率','Evidence coverage',score?.evidence_coverage == null ? '-' : `${esc(score.evidence_coverage)}%`]])}<section class="crm-detail-section"><h4>${bi('评分维度','Score dimensions')}</h4>${dimensionRows(score?.dimension_scores,scores)}</section></section>
+    <section id="detail-panel-scoring" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-scoring" hidden>${factRows([['DPV 评分','DPV Score',`<b>${esc(currentScore ?? '-')}/100</b>`],['等级','Tier',esc(currentTier || '-')],['评分资格','Score eligibility',pairHtml(scoreEligibilityLabel(score?.score_eligibility || score?.eligibility))],['资料覆盖率','Evidence coverage',score?.evidence_coverage == null ? '-' : `${esc(score.evidence_coverage)}%`]])}<section class="crm-detail-section"><h4>${bi('评分维度','Score dimensions')}</h4>${dimensionRows(score?.dimension_scores,scores)}</section></section>
     <section id="detail-panel-history" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-history" hidden><section class="crm-detail-section"><h4>${bi('历史客户记录','Historical CRM record')}</h4>${linkedCrmHistoryView(linkedCrmHistory)}</section><section class="crm-detail-section"><h4>${bi('企业状态历史','Company status history')}</h4>${lifecycleHistoryView(lifecycleHistory)}</section><section class="crm-detail-section"><h4>${bi('评分历史','Score history')}</h4>${historyTable(scoreHistory,'score')}</section><section class="crm-detail-section"><h4>${bi('客户匹配历史','Customer Match history')}</h4>${historyTable(matchHistory,'match')}</section></section>
   </div>${hasLegacyReview ? `<footer class="crm-detail-actions actions" aria-label="客户审核操作 Prospect review actions"><div class="crm-detail-action-copy"><strong>${bi('审核操作','Review decision')}</strong><span class="crm-detail-action-status" role="status" aria-live="polite" aria-atomic="true"></span></div><div class="crm-detail-action-buttons"><button class="btn reject" type="button" data-status="rejected">${bi('拒绝','Reject')}</button><button class="btn btn-primary approve" type="button" data-status="approved">${bi('人工批准','Approve manually')}</button></div></footer>` : ''}`;
   wireDetailTabs(detail);
@@ -1336,10 +1606,12 @@ async function showLead(id) {
 }
 
 async function approve(id, status, button) {
+  const detail = button.closest('dialog') || $('#detail');
   const actions = button.closest('.crm-detail-actions');
   const actionStatus = actions?.querySelector('.crm-detail-action-status');
   const buttons = [...(actions?.querySelectorAll('button[data-status]') || [])];
   const originalLabel = button.innerHTML;
+  if (detail) detail.dataset.unsaved='true';
   actions?.setAttribute('aria-busy','true');
   buttons.forEach(action=>{ action.disabled=true; });
   button.innerHTML = status === 'approved' ? bi('正在批准','Approving') : bi('正在拒绝','Rejecting');
@@ -1359,9 +1631,88 @@ async function approve(id, status, button) {
     }
     button.focus({ preventScroll:true });
   } finally {
+    if (detail) delete detail.dataset.unsaved;
     if (actions?.isConnected) actions.setAttribute('aria-busy','false');
     if (button.isConnected) button.innerHTML = originalLabel;
     buttons.forEach(action=>{ if (action.isConnected) action.disabled=false; });
+  }
+}
+
+function renderEnrichmentStatus(job) {
+  const host = $('#enrichment-job-status');
+  if (!host || !job) return;
+  const pair = enrichmentStatusLabel(job.status);
+  const attempted = Number(job.companies_attempted || 0);
+  const decisionMakers = Number(job.decision_makers_found || 0);
+  const contactRoutes = Number(job.contact_routes_found || 0);
+  host.innerHTML = `<span class="crm-enrichment-state">${enumBadge(pair,['COMPLETE','COMPLETED'].includes(String(job.status || '').toUpperCase()) ? 'active' : String(job.status || '').toUpperCase() === 'FAILED' ? 'rejected' : 'review')}<span>${bi(`已处理 ${attempted} 家，采购角色 ${decisionMakers} 条，联系路径 ${contactRoutes} 条`,`Processed ${attempted} companies, ${decisionMakers} buying roles and ${contactRoutes} contact routes`)}</span></span>`;
+}
+
+function setEnrichmentButtonBusy(isBusy) {
+  const button = $('#start-enrichment');
+  if (!button) return;
+  button.disabled = isBusy;
+  button.setAttribute('aria-busy',isBusy ? 'true' : 'false');
+  button.innerHTML = isBusy
+    ? `<i class="ti ti-loader" aria-hidden="true"></i>${bi('正在更新采购联系人','Updating Buying Contacts')}`
+    : `<i class="ti ti-user-search" aria-hidden="true"></i>${bi('更新采购联系人','Update Buying Contacts')}`;
+}
+
+async function pollEnrichmentJob(jobId) {
+  clearTimeout(state.enrichmentPollTimer);
+  setEnrichmentButtonBusy(true);
+  try {
+    const job = await json(`/api/enrichment/jobs/${encodeURIComponent(jobId)}`);
+    state.enrichmentPollFailures = 0;
+    state.enrichmentJobId = jobId;
+    renderEnrichmentStatus(job);
+    const status = String(job.status || '').toUpperCase();
+    if (['COMPLETE','COMPLETED','PARTIAL','FAILED'].includes(status)) {
+      if (status !== 'FAILED') await loadOpportunities();
+      setEnrichmentButtonBusy(false);
+      return;
+    }
+    state.enrichmentPollTimer = setTimeout(()=>pollEnrichmentJob(jobId),1500);
+  } catch {
+    const host = $('#enrichment-job-status');
+    state.enrichmentPollFailures = Number(state.enrichmentPollFailures || 0) + 1;
+    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('采购资料状态待确认，正在重新读取。','Buying-information status is being confirmed. Retrying now.')}</span>`;
+    const retryMs = Math.min(10000,1500 * (2 ** Math.min(3,state.enrichmentPollFailures - 1)));
+    state.enrichmentPollTimer = setTimeout(()=>pollEnrichmentJob(jobId),retryMs);
+  }
+}
+
+async function loadLatestEnrichmentJob() {
+  try {
+    const payload = await json('/api/enrichment/jobs');
+    const latest = arrayPayload(payload)[0];
+    if (!latest) return;
+    state.enrichmentJobId = latest.job_id || latest.id;
+    renderEnrichmentStatus(latest);
+    if (!['COMPLETE','COMPLETED','PARTIAL','FAILED'].includes(String(latest.status || '').toUpperCase())) pollEnrichmentJob(state.enrichmentJobId);
+  } catch {}
+}
+
+async function startEnrichmentJob() {
+  const button = $('#start-enrichment');
+  const host = $('#enrichment-job-status');
+  if (!button) return;
+  const filters = collectOpportunityFilters();
+  const request = {
+    market_codes:filters.country ? [filters.country] : ['AE','MX'],
+    product_profiles:filters.product_profile ? [filters.product_profile] : ['WOMENSWEAR','GENERAL_MERCHANDISE'],
+    max_results:100
+  };
+  setEnrichmentButtonBusy(true);
+  if (host) host.innerHTML = bi('正在建立采购资料更新任务。','Creating a buying-information update job.');
+  try {
+    const created = await json('/api/enrichment/jobs',{ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(request) });
+    state.enrichmentJobId = created.job_id || created.id;
+    renderEnrichmentStatus({ ...created,companies_attempted:0,decision_makers_found:0,contact_routes_found:0 });
+    pollEnrichmentJob(state.enrichmentJobId);
+  } catch {
+    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('采购资料更新任务未建立，请稍后重试。','The buying-information update job was not created. Try again shortly.')}</span>`;
+    setEnrichmentButtonBusy(false);
   }
 }
 
@@ -1415,7 +1766,13 @@ $('#size').addEventListener('change', () => { state.companyPage=1; loadLeads(); 
 $('#verification-filter')?.addEventListener('change', () => { state.companyPage=1; loadLeads(); });
 $('#lifecycle-filter')?.addEventListener('change', () => { state.companyPage=1; loadLeads(); });
 $('#company-sort')?.addEventListener('change',()=>{state.companyPage=1;renderCompanyTable()});
-$('#opportunity-sort')?.addEventListener('change',renderOpportunityTable);
+$('#opportunity-filters')?.addEventListener('change',()=>loadOpportunities());
+$('#opportunity-clear-filters')?.addEventListener('click',()=>{
+  $('#opportunity-filters')?.reset();
+  if ($('#opportunity-sort')) $('#opportunity-sort').value='feasibility_desc';
+  loadOpportunities();
+});
+$('#start-enrichment')?.addEventListener('click',startEnrichmentJob);
 document.addEventListener('crm:densitychange',renderCompanyTable);
 $('#research-country').addEventListener('change', () => {
   $('#research-city').value = '';
@@ -1489,7 +1846,8 @@ $('#reset').addEventListener('click', async () => {
 });
 
 ensureCrmHistoryPanel();
-const initialLoads = await Promise.allSettled([loadMetrics(),loadLeads(),loadIcpProfiles(),loadImportBatches(),loadCrmHistory()]);
+syncOpportunityFilters();
+const initialLoads = await Promise.allSettled([loadMetrics(),loadLeads(),loadIcpProfiles(),loadImportBatches(),loadCrmHistory(),loadLatestEnrichmentJob()]);
 if (initialLoads[0].status === 'rejected') {
   $('#metrics').setAttribute('aria-busy','false');
   $('#metrics').innerHTML = `<div class="crm-load-error">${bi('名录概览读取失败。','Directory overview could not be loaded.')}<button id="metrics-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></div>`;
@@ -1497,7 +1855,7 @@ if (initialLoads[0].status === 'rejected') {
 }
 if (initialLoads[1].status === 'rejected') {
   $('#leads').innerHTML = `<tr><td colspan="11" class="crm-loading-cell">${bi('客户名录读取失败。','Company directory could not be loaded.')}<button id="leads-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
-  $('#opportunity-table').innerHTML = `<tr><td colspan="12" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
+  $('#opportunity-table').innerHTML = `<tr><td colspan="14" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
   $('#leads-retry')?.addEventListener('click',loadLeads);
 }
 const requestedJobId = new URLSearchParams(location.search).get('job');

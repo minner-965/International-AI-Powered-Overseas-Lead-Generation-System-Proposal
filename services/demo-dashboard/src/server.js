@@ -17,12 +17,14 @@ import { createReferenceDataImportService } from './referenceData/referenceDataI
 import { SharedHistoryImportService } from './referenceData/sharedHistoryImportService.js';
 import { OkkiHistoryService } from './referenceData/okkiHistoryService.js';
 import { createCompanyLifecycleService } from './lifecycle/companyLifecycleService.js';
+import { EnrichmentService } from './enrichment/EnrichmentService.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
 
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const n8nResearchWebhookUrl = process.env.N8N_RESEARCH_WEBHOOK_URL || '';
+const n8nEnrichmentWebhookUrl = process.env.N8N_ENRICHMENT_WEBHOOK_URL || '';
 const n8nWebhookTimeoutMs = Math.max(1000, Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 5000));
 const internalApiToken = process.env.INTERNAL_API_TOKEN || '';
 const hiddenCompanyMarketSql = hiddenMarketCodes().map(code=>`'${code.replaceAll("'", "''")}'`).join(',');
@@ -86,6 +88,31 @@ const referenceDataImports = createReferenceDataImportService({ pool });
 const sharedHistoryImports = new SharedHistoryImportService({ pool });
 const okkiHistory = new OkkiHistoryService({ pool });
 const companyLifecycleService = createCompanyLifecycleService({ pool });
+const enrichmentService = new EnrichmentService({
+  pool,
+  searchConfig,
+  crawlerConfig: searchConfig.contactConfig,
+  hunterConfig: {
+    apiKey: process.env.HUNTER_API_KEY || '',
+    mode: process.env.HUNTER_MODE || '',
+    endpoint: process.env.HUNTER_API_ENDPOINT || 'https://api.hunter.io/v2',
+    timeoutMs: Number(process.env.HUNTER_REQUEST_TIMEOUT_MS || 12000),
+    runCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
+    billingPeriodCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000)
+  },
+  linkedInConfig: {
+    mode: process.env.LINKEDIN_DISCOVERY_MODE || 'SEARCH_DISCOVERY_ONLY',
+    officialApiToken: process.env.LINKEDIN_OFFICIAL_API_TOKEN || '',
+    officialApiApproved: /^(1|true|yes)$/i.test(process.env.LINKEDIN_OFFICIAL_API_APPROVED || ''),
+    crawlPermissionId: process.env.LINKEDIN_CRAWL_PERMISSION_ID || '',
+    crawlPermissionExpiresAt: process.env.LINKEDIN_CRAWL_PERMISSION_EXPIRES_AT || '',
+    crawlAllowedPaths: String(process.env.LINKEDIN_CRAWL_ALLOWED_PATHS || '').split(',').map(value=>value.trim()).filter(Boolean)
+  },
+  maxCompanies: Number(process.env.ENRICHMENT_MAX_COMPANIES || 100),
+  maxQueriesPerCompany: Number(process.env.ENRICHMENT_MAX_QUERIES_PER_COMPANY || 5),
+  maxPagesPerCompany: Number(process.env.ENRICHMENT_MAX_PAGES_PER_COMPANY || 6),
+  audit
+});
 
 function optionalUuid(value, label) {
   if (value === null || value === undefined || value === '') return null;
@@ -178,7 +205,8 @@ const phase5Queue = createPhase5Queue({
         throw Object.assign(new Error('Requested rule version is not installed'), { code: 'RULE_VERSION_NOT_INSTALLED' });
       }
       return scoreCompanySet(data, job);
-    }
+    },
+    [PHASE5_QUEUES.ENRICH_DECISION_MAKERS]: data => enrichmentService.runJob(data.research_job_id)
   }
 });
 
@@ -716,6 +744,25 @@ async function triggerResearchWorkflow(job) {
   return { accepted: true, status_code: response.status };
 }
 
+async function triggerEnrichmentWorkflow(job) {
+  if (!n8nEnrichmentWebhookUrl) throw new Error('Enrichment workflow webhook is not configured');
+  const response = await fetch(n8nEnrichmentWebhookUrl, {
+    method:'POST',
+    headers:{ 'content-type':'application/json' },
+    body:JSON.stringify({
+      job_id:job.id,
+      job_type:job.job_type,
+      market_codes:job.market_codes,
+      product_profiles:job.product_profiles,
+      requested_company_ids:job.requested_company_ids,
+      max_results:job.max_results
+    }),
+    signal:AbortSignal.timeout(n8nWebhookTimeoutMs)
+  });
+  if (!response.ok) throw new Error(`Enrichment workflow returned HTTP ${response.status}`);
+  return { accepted:true,status_code:response.status };
+}
+
 app.get('/api/markets', (_req, res) => {
   res.json({
     markets: listConfiguredMarkets().filter(market=>isMarketVisible(market.country_code)),
@@ -800,6 +847,115 @@ app.get('/api/research/jobs/:id', async (req, res, next) => {
     const { rows } = await pool.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Research job not found' });
     res.json(researchJobResponse(rows[0]));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/enrichment/jobs', async (req, res, next) => {
+  try {
+    const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
+      .map(value=>clean(value).toUpperCase()).filter(Boolean))];
+    const productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
+      .map(value=>clean(value).toUpperCase()).filter(Boolean))];
+    const companyIds = [...new Set((Array.isArray(req.body?.company_ids) ? req.body.company_ids : [])
+      .map(value=>optionalUuid(value,'company_id')).filter(Boolean))];
+    if (!marketCodes.length || marketCodes.some(code=>!['AE','MX'].includes(code))) {
+      return res.status(400).json({ error:'Invalid enrichment job',detail:'market_codes must contain AE and/or MX' });
+    }
+    if (!productProfiles.length || productProfiles.some(value=>!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(value))) {
+      return res.status(400).json({ error:'Invalid enrichment job',detail:'product_profiles must contain WOMENSWEAR and/or GENERAL_MERCHANDISE' });
+    }
+    const requestedMaxResults = Number(req.body?.max_results ?? 100);
+    const maxResults = Number.isFinite(requestedMaxResults) ? Math.max(1,Math.min(100,Math.trunc(requestedMaxResults))) : 100;
+    const result = await pool.query(`INSERT INTO leadgen.research_jobs
+      (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
+       buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids)
+      VALUES ('AE / MX','XX','AE / MX','en','MULTI_MARKET','Buyer / Procurement Enrichment',$1,$2,$3,
+        'QUEUED','DECISION_MAKER_ENRICHMENT',$4,$5,$6) RETURNING *`,[
+      productProfiles[0],['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],maxResults,
+      marketCodes,productProfiles,companyIds
+    ]);
+    const job = result.rows[0];
+    audit('PHASE6_ENRICHMENT_JOB_CREATED',{ job_id:job.id,markets:marketCodes,product_profiles:productProfiles });
+    try {
+      const dispatch = await triggerEnrichmentWorkflow(job);
+      audit('PHASE6_N8N_DISPATCH_SUCCEEDED',{ job_id:job.id,status_code:dispatch.status_code });
+      res.status(202).json({ job_id:job.id,id:job.id,status:'QUEUED',dispatch:'accepted' });
+    } catch (dispatchError) {
+      const safeError = clean(dispatchError.message).slice(0,500);
+      await pool.query(`UPDATE leadgen.research_jobs SET status='FAILED',completed_at=now(),error_count=error_count+1,last_error=$2 WHERE id=$1`,[job.id,safeError]);
+      audit('PHASE6_N8N_DISPATCH_FAILED',{ job_id:job.id,error:safeError });
+      res.status(502).json({ error:'Enrichment workflow dispatch failed',job_id:job.id,status:'FAILED' });
+    }
+  } catch (error) { next(error); }
+});
+
+app.get('/api/enrichment/jobs', async (_req,res,next) => {
+  try {
+    const result = await pool.query(`SELECT * FROM leadgen.research_jobs WHERE job_type='DECISION_MAKER_ENRICHMENT' ORDER BY created_at DESC,id DESC LIMIT 100`);
+    res.json(result.rows.map(researchJobResponse));
+  } catch (error) { next(error); }
+});
+
+app.get('/api/enrichment/jobs/:id', async (req,res,next) => {
+  try {
+    const job = await enrichmentService.getJob(optionalUuid(req.params.id,'enrichment_job_id'));
+    if (!job) return res.status(404).json({ error:'Enrichment job not found' });
+    res.json(researchJobResponse(job));
+  } catch (error) { next(error); }
+});
+
+app.get('/api/enrichment/jobs/:id/results', async (req,res,next) => {
+  try {
+    const jobId = optionalUuid(req.params.id,'enrichment_job_id');
+    const job = await enrichmentService.getJob(jobId);
+    if (!job) return res.status(404).json({ error:'Enrichment job not found' });
+    const result = await pool.query(`SELECT e.company_id,c.company_name,e.market_code,e.product_profiles,e.attempt_status,
+      e.queries_executed,e.sources_found,e.decision_makers_found,e.contact_routes_found,e.provider_calls,e.timeout_count,
+      e.last_error,e.started_at,e.completed_at,
+      coalesce(f.results,'[]'::json) AS feasibility
+      FROM leadgen.enrichment_job_companies e JOIN leadgen.companies c ON c.id=e.company_id
+      LEFT JOIN LATERAL (SELECT json_agg(json_build_object(
+        'product_profile',x.product_profile,'score',x.cooperation_feasibility_score,'band',x.feasibility_band,
+        'matrix',x.access_opportunity_matrix,'readiness',x.opportunity_readiness,'relationship_status',x.relationship_status,
+        'barriers',x.barrier_signals,'missing_evidence',x.missing_evidence) ORDER BY x.product_profile) results
+        FROM leadgen.cooperation_feasibility_results x WHERE x.research_job_id=e.research_job_id AND x.company_id=e.company_id) f ON true
+      WHERE e.research_job_id=$1 ORDER BY c.country_code,c.company_name`,[jobId]);
+    res.json({ job:researchJobResponse(job),items:result.rows });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/internal/enrichment/jobs/:id/run', requireInternalToken, async (req,res,next) => {
+  try {
+    const jobId = optionalUuid(req.params.id,'enrichment_job_id');
+    const job = await enrichmentService.getJob(jobId);
+    if (!job) return res.status(404).json({ error:'Enrichment job not found' });
+    const queueId = await phase5Queue.enqueue(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,{ research_job_id:jobId },{ singletonKey:`phase6:${jobId}` });
+    if (req.body?.wait === true) {
+      const requestedTimeout = Number(req.body?.timeout_ms ?? 600000);
+      const timeoutMs = Number.isFinite(requestedTimeout) ? Math.max(1000,Math.min(900000,Math.trunc(requestedTimeout))) : 600000;
+      const queued = await phase5Queue.waitFor(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,queueId,{ timeoutMs });
+      if (queued.state !== 'completed') return res.status(500).json({ status:queued.state,queue_job_id:queueId,error:'Enrichment queue job did not complete' });
+      return res.json({ status:'completed',queue_job_id:queueId,result:queued.output });
+    }
+    res.status(202).json({ status:'queued',queue_job_id:queueId,queue:PHASE5_QUEUES.ENRICH_DECISION_MAKERS });
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/internal/enrichment/jobs/:id/status', requireInternalToken, async (req,res,next) => {
+  try {
+    const status = clean(req.body?.status).toUpperCase();
+    if (!['QUEUED','DISCOVERING','RESOLVING','VERIFYING','PERSISTING','COMPLETE','PARTIAL','FAILED'].includes(status)) {
+      return res.status(400).json({ error:'Invalid enrichment status' });
+    }
+    const result = await pool.query(`UPDATE leadgen.research_jobs SET status=$2,
+      started_at=CASE WHEN $2<>'QUEUED' THEN coalesce(started_at,now()) ELSE started_at END,
+      completed_at=CASE WHEN $2 IN ('COMPLETE','PARTIAL','FAILED') THEN now() ELSE NULL END,
+      last_error=CASE WHEN $2='FAILED' THEN $3 ELSE last_error END
+      WHERE id=$1 AND job_type='DECISION_MAKER_ENRICHMENT' RETURNING *`,[
+      optionalUuid(req.params.id,'enrichment_job_id'),status,clean(req.body?.error,500)||null
+    ]);
+    if (!result.rowCount) return res.status(404).json({ error:'Enrichment job not found' });
+    res.json(researchJobResponse(result.rows[0]));
   } catch (error) { next(error); }
 });
 
@@ -1236,25 +1392,137 @@ app.get('/api/companies/:id/crm-history', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get('/api/leads/:id/decision-makers', async (req,res,next) => {
+  try {
+    const companyId = optionalUuid(req.params.id,'company_id');
+    const result = await pool.query(`SELECT d.id,d.company_id,d.person_name,d.department_name,d.raw_title,d.normalized_role,
+      d.role_relevance,d.market_code,d.verification_status,d.lifecycle_status,d.evidence_strength,d.last_verified_at,d.source_count,
+      coalesce(pr.items,'[]'::json) AS product_relevance,
+      coalesce(src.items,'[]'::json) AS sources,
+      coalesce(ct.items,'[]'::json) AS contacts
+      FROM leadgen.decision_makers d JOIN leadgen.companies c ON c.id=d.company_id
+      LEFT JOIN LATERAL (SELECT json_agg(json_build_object('product_profile',r.product_profile,'relevance',r.relevance,'reason',r.reason) ORDER BY r.product_profile) items
+        FROM leadgen.decision_maker_product_relevance r WHERE r.decision_maker_id=d.id) pr ON true
+      LEFT JOIN LATERAL (SELECT json_agg(json_build_object('url',s.source_url,'source_type',s.source_type,'source_authority',s.source_authority,
+        'captured_at',s.captured_at,'evidence_text',s.evidence_text,'evidence_status',s.evidence_status,'is_primary',s.is_primary) ORDER BY s.is_primary DESC,s.captured_at DESC) items
+        FROM leadgen.decision_maker_sources s WHERE s.decision_maker_id=d.id AND s.research_job_id=d.research_job_id) src ON true
+      LEFT JOIN LATERAL (SELECT json_agg(json_build_object('contact_type',x.contact_type,'value',x.contact_value_raw,
+        'verification_status',x.verification_status,'verification_provider',x.verification_provider,'last_verified_at',x.last_verified_at,
+        'source_url',x.source_url,'is_generic',x.is_generic,'is_department',x.is_department) ORDER BY
+        CASE x.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2 WHEN 'SUPPLIER_PORTAL' THEN 3 WHEN 'VENDOR_REGISTRATION' THEN 4 WHEN 'CONTACT_FORM' THEN 5 ELSE 6 END) items
+        FROM leadgen.decision_maker_contacts x WHERE x.decision_maker_id=d.id AND x.research_job_id=d.research_job_id) ct ON true
+      WHERE d.company_id=$1 AND ${companyMarketVisibleSql('c')}
+      ORDER BY (d.lifecycle_status='ACTIVE') DESC,(d.verification_status='VERIFIED') DESC,
+        CASE d.role_relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,d.updated_at DESC`,[companyId]);
+    res.json(result.rows);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/leads/:id/contact-routes', async (req,res,next) => {
+  try {
+    const companyId = optionalUuid(req.params.id,'company_id');
+    const result = await pool.query(`SELECT x.id,x.decision_maker_id,x.contact_type,x.contact_value_raw AS value,
+      x.verification_status,x.verification_provider,x.verification_score,x.last_verified_at,x.source_url,x.is_generic,x.is_department,
+      d.person_name,d.department_name,d.raw_title,d.normalized_role,d.verification_status AS role_verification_status
+      FROM leadgen.decision_maker_contacts x JOIN leadgen.decision_makers d ON d.id=x.decision_maker_id
+      JOIN leadgen.companies c ON c.id=d.company_id
+      WHERE d.company_id=$1 AND d.lifecycle_status='ACTIVE' AND x.research_job_id=d.research_job_id AND ${companyMarketVisibleSql('c')}
+      ORDER BY CASE x.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2 WHEN 'SUPPLIER_PORTAL' THEN 3
+        WHEN 'VENDOR_REGISTRATION' THEN 4 WHEN 'BUSINESS_PHONE' THEN 5 WHEN 'BUSINESS_WHATSAPP' THEN 6 WHEN 'CONTACT_FORM' THEN 7 ELSE 8 END,
+        (x.verification_status='VALID') DESC,x.updated_at DESC`,[companyId]);
+    res.json(result.rows);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/companies/:id/cooperation-feasibility', async (req,res,next) => {
+  try {
+    const companyId = optionalUuid(req.params.id,'company_id');
+    const productProfile = clean(req.query.product_profile).toUpperCase();
+    const params = [companyId];
+    const profileClause = productProfile ? (params.push(productProfile),`AND f.product_profile=$${params.length}`) : '';
+    const result = await pool.query(`SELECT DISTINCT ON (f.product_profile)
+      f.id,f.company_id,f.product_profile,f.cooperation_feasibility_score,f.feasibility_band,
+      f.access_opportunity_matrix,f.opportunity_readiness,f.relationship_status,f.management_match,
+      f.mexico_historical_match,f.dpv_score,f.dimension_breakdown,f.reason_codes,f.barrier_signals,
+      f.missing_evidence,f.supplier_route_count,f.verified_decision_maker_count,f.usable_contact_route_count,
+      f.evidence_source_count,f.rule_version,f.calculated_at,
+      coalesce(src.items,'[]'::json) AS evidence_sources
+      FROM leadgen.cooperation_feasibility_results f JOIN leadgen.companies c ON c.id=f.company_id
+      LEFT JOIN LATERAL (SELECT json_agg(DISTINCT jsonb_build_object('url',s.source_url,'source_type',s.source_type,
+        'source_authority',s.source_authority,'captured_at',s.captured_at)) items
+        FROM leadgen.cooperation_feasibility_sources fs JOIN leadgen.decision_maker_sources s ON s.id=fs.decision_maker_source_id
+        WHERE fs.feasibility_result_id=f.id) src ON true
+      WHERE f.company_id=$1 ${profileClause} AND ${companyMarketVisibleSql('c')}
+      ORDER BY f.product_profile,f.calculated_at DESC,f.id DESC`,params);
+    res.json(result.rows);
+  } catch (error) { next(error); }
+});
+
 app.get('/api/opportunities', async (req, res, next) => {
   try {
     const params = [];
+    let feasibilityProfileClause = '';
+    const decisionMakerFilterClauses = [];
+    const contactFilterClauses = [];
     const clauses = [
       `c.data_origin IN (${publicDataOriginSql})`,
       companyMarketVisibleSql('c'),
       "c.verification_status='VERIFIED'",
       "c.lifecycle_status='ACTIVE'",
       'c.explicit_exclusion_reason IS NULL',
-      excludesConfirmedExistingCustomerSql('c')
+      excludesConfirmedExistingCustomerSql('c'),
+      'f.id IS NOT NULL'
     ];
     if (req.query.country) { params.push(String(req.query.country).toUpperCase()); clauses.push(`c.country_code=$${params.length}`); }
     if (req.query.tier) { params.push(String(req.query.tier).toUpperCase()); clauses.push(`coalesce(sr.tier,lr.tier)=$${params.length}`); }
     if (req.query.size) { params.push(String(req.query.size).toUpperCase()); clauses.push(`upper(coalesce(v.company_size,c.company_size_band,'UNKNOWN'))=$${params.length}`); }
     if (req.query.score_eligibility) { params.push(String(req.query.score_eligibility).toUpperCase()); clauses.push(`sr.score_eligibility=$${params.length}`); }
     if (req.query.opportunity_matrix) { params.push(String(req.query.opportunity_matrix).toUpperCase()); clauses.push(`mr.opportunity_matrix=$${params.length}`); }
+    if (req.query.product_profile) {
+      params.push(String(req.query.product_profile).toUpperCase());
+      feasibilityProfileClause = `AND fx.product_profile=$${params.length}`;
+    }
+    if (req.query.readiness) { params.push(String(req.query.readiness).toUpperCase()); clauses.push(`f.opportunity_readiness=$${params.length}`); }
+    if (req.query.decision_maker_status) { params.push(String(req.query.decision_maker_status).toUpperCase()); decisionMakerFilterClauses.push(`fd.verification_status=$${params.length}`); }
+    if (req.query.normalized_role) { params.push(String(req.query.normalized_role).toUpperCase()); decisionMakerFilterClauses.push(`fd.normalized_role=$${params.length}`); }
+    if (req.query.contact_type) { params.push(String(req.query.contact_type).toUpperCase()); contactFilterClauses.push(`fc.contact_type=$${params.length}`); }
+    if (req.query.contact_verification) { params.push(String(req.query.contact_verification).toUpperCase()); contactFilterClauses.push(`fc.verification_status=$${params.length}`); }
+    if (decisionMakerFilterClauses.length) clauses.push(`EXISTS (SELECT 1 FROM leadgen.decision_makers fd
+      WHERE fd.company_id=c.id AND fd.research_job_id=f.research_job_id AND fd.lifecycle_status='ACTIVE'
+        AND ${decisionMakerFilterClauses.join(' AND ')})`);
+    if (contactFilterClauses.length) clauses.push(`EXISTS (SELECT 1 FROM leadgen.decision_maker_contacts fc
+      JOIN leadgen.decision_makers fdm ON fdm.id=fc.decision_maker_id
+      WHERE fdm.company_id=c.id AND fdm.research_job_id=f.research_job_id AND fc.research_job_id=f.research_job_id
+        AND fdm.lifecycle_status='ACTIVE' AND ${contactFilterClauses.join(' AND ')})`);
+    if (req.query.historical_crm_status) { params.push(String(req.query.historical_crm_status).toUpperCase()); clauses.push(`f.relationship_status=$${params.length}`); }
+    if (req.query.cooperation_matrix) { params.push(String(req.query.cooperation_matrix).toUpperCase()); clauses.push(`f.access_opportunity_matrix=$${params.length}`); }
+    if (req.query.feasibility_band) { params.push(String(req.query.feasibility_band).toUpperCase()); clauses.push(`f.feasibility_band=$${params.length}`); }
+    const matchBandClause = (column,value) => {
+      const band = String(value || '').toUpperCase();
+      if (band === 'HIGH') return `${column}>=60`;
+      if (band === 'MEDIUM') return `${column}>=35 AND ${column}<60`;
+      if (band === 'LOW') return `${column}<35`;
+      if (band === 'UNKNOWN') return `${column} IS NULL`;
+      return '';
+    };
+    const managementBand = matchBandClause('mr.match_score',req.query.management_match_band);
+    const historicalBand = matchBandClause('hmr.match_score',req.query.historical_match_band);
+    if (managementBand) clauses.push(managementBand);
+    if (historicalBand) clauses.push(historicalBand);
     if (req.query.verified === 'true') clauses.push("c.verification_status='VERIFIED'");
     const limit = Math.max(1, Math.min(500, Number(req.query.limit || 200)));
     params.push(limit);
+    const sort = String(req.query.sort || 'feasibility_desc');
+    const orderBy = sort === 'score_desc' ? 'sr.final_score DESC NULLS LAST,mr.match_score DESC NULLS LAST,c.company_name'
+      : sort === 'match_desc' ? 'mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,sr.final_score DESC NULLS LAST,c.company_name'
+        : sort === 'name_asc' ? 'c.company_name'
+          : `CASE f.feasibility_band WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW_MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END,
+             CASE f.access_opportunity_matrix WHEN 'HIGH_FIT_HIGH_ACCESS' THEN 1 WHEN 'MEDIUM_FIT_HIGH_ACCESS' THEN 2 WHEN 'HIGH_FIT_MEDIUM_ACCESS' THEN 3
+               WHEN 'MEDIUM_FIT_MEDIUM_ACCESS' THEN 4 WHEN 'HIGH_FIT_LOW_ACCESS' THEN 5 ELSE 6 END,
+             mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,sr.final_score DESC NULLS LAST,
+             CASE dm.role_relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+             CASE bc.verification_status WHEN 'VALID' THEN 1 WHEN 'PUBLICLY_OBSERVED' THEN 2 WHEN 'FORMAT_VALID' THEN 3 WHEN 'NOT_VERIFIED' THEN 4 ELSE 5 END,
+             f.calculated_at DESC NULLS LAST,c.company_name`;
     const { rows } = await pool.query(`
       SELECT c.id,c.company_name,c.country_code,c.city,c.website_url,c.data_origin,c.research_job_id,
         c.verification_status,c.lifecycle_status,c.last_verified_at,c.verification_source_count,
@@ -1271,6 +1539,15 @@ app.get('/api/opportunities', async (req, res, next) => {
         hmr.match_score AS historical_customer_match,hmr.coverage_percent AS historical_match_coverage,
         hmr.display_status AS historical_match_status,hmr.profile_version AS historical_profile_version,
         hmr.calculated_at AS historical_matched_at,
+        f.product_profile,f.cooperation_feasibility_score,f.feasibility_band,
+        f.access_opportunity_matrix AS cooperation_matrix,f.opportunity_readiness,f.relationship_status AS historical_crm_status,
+        f.barrier_signals,f.missing_evidence,f.supplier_route_count,f.calculated_at AS feasibility_calculated_at,
+        dm.id AS decision_maker_id,dm.person_name AS buyer_name,dm.department_name AS buyer_department,
+        dm.raw_title AS buyer_raw_title,dm.normalized_role,dm.role_relevance,
+        dm.verification_status AS decision_maker_status,dm.last_verified_at AS decision_maker_last_verified_at,
+        bc.contact_type AS best_contact_type,bc.contact_value_raw AS best_contact,
+        bc.verification_status AS contact_verification,bc.source_url AS contact_source_url,
+        portal.contact_type AS supplier_route_type,portal.contact_value_raw AS supplier_portal_url,
         EXISTS (SELECT 1 FROM leadgen.contacts ct WHERE ct.company_id=c.id
           AND ct.lifecycle_status='ACTIVE'
           AND (ct.business_email IS NOT NULL OR ct.business_phone IS NOT NULL)) AS contactable
@@ -1286,9 +1563,26 @@ app.get('/api/opportunities', async (req, res, next) => {
       LEFT JOIN LATERAL (SELECT * FROM leadgen.customer_match_results hx
         WHERE hx.company_id=c.id AND hx.reference_profile_type='HISTORICAL_CUSTOMER_ICP'
         ORDER BY hx.calculated_at DESC,hx.id DESC LIMIT 1) hmr ON true
+      LEFT JOIN LATERAL (SELECT * FROM leadgen.cooperation_feasibility_results fx
+        WHERE fx.company_id=c.id ${feasibilityProfileClause}
+        ORDER BY fx.calculated_at DESC,fx.cooperation_feasibility_score DESC,fx.id DESC LIMIT 1) f ON true
+      LEFT JOIN LATERAL (SELECT dx.* FROM leadgen.decision_makers dx
+        LEFT JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dx.id AND pr.product_profile=f.product_profile
+        WHERE dx.company_id=c.id AND dx.research_job_id=f.research_job_id AND dx.lifecycle_status='ACTIVE'
+        ORDER BY (dx.verification_status='VERIFIED') DESC,
+          CASE pr.relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+          (dx.person_name IS NOT NULL) DESC,dx.updated_at DESC LIMIT 1) dm ON true
+      LEFT JOIN LATERAL (SELECT cx.* FROM leadgen.decision_maker_contacts cx WHERE cx.decision_maker_id=dm.id AND cx.research_job_id=dm.research_job_id
+        ORDER BY (cx.verification_status='VALID') DESC,
+          CASE cx.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2 WHEN 'SUPPLIER_PORTAL' THEN 3
+            WHEN 'VENDOR_REGISTRATION' THEN 4 WHEN 'BUSINESS_PHONE' THEN 5 WHEN 'BUSINESS_WHATSAPP' THEN 6 WHEN 'CONTACT_FORM' THEN 7 ELSE 8 END,
+          cx.updated_at DESC LIMIT 1) bc ON true
+      LEFT JOIN LATERAL (SELECT px.* FROM leadgen.decision_maker_contacts px JOIN leadgen.decision_makers pd ON pd.id=px.decision_maker_id
+        WHERE pd.company_id=c.id AND pd.research_job_id=f.research_job_id AND px.research_job_id=f.research_job_id
+          AND px.contact_type IN ('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
+        ORDER BY px.updated_at DESC LIMIT 1) portal ON true
       WHERE ${clauses.join(' AND ')}
-      ORDER BY sr.final_score DESC NULLS LAST,mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,
-               lr.lead_score DESC NULLS LAST,c.company_name
+      ORDER BY ${orderBy}
       LIMIT $${params.length}`, params);
     res.json(rows);
   } catch (error) { next(error); }
@@ -1432,6 +1726,8 @@ app.get('/api/leads', async (req, res, next) => {
     ];
     if (req.query.tier) { params.push(req.query.tier); clauses.push(`r.tier = $${params.length}`); }
     if (req.query.approval) { params.push(req.query.approval); clauses.push(`r.approval_status = $${params.length}`); }
+    if (req.query.verification_status) { params.push(String(req.query.verification_status).toUpperCase()); clauses.push(`c.verification_status = $${params.length}`); }
+    if (req.query.lifecycle_status) { params.push(String(req.query.lifecycle_status).toUpperCase()); clauses.push(`c.lifecycle_status = $${params.length}`); }
     if (req.query.size === 'sme') clauses.push("c.company_size_band IN ('micro','small','medium')");
     if (req.query.size === 'large') clauses.push("c.company_size_band IN ('large','enterprise')");
     if (req.query.size === 'unknown') clauses.push("c.company_size_band = 'unknown'");

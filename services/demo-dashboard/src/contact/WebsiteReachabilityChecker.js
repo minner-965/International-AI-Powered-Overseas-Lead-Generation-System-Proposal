@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import { load } from 'cheerio';
+import { domainService } from '../platform/DomainService.js';
 
 function isPrivateAddress(address) {
   if (!address) return true;
@@ -19,13 +20,17 @@ function isDockerDesktopDnsProxyAddress(address) {
   return /^198\.(?:18|19)\./.test(address) || address.toLowerCase().startsWith('fdfe:dcba:9876:');
 }
 
-async function assertPublicUrl(value, lookupImpl) {
+async function assertPublicUrl(value, lookupImpl, blockedDomains = []) {
   let url;
   try { url = new URL(value); } catch { throw Object.assign(new Error('Invalid URL'), { code: 'INVALID_URL' }); }
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
     throw Object.assign(new Error('Invalid public URL'), { code: 'INVALID_URL' });
   }
   const host = url.hostname.toLowerCase();
+  const rootDomain = domainService.getRegistrableDomain(url.href);
+  if (blockedDomains.some(domain => rootDomain === domain || host === domain || host.endsWith(`.${domain}`))) {
+    throw Object.assign(new Error('Provider-controlled profile pages are discovery references only'), { code: 'POLICY_BLOCKED' });
+  }
   if (host === 'localhost' || host.endsWith('.localhost') || (isIP(host) && isPrivateAddress(host))) {
     throw Object.assign(new Error('Private network URL rejected'), { code: 'INVALID_URL' });
   }
@@ -69,6 +74,7 @@ async function readLimitedBody(response, maxBytes) {
 }
 
 function fetchStatusFromError(error) {
+  if (error?.code === 'POLICY_BLOCKED') return 'POLICY_BLOCKED';
   if (error?.code === 'INVALID_URL') return 'INVALID_URL';
   if (error?.code === 'TOO_LARGE') return 'TOO_LARGE';
   if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'TIMEOUT';
@@ -76,13 +82,14 @@ function fetchStatusFromError(error) {
 }
 
 export class WebsiteReachabilityChecker {
-  constructor({ timeoutMs = 10000, maxResponseBytes = 2000000, userAgent = 'DPVLeadResearchDemo/1.0', maxRedirects = 5, fetchImpl = fetch, lookupImpl = lookup } = {}) {
+  constructor({ timeoutMs = 10000, maxResponseBytes = 2000000, userAgent = 'DPVLeadResearchDemo/1.0', maxRedirects = 5, fetchImpl = fetch, lookupImpl = lookup, blockedDomains = ['linkedin.com'] } = {}) {
     this.timeoutMs = timeoutMs;
     this.maxResponseBytes = maxResponseBytes;
     this.userAgent = userAgent;
     this.maxRedirects = maxRedirects;
     this.fetchImpl = fetchImpl;
     this.lookupImpl = lookupImpl;
+    this.blockedDomains = blockedDomains.map(value => String(value || '').toLowerCase()).filter(Boolean);
   }
 
   async fetchPage(requestedUrl, { robotsAllowed = null, acceptedTypes = ['text/html', 'application/xhtml+xml'] } = {}) {
@@ -91,7 +98,7 @@ export class WebsiteReachabilityChecker {
     let response;
     try {
       for (let redirects = 0; redirects <= this.maxRedirects; redirects += 1) {
-        await assertPublicUrl(current, this.lookupImpl);
+        await assertPublicUrl(current, this.lookupImpl, this.blockedDomains);
         response = await this.fetchImpl(current, {
           method: 'GET', redirect: 'manual',
           headers: { accept: 'text/html,application/xhtml+xml,text/plain;q=0.5', 'user-agent': this.userAgent },

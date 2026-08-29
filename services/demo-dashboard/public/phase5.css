@@ -142,6 +142,14 @@ a:hover { color: var(--crm-brand-strong); }
 
 .crm-section-head { align-items: flex-end; min-height: 62px; }
 .crm-section-head-actions .filters { display: grid; grid-template-columns: repeat(3,minmax(150px,1fr)); gap: .65rem; }
+.crm-opportunity-actions { display: flex; min-width: 15rem; flex-direction: column; align-items: flex-end; gap: .45rem; }
+.crm-enrichment-status { min-height: 1.25rem; max-width: 42ch; color: var(--crm-muted); font-size: .72rem; text-align: right; }
+.crm-enrichment-state { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.crm-enrichment-error { color: var(--crm-danger); }
+.crm-opportunity-filters { margin-bottom: 1rem; border-color: var(--crm-border); border-radius: var(--crm-radius); background: var(--crm-surface); box-shadow: var(--crm-shadow); }
+.crm-opportunity-filters > summary { color: var(--crm-brand-strong); }
+.crm-opportunity-filters .verification-filter-grid { grid-template-columns: repeat(4,minmax(150px,1fr)); }
+.crm-filter-clear { align-self: end; }
 .filter-control, .research-form > label, .crm-settings-grid > label { display: flex; min-width: 0; flex-direction: column; gap: .35rem; color: var(--crm-text-soft); font-size: .78rem; font-weight: 650; }
 .form-control, .form-select { min-width: 0; border-color: var(--crm-border-strong); border-radius: 6px; background-color: var(--crm-surface); color: var(--crm-text); }
 .form-control::placeholder { color: var(--crm-muted); }
@@ -156,7 +164,7 @@ a:hover { color: var(--crm-brand-strong); }
 .table-wrap { max-height: none; }
 .crm-table, .candidate-table { width: 100%; min-width: 780px; margin: 0; color: var(--crm-text); }
 .crm-company-table { min-width: 1660px; }
-#view-opportunities .crm-table { min-width: 1660px; }
+.crm-opportunity-table { min-width: 2280px; }
 .crm-import-table { min-width: 1180px; }
 .crm-table thead th, .candidate-table thead th { position: sticky; z-index: 2; top: 0; padding: .62rem .75rem; border-bottom: 1px solid var(--crm-border-strong); background: var(--crm-surface-subtle); color: var(--crm-muted); font-size: .7rem; font-weight: 700; vertical-align: bottom; }
 .crm-table tbody td, .candidate-table tbody td { padding: var(--crm-row-pad-y) .75rem; border-bottom: 1px solid var(--crm-border); color: var(--crm-text-soft); font-size: .78rem; vertical-align: middle; }
@@ -178,6 +186,21 @@ a:hover { color: var(--crm-brand-strong); }
 .crm-pagination .btn { min-height: 36px; }
 .crm-score, .crm-match { display: inline-flex; min-width: 3rem; justify-content: center; font-weight: 750; font-variant-numeric: tabular-nums; }
 .crm-match.is-empty { color: var(--crm-muted); font-weight: 500; }
+.crm-opportunity-table td { min-width: 8rem; }
+.crm-opportunity-table .op-col-company { min-width: 13rem; }
+.crm-opportunity-table .op-col-market-product { min-width: 11rem; }
+.crm-opportunity-table .op-col-contact { min-width: 13rem; }
+.crm-opportunity-table .op-col-feasibility, .crm-opportunity-table .op-col-readiness { min-width: 10.5rem; }
+.crm-opportunity-company { max-width: 13rem; }
+.crm-opportunity-company > span:first-child, .crm-buyer-name { overflow-wrap: anywhere; }
+.crm-opportunity-table td > small, .crm-buyer-name + small, .crm-cell-empty { display: block; margin-top: .25rem; color: var(--crm-muted); font-size: .7rem; }
+.crm-score-tier { display: inline-flex; align-items: center; gap: .35rem; }
+.crm-feasibility-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
+.crm-feasibility-cell > b { color: var(--crm-text); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.crm-contact-route-type, .crm-contact-route-value { display: block; min-width: 0; overflow-wrap: anywhere; }
+.crm-contact-route-type { margin-bottom: .2rem; color: var(--crm-text); font-weight: 700; }
+.crm-contact-route-value { color: var(--crm-text-soft); }
+.crm-supplier-route { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: .3rem; overflow-wrap: anywhere; }
 .tier-score { min-width: 50px; min-height: 34px; border-radius: 6px; }
 .pill, .size-tag, .result-status, .job-status, .strategic-flag { border-radius: 999px; white-space: nowrap; }
 
@@ -319,6 +342,26 @@ a:hover { color: var(--crm-brand-strong); }
 .crm-match-reference-score { flex: 0 0 auto; color: var(--crm-brand-strong); font-weight: 750; font-variant-numeric: tabular-nums; }
 .crm-match-reference .crm-detail-facts { grid-template-columns: 1fr; }
 .crm-match-reference .crm-detail-section:last-child { margin-bottom: 0; }
+.crm-detail-empty { min-height: 14rem; }
+.crm-decision-maker-list, .crm-feasibility-list { display: grid; gap: .85rem; }
+.crm-decision-maker-card, .crm-feasibility-card { min-width: 0; padding: 1rem; border: 1px solid var(--crm-border); border-radius: 6px; background: var(--crm-surface-subtle); }
+.crm-decision-maker-card > header, .crm-feasibility-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
+.crm-decision-maker-card > header h4, .crm-feasibility-card > header h4 { margin: 0; color: var(--crm-text); font-size: 1rem; overflow-wrap: anywhere; }
+.crm-decision-maker-card > header p { margin: .2rem 0 0; color: var(--crm-muted); overflow-wrap: anywhere; }
+.crm-decision-maker-card > header > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
+.crm-decision-maker-card .crm-detail-section, .crm-feasibility-card .crm-detail-section { margin-top: 1rem; margin-bottom: 0; }
+.crm-decision-maker-card .crm-detail-section h5, .crm-feasibility-card .crm-detail-section h5 { margin: 0 0 .55rem; color: var(--crm-text); font-size: .82rem; }
+.crm-product-relevance { display: grid; gap: .45rem; }
+.crm-product-relevance > span { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.crm-product-relevance small { flex-basis: 100%; color: var(--crm-muted); overflow-wrap: anywhere; }
+.crm-contact-route-list { display: grid; gap: .5rem; }
+.crm-contact-route-list article { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .75rem; padding: .65rem; border: 1px solid var(--crm-border); border-radius: 6px; background: var(--crm-surface); }
+.crm-contact-route-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem .65rem; color: var(--crm-muted); font-size: .7rem; }
+.crm-decision-source-list a { display: grid; gap: .25rem; overflow-wrap: anywhere; }
+.crm-decision-source-list time, .crm-feasibility-card .sources time { color: var(--crm-muted); font-size: .7rem; }
+.crm-feasibility-score { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: .35rem; }
+.crm-feasibility-score > b { color: var(--crm-text); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.crm-feasibility-explain { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; }
 .crm-history-table { min-width: 560px; }
 .verification-dialog-toolbar { position: sticky; z-index: 5; top: 0; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem 1rem; border-bottom: 1px solid var(--crm-border); background: var(--crm-surface); }
 .verification-dialog-toolbar > strong { color: var(--crm-text); font-size: .82rem; }
@@ -337,6 +380,7 @@ a:hover { color: var(--crm-brand-strong); }
   .crm-kpi-strip .metric:nth-child(4n) { border-right: 0; }
   .crm-overview-grid { grid-template-columns: 1fr; }
   .research-form { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .crm-opportunity-filters .verification-filter-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
 
 @media (max-width:991px) {
@@ -349,6 +393,9 @@ a:hover { color: var(--crm-brand-strong); }
   .crm-topbar .container-fluid { flex-wrap: nowrap; }
   .crm-section-head-actions { align-items: stretch; flex-direction: column; }
   .crm-section-head-actions .filters { width: 100%; }
+  .crm-opportunity-actions { min-width: 0; align-items: stretch; }
+  .crm-enrichment-status { max-width: none; text-align: left; }
+  .crm-enrichment-state { align-items: flex-start; }
   .crm-icp-layout { grid-template-columns: 1fr; }
 }
 
@@ -367,6 +414,8 @@ a:hover { color: var(--crm-brand-strong); }
   .research-form #start-research { grid-column: 1 / -1; }
   .crm-section-head-actions .filters { grid-template-columns: 1fr 1fr; }
   .crm-section-head-actions .filters > :last-child { grid-column: 1 / -1; }
+  .crm-opportunity-filters .verification-filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .crm-filter-clear { width: 100%; }
   .crm-settings-grid, .crm-profile-groups { grid-template-columns: 1fr; }
   .crm-history-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .crm-history-summary > div:nth-child(even) { border-right: 0; }
@@ -375,6 +424,7 @@ a:hover { color: var(--crm-brand-strong); }
   .crm-detail-header { grid-template-columns: 1fr; }
   .crm-detail-score-set { justify-content: flex-start; }
   .crm-match-reference-grid { grid-template-columns: 1fr; }
+  .crm-feasibility-explain { grid-template-columns: 1fr; }
   #detail.crm-detail-drawer[open].has-detail {
     inset: max(.5rem,env(safe-area-inset-top)) max(.5rem,env(safe-area-inset-right)) auto max(.5rem,env(safe-area-inset-left));
     top: max(.5rem,env(safe-area-inset-top));
@@ -413,8 +463,21 @@ a:hover { color: var(--crm-brand-strong); }
   .crm-history-directory-table { min-width: 43rem; }
   .crm-history-directory-table tr > :is(:nth-child(2),:nth-child(5),:nth-child(7),:nth-child(8),:nth-child(9)) { display: none; }
   .crm-history-directory-table .crm-history-open { min-height: 44px; }
-  #view-opportunities .crm-table { min-width: 44rem; }
-  #view-opportunities .crm-table tr > :is(:nth-child(4),:nth-child(6),:nth-child(7),:nth-child(8),:nth-child(10)) { display: none; }
+  .crm-opportunity-filters .verification-filter-grid { grid-template-columns: 1fr; }
+  .crm-opportunity-table { display: block; min-width: 0; width: 100%; }
+  .crm-opportunity-table thead { display: none; }
+  .crm-opportunity-table tbody { display: grid; gap: .65rem; width: 100%; padding: .1rem; }
+  .crm-opportunity-table tr { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); gap: .55rem .7rem; width: 100%; padding: .75rem; border: 1px solid var(--crm-border); border-radius: 9px; background: var(--crm-surface); box-shadow: var(--crm-shadow); }
+  .crm-opportunity-table td { display: block; min-width: 0 !important; width: auto; padding: 0 !important; border: 0; overflow-wrap: anywhere; }
+  .crm-opportunity-table .op-col-secondary, .crm-opportunity-table .op-col-contact { display: none; }
+  .crm-opportunity-table .op-col-company { grid-column: 1; }
+  .crm-opportunity-table .op-col-market-product { grid-column: 2; text-align: right; }
+  .crm-opportunity-table .op-col-feasibility { grid-column: 1; }
+  .crm-opportunity-table .op-col-readiness { grid-column: 2; align-self: end; justify-self: end; text-align: right; }
+  .crm-opportunity-table :is(.op-col-feasibility,.op-col-readiness)::before { content: attr(data-label); display: block; margin-bottom: .2rem; color: var(--crm-muted); font-size: .66rem; font-weight: 600; line-height: 1.25; }
+  .crm-opportunity-table .crm-company-link { min-height: 0; padding: 0; text-align: left; }
+  .crm-opportunity-table .lead-select-action { display: block; margin-top: .16rem; font-size: .64rem; line-height: 1.2; }
+  #opportunity-table td[colspan] { grid-column: 1 / -1; }
   #verification-detail { width: calc(100vw - 1rem); max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); margin: auto; }
   .crm-detail-body { padding: .75rem; }
   .crm-detail-facts { grid-template-columns: 1fr; }
@@ -431,6 +494,9 @@ a:hover { color: var(--crm-brand-strong); }
   .crm-detail-actions { align-items: stretch; gap: .55rem; padding: .65rem max(.75rem,env(safe-area-inset-right)) max(.65rem,env(safe-area-inset-bottom)) max(.75rem,env(safe-area-inset-left)); }
   .crm-detail-action-buttons { width: 100%; }
   .crm-detail-actions .btn { flex: 1 1 0; min-width: 0; }
+  .crm-decision-maker-card, .crm-feasibility-card { padding: .75rem; }
+  .crm-decision-maker-card > header, .crm-feasibility-card > header, .crm-contact-route-list article { grid-template-columns: 1fr; align-items: flex-start; flex-direction: column; }
+  .crm-decision-maker-card > header > div:last-child, .crm-contact-route-meta { justify-content: flex-start; }
   .crm-pagination { align-items: stretch; flex-direction: column; }
   .crm-import-status { margin-left: 0; text-align: left; }
 }

@@ -1,0 +1,17 @@
+{
+  "rule_version": "cooperation-feasibility-v1",
+  "total_points": 100,
+  "dimensions": {
+    "external_supplier_openness": 25,
+    "supplier_onboarding_accessibility": 20,
+    "buying_procurement_accessibility": 15,
+    "product_category_buying_fit": 15,
+    "commercial_operational_feasibility": 15,
+    "supplier_lock_in_barrier": 10
+  },
+  "notes": [
+    "DPV Score, Management Baseline Match and Mexico Historical Reference Match remain independent inputs.",
+    "Unknown evidence receives an explicit neutral score and remains listed as missing evidence.",
+    "Company size alone never adds cooperation-feasibility points."
+  ]
+}

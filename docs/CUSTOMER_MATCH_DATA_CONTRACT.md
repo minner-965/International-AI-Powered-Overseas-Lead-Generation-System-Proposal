@@ -253,3 +253,34 @@ The company API returns both current match types:
 ```
 
 The Opportunities endpoint exposes the two scores as separate fields and excludes only a public company with a `CONFIRMED` historical-customer link. Fuzzy or ambiguous name similarity remains review-only and does not silently remove a prospect.
+
+## Phase 6 cooperation-feasibility boundary
+
+Phase 6 does not change this Customer Match contract. The active `MANAGEMENT_BASELINE` and `HISTORICAL_CUSTOMER_ICP` results remain versioned, append-only Phase 5 outputs. Decision-maker enrichment does not rebuild a profile, activate a draft, overwrite a prior match, change a Phase 5 threshold or recalculate the deterministic DPV score.
+
+`leadgen.cooperation_feasibility_results` may retain the latest applicable values as separate context fields:
+
+```text
+management_match
+mexico_historical_match
+dpv_score
+```
+
+Those values remain individually visible and are not averaged into `cooperation_feasibility_score`. The Phase 6 score measures supplier access and cooperation feasibility from its own evidence dimensions. `access_opportunity_matrix` combines a documented management target-fit band with the independent feasibility band; it is a transparent classification rather than a new Customer Match score or conversion probability.
+
+The management opportunity ordering keeps the signals separate:
+
+```text
+1. Cooperation Feasibility band
+2. Access Opportunity Matrix
+3. Management Baseline Match
+4. Mexico Historical Reference Match
+5. DPV Score
+6. Role relevance
+7. Contact quality
+8. Evidence recency
+```
+
+Historical CRM linkage remains a relationship and exclusion signal. A confirmed internal existing customer is not treated as a new-customer opportunity; an ambiguous similarity remains review-only. Phase 6 stores readiness such as `HISTORICAL_REVIEW` or `EXISTING_CUSTOMER` without exposing raw historical contact rows, private activity bodies or the original OKKI contact list.
+
+The complete Phase 6 entity, evidence, LinkedIn, Hunter-budget and readiness contract is documented in `docs/PHASE6_DECISION_MAKER_DATA_CONTRACT.md`.

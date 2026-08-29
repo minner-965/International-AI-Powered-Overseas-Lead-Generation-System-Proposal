@@ -40,7 +40,8 @@ export async function persistGeneratedQueries(client, job, config) {
         (research_job_id,query_text,query_type,country,country_code,country_name,city,region,
          preferred_language,market_profile,product_category,buyer_type,provider,status)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'PENDING')
-      ON CONFLICT (research_job_id,query_text) DO UPDATE SET provider=EXCLUDED.provider
+      ON CONFLICT (research_job_id,query_text) WHERE company_id IS NULL
+      DO UPDATE SET provider=EXCLUDED.provider
       RETURNING *`, [job.id, query.query_text, query.query_type, query.country, query.country_code,
       query.country_name, query.city, query.region, query.preferred_language, query.market_profile,
       query.product_category, query.buyer_type, config.provider]);

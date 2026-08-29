@@ -67,6 +67,9 @@ Use `--radius-card` for major panels, `--radius-control` for inputs and buttons,
 - Import batches: the Jobs view reuses `.crm-panel`, `.crm-table`, `.table-responsive` and existing state badges; it displays aggregate counts only
 - ICP comparison: the Customer Match view uses equal profile cards for Womenswear Management Baseline, General Merchandise Management Baseline and Mexico Historical Customer ICP
 - Dual match: Opportunities and company detail display Management Baseline Match and Mexico Historical Reference Match in separate columns/cards
+- Phase 6 opportunity controls: `#opportunity-filter-disclosure`, `#opportunity-filters`, `#opportunity-sort`, `#start-enrichment` and `#enrichment-job-status`
+- Phase 6 opportunity columns: `.op-col-company`, `.op-col-market-product`, `.op-col-feasibility`, `.op-col-readiness`, `.op-col-contact` and `.op-col-secondary`
+- Phase 6 detail: the reusable company dialog adds Buying Contacts and Cooperation Feasibility tabs using `.crm-decision-maker-*`, `.crm-contact-route-*` and `.crm-feasibility-*`
 
 When a future feature matches one of these roles, extend the existing component rather than creating a visually separate card, button, badge, or table system.
 
@@ -92,6 +95,9 @@ Visual work must preserve these hooks and their behavior:
 - `[data-app-nav]`, `[data-app-view]`, `#sidebar-toggle` and the eight-page information architecture
 - `.actions button[data-status]` and approval updates
 - `#research-job` plus ResearchJob polling, query, and candidate endpoints
+- `#opportunity-table`, `#opportunity-sort`, `#opportunity-filters` and `GET /api/opportunities`
+- `#start-enrichment`, `#enrichment-job-status`, `POST /api/enrichment/jobs` and `GET /api/enrichment/jobs/:id`
+- `GET /api/leads/:id/decision-makers`, `GET /api/leads/:id/contact-routes` and `GET /api/companies/:id/cooperation-feasibility`
 
 IDs are JavaScript and accessibility hooks. New styling should use classes. Do not rename endpoints, payload keys, returned fields, or source evidence during a visual refactor.
 
@@ -112,7 +118,8 @@ IDs are JavaScript and accessibility hooks. New styling should use classes. Do n
 - At 768px and below: section headers, command actions, filters and forms stack without overlapping.
 - At 390px: filters use two columns where possible, the third control spans the row, KPI facts use two columns, and long company tables stay inside a horizontal scroll container.
 - At 390px, customer and opportunity tables show the decision-critical columns first. Secondary evidence, freshness and reference fields remain available in the detail window instead of forcing a 1,000px-wide first view. The View action stays next to the company name.
-- Customer details use a viewport-contained native dialog with seven tabs and vertical scrolling when required.
+- At 390px, Phase 6 opportunities retain Company, Market / Product, Cooperation Feasibility and Readiness. Buying-contact, supplier-access, barrier and score details remain in the horizontally scrollable desktop table and the detail window.
+- Customer details use a viewport-contained native dialog with nine tabs and vertical scrolling when required.
 - Comfortable and Compact change row/cell/form spacing only; they never scale the whole document.
 - Wide data tables remain inside labeled, keyboard-focusable horizontal scroll regions. They must never expand the page viewport.
 - The Customer Match / ICP view renders the active Womenswear, General Merchandise and Mexico Historical profiles as equal cards on desktop and stacked cards on mobile.
@@ -149,3 +156,16 @@ Before adding a new feature:
 - 服务端对详情响应使用字段白名单；内部链接、附件、来源路径、文件哈希和原始 payload 不进入 API/DOM。
 - 390px 仅保留公司、历史状态、分类、最近活动和操作；其他字段在详情查看，表格横向滚动限制在组件内。
 - 手机详情窗按内容高度显示并受 `100dvh` 安全区限制；返回与关闭按钮保持至少 44px，原生浏览器缩放不受限制。
+
+## Phase 6：采购联系人与合作可行性
+
+- Phase 6 extends the existing Opportunities page and company detail dialog. It does not add a separate navigation system.
+- The default opportunity ordering is `feasibility_desc`. Cooperation Feasibility, Cooperation Matrix, Management Baseline Match, Mexico Historical Reference Match and DPV Score remain separate visible signals.
+- `cooperation_matrix` is the supplier-access matrix (`HIGH_FIT_HIGH_ACCESS`, `HIGH_FIT_LOW_ACCESS` and related states). It must not replace the existing Customer Match `opportunity_matrix` field.
+- Opportunity filters use the reusable disclosure and filter-grid pattern. The active filter count is visible, all fields retain native select semantics, and Clear Filters restores `feasibility_desc`.
+- The Buying Contacts tab shows named people or buying departments, raw job titles, normalized roles, role and product relevance, business contact routes, verification and clickable source references.
+- The Cooperation Feasibility tab shows the score and band, cooperation matrix, readiness, relationship context, supplier onboarding routes, known barriers, missing evidence, six dimension rows and source references.
+- LinkedIn and other professional-profile URLs may be displayed only as source references for manual review. They never replace independent role or contact verification.
+- The ordinary UI must not expose internal OKKI links, source hashes, evidence hashes, shared-folder paths, staging paths or raw record payloads.
+- The `#start-enrichment` action calls Express `POST /api/enrichment/jobs`; the browser never calls n8n or an enrichment provider directly. Its live region reports persisted job state and safe aggregate counters only.
+- Enrichment controls do not send email, WhatsApp, forms, supplier registrations or professional-network messages.

@@ -9,7 +9,8 @@ const rulesRoot = process.env.DPV_RULES_DIR ? path.resolve(process.env.DPV_RULES
 const RULE_PATHS = Object.freeze({
   score: path.join(rulesRoot, 'dpv-score/v1/decision.json'),
   qualification: path.join(rulesRoot, 'qualification/v1/decision.json'),
-  customerMatch: path.join(rulesRoot, 'customer-match/baseline-v1/decision.json')
+  customerMatch: path.join(rulesRoot, 'customer-match/baseline-v1/decision.json'),
+  cooperationFeasibility: path.join(rulesRoot, 'cooperation-feasibility/v1/decision.json')
 });
 
 export class DpvZenRulesAdapter {

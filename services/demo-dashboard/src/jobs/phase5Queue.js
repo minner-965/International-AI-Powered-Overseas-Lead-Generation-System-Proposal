@@ -5,7 +5,8 @@ export const PHASE5_QUEUES = Object.freeze({
   SCORE_ALL_ELIGIBLE: 'score-all-eligible',
   RECALCULATE_CUSTOMER_MATCH: 'recalculate-customer-match',
   REBUILD_ICP_PROFILE: 'rebuild-icp-profile',
-  REPLAY_RULE_VERSION: 'replay-rule-version'
+  REPLAY_RULE_VERSION: 'replay-rule-version',
+  ENRICH_DECISION_MAKERS: 'enrich-decision-makers'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -15,7 +16,7 @@ function queuePolicy(name) {
     retryLimit: 3,
     retryDelay: 5,
     retryBackoff: true,
-    expireInSeconds: 300,
+    expireInSeconds: name === PHASE5_QUEUES.ENRICH_DECISION_MAKERS ? 900 : 300,
     heartbeatSeconds: 60,
     deleteAfterSeconds: 86400,
     retentionSeconds: 604800,
