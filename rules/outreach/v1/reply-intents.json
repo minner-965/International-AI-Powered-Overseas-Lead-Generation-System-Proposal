@@ -1,0 +1,18 @@
+{
+  "schema_version": "outreach-reply-intents-v1",
+  "intents": [
+    "CATALOGUE",
+    "SAMPLE",
+    "QUOTATION",
+    "MEETING",
+    "DEFER",
+    "DECLINE",
+    "OPT_OUT",
+    "AUTO_REPLY",
+    "IRRELEVANT",
+    "REVIEW"
+  ],
+  "automatic_send_allowed": false,
+  "commercial_commitment_allowed": false,
+  "task_only_intents": ["CATALOGUE", "SAMPLE", "QUOTATION", "MEETING", "DEFER", "REVIEW"]
+}

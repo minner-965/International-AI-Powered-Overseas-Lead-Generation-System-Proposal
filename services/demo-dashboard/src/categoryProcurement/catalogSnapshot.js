@@ -23,8 +23,14 @@ export class CatalogSnapshotService{
   constructor({pool,taxonomyService=null}={}){if(!pool)throw new Error('CatalogSnapshotService requires a PostgreSQL pool');this.pool=pool;this.taxonomyService=taxonomyService||new ProductTaxonomyService({pool});}
   async refresh({snapshotVersion=CATALOG_SNAPSHOT_VERSION}={}){
     await this.taxonomyService.classifyAll({apply:true});
-    const result=await this.pool.query(`SELECT pm.id product_master_id,pm.product_profile,a.assignment_status,a.catalog_status,a.input_digest
-      FROM leadgen.product_master pm JOIN LATERAL(SELECT x.* FROM leadgen.product_master_taxonomy_assignments x
+    const result=await this.pool.query(`SELECT pm.id product_master_id,
+      coalesce(rev.product_profile,pm.product_profile) product_profile,
+      a.assignment_status,
+      CASE WHEN rev.catalog_status='INACTIVE' THEN 'EXCLUDED' ELSE a.catalog_status END catalog_status,
+      a.input_digest
+      FROM leadgen.product_master pm
+      LEFT JOIN leadgen.product_master_current_revisions rev ON rev.product_master_id=pm.id
+      JOIN LATERAL(SELECT x.* FROM leadgen.product_master_taxonomy_assignments x
         WHERE x.product_master_id=pm.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)a ON true ORDER BY pm.id`);
     const snapshots=[];
     for(const profile of ['WOMENSWEAR','GENERAL_MERCHANDISE']){

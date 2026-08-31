@@ -1,0 +1,24 @@
+{
+  "schema_version": "outreach-message-policy-v1",
+  "format": "plain_text",
+  "maximum_followups": 3,
+  "maximum_products_per_message": 3,
+  "maximum_ctas_per_message": 1,
+  "allowed_ctas": [
+    "REQUEST_PERMISSION_TO_SHARE_CATALOGUE",
+    "REQUEST_CATEGORY_DISCUSSION",
+    "REQUEST_SHORT_INTRODUCTORY_CALL"
+  ],
+  "target_language_from_market_policy": true,
+  "prohibited_subject_prefixes": ["Re:", "Fwd:", "Fw:"],
+  "prohibited_unapproved_commitments": [
+    "PRICE",
+    "MOQ",
+    "CERTIFICATION",
+    "LEAD_TIME",
+    "PAYMENT_TERMS",
+    "DELIVERY_GUARANTEE"
+  ],
+  "approval_required": true,
+  "self_approval_allowed": false
+}

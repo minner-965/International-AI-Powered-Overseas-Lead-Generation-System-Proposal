@@ -52,6 +52,14 @@ services:
       - n8n_data:/home/node/.n8n
       - ./workflows:/files/workflows
 
+  phase7-runtime-init:
+    image: dpv-leadgen-demo-dashboard
+    user: "0:0"
+    restart: "no"
+    command: ["sh", "-lc", "mkdir -p /app/runtime/phase7/staging /app/runtime/phase7/exports && chown -R 1000:1000 /app/runtime/phase7"]
+    volumes:
+      - phase7_runtime:/app/runtime/phase7
+
   demo-dashboard:
     build:
       context: .
@@ -59,14 +67,20 @@ services:
     restart: unless-stopped
     env_file:
       - .env.phase2
+      - path: .env.phase7-api
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
+      phase7-runtime-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
+      DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
+      DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -77,6 +91,7 @@ services:
       - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
       - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
       - ./services/demo-dashboard/public/phase5.css:/app/public/phase5.css:ro
+      - phase7_runtime:/app/runtime/phase7
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 5s
@@ -91,9 +106,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      phase7-runtime-init:
+        condition: service_completed_successfully
     environment:
       PORT: 3000
+      HTTP_LISTEN_ENABLED: "false"
       PGBOSS_PROCESS_JOBS: "true"
+      PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,refresh-opportunity-exception-queue"
+      DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
+      DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -103,7 +124,68 @@ services:
     volumes:
       - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
       - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
+      - phase7_runtime:/app/runtime/phase7
+
+  outreach-worker:
+    image: dpv-leadgen-demo-dashboard
+    restart: unless-stopped
+    env_file:
+      - path: .env.phase7-outreach
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      phase7-runtime-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3000
+      HTTP_LISTEN_ENABLED: "false"
+      PGBOSS_ENABLED: "true"
+      PGBOSS_PROCESS_JOBS: "true"
+      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,generate-outreach-draft,validate-outreach-draft,send-outreach-email,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm"
+      DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
+      DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
+      CRM_BASE_URL: ${CRM_BASE_URL:-}
+      CRM_API_KEY: ${CRM_API_KEY:-}
+      CRM_TIMEOUT_MS: ${CRM_TIMEOUT_MS:-10000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
+      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
+      - phase7_runtime:/app/runtime/phase7
+
+  data-worker:
+    image: dpv-leadgen-demo-dashboard
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      phase7-runtime-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3000
+      HTTP_LISTEN_ENABLED: "false"
+      PGBOSS_PROCESS_JOBS: "true"
+      PGBOSS_QUEUE_ALLOWLIST: "discover-shared-import-files,parse-reference-import,commit-reference-import,export-business-data,recalculate-after-import"
+      DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
+      DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
+      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
+      - phase7_runtime:/app/runtime/phase7
 
 volumes:
   n8n_data:
   postgres_data:
+  phase7_runtime:

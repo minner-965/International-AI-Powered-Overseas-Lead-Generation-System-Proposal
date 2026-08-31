@@ -71,5 +71,5 @@ test('container build includes pinned application dependencies and externalized 
 
 test('management responses and frontend API requests do not reuse stale scoring state', () => {
   assert.match(server, /Cache-Control', 'no-store'/);
-  assert.match(frontend, /fetch\(url, \{ cache: 'no-store', \.\.\.options \}\)/);
+  assert.match(frontend, /fetch\(url, \{ cache: 'no-store', \.\.\.options,/);
 });

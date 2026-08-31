@@ -1,0 +1,8 @@
+{
+  "schema_version": "approved-claims-v1",
+  "context_version": "dpv-product-marketing-v1",
+  "status": "AWAITING_MANAGEMENT_APPROVAL",
+  "approved_claim_required_for_assertions": true,
+  "snapshot_date": "2026-08-31",
+  "claims": []
+}

@@ -7,6 +7,8 @@ COPY services/demo-dashboard/public ./public
 COPY services/demo-dashboard/test ./test
 COPY database/migrations ./database/migrations
 COPY rules ./rules
+COPY .agents ./.agents
+COPY skills.lock.json ./skills.lock.json
 ENV DPV_RULES_DIR=/app/rules
 ENV DPV_PROJECT_ROOT=/app
 USER node

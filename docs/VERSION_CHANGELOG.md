@@ -1,5 +1,32 @@
 # Version Changelog
 
+## phase7 — 2026-08-31 — release candidate
+
+### Added to the working tree
+
+- Added the Phase 7 controlled-outreach contracts, versioned Marketing Context rules, deterministic draft/approval/provider boundaries, inbound-event handling, suppression rules, sales tasks and CRM outbox foundations.
+- Added CSV/XLSX lead, product and customer-deal import/export contracts, product revisions, import approval guardrails, short-lived export downloads and shared-folder three-hash verification foundations.
+- Added a credential-free n8n orchestration workflow that accepts only `OUTREACH_RECHECK`, `IMPORT_DISCOVER`, `EXPORT_PROCESS` and `CRM_SYNC`, and delegates to the Express internal API.
+- Added isolated, HTTP-less category, outreach and data workers with explicit pg-boss queue allowlists; the dashboard process does not execute background jobs.
+- Pinned selected Marketing Skills and Resend Skills by repository commit, version, license and directory SHA-256; pinned ExcelJS 4.4.0 for the Node XLSX runtime.
+
+### Safety and data integrity
+
+- Kept `OUTREACH_ENABLED=false`, `LIVE_PROSPECT_SEND_APPROVED=false`, `OUTBOUND_EMAIL_PROVIDER=NONE` and `RESEND_USE_CASE=DISABLED` as defaults.
+- Blocked Resend cold-outreach use according to its current AUP; Phase 7 does not start a live prospect pilot.
+- Preserved the Phase 6/6.1 decision gates, existing company/source/contact history, product master IDs and the two restored Phase 6.1 V2/V3 plan documents.
+- Kept source/shared paths, raw messages, provider payloads, credentials, internal costs and unapproved commercial claims outside ordinary API/UI/export contracts.
+
+### Verification status
+
+- The current full suite recorded 427 tests: 424 passed, 0 failed and 3 conditionally skipped.
+- Migrations 025, 026 and 027 applied to the existing PostgreSQL database; final replay returned `SKIPPED_ALREADY_APPLIED` for all three. All recorded pre-Phase-7 business-table counts remained unchanged.
+- Current Phase 6.1 facts produced 14 decision snapshots and 14 `BLOCKED` eligibility snapshots, with 0 eligible recipients.
+- Database zero-send proof recorded 0 outbound messages, 0 Provider call starts, 0 outbound events and 0 real prospect sends.
+- Workflow JSON and documentation static checks are covered by a Phase 7 documentation test.
+- `npm audit` reports 2 moderate findings in ExcelJS 4.4.0 transitive dependencies. The proposed forced remediation would downgrade ExcelJS to 3.4.0, outside the pinned and tested runtime, so no forced downgrade was applied; the transitive findings remain tracked pending an upstream-compatible resolution.
+- Browser matrix, real XLSX/CSV export and download audit, template endpoints, and shared-folder final three-hash runtime proof passed. Release push and tag verification remain pending; see `docs/PHASE7_RESULT.md`.
+
 ## phase6.1 — 2026-08-31
 
 ### Added

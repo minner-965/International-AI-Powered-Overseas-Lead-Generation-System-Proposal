@@ -1,0 +1,142 @@
+{
+  "name": "DPV Phase 7 Controlled Outreach and Data Exchange",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dpv-phase7-controlled-orchestration",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "phase7-orchestration-webhook",
+      "name": "01 Phase 7 Orchestration Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [160, 300],
+      "webhookId": "6656c6c0-d4df-46dd-a2bc-850a182248b8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst allowedActions = new Set(['OUTREACH_RECHECK', 'IMPORT_DISCOVER', 'EXPORT_PROCESS', 'CRM_SYNC']);\nconst allowedImports = new Set(['PROSPECT_LEADS', 'PRODUCT_MASTER_UPDATE', 'CUSTOMER_DEALS', 'CUSTOMER_DEAL_LINES']);\nconst action = String(body.action || '').trim().toUpperCase();\nconst resourceId = String(body.resource_id || '').trim();\nconst requestId = String(body.request_id || '').trim();\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nconst hashPattern = /^[0-9a-f]{64}$/i;\nif (!allowedActions.has(action)) throw new Error('Invalid Phase 7 action');\nif (requestId && !uuidPattern.test(requestId)) throw new Error('Invalid request_id');\nif (action === 'IMPORT_DISCOVER') {\n  const importType = String(body.import_type || '').trim().toUpperCase();\n  const manifest = body.manifest || {};\n  if (!allowedImports.has(importType)) throw new Error('Invalid import_type');\n  if (!requestId) throw new Error('request_id is required for shared import discovery');\n  if (![manifest.sourceSha256Before, manifest.localSha256, manifest.sourceSha256After].every(value => hashPattern.test(String(value || '')))) throw new Error('Invalid shared import hashes');\n  if (new Set([manifest.sourceSha256Before, manifest.localSha256, manifest.sourceSha256After].map(value => String(value).toLowerCase())).size !== 1) throw new Error('Shared source changed during staging');\n  const mutations = manifest.sourceMutations || {};\n  if (['modified','deleted','renamed','moved','created'].some(key => Number(mutations[key] || 0) !== 0) || manifest.autoCommit === true) throw new Error('Shared import read-only contract violated');\n  return [{ json: { action, import_type: importType, manifest, request_id: requestId } }];\n}\nif (!uuidPattern.test(resourceId)) throw new Error('Invalid resource_id');\nreturn [{ json: { action, resource_id: resourceId, request_id: requestId || resourceId } }];"
+      },
+      "id": "phase7-orchestration-validate",
+      "name": "02 Validate Orchestration Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APP_INTERNAL_BASE_URL + '/api/internal/phase7/orchestrate' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.INTERNAL_API_TOKEN }}"
+            },
+            {
+              "name": "X-DPV-Request-Id",
+              "value": "={{ $json.request_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "phase7-orchestration-dispatch",
+      "name": "03 Dispatch to Express",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json.result || $json;\nconst request = $('02 Validate Orchestration Request').item.json;\nreturn [{ json: { request_id: request.request_id, action: request.action, resource_id: request.resource_id || null, manifest_digest: result.manifest_digest || null, status: String(result.status || 'QUEUED'), queued_items: Number(result.queued_items || 0), provider_calls: Number(result.provider_calls || 0) } }];"
+      },
+      "id": "phase7-orchestration-result",
+      "name": "04 Orchestration Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const failure = $json.error || $json.message || 'Phase 7 orchestration request failed';\nthrow new Error(String(failure));"
+      },
+      "id": "phase7-orchestration-failed",
+      "name": "05 Stop Failed Execution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 440]
+    }
+  ],
+  "connections": {
+    "01 Phase 7 Orchestration Webhook": {
+      "main": [
+        [
+          {
+            "node": "02 Validate Orchestration Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 Validate Orchestration Request": {
+      "main": [
+        [
+          {
+            "node": "03 Dispatch to Express",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "05 Stop Failed Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 Dispatch to Express": {
+      "main": [
+        [
+          {
+            "node": "04 Orchestration Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "05 Stop Failed Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4264cd8e-2d92-4eeb-bdb4-6cd86798e683",
+  "id": "dpvPhase7ControlledOrchestration",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

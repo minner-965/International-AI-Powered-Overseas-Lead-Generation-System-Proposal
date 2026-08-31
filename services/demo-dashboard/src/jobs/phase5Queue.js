@@ -11,7 +11,23 @@ export const PHASE5_QUEUES = Object.freeze({
   CLASSIFY_BUYER_BUSINESS_MODEL: 'classify-buyer-business-model',
   CALCULATE_CATEGORY_PROCUREMENT_MATCH: 'calculate-category-procurement-match',
   CALCULATE_PRODUCT_OPPORTUNITIES: 'calculate-product-opportunities',
-  RECALCULATE_COOPERATION_V3: 'recalculate-cooperation-v3'
+  RECALCULATE_COOPERATION_V3: 'recalculate-cooperation-v3',
+  RECALCULATE_BUSINESS_OPPORTUNITIES: 'recalculate-business-opportunities',
+  REFRESH_OPPORTUNITY_EXCEPTION_QUEUE: 'refresh-opportunity-exception-queue',
+  VERIFY_OUTREACH_CONTACT: 'verify-outreach-contact',
+  GENERATE_OUTREACH_DRAFT: 'generate-outreach-draft',
+  VALIDATE_OUTREACH_DRAFT: 'validate-outreach-draft',
+  SEND_OUTREACH_EMAIL: 'send-outreach-email',
+  PROCESS_EMAIL_PROVIDER_EVENT: 'process-email-provider-event',
+  PROCESS_INBOUND_MESSAGE: 'process-inbound-message',
+  CLASSIFY_INBOUND_REPLY: 'classify-inbound-reply',
+  CREATE_SALES_FOLLOWUP: 'create-sales-followup',
+  SYNC_OUTREACH_TO_CRM: 'sync-outreach-to-crm',
+  DISCOVER_SHARED_IMPORT_FILES: 'discover-shared-import-files',
+  PARSE_REFERENCE_IMPORT: 'parse-reference-import',
+  COMMIT_REFERENCE_IMPORT: 'commit-reference-import',
+  EXPORT_BUSINESS_DATA: 'export-business-data',
+  RECALCULATE_AFTER_IMPORT: 'recalculate-after-import'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -27,7 +43,18 @@ function queuePolicy(name) {
       PHASE5_QUEUES.CLASSIFY_BUYER_BUSINESS_MODEL,
       PHASE5_QUEUES.CALCULATE_CATEGORY_PROCUREMENT_MATCH,
       PHASE5_QUEUES.CALCULATE_PRODUCT_OPPORTUNITIES,
-      PHASE5_QUEUES.RECALCULATE_COOPERATION_V3
+      PHASE5_QUEUES.RECALCULATE_COOPERATION_V3,
+      PHASE5_QUEUES.RECALCULATE_BUSINESS_OPPORTUNITIES,
+      PHASE5_QUEUES.REFRESH_OPPORTUNITY_EXCEPTION_QUEUE,
+      PHASE5_QUEUES.VERIFY_OUTREACH_CONTACT,
+      PHASE5_QUEUES.GENERATE_OUTREACH_DRAFT,
+      PHASE5_QUEUES.SEND_OUTREACH_EMAIL,
+      PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT,
+      PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE,
+      PHASE5_QUEUES.PARSE_REFERENCE_IMPORT,
+      PHASE5_QUEUES.COMMIT_REFERENCE_IMPORT,
+      PHASE5_QUEUES.EXPORT_BUSINESS_DATA,
+      PHASE5_QUEUES.RECALCULATE_AFTER_IMPORT
     ].includes(name) ? 900 : 300,
     heartbeatSeconds: 60,
     deleteAfterSeconds: 86400,
@@ -53,6 +80,14 @@ function booleanEnv(value, fallback = true) {
   return /^(1|true|yes|on)$/i.test(String(value));
 }
 
+function queueAllowlist(value) {
+  if (!value || !String(value).trim()) return PHASE5_QUEUE_NAMES;
+  const requested = [...new Set(String(value).split(',').map(item => item.trim()).filter(Boolean))];
+  const unsupported = requested.filter(name => !PHASE5_QUEUE_NAMES.includes(name));
+  if (unsupported.length) throw new Error(`Unsupported queue allowlist: ${unsupported.join(', ')}`);
+  return Object.freeze(requested);
+}
+
 export function createPhase5Queue({
   env = process.env,
   telemetry,
@@ -62,6 +97,7 @@ export function createPhase5Queue({
 } = {}) {
   const enabled = booleanEnv(env.PGBOSS_ENABLED, true);
   const processJobs = booleanEnv(env.PGBOSS_PROCESS_JOBS, true);
+  const workerQueueNames = queueAllowlist(env.PGBOSS_QUEUE_ALLOWLIST);
   const boss = enabled ? bossFactory(pgBossOptions(env)) : null;
   const workerIds = new Map();
   let started = false;
@@ -101,7 +137,7 @@ export function createPhase5Queue({
         boss.on('error', error => audit('phase5_queue_error', { message: String(error?.message || error).slice(0, 240) }));
         await boss.start();
         for (const name of PHASE5_QUEUE_NAMES) await registerQueue(name);
-        for (const name of PHASE5_QUEUE_NAMES) {
+        for (const name of workerQueueNames) {
           if (!processJobs) continue;
           if (!handlers[name]) continue;
           const workerId = await boss.work(name, {
@@ -114,7 +150,12 @@ export function createPhase5Queue({
         }
         started = true;
         startupError = null;
-        audit('phase5_queue_started', { queues: PHASE5_QUEUE_NAMES.length, workers: workerIds.size, process_jobs:processJobs });
+        audit('phase5_queue_started', {
+          queues: PHASE5_QUEUE_NAMES.length,
+          worker_queues: workerQueueNames.length,
+          workers: workerIds.size,
+          process_jobs:processJobs
+        });
       } catch (error) {
         startupError = error;
         audit('phase5_queue_start_failed', { message: String(error?.message || error).slice(0, 240) });
@@ -147,7 +188,7 @@ export function createPhase5Queue({
         startup_error: startupError?.message || null,
         queues: []
       };
-      const queues = await boss.getQueues(PHASE5_QUEUE_NAMES.flatMap(name => [name, `${name}-dead-letter`]));
+      const queues = await boss.getQueues(workerQueueNames.flatMap(name => [name, `${name}-dead-letter`]));
       return { enabled: true, started: true, status: 'ready', queues };
     },
     async find(name, options = {}) {
@@ -174,4 +215,4 @@ export function createPhase5Queue({
   });
 }
 
-export { booleanEnv, pgBossOptions, queuePolicy };
+export { booleanEnv, pgBossOptions, queueAllowlist, queuePolicy };

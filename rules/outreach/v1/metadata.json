@@ -1,0 +1,11 @@
+{
+  "rule_version": "dpv-b2b-outreach-v1",
+  "schema_version": "outreach-policy-metadata-v1",
+  "status": "ACTIVE",
+  "default_outbound_provider": "NONE",
+  "outreach_enabled_default": false,
+  "live_prospect_send_approved_default": false,
+  "allowed_markets": ["AE", "MX"],
+  "contact_verification_ttl_days": 30,
+  "allow_accept_all_send": false
+}

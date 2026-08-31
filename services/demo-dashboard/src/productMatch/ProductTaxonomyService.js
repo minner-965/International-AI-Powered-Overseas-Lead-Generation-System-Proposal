@@ -34,7 +34,8 @@ export class ProductTaxonomyService{
 
   assignmentFor(product){
     const classification=classifyProductMaster(product);
-    const catalogStatus=product.confirmed_order_supported?'HISTORICAL_ORDER_SUPPORTED'
+    const catalogStatus=String(product.effective_catalog_status||'').toUpperCase()==='INACTIVE'?'EXCLUDED'
+      :product.confirmed_order_supported?'HISTORICAL_ORDER_SUPPORTED'
       :['CONFIRMED','SUPPORTED'].includes(classification.assignment_status)?'REFERENCE_ONLY'
         :classification.assignment_status==='REVIEW'?'REVIEW':'UNKNOWN';
     return {...classification,catalog_status:catalogStatus,input_digest:digest({
@@ -45,10 +46,20 @@ export class ProductTaxonomyService{
   }
 
   async classifyAll({apply=false}={}){
-    const {rows}=await this.pool.query(`SELECT pm.id,pm.product_profile,pm.product_name,pm.category,pm.material,pm.size_spec,pm.color,pm.packing,
+    const {rows}=await this.pool.query(`SELECT pm.id,
+      coalesce(rev.product_profile,pm.product_profile) product_profile,
+      coalesce(rev.revision_payload->>'product_name',pm.product_name) product_name,
+      coalesce(rev.category,pm.category) category,
+      coalesce(rev.revision_payload->>'material',pm.material) material,
+      coalesce(rev.revision_payload->>'size_spec',pm.size_spec) size_spec,
+      coalesce(rev.revision_payload->>'color',pm.color) color,
+      coalesce(rev.revision_payload->>'packing',pm.packing) packing,
+      coalesce(rev.catalog_status,'ACTIVE') effective_catalog_status,
       EXISTS(SELECT 1 FROM leadgen.historical_order_lines hol JOIN leadgen.historical_orders ho ON ho.id=hol.historical_order_id
         WHERE hol.product_id=pm.id AND ho.order_status='CONFIRMED') AS confirmed_order_supported
-      FROM leadgen.product_master pm ORDER BY pm.id`);
+      FROM leadgen.product_master pm
+      LEFT JOIN leadgen.product_master_current_revisions rev ON rev.product_master_id=pm.id
+      ORDER BY pm.id`);
     const assignments=rows.map(row=>({product:row,assignment:this.assignmentFor(row)}));
     const counts=Object.fromEntries(['CONFIRMED','SUPPORTED','REVIEW','UNKNOWN'].map(status=>[status,assignments.filter(item=>item.assignment.assignment_status===status).length]));
     if(!apply)return {taxonomy_version:PRODUCT_TAXONOMY_VERSION,classification_version:PRODUCT_CLASSIFICATION_VERSION,products:rows.length,assignments:counts,status:'DRY_RUN'};

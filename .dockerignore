@@ -1,0 +1,62 @@
+# Git and local editor state
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+
+# Credentials and workstation-only configuration
+.env
+.env.*
+!.env.example
+!.env.phase7-api.example
+!.env.phase7-outreach.example
+credentials
+secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime databases, queues, uploads and exports
+node_modules
+**/node_modules
+.n8n
+postgres-data
+data
+logs
+runtime
+artifacts
+outputs
+test-artifacts
+*.log
+*.dump
+*.bak
+*.backup
+*.xlsx
+*.xls
+*.csv
+*.tsv
+
+# Local build and document-generation workspaces
+.venv
+venv
+__pycache__
+**/__pycache__
+.codex_cost_review
+.codex_cost_workbook
+demo_build
+doc_assets
+final
+final_updated
+final_updated_v2
+final_updated_v3
+management_demo
+n8n_edit_build
+render_*
+
+# The dashboard image uses explicit COPY statements. Exclude unrelated source
+# material from the build context while retaining the service, migration,
+# workflow and vendored-skill paths copied by its Dockerfile.
+deliverables
+runbooks

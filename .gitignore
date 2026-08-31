@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.phase7-outreach.example
+!.env.phase7-api.example
 *.pem
 *.key
 *.p12
@@ -31,6 +33,23 @@ logs/
 COMPANY_TRAIL_EXPORT_56973061_7_1787906139.xlsx
 artifacts/okki-staging/
 artifacts/backups/
+artifacts/phase7-data-exchange/
+outputs/phase7-exports/
+runtime/phase7-exports/
+runtime/phase7-import-staging/
+runtime/phase7/
+services/demo-dashboard/runtime/phase7-exports/
+services/demo-dashboard/runtime/phase7-import-staging/
+services/demo-dashboard/runtime/phase7/
+
+# Internal business-data workbooks and flat-file extracts are local artifacts.
+# Only explicit synthetic fixtures under a test/fixtures directory may be tracked.
+*.xlsx
+*.xls
+*.csv
+*.tsv
+!**/test/fixtures/*.csv
+!**/test/fixtures/*.tsv
 
 # Codex and artifact-tool temporary files
 .codex_cost_review/

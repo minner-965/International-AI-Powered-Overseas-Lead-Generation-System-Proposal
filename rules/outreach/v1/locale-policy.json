@@ -1,0 +1,13 @@
+{
+  "schema_version": "outreach-locale-policy-v1",
+  "markets": {
+    "AE": {
+      "default_language": "en",
+      "allowed_languages": ["en"]
+    },
+    "MX": {
+      "default_language": "es",
+      "allowed_languages": ["es"]
+    }
+  }
+}

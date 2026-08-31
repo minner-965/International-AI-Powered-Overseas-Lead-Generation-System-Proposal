@@ -15,3 +15,7 @@
 *.jpg binary
 *.jpeg binary
 
+# Preserve pinned upstream skill bytes exactly; vendored documentation keeps
+# the source repository's whitespace so directory SHA-256 locks remain valid.
+.agents/vendor/** -text whitespace=-trailing-space
+

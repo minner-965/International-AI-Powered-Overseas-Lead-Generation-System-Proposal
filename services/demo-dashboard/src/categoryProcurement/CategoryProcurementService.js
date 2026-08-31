@@ -32,7 +32,15 @@ export class CategoryProcurementService{
     if(!pool)throw new Error('CategoryProcurementService requires a PostgreSQL pool');this.pool=pool;this.buyerEngine=buyerEngine;this.matchEngine=matchEngine;this.cooperationEngine=cooperationEngine;this.catalogService=catalogService||new CatalogSnapshotService({pool});
   }
   async loadObservations(companyId){const result=await this.pool.query(`SELECT o.*,s.source_url,s.content_fetched,s.fetch_status,s.page_title FROM leadgen.prospect_category_observations o JOIN leadgen.prospect_category_sources s ON s.id=o.source_id WHERE o.company_id=$1 ORDER BY o.captured_at DESC,o.id`,[companyId]);return result.rows;}
-  async loadProducts(profile){const result=await this.pool.query(`SELECT pm.id product_master_id,pm.product_profile,a.normalized_category,a.normalized_subcategory,a.assignment_status,a.catalog_status,a.input_digest FROM leadgen.product_master pm JOIN LATERAL(SELECT x.* FROM leadgen.product_master_taxonomy_assignments x WHERE x.product_master_id=pm.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)a ON true WHERE pm.product_profile=$1 ORDER BY pm.id`,[upper(profile)]);return result.rows;}
+  async loadProducts(profile){const result=await this.pool.query(`SELECT pm.id product_master_id,
+    coalesce(rev.product_profile,pm.product_profile) product_profile,
+    a.normalized_category,a.normalized_subcategory,a.assignment_status,
+    CASE WHEN rev.catalog_status='INACTIVE' THEN 'EXCLUDED' ELSE a.catalog_status END catalog_status,
+    a.input_digest
+    FROM leadgen.product_master pm
+    LEFT JOIN leadgen.product_master_current_revisions rev ON rev.product_master_id=pm.id
+    JOIN LATERAL(SELECT x.* FROM leadgen.product_master_taxonomy_assignments x WHERE x.product_master_id=pm.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)a ON true
+    WHERE coalesce(rev.product_profile,pm.product_profile)=$1 ORDER BY pm.id`,[upper(profile)]);return result.rows;}
   async loadContext(companyId,profile){const result=await this.pool.query(`SELECT c.id,c.company_name,c.company_type AS organization_type,c.verification_status,c.lifecycle_status,c.explicit_exclusion_reason,
       EXISTS(SELECT 1 FROM leadgen.company_suppressions s WHERE s.company_id=c.id AND s.lifted_at IS NULL)suppressed,
       EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l JOIN leadgen.historical_customers h ON h.id=l.historical_customer_id WHERE l.company_id=c.id AND l.link_status='CONFIRMED' AND h.customer_role='INTERNAL_EXISTING_CUSTOMER')existing_customer,

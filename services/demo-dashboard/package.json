@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
     "phase6.1:migrate": "node src/categoryProcurement/migrationRunner.js --apply",
+    "phase7:migrate": "node src/phase7/migrationRunner.js --apply",
     "phase6.1:taxonomy:check": "node src/productMatch/productTaxonomyCli.js",
     "phase6.1:taxonomy:apply": "node src/productMatch/productTaxonomyCli.js --apply"
   },
@@ -19,6 +20,7 @@
     "@tabler/icons-webfont": "3.46.0",
     "cheerio": "1.2.0",
     "csv-parse": "7.0.2",
+    "exceljs": "4.4.0",
     "express": "5.2.1",
     "libphonenumber-js": "1.13.12",
     "pg": "8.23.0",

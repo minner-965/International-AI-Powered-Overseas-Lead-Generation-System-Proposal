@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-31",
+  "hash_algorithm": "sha256(sorted UTF-8 lines of relative_path:file_sha256, LF normalized)",
+  "repositories": [
+    {
+      "repository": "https://github.com/coreyhaines31/marketingskills",
+      "commit": "e55de886fe7580ec75cdb7ded5092b33f7d4ed58",
+      "license": "MIT",
+      "license_path": ".agents/vendor/marketingskills/LICENSE",
+      "skills": [
+        {
+          "name": "product-marketing",
+          "version": "2.1.0",
+          "path": ".agents/vendor/marketingskills/product-marketing",
+          "directory_sha256": "cc9d419557672b0561bb3d9c8986e0d1cd75021f98fd1a581431fa1fa300432e"
+        },
+        {
+          "name": "cold-email",
+          "version": "2.0.0",
+          "path": ".agents/vendor/marketingskills/cold-email",
+          "directory_sha256": "8510083057c15698194a85126421e85890d7711db8b66b2a27e015cf9d358384"
+        },
+        {
+          "name": "copy-editing",
+          "version": "2.0.0",
+          "path": ".agents/vendor/marketingskills/copy-editing",
+          "directory_sha256": "f4566982c9acb1908081be3f4de673b734a37d3b94b284cf2d920f5d90e7fce8"
+        },
+        {
+          "name": "sales-enablement",
+          "version": "2.0.1",
+          "path": ".agents/vendor/marketingskills/sales-enablement",
+          "directory_sha256": "5dbf4edb05a845eacb392ad5ce7e8c1cc2b5689b0b50242f6db5ab5fb5ed6077"
+        },
+        {
+          "name": "revops",
+          "version": "2.0.0",
+          "path": ".agents/vendor/marketingskills/revops",
+          "directory_sha256": "9243e79ed15f1a45128f423a56d60b006d93287384e2e6c858c5de9e614e6c0b"
+        },
+        {
+          "name": "prospecting",
+          "version": "1.1.0",
+          "path": ".agents/vendor/marketingskills/prospecting",
+          "directory_sha256": "0c1b826c3813c3b2b78917f0855689ef634ac3b29699d91f9d0f3aca6591f38c"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/resend/resend-skills",
+      "commit": "828340bd8a361c4e6e0c02bddf1575f131d5d77f",
+      "license": "MIT",
+      "license_path": ".agents/vendor/resend-skills/LICENSE",
+      "skills": [
+        {
+          "name": "email-best-practices",
+          "version": "1.0.2",
+          "path": ".agents/vendor/resend-skills/email-best-practices",
+          "directory_sha256": "33e0ac8fc82ab080ede52ef5b24abcbcf55855f69da92d5e1c7a37c02b770635"
+        },
+        {
+          "name": "agent-email-inbox",
+          "version": "3.0.4",
+          "path": ".agents/vendor/resend-skills/agent-email-inbox",
+          "directory_sha256": "c396d785011acd2a193f45ecf6b6b5563c4d0603eff2fcd43ae799925e35fdc1"
+        },
+        {
+          "name": "resend",
+          "version": "3.6.0",
+          "path": ".agents/vendor/resend-skills/resend",
+          "directory_sha256": "9f32f4f32d68fa46349a0c700bfc668e1fb57aa19592c0bbad86010871f1abd8"
+        }
+      ]
+    }
+  ],
+  "update_policy": "Pinned review only. Upstream changes require a human-reviewed pull request and regression tests."
+}

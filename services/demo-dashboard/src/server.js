@@ -22,15 +22,21 @@ import { CategoryEvidenceService } from './categoryProcurement/CategoryEvidenceS
 import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './categoryProcurement/CategoryProcurementService.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
+import { Phase7Service } from './phase7/service.js';
+import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
+import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/router.js';
+import { createManagementAuth } from './phase7/managementAuth.js';
 
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const httpListenEnabled = !/^(0|false|no|off)$/i.test(process.env.HTTP_LISTEN_ENABLED || 'true');
 const n8nResearchWebhookUrl = process.env.N8N_RESEARCH_WEBHOOK_URL || '';
 const n8nEnrichmentWebhookUrl = process.env.N8N_ENRICHMENT_WEBHOOK_URL || '';
 const n8nCategoryProcurementWebhookUrl = process.env.N8N_CATEGORY_PROCUREMENT_WEBHOOK_URL || '';
 const n8nWebhookTimeoutMs = Math.max(1000, Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 5000));
 const internalApiToken = process.env.INTERNAL_API_TOKEN || '';
+const managementAuth = createManagementAuth(process.env);
 const hiddenCompanyMarketSql = hiddenMarketCodes().map(code=>`'${code.replaceAll("'", "''")}'`).join(',');
 const companyMarketVisibleSql = (alias = 'c') => hiddenCompanyMarketSql
   ? `upper(coalesce(${alias}.country_code,'')) NOT IN (${hiddenCompanyMarketSql})`
@@ -278,6 +284,17 @@ async function recalculateCooperationV3Work(data){const payload=categoryProcurem
   await refreshCategoryProcurementJobProgress(payload.job_id);return{cooperation_result_id:result.id,readiness:result.opportunity_readiness,product_access_matrix:result.product_access_matrix};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
 
+const phase7QueueProxy = Object.freeze({
+  enqueue: (...args) => phase5Queue.enqueue(...args)
+});
+const phase7Service = new Phase7Service({
+  pool,queue:phase7QueueProxy,hunter:enrichmentService.hunter,env:process.env,audit,
+  opportunityQuery: query => queryCategoryProcurementOpportunities({
+    pool,query,publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
+  })
+});
+const phase7QueueHandlers = createPhase7QueueHandlers({service:phase7Service});
+
 const phase5Queue = createPhase5Queue({
   telemetry,
   audit,
@@ -304,7 +321,8 @@ const phase5Queue = createPhase5Queue({
     [PHASE5_QUEUES.CLASSIFY_BUYER_BUSINESS_MODEL]: classifyBuyerBusinessModelWork,
     [PHASE5_QUEUES.CALCULATE_CATEGORY_PROCUREMENT_MATCH]: calculateCategoryProcurementMatchWork,
     [PHASE5_QUEUES.CALCULATE_PRODUCT_OPPORTUNITIES]: calculateProductOpportunitiesWork,
-    [PHASE5_QUEUES.RECALCULATE_COOPERATION_V3]: recalculateCooperationV3Work
+    [PHASE5_QUEUES.RECALCULATE_COOPERATION_V3]: recalculateCooperationV3Work,
+    ...phase7QueueHandlers
   }
 });
 
@@ -318,13 +336,15 @@ const publicDataOrigins = [
 ];
 const publicDataOriginSql = publicDataOrigins.map(value => `'${value}'`).join(',');
 
+registerPhase7RawWebhookRoutes(app,{service:phase7Service,queue:phase7QueueProxy});
+
 app.use((_req, res, next) => {
   // This management workspace shows mutable research, scoring and job state.
   // Prevent a previous response or static bundle from masking a completed run.
   res.set('Cache-Control', 'no-store');
   next();
 });
-app.use(express.json({ limit: '11mb' }));
+app.use(express.json({ limit: '16mb' }));
 app.use('/vendor/tabler', express.static(new URL('../node_modules/@tabler/core/dist', import.meta.url).pathname));
 app.use('/vendor/tabler-icons', express.static(new URL('../node_modules/@tabler/icons-webfont/dist', import.meta.url).pathname));
 app.use(express.static(new URL('../public', import.meta.url).pathname));
@@ -339,6 +359,8 @@ function requireInternalToken(req, res, next) {
   }
   next();
 }
+
+app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 
 const verifiedCompanySources = [
   ['Al Sammran Garments Trading LLC', 'https://sammran.com/'],
@@ -800,7 +822,8 @@ app.get('/api/health', async (_req, res) => {
   catch (error) { res.status(503).json({ status: 'error', error: error.message }); }
 });
 
-app.post('/api/live/collect', async (req, res, next) => {
+app.post('/api/live/collect', managementAuth.authenticate, managementAuth.requireCsrf,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     const requested = Number(req.body?.limit || 50);
     const limit = Math.max(10, Math.min(100, requested));
@@ -926,7 +949,8 @@ app.get('/api/markets', (_req, res) => {
   });
 });
 
-app.post('/api/research/jobs', async (req, res, next) => {
+app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     const requestedCountryName = clean(req.body?.country_name || req.body?.country);
     let requestedCountryCode = clean(req.body?.country_code).toUpperCase();
@@ -1006,7 +1030,8 @@ app.get('/api/research/jobs/:id', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post('/api/enrichment/jobs', async (req, res, next) => {
+app.post('/api/enrichment/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
@@ -1677,7 +1702,8 @@ app.get('/api/companies/:id/product-opportunities', async (req,res,next) => {
   }catch(error){next(error);}
 });
 
-app.post('/api/category-procurement/jobs', async (req,res,next) => {
+app.post('/api/category-procurement/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req,res,next) => {
   try{
     const companyIds=Array.isArray(req.body?.company_ids)?req.body.company_ids:[];
     const job=await createCategoryProcurementResearchJob({companyIds,maxResults:req.body?.max_results||100});
@@ -1788,6 +1814,7 @@ app.get('/api/opportunities', async (req,res,next) => {
     // → customer_match → historical_customer_match → dpv_score; NULLS LAST.
     // Historical axes remain separate: mr.opportunity_matrix, access_opportunity_matrix and product_access_matrix.
     const filters={
+      status:req.query.status === undefined ? 'RECOMMENDED' : req.query.status,
       ...req.query,
       buyer_business_model:req.query.buyer_business_model,
       buyer_subtype:req.query.buyer_subtype,
@@ -1939,7 +1966,8 @@ app.get('/api/leads', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/export/leads', async (_req, res, next) => {
+app.get('/api/export/leads', managementAuth.authenticate,
+  managementAuth.requireRoles('SALES','MANAGEMENT'), async (_req, res, next) => {
   try {
     const { rows } = await pool.query(`
       SELECT c.id,c.company_name,c.city,c.website_url,c.company_type,c.company_description,
@@ -1975,7 +2003,7 @@ app.get('/api/export/leads', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/leads/:id', async (req, res, next) => {
+app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(`
       SELECT c.*, r.*, ct.full_name, ct.job_title, ct.business_email, ct.business_phone,
@@ -2000,11 +2028,19 @@ app.get('/api/leads/:id', async (req, res, next) => {
       WHERE c.id = $1 AND ${companyMarketVisibleSql('c')}
       `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
-    res.json(rows[0]);
+    const lead=rows[0];
+    if (!['SALES','MANAGEMENT','OUTREACH_APPROVER','SENDER_OPERATOR'].includes(req.managementUser?.role)) {
+      for (const field of ['full_name','job_title','business_email','business_phone','email_verification_status',
+        'verification_method','verification_detail','verification_checked_at','contact_verification_status',
+        'contact_lifecycle_status','contact_last_verified_at']) delete lead[field];
+      lead.contact_access='RESTRICTED';
+    }
+    res.json(lead);
   } catch (e) { next(e); }
 });
 
-app.patch('/api/leads/:id/approval', async (req, res, next) => {
+app.patch('/api/leads/:id/approval', managementAuth.authenticate, managementAuth.requireCsrf,
+  managementAuth.requireRoles('MANAGEMENT','MANAGEMENT_APPROVER'), async (req, res, next) => {
   try {
     if (!['approved', 'rejected', 'pending', 'needs_changes'].includes(req.body.status))
       return res.status(400).json({ error: 'Invalid approval status' });
@@ -2022,7 +2058,7 @@ app.use((error, _req, res, _next) => {
   const badRequestCodes = new Set([
     'PHASE5_SCOPE_REQUIRED','UNSUPPORTED_IMPORT_TYPE','CSV_FILENAME_REQUIRED','CSV_SIZE_INVALID',
     'CSV_PARSE_FAILED','CSV_SCHEMA_INVALID','IMPORT_NOT_VALIDATED','RULE_VERSION_NOT_INSTALLED','PHASE5_INVALID_ID',
-    'CLEANUP_BATCH_INVALID','CLEANUP_BACKUP_REQUIRED','CLEANUP_BATCH_EXISTS'
+    'CLEANUP_BATCH_INVALID','CLEANUP_BACKUP_REQUIRED','CLEANUP_BATCH_EXISTS','OPPORTUNITY_STATUS_INVALID'
   ]);
   const notFoundCodes = new Set(['COMPANY_NOT_FOUND','IMPORT_NOT_FOUND','CLEANUP_BATCH_NOT_FOUND']);
   const status = badRequestCodes.has(error.code) ? 400 : notFoundCodes.has(error.code) ? 404 : 500;
@@ -2037,15 +2073,20 @@ async function start() {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
-  const liveCount = await pool.query(`SELECT count(*)::int AS count FROM leadgen.companies WHERE data_origin IN (${publicDataOriginSql})`);
-  if (liveCount.rows[0].count === 0) {
-    try { await collectLive(50); } catch (error) { console.warn(`Initial live collection failed: ${error.message}`); }
+  if (httpListenEnabled) {
+    const liveCount = await pool.query(`SELECT count(*)::int AS count FROM leadgen.companies WHERE data_origin IN (${publicDataOriginSql})`);
+    if (liveCount.rows[0].count === 0) {
+      try { await collectLive(50); } catch (error) { console.warn(`Initial live collection failed: ${error.message}`); }
+    }
   }
   await phase5Queue.start();
-  const server = app.listen(port, '0.0.0.0', () => console.log(`DPV workspace listening on ${port}`));
+  const server = httpListenEnabled
+    ? app.listen(port, '0.0.0.0', () => console.log(`DPV workspace listening on ${port}`))
+    : null;
+  if (!httpListenEnabled) console.log('DPV worker started without an HTTP listener');
   const shutdown = async signal => {
     audit('application_shutdown', { signal });
-    server.close();
+    server?.close();
     await phase5Queue.stop();
     await telemetry.shutdown();
     await pool.end();

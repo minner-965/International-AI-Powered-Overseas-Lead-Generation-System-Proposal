@@ -36,6 +36,13 @@ export async function queryCategoryProcurementOpportunities({
   if(query.normalized_role)add(upper(query.normalized_role),index=>`dm.normalized_role=$${index}`);
   if(query.contact_type)add(upper(query.contact_type),index=>`bc.contact_type=$${index}`);
   if(query.contact_verification)add(upper(query.contact_verification),index=>`bc.verification_status=$${index}`);
+  const opportunityStatus=upper(query.status);
+  if (opportunityStatus && opportunityStatus !== 'ALL') {
+    if (!['RECOMMENDED','MANAGEMENT_APPROVED','EVIDENCE_REQUIRED','HOLD','NOT_SUITABLE'].includes(opportunityStatus)) {
+      const error=new Error('Invalid opportunity status');error.code='OPPORTUNITY_STATUS_INVALID';error.status=400;throw error;
+    }
+    add(opportunityStatus,index=>`bod.display_opportunity_status=$${index}`);
+  }
   const managementBand=matchBandClause('mr.match_score',query.management_match_band);
   const historicalBand=matchBandClause('hmr.match_score',query.historical_match_band);
   if(managementBand)clauses.push(managementBand);
@@ -77,6 +84,9 @@ export async function queryCategoryProcurementOpportunities({
     hmr.match_score historical_customer_match,hmr.coverage_percent historical_match_coverage,
     hmr.display_status historical_match_status,hmr.profile_version historical_profile_version,hmr.calculated_at historical_matched_at,
     cpm.id category_procurement_match_result_id,cpm.product_profile,
+    bod.id opportunity_decision_id,bod.display_opportunity_status,bod.system_recommendation_status,
+    bod.contact_readiness,bod.policy_contact_status,bod.reason_codes opportunity_decision_reason_codes,
+    bod.latest_management_event_id,bod.management_contact_status,bod.created_at opportunity_decision_assessed_at,
     cpm.score category_procurement_match_score,cpm.band category_procurement_match_band,
     cpm.match_status category_procurement_match_status,cpm.coverage_percent category_procurement_coverage,
     bbm.buyer_model buyer_business_model,bbm.buyer_subtype,bbm.eligibility_status buyer_eligibility_status,
@@ -102,6 +112,7 @@ export async function queryCategoryProcurementOpportunities({
         AND newer.product_profile=x.product_profile AND(newer.created_at,newer.id)>(x.created_at,x.id))
       ORDER BY x.product_profile)cpm ON true
     JOIN leadgen.buyer_business_model_results bbm ON bbm.id=cpm.buyer_business_model_result_id
+    LEFT JOIN leadgen.business_opportunity_current bod ON bod.company_id=c.id AND bod.product_profile=cpm.product_profile
     LEFT JOIN leadgen.product_opportunity_results po ON po.category_procurement_match_result_id=cpm.id
     LEFT JOIN LATERAL(SELECT pc.safe_product_name FROM leadgen.product_opportunity_candidates pc
       WHERE pc.product_opportunity_result_id=po.id ORDER BY pc.rank LIMIT 1)top_product ON true
