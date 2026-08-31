@@ -1,0 +1,25 @@
+{
+  "taxonomy_version": "product-taxonomy-v1",
+  "classification_version": "product-taxonomy-classifier-v1",
+  "effective_date": "2026-08-31",
+  "source_of_truth": "leadgen.product_master",
+  "languages": ["en", "es", "zh"],
+  "assignment_contract": {
+    "confirmed": "An explicit existing source category maps to one active node.",
+    "supported": "Explicit product wording maps to one active node in the existing product profile.",
+    "review": "An ambiguous alias or cross-profile conflict requires review.",
+    "unknown": "No explicit taxonomy evidence is available."
+  },
+  "catalog_status_priority": [
+    "CURRENT_CONFIRMED",
+    "HISTORICAL_ORDER_SUPPORTED",
+    "REFERENCE_ONLY",
+    "REVIEW",
+    "UNKNOWN",
+    "EXCLUDED"
+  ],
+  "privacy": {
+    "data_classification": "INTERNAL_BUSINESS",
+    "external_provider_payload": false
+  }
+}

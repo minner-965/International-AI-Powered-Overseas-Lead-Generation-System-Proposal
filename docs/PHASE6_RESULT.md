@@ -200,3 +200,13 @@ YES — Phase 6 acceptance passed; Phase 7 has not started.
 ```
 
 STOP — Phase 7 not started.
+
+## PHASE 6.1 V3 ADDENDUM — 2026-08-31
+
+Phase 6.1 adds a buyer-first Category Procurement Match without replacing this accepted Phase 6 result. The five layers—Category Procurement Match, Buyer Business Model, Product Opportunity, Supplier Access and Decision Maker / Contactability—remain independent. DPV Score, Management Baseline Match, Mexico Historical Reference Match and all Phase 6 evidence stay unchanged.
+
+The official Phase 6.1 ResearchJob completed 7 companies × 2 product profiles = 14 persisted results with 0 job errors. Actual public evidence produced 1 `DIRECT_END_BUYER`, 10 `UNCLEAR_INTERMEDIARY`, 2 `EXCLUDED_INTERMEDIARY` and 1 `UNKNOWN`; no row passed the strict Category Procurement Match gate. This is a conservative live-data result, not a generated mismatch.
+
+Full aggregate acceptance evidence, catalog coverage, queue totals, tests, browser matrix and release metadata are recorded in [PHASE6_1_PRODUCT_MATCH_RESULT.md](./PHASE6_1_PRODUCT_MATCH_RESULT.md).
+
+STOP — Phase 7 not started.

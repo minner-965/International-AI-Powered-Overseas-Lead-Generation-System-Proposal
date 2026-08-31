@@ -31,6 +31,24 @@ const GENERIC = Object.freeze({
   procurementDepartmentTerms: ['buying department', 'procurement department', 'purchasing department', 'merchandising department', 'sourcing department'],
   supplierAccessTerms: ['supplier registration', 'vendor registration', 'become a supplier', 'supplier onboarding', 'procurement portal', 'supplier prequalification', 'approved vendor', 'tender', 'RFQ', 'RFP', 'supplier requirements'],
   supplierBarrierTerms: ['invitation only', 'exclusive supplier', 'fixed supplier', 'approved vendor list', 'local sourcing only', 'prequalification required', 'supplier code of conduct', 'centralized procurement'],
+  productDiscoveryTerms: Object.freeze({
+    WOMENSWEAR: ['women clothing', 'dresses', 'tops', 'skirts', 'womenswear'],
+    GENERAL_MERCHANDISE: ['home living', 'household', 'pet products', 'products', 'brands']
+  }),
+  categoryBuyerDiscoveryTerms: Object.freeze({
+    WOMENSWEAR: Object.freeze({
+      category: ['women clothing', 'dresses', 'brands women'],
+      directBuyer: ['stores', 'retail group', 'buying department'],
+      distribution: ['wholesale', 'distributor', 'importer', 'warehouse', 'dealer network'],
+      exclusion: ['sourcing agent', 'broker', 'OEM manufacturer']
+    }),
+    GENERAL_MERCHANDISE: Object.freeze({
+      category: ['home living', 'household', 'pet products', 'brands'],
+      directBuyer: ['stores', 'retail group', 'buying department'],
+      distribution: ['wholesale', 'distributor', 'importer', 'warehouse', 'dealer network'],
+      exclusion: ['sourcing agent', 'broker', 'OEM manufacturer']
+    })
+  }),
   locationTerms: [],
   businessEvidenceTerms: Object.freeze({
     importer: ['importer', 'import company', 'importing'],
@@ -64,6 +82,11 @@ const PROFILES = Object.freeze({
     procurementDepartmentTerms: [...GENERIC.procurementDepartmentTerms],
     supplierAccessTerms: [...GENERIC.supplierAccessTerms, 'supplier registration UAE', 'vendor registration UAE'],
     supplierBarrierTerms: [...GENERIC.supplierBarrierTerms],
+    productDiscoveryTerms: Object.freeze({
+      WOMENSWEAR: ['women clothing', 'dresses', 'tops', 'skirts', 'womenswear'],
+      GENERAL_MERCHANDISE: ['home living', 'household', 'pet products', 'products', 'brands']
+    }),
+    categoryBuyerDiscoveryTerms: GENERIC.categoryBuyerDiscoveryTerms,
     locationTerms: ['United Arab Emirates', 'UAE', 'Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Ras Al Khaimah', 'GCC', 'Middle East']
   }),
   BD: Object.freeze({
@@ -127,6 +150,24 @@ const PROFILES = Object.freeze({
     procurementDepartmentTerms: [...GENERIC.procurementDepartmentTerms, 'departamento de compras', 'equipo de compras', 'departamento de adquisiciones', 'área de abastecimiento'],
     supplierAccessTerms: [...GENERIC.supplierAccessTerms, 'registro de proveedores', 'alta de proveedores', 'quiero ser proveedor', 'portal de proveedores', 'licitación', 'proveedores aprobados', 'requisitos de proveedor'],
     supplierBarrierTerms: [...GENERIC.supplierBarrierTerms, 'solo por invitación', 'proveedores exclusivos', 'lista cerrada de proveedores', 'abastecimiento local', 'precalificación requerida'],
+    productDiscoveryTerms: Object.freeze({
+      WOMENSWEAR: ['ropa de mujer', 'vestidos', 'blusas', 'faldas', 'moda femenina'],
+      GENERAL_MERCHANDISE: ['hogar', 'artículos para el hogar', 'mascotas', 'categorías', 'marcas']
+    }),
+    categoryBuyerDiscoveryTerms: Object.freeze({
+      WOMENSWEAR: Object.freeze({
+        category: ['ropa de mujer', 'vestidos', 'marcas mujer'],
+        directBuyer: ['tiendas', 'cadena minorista', 'departamento de compras'],
+        distribution: ['mayorista', 'distribuidor', 'importador', 'almacén', 'red de distribuidores'],
+        exclusion: ['agente de compras', 'corredor', 'fabricante OEM']
+      }),
+      GENERAL_MERCHANDISE: Object.freeze({
+        category: ['hogar', 'artículos para el hogar', 'mascotas', 'marcas'],
+        directBuyer: ['tiendas', 'cadena minorista', 'departamento de compras'],
+        distribution: ['mayorista', 'distribuidor', 'importador', 'almacén', 'red de distribuidores'],
+        exclusion: ['agente de compras', 'corredor', 'fabricante OEM']
+      })
+    }),
     locationTerms: ['Mexico', 'México', 'Mexico City', 'Ciudad de México', 'CDMX', 'Guadalajara', 'Monterrey'],
     businessEvidenceTerms: Object.freeze({
       importer: [...GENERIC.businessEvidenceTerms.importer, 'importador', 'importadora', 'importación'],

@@ -1,0 +1,20 @@
+{
+  "metadata": { "version": "buyer-business-model-v1" },
+  "nodes": [
+    { "id": "input", "type": "inputNode", "name": "Buyer evidence facts", "position": { "x": 0, "y": 0 }, "content": { "schema": "" } },
+    {
+      "id": "classify",
+      "type": "functionNode",
+      "name": "Buyer Business Model v1",
+      "position": { "x": 280, "y": 0 },
+      "content": {
+        "source": "export const handler=async(input)=>{const f=input.facts||input;let buyer_model='UNKNOWN',buyer_subtype='OTHER',eligibility_status='NEEDS_EVIDENCE',priority_tier='REVIEW',confidence_band='UNKNOWN';const reason_codes=[];if(f.exclusion_confirmed){buyer_model='EXCLUDED_INTERMEDIARY';buyer_subtype=f.exclusion_subtype||'OTHER';eligibility_status='INELIGIBLE';priority_tier='EXCLUDED';confidence_band='HIGH';reason_codes.push('EXCLUDED_INTERMEDIARY_CONFIRMED');}else if(f.target_category_confirmed&&f.organized_own_retail_confirmed){buyer_model='DIRECT_END_BUYER';buyer_subtype=f.direct_subtype||'OTHER';eligibility_status='ELIGIBLE';priority_tier='P1_DIRECT';confidence_band='HIGH';reason_codes.push('OWN_RETAIL_TARGET_CATEGORY_CONFIRMED');}else if(f.target_category_confirmed&&f.procurement_import_confirmed&&f.inventory_distribution_confirmed){buyer_model='DISTRIBUTION_BUYER';buyer_subtype=f.distribution_subtype||'DISTRIBUTOR';eligibility_status='ELIGIBLE';priority_tier='P2_DISTRIBUTION';confidence_band=f.strong_distribution_evidence?'HIGH':'MEDIUM';reason_codes.push('CATEGORY_PROCUREMENT_AND_DISTRIBUTION_CONFIRMED');}else if(f.intermediary_label_present||f.procurement_import_confirmed||f.inventory_distribution_confirmed||f.target_category_confirmed){buyer_model='UNCLEAR_INTERMEDIARY';buyer_subtype=f.unclear_subtype||'OTHER';eligibility_status='NEEDS_EVIDENCE';priority_tier='REVIEW';confidence_band='LOW';reason_codes.push(f.target_category_confirmed?'BUYING_MODEL_EVIDENCE_INCOMPLETE':'INTERMEDIARY_LABEL_ONLY');}else reason_codes.push('BUYER_BUSINESS_MODEL_EVIDENCE_MISSING');return{buyer_model,buyer_subtype,eligibility_status,priority_tier,confidence_band,reason_codes,calculation_version:'buyer-business-model-v1'};};"
+      }
+    },
+    { "id": "output", "type": "outputNode", "name": "Buyer classification", "position": { "x": 600, "y": 0 }, "content": { "schema": "" } }
+  ],
+  "edges": [
+    { "id": "e1", "sourceId": "input", "targetId": "classify", "sourceHandle": null, "type": "edge" },
+    { "id": "e2", "sourceId": "classify", "targetId": "output", "sourceHandle": null, "type": "edge" }
+  ]
+}

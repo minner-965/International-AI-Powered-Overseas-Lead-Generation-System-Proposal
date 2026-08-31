@@ -66,17 +66,43 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       PORT: 3000
+      PGBOSS_PROCESS_JOBS: "false"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: ${TZ}
+    volumes:
+      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
+      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
+      - ./services/demo-dashboard/public/phase5.css:/app/public/phase5.css:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  category-worker:
+    image: dpv-leadgen-demo-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env.phase2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      PGBOSS_PROCESS_JOBS: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
+      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
 
 volumes:
   n8n_data:

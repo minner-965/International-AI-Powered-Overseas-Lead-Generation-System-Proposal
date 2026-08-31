@@ -26,6 +26,25 @@ import {
   sourceTypeLabel,
   systemReasonLabel
 } from '../public/opportunity-ui.js';
+import {
+  buyerBusinessModelLabel,
+  categoryProcurementScore,
+  categoryProcurementStatusLabel,
+  productAccessMatrixLabel,
+  productCatalogStatusLabel,
+  productGapStatusLabel,
+  productGapTypeLabel,
+  productMatchBandLabel,
+  productMatchDimensionLabel,
+  productMatchItems,
+  productMatchProfile,
+  productMatchScore,
+  productMatchTypeLabel,
+  productOpportunityStatusLabel,
+  productSourceClassificationLabel,
+  productTaxonomyLabel,
+  supplierAccessBandLabel
+} from '../public/product-match-ui.js';
 
 test('research market selection supports AE, MX and BD', () => {
   assert.deepEqual(marketSelection('United Arab Emirates'), { country_code:'AE', country_name:'United Arab Emirates' });
@@ -160,16 +179,19 @@ test('Phase 5 preserves stable business hooks and adds locally persisted display
   assert.match(shell,/dataset\.bsTheme/);
 });
 
-test('company detail extends the CRM tabs for buying contacts and feasibility while keeping existing scores separate', async () => {
+test('company detail extends CRM tabs with V3 Product Match while keeping existing scores separate', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  for (const tab of ['overview','buying','feasibility','evidence','contacts','social','matching','scoring','history']) assert.equal(app.includes(`['${tab}'`),true);
+  for (const tab of ['overview','product-match','buying','feasibility','evidence','contacts','social','matching','scoring','history']) assert.equal(app.includes(`['${tab}'`),true);
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/customer-match/);
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/score/);
   assert.match(app,/\/api\/leads\/\$\{encodeURIComponent\(companyId\)\}\/decision-makers/);
   assert.match(app,/\/api\/leads\/\$\{encodeURIComponent\(companyId\)\}\/contact-routes/);
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/cooperation-feasibility/);
-  assert.match(html,/Customer Match and DPV Score remain separate/);
+  for(const endpoint of ['category-procurement-matches','buyer-business-model','product-opportunities']) assert.match(app,new RegExp(`/api/companies/\\$\\{encodedCompanyId\\}/${endpoint}`));
+  assert.match(html,/<span lang="en">Customer Match<\/span>[\s\S]*<span lang="en">DPV Score<\/span>/);
+  assert.match(app,/managementMatchScoreValue/);
+  assert.match(app,/leadScoreValue/);
 });
 
 test('company detail offers explicit dismissal paths and restores focus to its opener', async () => {
@@ -233,9 +255,10 @@ test('opportunity table uses the combined endpoint and retains the lead-director
   assert.match(app,/customer_match_score \?\? lead\?\.customer_match \?\? lead\?\.match_score/);
 });
 
-test('Phase 6 opportunity labels and filter query remain deterministic and bilingual', () => {
+test('V3 opportunity labels and filter query remain deterministic and bilingual', () => {
   assert.deepEqual(opportunityReadinessLabel('SALES_READY'), ['可安排销售跟进','Sales ready']);
   assert.deepEqual(opportunityReadinessLabel('STRATEGIC_LONG_SHOT'), ['战略长期机会','Strategic long shot']);
+  assert.deepEqual(opportunityReadinessLabel('NEEDS_PRODUCT_EVIDENCE'), ['需补充产品资料','Needs product evidence']);
   assert.deepEqual(feasibilityBandLabel('LOW_MEDIUM'), ['中低可行性','Low-medium feasibility']);
   assert.deepEqual(cooperationMatrixLabel('HIGH_FIT_LOW_ACCESS'), ['高匹配但较难进入','High fit, low access']);
   assert.deepEqual(normalizedRoleLabel('PROCUREMENT_DEPARTMENT'), ['采购部门','Procurement Department']);
@@ -243,24 +266,29 @@ test('Phase 6 opportunity labels and filter query remain deterministic and bilin
   assert.deepEqual(systemReasonLabel('Supplier registration route'), ['企业公开的供应商注册路径','Supplier registration route published by the business']);
   assert.deepEqual(contactTypeLabel('UNRECOGNIZED_ROUTE'), ['待确认','To confirm']);
   assert.deepEqual(sourceTypeLabel('UNRECOGNIZED_SOURCE'), ['资料来源','Source reference']);
-  const query = buildOpportunityQuery({ country:'MX',product_profile:'WOMENSWEAR',readiness:'SALES_READY',cooperation_matrix:'HIGH_FIT_HIGH_ACCESS',sort:'' },100);
+  const query = buildOpportunityQuery({ country:'MX',product_profile:'WOMENSWEAR',buyer_business_model:'DIRECT_END_BUYER',buyer_subtype:'CHAIN_RETAILER',category_procurement_match_band:'HIGH',category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',product_access_matrix:'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS',readiness:'SALES_READY',cooperation_matrix:'HIGH_FIT_HIGH_ACCESS',sort:'' },100);
   assert.equal(query.get('country'),'MX');
   assert.equal(query.get('product_profile'),'WOMENSWEAR');
   assert.equal(query.get('readiness'),'SALES_READY');
   assert.equal(query.get('cooperation_matrix'),'HIGH_FIT_HIGH_ACCESS');
-  assert.equal(query.get('sort'),'feasibility_desc');
+  assert.equal(query.get('buyer_business_model'),'DIRECT_END_BUYER');
+  assert.equal(query.get('buyer_subtype'),'CHAIN_RETAILER');
+  assert.equal(query.get('category_procurement_match_band'),'HIGH');
+  assert.equal(query.get('category_procurement_match_status'),'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(query.get('product_access_matrix'),'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS');
+  assert.equal(query.get('sort'),'category_procurement_desc');
   assert.equal(query.get('limit'),'100');
   assert.equal(activeOpportunityFilterCount({ country:'MX',sort:'feasibility_desc',tier:'' }),1);
 });
 
-test('Phase 6 opportunity UI adds foldable filters, semantic columns and the Express enrichment trigger', async () => {
+test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps the Express enrichment trigger', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
-  for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
-  assert.match(html,/id="opportunity-sort"[\s\S]*<option value="feasibility_desc" selected>/);
-  for (const column of ['op-col-company','op-col-market-product','op-col-feasibility','op-col-readiness','op-col-secondary','op-col-contact']) assert.match(html,new RegExp(column));
+  for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-product-access-matrix','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
+  assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
+  for (const column of ['op-col-company','op-col-market-product','op-col-buyer-model','op-col-product-match','op-col-product-opportunity','op-col-supplier-access','op-col-product-access','op-col-readiness','op-col-secondary','op-col-contact']) assert.match(html,new RegExp(column));
   assert.match(html,/id="start-enrichment"/);
   assert.match(html,/id="enrichment-job-status"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(app,/json\('\/api\/enrichment\/jobs',\{ method:'POST'/);
@@ -274,14 +302,70 @@ test('Phase 6 opportunity UI adds foldable filters, semantic columns and the Exp
   assert.doesNotMatch(pollCatch,/setEnrichmentButtonBusy\(false\)/);
   const startJobSegment = app.slice(app.indexOf('async function startEnrichmentJob()'),app.indexOf('const detailDialog'));
   assert.doesNotMatch(startJobSegment,/finally\s*\{/);
-  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.crm-opportunity-table \.op-col-secondary, \.crm-opportunity-table \.op-col-contact\s*\{[^}]*display:\s*none/);
+  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.crm-opportunity-table \.op-col-secondary, \.crm-opportunity-table \.op-col-contact, \.crm-opportunity-table \.op-col-product-access, \.crm-opportunity-table \.op-col-product-opportunity, \.crm-opportunity-table \.op-col-feasibility\s*\{[^}]*display:\s*none/);
   assert.match(css,/\.crm-opportunity-table \.op-col-company/);
   assert.match(css,/\.crm-opportunity-table \.op-col-market-product/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-feasibility, \.crm-opportunity-table \.op-col-readiness/);
-  assert.match(css,/\.crm-opportunity-table :is\(\.op-col-feasibility,\.op-col-readiness\)::before\s*\{[^}]*content:\s*attr\(data-label\)/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-buyer-model\s*\{[^}]*grid-column:\s*1/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-product-match\s*\{[^}]*grid-column:\s*2/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-supplier-access\s*\{[^}]*grid-column:\s*1/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-readiness\s*\{[^}]*grid-column:\s*2/);
+  assert.match(css,/\.crm-opportunity-table :is\(\.op-col-buyer-model,\.op-col-product-match,\.op-col-supplier-access,\.op-col-readiness\)::before\s*\{[^}]*content:\s*attr\(data-label\)/);
   assert.match(css,/#opportunity-table td\[colspan\]\s*\{[^}]*grid-column:\s*1 \/ -1/);
   assert.match(css,/\.crm-opportunity-table \.lead-select-action\s*\{[^}]*display:\s*block/);
   assert.doesNotMatch(`${html}\n${app}`,/source_hash|evidence_hash|source_unc_path|local_staging_path|raw_payload|raw_row/i);
+});
+
+test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier Access labels are deterministic', () => {
+  assert.deepEqual(productMatchBandLabel('VERY_HIGH'), ['很高','Very high']);
+  assert.deepEqual(productMatchBandLabel('UNKNOWN'), ['待补充产品资料','Product evidence required']);
+  assert.deepEqual(productMatchTypeLabel('DIRECT_MATCH'), ['直接匹配','Direct match']);
+  assert.deepEqual(productGapStatusLabel('POSSIBLE_GAP'), ['可能存在产品缺口','Possible product gap']);
+  assert.deepEqual(productGapTypeLabel('CATEGORY_GAP'), ['品类缺口','Category gap']);
+  assert.deepEqual(productMatchDimensionLabel('category_overlap'), ['品类重合度','Category overlap']);
+  assert.deepEqual(productTaxonomyLabel('WOMENSWEAR'), ['全品类女装',"Full-category Women's Apparel"]);
+  assert.deepEqual(productCatalogStatusLabel('HISTORICAL_ORDER_SUPPORTED'), ['历史订单资料支持','Supported by historical order records']);
+  assert.deepEqual(productSourceClassificationLabel('PRODUCT_MASTER'), ['公司商品库','Company product catalog']);
+  assert.deepEqual(buyerBusinessModelLabel('DIRECT_END_BUYER'), ['终端零售买家','Direct end buyer']);
+  assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['品类匹配，采购模式待确认','Category match; buying evidence required']);
+  assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['暂无真实产品候选','No real product candidate']);
+  assert.deepEqual(supplierAccessBandLabel('LOW_MEDIUM'), ['供应商准入中低','Low-medium supplier access']);
+  assert.deepEqual(productAccessMatrixLabel('DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS'), ['终端买家 · 高产品匹配 · 高准入','Direct buyer · high product match · high access']);
+  assert.equal(productMatchScore({ score:null,band:'UNKNOWN' }),null);
+  assert.equal(productMatchScore({ product_match_score:'72' }),72);
+  assert.equal(categoryProcurementScore({ category_procurement_match_score:'70' }),70);
+  assert.equal(productMatchProfile({ product_profile:'womenswear' }),'WOMENSWEAR');
+  assert.deepEqual(productMatchItems({ items:[{ product_profile:'WOMENSWEAR' }] }),[{ product_profile:'WOMENSWEAR' }]);
+  const query = buildOpportunityQuery({ buyer_business_model:'DIRECT_END_BUYER',category_procurement_match_band:'HIGH',category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',product_access_matrix:'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS' },100);
+  assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&product_access_matrix=DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS&sort=category_procurement_desc&limit=100');
+});
+
+test('Phase 6.1 V3 uses eleven buyer-first opportunity columns and two independent Product Match cards', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
+  const productStart = app.indexOf('const PRODUCT_MATCH_PROFILES');
+  const productEnd = app.indexOf('const crmBusinessText',productStart);
+  assert.ok(productStart >= 0 && productEnd > productStart);
+  const productSegment = app.slice(productStart,productEnd);
+  for (const label of ['Buyer Model','Product Match','Product Opportunity','Supplier Access','Product Access Matrix','Secondary Scores','Readiness']) assert.match(html,new RegExp(label));
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="11"/);
+  assert.match(app,/const PRODUCT_MATCH_PROFILES = Object\.freeze\(\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\)/);
+  assert.match(app,/id="detail-tab-\$\{key\}"/);
+  assert.match(app,/\['product-match','产品匹配','Product Match'\]/);
+  assert.match(app,/id="detail-panel-product-match"/);
+  for(const endpoint of ['category-procurement-matches','buyer-business-model','product-opportunities']) assert.match(app,new RegExp(`/api/companies/\\$\\{encodedCompanyId\\}/${endpoint}`));
+  for (const stateName of ['loading','empty','error']) assert.match(productSegment,new RegExp(`productMatchStateCard\\(profile,'${stateName}'`));
+  for(const stateName of ['unknown','weak','mismatch','excluded','ready']) assert.match(productSegment,new RegExp(`'${stateName}'`));
+  assert.match(productSegment,/data-product-match-retry/);
+  assert.match(productSegment,/score == null \|\| !band \|\| band === 'UNKNOWN'/);
+  assert.match(productSegment,/Category Procurement Match/);
+  assert.match(productSegment,/Buyer Business Model/);
+  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.op-col-product-match\s*\{[^}]*grid-column:\s*2/);
+  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.op-col-buyer-model\s*\{[^}]*grid-column:\s*1/);
+  assert.match(css,/\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(css,/\.crm-detail-tabs button\s*\{[^}]*min-height:\s*44px/);
+  assert.doesNotMatch(productSegment,/supplier_price|supplier_currency|customer_sales_price|customer_sales_currency|profit|historical_customer_id|historical_order_id|source_import_row_id|source_identity_key|shared_folder_path|asset_reference|raw_internal_payload|internal_description/i);
 });
 
 test('Phase 6 detail keeps internal versions hidden and protects approval work from accidental dismissal', async () => {
@@ -343,7 +427,7 @@ test('Phase 5 V2.3 keeps management and Mexico historical matches separate', asy
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(html,/Management Baseline Match/);
   assert.match(html,/Mexico Historical Reference Match/);
-  assert.match(html,/id="opportunity-table"[\s\S]*colspan="14"/);
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="11"/);
   assert.match(app,/matchRecord\(payload, 'management_baseline'\)/);
   assert.match(app,/matchRecord\(payload, 'mx_historical_reference'\)/);
   assert.match(app,/matchReferencePanel\(managementMatch,'management_baseline'\)/);

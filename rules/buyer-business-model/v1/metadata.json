@@ -1,0 +1,7 @@
+{
+  "rule_version": "buyer-business-model-v1",
+  "decision": "Buyer Business Model",
+  "inputs": "Verified public category, retail, procurement, import, inventory and distribution observations",
+  "outputs": ["buyer_model", "buyer_subtype", "eligibility_status", "priority_tier", "confidence_band", "reason_codes"],
+  "discovery_only_is_evidence": false
+}

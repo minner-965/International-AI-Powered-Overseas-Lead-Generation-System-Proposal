@@ -35,6 +35,31 @@ import {
   systemReasonLabel,
   systemRouteLabel
 } from './opportunity-ui.js';
+import {
+  buyerBusinessModelItems,
+  buyerBusinessModelLabel,
+  buyerBusinessModelTone,
+  buyerSubtypeLabel,
+  categoryProcurementItems,
+  categoryProcurementScore,
+  categoryProcurementStatusLabel,
+  categoryProcurementStatusTone,
+  productAccessMatrixLabel,
+  productCatalogStatusLabel,
+  productMatchBandLabel,
+  productMatchBandTone,
+  productMatchDimensionLabel,
+  productMatchProfile,
+  productMatchReasonLabel,
+  productMatchResultId,
+  productOpportunityItems,
+  productOpportunityStatusLabel,
+  productOpportunityStatusTone,
+  supplierAccessBandLabel,
+  supplierAccessBandTone,
+  productSourceClassificationLabel,
+  productTaxonomyLabel
+} from './product-match-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const state = {
@@ -57,7 +82,8 @@ const state = {
   crmHistoryPage: 1,
   crmHistoryPageSize: 15,
   companyPage: 1,
-  companyPageSize: 15
+  companyPageSize: 15,
+  productMatchRequestId: 0
 };
 applyMarketVisibility();
 const metricLabels = [
@@ -176,7 +202,7 @@ const productProfilesCell = lead => {
     ? bi('日用百货','General Merchandise')
     : bi('全品类女装',"Full-category Women's Apparel")).join('');
 };
-const readinessTone = value => ({ SALES_READY:'active',SUPPRESSED:'rejected',EXISTING_CUSTOMER:'superseded',STRATEGIC_LONG_SHOT:'review',NEEDS_DECISION_MAKER:'aging',NEEDS_CONTACT_ROUTE:'aging',NEEDS_VERIFICATION:'review',HISTORICAL_REVIEW:'review',REVIEW:'review' }[String(value || '').toUpperCase()] || 'unknown');
+const readinessTone = value => ({ SALES_READY:'active',SUPPRESSED:'rejected',EXISTING_CUSTOMER:'superseded',STRATEGIC_LONG_SHOT:'review',INELIGIBLE_BUYER_MODEL:'rejected',PRODUCT_MISMATCH:'rejected',WEAK_CATEGORY_MATCH:'aging',WEAK_PRODUCT_MATCH:'aging',CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE:'review',NEEDS_INTERNAL_CATALOG_EVIDENCE:'review',NEEDS_PRODUCT_RECOMMENDATION:'review',NEEDS_PRODUCT_EVIDENCE:'review',NEEDS_DECISION_MAKER:'aging',NEEDS_CONTACT_ROUTE:'aging',NEEDS_VERIFICATION:'review',HISTORICAL_REVIEW:'review',REVIEW:'review' }[String(value || '').toUpperCase()] || 'unknown');
 const feasibilityTone = value => ({ HIGH:'active',MEDIUM:'review',LOW_MEDIUM:'aging',LOW:'rejected' }[String(value || '').toUpperCase()] || 'unknown');
 const verificationTone = value => ({ VERIFIED:'active',VALID:'active',PUBLICLY_OBSERVED:'current',BUSINESS_WHATSAPP_OBSERVED:'current',FORMAT_VALID:'review',ACCEPT_ALL:'review',NOT_VERIFIED:'aging',UNKNOWN:'unknown',INVALID:'rejected',INVALID_FORMAT:'rejected',REJECTED:'rejected' }[String(value || '').toUpperCase()] || 'unknown');
 const relationshipTone = value => ({ NEW_PROSPECT:'active',HISTORICAL_CRM_LEAD:'review',HISTORICAL_CONTACTED_LEAD:'review',INTERNAL_EXISTING_CUSTOMER:'superseded',SUPPRESSED:'rejected',REVIEW:'review' }[String(value || '').toUpperCase()] || 'unknown');
@@ -609,6 +635,7 @@ function sortedLeads(items, mode) {
   if (mode === 'name_asc') return copy.sort(compareName);
   if (mode === 'tier_asc') return copy.sort((a,b)=>String(a.tier || 'Z').localeCompare(String(b.tier || 'Z')) || (leadScoreValue(b) ?? -1) - (leadScoreValue(a) ?? -1));
   if (mode === 'match_desc') return copy.sort((a,b)=>(matchScoreValue(b) ?? -1) - (matchScoreValue(a) ?? -1) || (leadScoreValue(b) ?? -1) - (leadScoreValue(a) ?? -1));
+  if (mode === 'category_procurement_desc') return copy.sort((a,b)=>(categoryProcurementScore(b) ?? -1) - (categoryProcurementScore(a) ?? -1) || (leadScoreValue(b) ?? -1) - (leadScoreValue(a) ?? -1));
   return copy.sort((a,b)=>(leadScoreValue(b) ?? -1) - (leadScoreValue(a) ?? -1) || compareName(a,b));
 }
 
@@ -657,7 +684,7 @@ function renderOverviewCompanies() {
 
 function collectOpportunityFilters() {
   const form = $('#opportunity-filters');
-  return form ? Object.fromEntries(new FormData(form).entries()) : { sort:$('#opportunity-sort')?.value || 'feasibility_desc' };
+  return form ? Object.fromEntries(new FormData(form).entries()) : { sort:$('#opportunity-sort')?.value || 'category_procurement_desc' };
 }
 
 function syncOpportunityFilters() {
@@ -691,6 +718,71 @@ function opportunityFeasibilityCell(item) {
   return `<span class="crm-feasibility-cell"><b>${esc(Math.round(score))}/100</b>${enumBadge(feasibilityBandLabel(item.feasibility_band),feasibilityTone(item.feasibility_band))}</span>`;
 }
 
+function productMatchBusinessValue(value) {
+  const text = displayValue(typeof value === 'object' ? value?.canonical_name || value?.name || value?.label || value?.category || value?.subcategory : value);
+  if (!text) return '';
+  const mapped = productTaxonomyLabel(text);
+  if (mapped[0] !== '待确认' || mapped[1] !== 'To confirm') return pairHtml(mapped);
+  return (/^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$/.test(text) || /^[A-Z][A-Z0-9]*$/.test(text)) ? pairHtml(['待确认','To confirm']) : esc(text);
+}
+
+function firstProductMatchValue(value) {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function opportunityProductMatchCell(item) {
+  const score = categoryProcurementScore(item);
+  const band = String(item.category_procurement_match_band || item.band || '').toUpperCase();
+  const status = String(item.category_procurement_match_status || item.match_status || '').toUpperCase();
+  const hasResult = Boolean(productMatchResultId(item) || band || status || item.category_procurement_match_calculated_at || item.created_at);
+  if (score == null && !hasResult) return `<span class="crm-cell-empty">${bi('暂无产品匹配结果','No Product Match result')}</span>`;
+  const coverage = numericValue(item.category_procurement_coverage ?? item.coverage_percent ?? item.coverage);
+  const unknown = score == null || !band || band === 'UNKNOWN';
+  return `<span class="crm-product-match-cell ${unknown ? 'is-unknown' : ''}"><span class="crm-product-match-heading">${unknown ? enumBadge(productMatchBandLabel('UNKNOWN'),'unknown') : `<b>${esc(Math.round(score))}/100</b>${enumBadge(productMatchBandLabel(band),productMatchBandTone(band))}`}</span>${status ? `<small>${bi('品类采购状态','Category procurement status')}<span>${enumBadge(categoryProcurementStatusLabel(status),categoryProcurementStatusTone(status))}</span></small>` : ''}${coverage == null ? '' : `<small>${bi('资料覆盖率','Evidence coverage')}<span>${esc(coverage)}%</span></small>`}</span>`;
+}
+
+function opportunityBuyerModelCell(item) {
+  const model = String(item.buyer_business_model || 'UNKNOWN').toUpperCase();
+  const subtype = String(item.buyer_subtype || '').toUpperCase();
+  return `<span class="crm-buyer-model-cell">${enumBadge(buyerBusinessModelLabel(model),buyerBusinessModelTone(model))}${subtype ? `<small>${pairHtml(buyerSubtypeLabel(subtype))}</small>` : ''}</span>`;
+}
+
+function opportunityProductValue(value) {
+  if (value && typeof value === 'object') return displayValue(value.display_label || value.safe_product_name || value.product_name || value.name || value.label);
+  const text = displayValue(value);
+  if (text.startsWith('{')) {
+    try { return opportunityProductValue(JSON.parse(text)); } catch {}
+  }
+  return text;
+}
+
+function opportunityProductSummaryCell(item) {
+  const categories = valueList(item.observed_categories || item.matched_categories || item.matched_category);
+  const category = firstProductMatchValue(categories);
+  const topProduct = opportunityProductValue(item.top_product_opportunity || item.top_product_name);
+  const status = String(item.product_opportunity_status || item.recommendation_status || '').toUpperCase();
+  const count = numericValue(item.product_opportunity_count ?? item.candidate_count);
+  if (!category && !topProduct && !status && count == null) return `<span class="crm-cell-empty">${bi('产品机会待评估','Product opportunity not assessed')}</span>`;
+  return `<span class="crm-product-opportunity-cell">${category ? `<span>${bi('客户经营品类','Observed Category')}<strong>${productMatchBusinessValue(category)}</strong></span>` : ''}${topProduct ? `<span>${bi('优先产品机会','Top Product Opportunity')}<strong>${esc(topProduct)}</strong></span>` : ''}${status ? `<span>${bi('推荐状态','Recommendation status')}${enumBadge(productOpportunityStatusLabel(status),productOpportunityStatusTone(status))}</span>` : ''}${count == null ? '' : `<span>${bi('真实产品候选','Real product candidates')}<strong>${esc(Math.round(count))}</strong></span>`}</span>`;
+}
+
+function opportunitySupplierAccessCell(item) {
+  const band = String(item.supplier_access_band || 'UNKNOWN').toUpperCase();
+  const score = numericValue(item.supplier_access_score);
+  const coverage = numericValue(item.supplier_access_coverage);
+  return `<span class="crm-supplier-access-cell"><span class="crm-product-match-heading">${score == null ? '' : `<b>${esc(Math.round(score))}/100</b>`}${enumBadge(supplierAccessBandLabel(band),supplierAccessBandTone(band))}</span>${coverage == null ? '' : `<small>${bi('资料覆盖率','Evidence coverage')}<span>${esc(coverage)}%</span></small>`}</span>`;
+}
+
+function opportunitySecondaryScores(item) {
+  const management = managementMatchScoreValue(item);
+  const historical = historicalMatchScoreValue(item);
+  const dpv = leadScoreValue(item);
+  const tier = displayValue(item.tier || item.current_tier) || '-';
+  const scoreValue = value => value == null ? bi('待计算','Not calculated') : `<b>${esc(Math.round(value))}/100</b>`;
+  return `<span class="crm-secondary-scores"><span>${bi('管理基准','Management')}${scoreValue(management)}</span><span>${bi('墨西哥历史参考','MX Historical')}${scoreValue(historical)}</span><span>${bi('DPV 评分 / 等级','DPV Score / Tier')}<b>${dpv == null ? '-' : `${esc(Math.round(dpv))}/100`} · ${esc(tier)}</b></span></span>`;
+}
+
 function opportunitySupplierCell(item) {
   const count = Number(item.supplier_route_count || 0);
   const portal = safeUrl(item.supplier_portal_url);
@@ -709,27 +801,29 @@ function renderOpportunityTable() {
   const host = $('#opportunity-table');
   if (!host) return;
   const fallback = state.opportunities.length ? state.opportunities : state.leads;
-  const items = state.opportunitiesFromApi ? state.opportunities : sortedLeads(fallback,$('#opportunity-sort')?.value || 'feasibility_desc');
+  const items = state.opportunitiesFromApi ? state.opportunities : sortedLeads(fallback,$('#opportunity-sort')?.value || 'category_procurement_desc');
   host.innerHTML = items.length ? items.map(item=>{
+    const opportunityKey = displayValue(item.opportunity_key) || `${companyIdFor(item)}:${productProfileCode(item) || 'UNSPECIFIED'}`;
     const contact = { contact_type:item.best_contact_type,value:item.best_contact };
-    const matrix = item.cooperation_matrix ? pairHtml(cooperationMatrixLabel(item.cooperation_matrix)) : `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
-    const contactVerification = item.contact_verification
-      ? enumBadge(opportunityContactVerificationLabel(item.contact_verification),verificationTone(item.contact_verification))
-      : `<span class="crm-cell-empty">${bi('待确认','To confirm')}</span>`;
-    const readiness = item.opportunity_readiness
-      ? enumBadge(opportunityReadinessLabel(item.opportunity_readiness),readinessTone(item.opportunity_readiness))
+    const productAccess = item.product_access_matrix
+      ? pairHtml(productAccessMatrixLabel(item.product_access_matrix))
       : `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
-    return `<tr>
+    const readinessValue = item.readiness || item.opportunity_readiness;
+    const readiness = readinessValue
+      ? enumBadge(opportunityReadinessLabel(readinessValue),readinessTone(readinessValue))
+      : `<span class="crm-cell-empty">${bi('待评估','Not assessed')}</span>`;
+    return `<tr data-opportunity-key="${esc(opportunityKey)}">
       <td class="op-col-company" data-label="公司 / Company"><button class="crm-company-link crm-opportunity-company" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看客户','View prospect')}</span></button></td>
-      <td class="op-col-market-product" data-label="市场与产品 / Market and product"><strong>${esc(marketValue(item))}</strong>${productProfilesCell(item)}</td>
-      <td class="op-col-secondary">${matchCell(item)}</td><td class="op-col-secondary">${historicalMatchCell(item)}</td>
-      <td class="op-col-secondary"><span class="crm-score-tier">${scoreCell(item)}${tierScore(item)}</span></td>
-      <td class="op-col-contact">${opportunityBuyerCell(item)}</td><td class="op-col-secondary">${opportunityRoleCell(item)}</td>
-      <td class="op-col-contact">${contactValueHtml(contact)}</td><td class="op-col-secondary">${contactVerification}</td>
-      <td class="op-col-feasibility" data-label="合作可行性 / Cooperation feasibility">${opportunityFeasibilityCell(item)}</td><td class="op-col-secondary">${matrix}</td>
-      <td class="op-col-secondary">${opportunitySupplierCell(item)}</td><td class="op-col-secondary">${opportunityBarrierCell(item)}</td>
+      <td class="op-col-market-product" data-label="市场与产品画像 / Market and product profile"><strong>${esc(marketValue(item))}</strong>${productProfilesCell(item)}</td>
+      <td class="op-col-buyer-model" data-label="客户采购模式 / Buyer Model">${opportunityBuyerModelCell(item)}</td>
+      <td class="op-col-product-match" data-label="产品匹配 / Product Match">${opportunityProductMatchCell(item)}</td>
+      <td class="op-col-product-opportunity" data-label="产品机会 / Product Opportunity">${opportunityProductSummaryCell(item)}</td>
+      <td class="op-col-supplier-access" data-label="供应商准入 / Supplier Access">${opportunitySupplierAccessCell(item)}</td>
+      <td class="op-col-product-access" data-label="产品与准入矩阵 / Product Access Matrix">${productAccess}</td>
+      <td class="op-col-contact">${opportunityBuyerCell(item)}</td><td class="op-col-contact op-col-contact-route" data-label="最佳联系路径 / Best Contact">${contactValueHtml(contact)}</td>
+      <td class="op-col-secondary">${opportunitySecondaryScores(item)}</td>
       <td class="op-col-readiness" data-label="跟进准备状态 / Readiness">${readiness}</td></tr>`;
-  }).join('') : `<tr><td colspan="14" class="crm-loading-cell">${bi(activeOpportunityFilterCount(collectOpportunityFilters()) ? '当前筛选没有业务机会。' : '当前没有可显示的业务机会。',activeOpportunityFilterCount(collectOpportunityFilters()) ? 'No opportunities match the current filters.' : 'No opportunities are available.')}</td></tr>`;
+  }).join('') : `<tr><td colspan="11" class="crm-loading-cell">${bi(activeOpportunityFilterCount(collectOpportunityFilters()) ? '当前筛选没有业务机会。' : '当前没有可显示的业务机会。',activeOpportunityFilterCount(collectOpportunityFilters()) ? 'No opportunities match the current filters.' : 'No opportunities are available.')}</td></tr>`;
   host.querySelectorAll('[data-opportunity-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.opportunityId)));
 }
 
@@ -1237,6 +1331,213 @@ function openDetail(detail) {
   detail.querySelector('.crm-detail-back')?.focus({ preventScroll:true });
 }
 
+const PRODUCT_MATCH_PROFILES = Object.freeze(['WOMENSWEAR','GENERAL_MERCHANDISE']);
+const productMatchProfileHtml = profile => pairHtml(productTaxonomyLabel(profile));
+const productMatchDate = result => {
+  const value = result?.last_assessed_at || result?.calculated_at || result?.created_at || result?.category_procurement_match_calculated_at || result?.product_match_calculated_at;
+  return value ? esc(new Date(value).toLocaleString()) : '-';
+};
+const productMatchCollection = (result, ...keys) => {
+  for (const key of keys) if (Array.isArray(result?.[key])) return result[key];
+  return [];
+};
+const productMatchNamedValue = item => displayValue(typeof item === 'object'
+  ? item?.display_label || item?.safe_product_name || item?.product_name || item?.name || item?.raw_product_name || item?.category || item?.normalized_category || item?.subcategory || item?.normalized_subcategory
+  : item);
+const productMatchCategoryValue = item => displayValue(typeof item === 'object'
+  ? item?.canonical_name || item?.category || item?.normalized_category || item?.raw_category || item?.subcategory || item?.normalized_subcategory || item?.raw_product_name
+  : item);
+
+function productMatchTags(items, emptyZh, emptyEn, { taxonomy = false } = {}) {
+  const values = items.map(productMatchCategoryValue).filter(Boolean);
+  if (!values.length) return `<div class="crm-empty-inline">${bi(emptyZh,emptyEn)}</div>`;
+  return `<div class="crm-product-match-tags">${values.map(value=>`<span>${taxonomy ? productMatchBusinessValue(value) : esc(value)}</span>`).join('')}</div>`;
+}
+
+function productMatchDimensionRows(result) {
+  const dimensions = result?.dimension_breakdown || result?.dimensions || result?.dimension_scores;
+  const entries = Array.isArray(dimensions)
+    ? dimensions.map(item=>[item.dimension || item.dimension_code || item.name,item.score ?? item.points,item.max_score ?? item.maximum ?? item.max_points,item.reason_codes || []])
+    : dimensions && typeof dimensions === 'object'
+      ? Object.entries(dimensions).map(([name,value])=>[name,value?.score ?? value?.points ?? value,value?.max_score ?? value?.maximum ?? value?.max_points,value?.reason_codes || []])
+      : [];
+  if (!entries.length) return `<div class="crm-empty-inline">${bi('暂无产品匹配维度明细。','No Product Match dimension details are available.')}</div>`;
+  return `<div class="crm-dimension-list">${entries.map(([name,score,maxScore,reasons])=>`<div class="crm-dimension-row"><div><span>${pairHtml(productMatchDimensionLabel(name))}</span>${Array.isArray(reasons) && reasons.length ? `<small>${reasons.map(reason=>pairHtml(productMatchReasonLabel(typeof reason === 'object' ? reason.code || reason.reason_code : reason))).join('<br>')}</small>` : ''}</div><b>${score == null ? '-' : esc(score)}${maxScore == null ? '' : `/${esc(maxScore)}`}</b></div>`).join('')}</div>`;
+}
+
+function productMatchCandidateList(result) {
+  const candidates = productMatchCollection(result,'candidates','top_candidates','top_products','product_candidates','matched_products');
+  if (!candidates.length) return `<div class="crm-empty-inline">${bi('暂无优先产品候选。','No priority product candidates are available.')}</div>`;
+  return `<ol class="crm-product-match-candidates">${candidates.map((item,index)=>{
+    const name = productMatchNamedValue(item) || '-';
+    const category = productMatchNamedValue(item?.category || item?.normalized_category || item?.subcategory || item?.normalized_subcategory);
+    const rank = Number(item?.rank) > 0 ? Number(item.rank) : index + 1;
+    const catalog = item?.catalog_status ? pairHtml(productCatalogStatusLabel(item.catalog_status)) : '';
+    const source = item?.source_classification ? pairHtml(productSourceClassificationLabel(item.source_classification)) : '';
+    const reasons = valueList(item?.match_reason_codes).slice(0,2);
+    return `<li><span class="crm-product-match-rank">${esc(rank)}</span><div><strong>${esc(name)}</strong>${category ? `<small>${productMatchBusinessValue(category)}</small>` : ''}${catalog ? `<small>${catalog}</small>` : ''}${source ? `<small>${source}</small>` : ''}${reasons.map(reason=>`<small>${pairHtml(productMatchReasonLabel(reason))}</small>`).join('')}</div></li>`;
+  }).join('')}</ol>`;
+}
+
+function productMatchEvidence(result) {
+  const evidence = productMatchCollection(result,'source_references','evidence_sources','public_evidence','sources','evidence');
+  const links = evidence.map(item=>({ url:safeUrl(typeof item === 'string' ? item : item?.source_url || item?.url), captured:item?.captured_at })).filter(item=>item.url !== '#');
+  if (!links.length) return `<div class="crm-empty-inline">${bi('暂无公开产品资料链接。','No public product source is available.')}</div>`;
+  return `<div class="sources crm-product-match-evidence">${links.map(item=>`<a href="${esc(item.url)}" target="_blank" rel="noreferrer">${bi('查看公开产品资料','Open public product source')}${item.captured ? `<small>${esc(new Date(item.captured).toLocaleString())}</small>` : ''}</a>`).join('')}</div>`;
+}
+
+function productMatchManagementSummary(result) {
+  const matched = productMatchCollection(result,'observed_categories','matched_categories','matched_dpv_categories','matched_subcategories');
+  const candidates = productMatchCollection(result,'candidates','top_candidates','top_products','product_candidates','matched_products');
+  const missing = productMatchCollection(result,'missing_evidence','missing_information');
+  const buyerModel = String(result?.buyer_business_model || result?.buyer_model || 'UNKNOWN').toUpperCase();
+  const matchStatus = String(result?.category_procurement_match_status || result?.match_status || 'NEEDS_PRODUCT_EVIDENCE').toUpperCase();
+  const entryProducts = candidates.slice(0,3).map(productMatchNamedValue).filter(Boolean);
+  const mainToConfirm = missing.slice(0,3).map(item=>pairHtml(productMatchReasonLabel(typeof item === 'object' ? item.code || item.reason_code || item.dimension : item))).join('<br>') || bi('暂无已记录的待确认项。','No confirmation item is recorded.');
+  const conclusion = buyerModel === 'EXCLUDED_INTERMEDIARY' || matchStatus === 'INELIGIBLE_BUYER_MODEL'
+    ? bi('客户模式已排除，不进入新客户产品机会池。','The buyer model is excluded from the new-customer product opportunity pool.')
+    : matchStatus === 'PRODUCT_MISMATCH'
+      ? bi('现有资料确认品类不匹配，当前列为低优先级。','Available evidence confirms a category mismatch; keep this at lower priority.')
+      : matchStatus === 'CATEGORY_PROCUREMENT_MATCH'
+        ? bi('品类采购关系已通过，可继续核对采购联系人、产品推荐与供应商准入。','Category procurement is confirmed; continue with buying contacts, product recommendations and supplier access.')
+        : matchStatus === 'WEAK_CATEGORY_MATCH'
+          ? bi('品类关系较弱，建议补充经营品类与采购依据后再推进。','The category relationship is weak; add assortment and buying evidence before proceeding.')
+          : bi('需先补充品类或采购模式依据，再判断产品机会。','Add category or buyer-model evidence before assessing the product opportunity.');
+  return `<section class="crm-detail-section crm-product-match-summary"><h5>${bi('业务判断摘要','Management Summary')}</h5>${factRows([
+    ['客户类型','Customer type',pairHtml(buyerBusinessModelLabel(buyerModel))],
+    ['为什么匹配','Why it fits',matched.length ? bi(`已记录 ${matched.length} 个客户经营品类依据。`,`${matched.length} observed ${matched.length === 1 ? 'category is' : 'categories are'} recorded.`) : bi('客户经营品类依据待补充。','Observed-category evidence is required.')],
+    ['主要可切入品类','Priority entry categories',matched.length ? matched.slice(0,3).map(productMatchCategoryValue).filter(Boolean).map(productMatchBusinessValue).join(' · ') : bi('可切入品类待确认。','Entry categories to confirm.')],
+    ['优先推荐产品','Recommended products',entryProducts.length ? esc(entryProducts.join(' · ')) : bi('暂无真实产品候选。','No real product candidate is available.')],
+    ['主要待确认','Main items to confirm',mainToConfirm],
+    ['结论','Conclusion',conclusion]
+  ])}</section>`;
+}
+
+function productMatchStateCard(profile, stateName, companyId = '') {
+  const profileName = productMatchProfileHtml(profile);
+  const attrs = `class="crm-product-match-card crm-product-profile-card is-${esc(stateName)}" data-product-profile="${esc(profile)}" data-product-match-profile="${esc(profile)}" data-product-match-state="${esc(stateName)}"`;
+  if (stateName === 'loading') return `<article ${attrs} role="status" aria-busy="true"><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('正在读取产品匹配','Loading Product Match')}</div></article>`;
+  if (stateName === 'error') return `<article ${attrs} role="alert"><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('产品匹配资料读取未完成。','Product Match data could not be loaded.')}</div><button class="btn btn-outline-secondary crm-product-match-retry" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></article>`;
+  return `<article ${attrs}><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('暂无该产品画像的匹配结果。','No Product Match result is available for this profile.')}</div></article>`;
+}
+
+function productMatchBusinessEvidence(result) {
+  const values = productMatchCollection(result,'buyer_model_evidence','business_model_evidence','retail_store_distribution_evidence','procurement_evidence','observations');
+  if (!values.length) return `<div class="crm-empty-inline">${bi('零售、门店或分销依据待补充。','Retail, store or distribution evidence is required.')}</div>`;
+  return `<ul class="reason-list">${values.slice(0,8).map(item=>{ const value = typeof item === 'object' ? item.evidence_text || item.summary || item.reason || item.reason_code || item.observation_type : item; return `<li>${/^[A-Z0-9_:-]+$/.test(String(value || '')) ? pairHtml(productMatchReasonLabel(value)) : esc(displayValue(value) || '-')}</li>`; }).join('')}</ul>`;
+}
+
+function productOpportunityView(result) {
+  const status = String(result?.product_opportunity_status || result?.recommendation_status || 'UNKNOWN').toUpperCase();
+  const candidates = productMatchCollection(result,'candidates','top_candidates','top_products','product_candidates','matched_products');
+  const count = numericValue(result?.product_opportunity_count ?? result?.candidate_count) ?? candidates.length;
+  const note = status === 'NO_REAL_CANDIDATE'
+    ? bi('当前没有真实产品候选；这不会推翻已确认的品类采购匹配。','No real product candidate is available; this does not reverse a confirmed Category Procurement Match.')
+    : status === 'NOT_RUN_GATE_FAILED'
+      ? bi('品类采购门槛尚未通过，因此本次未运行具体商品推荐。','The Category Procurement gate has not passed, so product recommendations were not run.')
+      : '';
+  return `<div class="crm-product-opportunity-detail"><div class="crm-product-opportunity-status">${enumBadge(productOpportunityStatusLabel(status),productOpportunityStatusTone(status))}<span>${bi(`真实产品候选：${Math.round(count)}`,`Real product candidates: ${Math.round(count)}`)}</span></div>${note ? `<p class="crm-helper">${note}</p>` : ''}${productMatchCandidateList(result)}</div>`;
+}
+
+function productMatchMissingEvidence(result) {
+  const missing = productMatchCollection(result,'missing_evidence','missing_information','missing_catalog_evidence');
+  if (!missing.length) return `<div class="crm-empty-inline">${bi('当前没有已记录的待补资料项。','No missing evidence is recorded.')}</div>`;
+  return `<ul class="reason-list">${missing.map(item=>`<li>${pairHtml(productMatchReasonLabel(typeof item === 'object' ? item.code || item.reason_code || item.dimension : item))}</li>`).join('')}</ul>`;
+}
+
+function productMatchResultCard(profile, result, { apiError = false, companyId = '' } = {}) {
+  const score = categoryProcurementScore(result);
+  const band = String(result?.category_procurement_match_band || result?.band || '').toUpperCase();
+  const matchStatus = String(result?.category_procurement_match_status || result?.match_status || 'NEEDS_PRODUCT_EVIDENCE').toUpperCase();
+  const buyerModel = String(result?.buyer_business_model || result?.buyer_model || 'UNKNOWN').toUpperCase();
+  const buyerSubtype = String(result?.buyer_subtype || 'UNKNOWN').toUpperCase();
+  const unknown = score == null || !band || band === 'UNKNOWN' || ['CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_PRODUCT_EVIDENCE','NEEDS_INTERNAL_CATALOG_EVIDENCE'].includes(matchStatus);
+  const cardState = apiError ? 'error' : buyerModel === 'EXCLUDED_INTERMEDIARY' || matchStatus === 'INELIGIBLE_BUYER_MODEL' ? 'excluded' : matchStatus === 'PRODUCT_MISMATCH' ? 'mismatch' : matchStatus === 'WEAK_CATEGORY_MATCH' ? 'weak' : unknown ? 'unknown' : 'ready';
+  const matched = productMatchCollection(result,'matched_categories','matched_dpv_categories','matched_subcategories');
+  const observed = productMatchCollection(result,'observed_categories','prospect_observed_categories','product_observations');
+  const coverage = numericValue(result?.category_procurement_coverage ?? result?.coverage_percent ?? result?.coverage);
+  const supplierBand = String(result?.supplier_access_band || 'UNKNOWN').toUpperCase();
+  const supplierScore = numericValue(result?.supplier_access_score);
+  const supplierCoverage = numericValue(result?.supplier_access_coverage);
+  return `<article class="crm-product-match-card crm-product-profile-card is-${esc(cardState)}" data-product-profile="${esc(profile)}" data-product-match-profile="${esc(profile)}" data-product-match-state="${esc(cardState)}">
+    <header><div><h4>${productMatchProfileHtml(profile)}</h4><div class="crm-product-match-type">${enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))}</div></div><div class="crm-product-match-score">${unknown ? enumBadge(productMatchBandLabel('UNKNOWN'),'unknown') : `<b>${esc(Math.round(score))}/100</b>${enumBadge(productMatchBandLabel(band),productMatchBandTone(band))}`}</div></header>
+    ${apiError ? `<div class="alert alert-warning crm-product-match-api-error" role="alert">${bi('部分产品匹配资料读取未完成。','Some Product Match data could not be loaded.')}<button class="btn btn-outline-secondary crm-product-match-retry" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></div>` : ''}
+    ${factRows([
+      ['客户采购模式','Buyer Business Model',enumBadge(buyerBusinessModelLabel(buyerModel),buyerBusinessModelTone(buyerModel))],
+      ['客户类型','Buyer subtype',pairHtml(buyerSubtypeLabel(buyerSubtype))],
+      ['客户资格','Eligibility',pairHtml(({ELIGIBLE:['符合','Eligible'],NEEDS_EVIDENCE:['依据待补充','Evidence required'],INELIGIBLE:['不符合','Ineligible']})[String(result?.eligibility_status || '').toUpperCase()] || ['待确认','To confirm'])],
+      ['判断把握度','Confidence',pairHtml(({HIGH:['高','High'],MEDIUM:['中','Medium'],LOW:['低','Low'],UNKNOWN:['待确认','To confirm']})[String(result?.confidence_band || 'UNKNOWN').toUpperCase()] || ['待确认','To confirm'])],
+      ['品类采购状态','Category Procurement Match',enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))],
+      ['资料覆盖率','Evidence coverage',coverage == null ? '-' : `${esc(coverage)}%`],
+      ['供应商准入','Supplier Access',`${supplierScore == null ? '' : `<b>${esc(Math.round(supplierScore))}/100</b>`}${enumBadge(supplierAccessBandLabel(supplierBand),supplierAccessBandTone(supplierBand))}${supplierCoverage == null ? '' : `<small>${bi(`资料覆盖率 ${supplierCoverage}%`,`Evidence coverage ${supplierCoverage}%`)}</small>`}`],
+      ['最近评估','Last assessed',productMatchDate(result)]
+    ])}
+    ${productMatchManagementSummary(result)}
+    <section class="crm-detail-section"><h5>${bi('客户公开经营品类','Observed categories')}</h5>${productMatchTags(observed,'暂无公开经营品类。','No observed categories are available.',{taxonomy:true})}</section>
+    <section class="crm-detail-section"><h5>${bi('匹配公司品类','Matched company categories')}</h5>${productMatchTags(matched,'暂无匹配公司品类。','No matched company categories are available.',{taxonomy:true})}</section>
+    <section class="crm-detail-section"><h5>${bi('零售、门店或分销依据','Retail, store or distribution evidence')}</h5>${productMatchBusinessEvidence(result)}</section>
+    <section class="crm-detail-section"><h5>${bi('产品机会','Product Opportunity')}</h5>${productOpportunityView(result)}</section>
+    <section class="crm-detail-section"><h5>${bi('品类采购匹配维度','Category Procurement Match dimensions')}</h5>${productMatchDimensionRows(result)}</section>
+    <section class="crm-detail-section"><h5>${bi('待补资料','Missing evidence')}</h5>${productMatchMissingEvidence(result)}</section>
+    <section class="crm-detail-section"><h5>${bi('公开资料来源','Public source references')}</h5>${productMatchEvidence(result)}</section>
+  </article>`;
+}
+
+function wireProductMatchRetry(host, companyId) {
+  host.querySelectorAll('[data-product-match-retry]').forEach(button=>button.addEventListener('click',()=>{
+    const requestId = ++state.productMatchRequestId;
+    loadProductMatchesPanel(companyId,requestId);
+  }));
+}
+
+const productMatchApiRecord = item => item && typeof item === 'object'
+  ? { ...(item.summary && typeof item.summary === 'object' ? item.summary : {}), ...(item.result && typeof item.result === 'object' && !Array.isArray(item.result) ? item.result : {}), ...item }
+  : {};
+
+async function loadProductMatchesPanel(companyId, requestId) {
+  const host = $('#product-match-panel');
+  if (!host || requestId !== state.productMatchRequestId) return;
+  host.setAttribute('aria-busy','true');
+  host.innerHTML = `<div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'loading',companyId)).join('')}</div>`;
+  const encodedCompanyId = encodeURIComponent(companyId);
+  const [categoryResponse,buyerResponse,opportunityResponse] = await Promise.allSettled([
+    json(`/api/companies/${encodedCompanyId}/category-procurement-matches`),
+    json(`/api/companies/${encodedCompanyId}/buyer-business-model`),
+    json(`/api/companies/${encodedCompanyId}/product-opportunities`)
+  ]);
+  if (requestId !== state.productMatchRequestId) return;
+  if (categoryResponse.status === 'rejected') {
+    host.innerHTML = `<div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'error',companyId)).join('')}</div>`;
+  } else {
+    const categories = categoryProcurementItems(categoryResponse.value).map(productMatchApiRecord);
+    const buyers = buyerResponse.status === 'fulfilled' ? buyerBusinessModelItems(buyerResponse.value).map(productMatchApiRecord) : [];
+    const opportunities = opportunityResponse.status === 'fulfilled' ? productOpportunityItems(opportunityResponse.value).map(productMatchApiRecord) : [];
+    const apiError = buyerResponse.status === 'rejected' || opportunityResponse.status === 'rejected';
+    const cards = PRODUCT_MATCH_PROFILES.map(profile=>{
+      const category = categories.find(item=>productMatchProfile(item) === profile);
+      if (!category) return productMatchStateCard(profile,'empty',companyId);
+      const buyer = buyers.find(item=>productMatchProfile(item) === profile) || buyers[0] || {};
+      const opportunity = opportunities.find(item=>productMatchProfile(item) === profile) || {};
+      const opportunityRow = state.opportunities.find(item=>String(companyIdFor(item)) === String(companyId) && productProfileCode(item) === profile) || {};
+      const result = {
+        ...opportunityRow,
+        ...category,
+        ...opportunity,
+        buyer_business_model:buyer.buyer_business_model || buyer.buyer_model || category.buyer_business_model || opportunityRow.buyer_business_model,
+        buyer_subtype:buyer.buyer_subtype || category.buyer_subtype || opportunityRow.buyer_subtype,
+        eligibility_status:buyer.eligibility_status || category.eligibility_status,
+        confidence_band:buyer.confidence_band || category.confidence_band,
+        product_opportunity_status:opportunity.product_opportunity_status || opportunity.recommendation_status || opportunityRow.product_opportunity_status,
+        product_opportunity_count:opportunity.product_opportunity_count ?? opportunity.candidate_count ?? opportunityRow.product_opportunity_count
+      };
+      return productMatchResultCard(profile,result,{ apiError, companyId });
+    });
+    host.innerHTML = `<div class="crm-product-match-grid">${cards.join('')}</div>`;
+  }
+  host.setAttribute('aria-busy','false');
+  wireProductMatchRetry(host,companyId);
+}
+
 const crmBusinessText = value => displayValue(value).replace(/^'(?=[+＋\d])/,'').replace(/＋/g,'+')
   .replace(/https?:\/\/\S+/gi,'').replace(/\s+/g,' ').trim();
 const crmDetailPayload = payload => {
@@ -1471,6 +1772,7 @@ async function showCrmHistory(id, trigger = null) {
 
 async function showLead(id) {
   state.selected = id;
+  const productMatchRequestId = ++state.productMatchRequestId;
   const detail = $('#detail');
   const shouldShowLoading = !detail.open;
   if (!detail.open || !detail.contains(document.activeElement)) {
@@ -1580,11 +1882,12 @@ async function showLead(id) {
   detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body">
     <header class="crm-detail-header"><div><p class="crm-context">${bi(`客户等级 ${currentTier || '-'} / ${lead.city || '-'}`,`Tier ${currentTier || '-'} / ${lead.city || '-'}`)}</p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${lifecycleBadge(lead)}${currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : ''}${currentFeasibility?.relationship_status ? enumBadge(relationshipStatusLabel(currentFeasibility.relationship_status),relationshipTone(currentFeasibility.relationship_status)) : ''}${hasLegacyReview ? `<span class="pill ${esc(lead.approval_status)}">${bi(status[0],status[1])}</span>` : ''}${lead.website_url ? `<a href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer">${bi('企业网站','Official website')}</a>` : ''}</div></div><div class="crm-detail-score-set"><div class="crm-detail-score"><b>${esc(currentFeasibility?.cooperation_feasibility_score ?? '-')}</b><span>${bi('合作可行性','Cooperation Feasibility')}</span></div><div class="crm-detail-score"><b>${esc(currentMatch ?? '-')}</b><span>${bi('管理基准匹配','Management Baseline Match')}</span></div><div class="crm-detail-score"><b>${esc(currentHistoricalMatch ?? '-')}</b><span>${bi('墨西哥历史参考匹配','Mexico Historical Reference Match')}</span></div><div class="crm-detail-score"><b>${esc(currentScore ?? '-')}</b><span>${bi('DPV 评分','DPV Score')}</span></div><div class="crm-detail-score"><b>${esc(currentTier || '-')}</b><span>${bi('等级','Tier')}</span></div></div></header>
     <div class="crm-detail-tabs" role="tablist" aria-label="客户详情页签 Company detail tabs">
-      ${[['overview','概览','Overview'],['buying','采购联系人','Buying Contacts'],['feasibility','合作可行性','Cooperation Feasibility'],['evidence','资料依据','Evidence'],['contacts','联系方式','Contacts'],['social','社交账号','Social'],['matching','客户匹配','Matching'],['scoring','评分','Scoring'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
+      ${[['overview','概览','Overview'],['product-match','产品匹配','Product Match'],['buying','采购联系人','Buying Contacts'],['feasibility','合作可行性','Cooperation Feasibility'],['evidence','资料依据','Evidence'],['contacts','联系方式','Contacts'],['social','社交账号','Social'],['matching','客户匹配','Matching'],['scoring','评分','Scoring'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
     </div>
     <section id="detail-panel-overview" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-overview">${factRows([
       ['产品画像','Product profile',productProfileLabel(lead)],['市场','Market',esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')],['核验状态','Verification',verificationBadge(lead)],['数据状态','Data status',lifecycleBadge(lead)],['跟进准备状态','Opportunity readiness',currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : bi('待评估','Not assessed')],['合作机会矩阵','Cooperation matrix',currentFeasibility?.access_opportunity_matrix ? pairHtml(cooperationMatrixLabel(currentFeasibility.access_opportunity_matrix)) : bi('待评估','Not assessed')],['最近核验','Last verified',esc(lead.last_verified_at ? new Date(lead.last_verified_at).toLocaleString() : '-')],['核验来源','Verification sources',esc(sourceCountValue(lead))],['资料时效','Verification freshness',stateBadge(lead.verification_freshness,freshnessLabels)],['企业规模','Company size',`${bi(size[0],size[1])}<br>${sizeEvidenceDisplay}`],['进口/批发','Importer / wholesaler',`${yesNo(importerWholesalerFit)}<br>${importerWholesalerEvidence}`],['连锁供货','Chain supply',`${yesNo(lead.chain_supply_fit)}<br>${esc(lead.chain_store_supply_evidence || '连锁供货属性待确认 / Chain-supply status to confirm')}`]
     ])}</section>
+    <section id="detail-panel-product-match" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-product-match" hidden><div id="product-match-panel" aria-busy="true"><div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'loading')).join('')}</div></div></section>
     <section id="detail-panel-buying" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-buying" hidden>${decisionMakerView(decisionMakers,contactRoutes)}</section>
     <section id="detail-panel-feasibility" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-feasibility" hidden>${cooperationFeasibilityView(feasibilityItems,contactRoutes)}</section>
     <section id="detail-panel-evidence" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-evidence" hidden><section class="crm-detail-section"><h4>${bi('资料来源','Source references')}</h4>${sources.length ? `<div class="sources">${sources.map(s=>{ const kind = evidenceTypeLabels[String(s.evidence_kind || s.evidence_type || '').toUpperCase()] || ['公开企业资料','Public business source']; return `<a href="${esc(safeUrl(s.url || s.source_url))}" target="_blank" rel="noreferrer">${pairHtml(kind)}${bi('查看来源页面','Open source page')}</a>`; }).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无来源链接。','No source URL is available.')}</div>`}</section></section>
@@ -1603,6 +1906,7 @@ async function showLead(id) {
     selectedRow.setAttribute('aria-selected', 'true');
   }
   openDetail(detail);
+  loadProductMatchesPanel(companyId,productMatchRequestId);
 }
 
 async function approve(id, status, button) {
@@ -1769,7 +2073,7 @@ $('#company-sort')?.addEventListener('change',()=>{state.companyPage=1;renderCom
 $('#opportunity-filters')?.addEventListener('change',()=>loadOpportunities());
 $('#opportunity-clear-filters')?.addEventListener('click',()=>{
   $('#opportunity-filters')?.reset();
-  if ($('#opportunity-sort')) $('#opportunity-sort').value='feasibility_desc';
+  if ($('#opportunity-sort')) $('#opportunity-sort').value='category_procurement_desc';
   loadOpportunities();
 });
 $('#start-enrichment')?.addEventListener('click',startEnrichmentJob);
@@ -1855,7 +2159,7 @@ if (initialLoads[0].status === 'rejected') {
 }
 if (initialLoads[1].status === 'rejected') {
   $('#leads').innerHTML = `<tr><td colspan="11" class="crm-loading-cell">${bi('客户名录读取失败。','Company directory could not be loaded.')}<button id="leads-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
-  $('#opportunity-table').innerHTML = `<tr><td colspan="14" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
+  $('#opportunity-table').innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
   $('#leads-retry')?.addEventListener('click',loadLeads);
 }
 const requestedJobId = new URLSearchParams(location.search).get('job');

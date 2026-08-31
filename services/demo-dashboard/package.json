@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "phase6.1:migrate": "node src/categoryProcurement/migrationRunner.js --apply",
+    "phase6.1:taxonomy:check": "node src/productMatch/productTaxonomyCli.js",
+    "phase6.1:taxonomy:apply": "node src/productMatch/productTaxonomyCli.js --apply"
   },
   "dependencies": {
     "@gorules/zen-engine": "2.0.2",

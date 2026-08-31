@@ -1,0 +1,136 @@
+const upper=value=>String(value||'').trim().toUpperCase();
+
+function matchBandClause(column,value){
+  const band=upper(value);
+  if(band==='HIGH')return `${column}>=60`;
+  if(band==='MEDIUM')return `${column}>=35 AND ${column}<60`;
+  if(band==='LOW')return `${column}<35`;
+  if(band==='UNKNOWN')return `${column} IS NULL`;
+  return '';
+}
+
+export async function queryCategoryProcurementOpportunities({
+  pool,query={},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
+}={}){
+  const params=[];
+  const clauses=[`c.data_origin IN (${publicDataOriginSql})`,companyMarketVisibleSql('c'),
+    "c.verification_status='VERIFIED'","c.lifecycle_status='ACTIVE'",'c.explicit_exclusion_reason IS NULL',
+    excludesConfirmedExistingCustomerSql('c')];
+  const add=(value,clause)=>{params.push(value);clauses.push(clause(params.length));};
+  if(query.country)add(upper(query.country),index=>`c.country_code=$${index}`);
+  if(query.tier)add(upper(query.tier),index=>`coalesce(sr.tier,lr.tier)=$${index}`);
+  if(query.size)add(upper(query.size),index=>`upper(coalesce(v.company_size,c.company_size_band,'UNKNOWN'))=$${index}`);
+  if(query.score_eligibility)add(upper(query.score_eligibility),index=>`sr.score_eligibility=$${index}`);
+  if(query.opportunity_matrix)add(upper(query.opportunity_matrix),index=>`mr.opportunity_matrix=$${index}`);
+  if(query.product_profile)add(upper(query.product_profile),index=>`cpm.product_profile=$${index}`);
+  if(query.buyer_business_model)add(upper(query.buyer_business_model),index=>`bbm.buyer_model=$${index}`);
+  if(query.buyer_subtype)add(upper(query.buyer_subtype),index=>`bbm.buyer_subtype=$${index}`);
+  if(query.category_procurement_match_band)add(upper(query.category_procurement_match_band),index=>`cpm.band=$${index}`);
+  if(query.category_procurement_match_status)add(upper(query.category_procurement_match_status),index=>`cpm.match_status=$${index}`);
+  if(query.product_access_matrix)add(upper(query.product_access_matrix),index=>`f.product_access_matrix=$${index}`);
+  if(query.readiness)add(upper(query.readiness),index=>`f.opportunity_readiness=$${index}`);
+  if(query.historical_crm_status)add(upper(query.historical_crm_status),index=>`f.relationship_status=$${index}`);
+  if(query.cooperation_matrix)add(upper(query.cooperation_matrix),index=>`f.access_opportunity_matrix=$${index}`);
+  if(query.feasibility_band)add(upper(query.feasibility_band),index=>`f.feasibility_band=$${index}`);
+  if(query.decision_maker_status)add(upper(query.decision_maker_status),index=>`dm.verification_status=$${index}`);
+  if(query.normalized_role)add(upper(query.normalized_role),index=>`dm.normalized_role=$${index}`);
+  if(query.contact_type)add(upper(query.contact_type),index=>`bc.contact_type=$${index}`);
+  if(query.contact_verification)add(upper(query.contact_verification),index=>`bc.verification_status=$${index}`);
+  const managementBand=matchBandClause('mr.match_score',query.management_match_band);
+  const historicalBand=matchBandClause('hmr.match_score',query.historical_match_band);
+  if(managementBand)clauses.push(managementBand);
+  if(historicalBand)clauses.push(historicalBand);
+
+  const defaultOrder=`CASE WHEN cpm.match_status='CATEGORY_PROCUREMENT_MATCH' THEN 1 ELSE 2 END,
+    CASE bbm.buyer_model WHEN 'DIRECT_END_BUYER' THEN 1 WHEN 'DISTRIBUTION_BUYER' THEN 2 WHEN 'UNCLEAR_INTERMEDIARY' THEN 3 WHEN 'UNKNOWN' THEN 4 ELSE 5 END,
+    CASE cpm.band WHEN 'VERY_HIGH' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 WHEN 'VERY_LOW' THEN 5 ELSE 6 END,
+    cpm.score DESC NULLS LAST,cpm.coverage_percent DESC,
+    CASE dm.role_relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+    CASE bc.verification_status WHEN 'VALID' THEN 1 WHEN 'PUBLICLY_OBSERVED' THEN 2 WHEN 'FORMAT_VALID' THEN 3 WHEN 'NOT_VERIFIED' THEN 4 ELSE 5 END,
+    CASE f.supplier_access_band WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW_MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END,
+    CASE f.product_access_matrix
+      WHEN 'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS' THEN 1 WHEN 'DIRECT_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS' THEN 2
+      WHEN 'DISTRIBUTION_BUYER_HIGH_PRODUCT_HIGH_ACCESS' THEN 3 WHEN 'DISTRIBUTION_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS' THEN 4
+      WHEN 'DIRECT_BUYER_HIGH_PRODUCT_LOW_ACCESS' THEN 5 WHEN 'DISTRIBUTION_BUYER_HIGH_PRODUCT_LOW_ACCESS' THEN 6
+      WHEN 'MEDIUM_PRODUCT_HIGH_ACCESS' THEN 7 WHEN 'MEDIUM_PRODUCT_MEDIUM_ACCESS' THEN 8 WHEN 'LOW_PRODUCT' THEN 9 ELSE 10 END,
+    mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,sr.final_score DESC NULLS LAST,
+    coalesce(cpm.created_at,f.calculated_at) DESC NULLS LAST,c.company_name,cpm.product_profile`;
+  const sort=String(query.sort||'category_procurement_desc');
+  const orderBy=sort==='score_desc'?`sr.final_score DESC NULLS LAST,${defaultOrder}`
+    :sort==='match_desc'?`mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,${defaultOrder}`
+      :sort==='feasibility_desc'?`f.cooperation_feasibility_score DESC NULLS LAST,${defaultOrder}`
+        :sort==='name_asc'?'c.company_name,cpm.product_profile':defaultOrder;
+  const limit=Math.max(1,Math.min(500,Number(query.limit||200)));params.push(limit);
+
+  const result=await pool.query(`SELECT
+    concat(cpm.company_id::text,':',cpm.product_profile) opportunity_key,
+    c.id,c.id company_id,c.company_name,c.country_code,c.city,c.website_url,c.data_origin,c.research_job_id,
+    c.verification_status,c.lifecycle_status,c.last_verified_at,c.verification_source_count,c.verification_freshness,
+    c.explicit_exclusion_reason,ARRAY[cpm.product_profile] product_profiles,
+    coalesce(v.company_size,upper(c.company_size_band),'UNKNOWN') company_size,
+    v.sme_relevance,v.partnership_accessibility,v.verification_status phase4_verification_status,
+    v.importer_status,v.wholesaler_status,v.distributor_status,v.general_trading_status,
+    coalesce(sr.final_score,lr.lead_score) dpv_score,coalesce(sr.tier,lr.tier) tier,
+    sr.qualification_status,sr.score_eligibility,sr.evidence_coverage score_coverage,sr.rule_version,sr.calculated_at scored_at,
+    mr.match_score customer_match,mr.coverage_percent customer_match_coverage,mr.display_status customer_match_status,
+    mr.opportunity_matrix,mr.profile_version,mr.calculated_at matched_at,
+    hmr.match_score historical_customer_match,hmr.coverage_percent historical_match_coverage,
+    hmr.display_status historical_match_status,hmr.profile_version historical_profile_version,hmr.calculated_at historical_matched_at,
+    cpm.id category_procurement_match_result_id,cpm.product_profile,
+    cpm.score category_procurement_match_score,cpm.band category_procurement_match_band,
+    cpm.match_status category_procurement_match_status,cpm.coverage_percent category_procurement_coverage,
+    bbm.buyer_model buyer_business_model,bbm.buyer_subtype,bbm.eligibility_status buyer_eligibility_status,
+    bbm.confidence_band buyer_confidence_band,cpm.observed_categories,
+    top_product.safe_product_name top_product_opportunity,coalesce(po.candidate_count,0) product_opportunity_count,
+    coalesce(po.recommendation_status,'NOT_RUN_GATE_FAILED') product_opportunity_status,
+    f.cooperation_feasibility_score,f.feasibility_band,f.access_opportunity_matrix cooperation_matrix,
+    coalesce(f.supplier_access_band,'UNKNOWN') supplier_access_band,coalesce(f.supplier_access_coverage,0) supplier_access_coverage,
+    coalesce(f.product_access_matrix,'UNKNOWN_PRODUCT') product_access_matrix,
+    coalesce(f.opportunity_readiness,cpm.match_status) readiness,coalesce(f.readiness_blockers,'{}') readiness_blockers,
+    f.relationship_status historical_crm_status,f.barrier_signals,f.missing_evidence,
+    f.supplier_route_count,f.calculated_at feasibility_calculated_at,
+    dm.id decision_maker_id,dm.person_name buyer_name,dm.department_name buyer_department,
+    dm.raw_title buyer_raw_title,dm.normalized_role,dm.role_relevance,dm.verification_status decision_maker_status,
+    dm.last_verified_at decision_maker_last_verified_at,
+    bc.contact_type best_contact_type,bc.contact_value_raw best_contact,bc.verification_status contact_verification,
+    bc.source_url contact_source_url,portal.contact_type supplier_route_type,portal.contact_value_raw supplier_portal_url,
+    EXISTS(SELECT 1 FROM leadgen.contacts ct WHERE ct.company_id=c.id AND ct.lifecycle_status='ACTIVE'
+      AND(ct.business_email IS NOT NULL OR ct.business_phone IS NOT NULL)) contactable
+    FROM leadgen.companies c
+    JOIN LATERAL(SELECT x.* FROM leadgen.category_procurement_match_results x WHERE x.company_id=c.id
+      AND NOT EXISTS(SELECT 1 FROM leadgen.category_procurement_match_results newer WHERE newer.company_id=x.company_id
+        AND newer.product_profile=x.product_profile AND(newer.created_at,newer.id)>(x.created_at,x.id))
+      ORDER BY x.product_profile)cpm ON true
+    JOIN leadgen.buyer_business_model_results bbm ON bbm.id=cpm.buyer_business_model_result_id
+    LEFT JOIN leadgen.product_opportunity_results po ON po.category_procurement_match_result_id=cpm.id
+    LEFT JOIN LATERAL(SELECT pc.safe_product_name FROM leadgen.product_opportunity_candidates pc
+      WHERE pc.product_opportunity_result_id=po.id ORDER BY pc.rank LIMIT 1)top_product ON true
+    LEFT JOIN leadgen.cooperation_feasibility_results f ON f.category_procurement_match_result_id=cpm.id
+    LEFT JOIN leadgen.lead_reviews lr ON lr.company_id=c.id
+    LEFT JOIN LATERAL(SELECT * FROM leadgen.research_candidate_verifications vx WHERE vx.company_id=c.id
+      ORDER BY vx.verified_at DESC NULLS LAST,vx.updated_at DESC LIMIT 1)v ON true
+    LEFT JOIN LATERAL(SELECT * FROM leadgen.company_score_runs sx WHERE sx.company_id=c.id
+      ORDER BY sx.calculated_at DESC,sx.id DESC LIMIT 1)sr ON true
+    LEFT JOIN LATERAL(SELECT mx.* FROM leadgen.customer_match_results mx JOIN leadgen.icp_profiles ip ON ip.id=mx.reference_profile_id
+      WHERE mx.company_id=c.id AND mx.reference_profile_type='MANAGEMENT_BASELINE'
+        AND(cardinality(ip.product_scope)=0 OR cpm.product_profile=ANY(ip.product_scope))
+      ORDER BY mx.calculated_at DESC,mx.id DESC LIMIT 1)mr ON true
+    LEFT JOIN LATERAL(SELECT hx.* FROM leadgen.customer_match_results hx JOIN leadgen.icp_profiles ip ON ip.id=hx.reference_profile_id
+      WHERE hx.company_id=c.id AND hx.reference_profile_type='HISTORICAL_CUSTOMER_ICP'
+        AND(cardinality(ip.product_scope)=0 OR cpm.product_profile=ANY(ip.product_scope))
+      ORDER BY hx.calculated_at DESC,hx.id DESC LIMIT 1)hmr ON true
+    LEFT JOIN LATERAL(SELECT dx.* FROM leadgen.decision_makers dx
+      LEFT JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dx.id AND pr.product_profile=cpm.product_profile
+      WHERE dx.company_id=c.id AND dx.lifecycle_status='ACTIVE'
+      ORDER BY(dx.verification_status='VERIFIED')DESC,CASE pr.relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+        (dx.person_name IS NOT NULL)DESC,dx.updated_at DESC LIMIT 1)dm ON true
+    LEFT JOIN LATERAL(SELECT cx.* FROM leadgen.decision_maker_contacts cx WHERE cx.decision_maker_id=dm.id
+      ORDER BY(cx.verification_status='VALID')DESC,CASE cx.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2
+        WHEN 'SUPPLIER_PORTAL' THEN 3 WHEN 'VENDOR_REGISTRATION' THEN 4 WHEN 'BUSINESS_PHONE' THEN 5 ELSE 6 END,
+        cx.updated_at DESC LIMIT 1)bc ON true
+    LEFT JOIN LATERAL(SELECT px.* FROM leadgen.decision_maker_contacts px JOIN leadgen.decision_makers pd ON pd.id=px.decision_maker_id
+      WHERE pd.company_id=c.id AND px.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
+      ORDER BY px.updated_at DESC LIMIT 1)portal ON true
+    WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy} LIMIT $${params.length}`,params);
+  return result.rows;
+}

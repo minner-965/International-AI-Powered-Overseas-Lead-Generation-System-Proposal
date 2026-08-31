@@ -1,0 +1,54 @@
+{
+  "taxonomy_version": "product-taxonomy-v1",
+  "profiles": [
+    {
+      "code": "WOMENSWEAR",
+      "name": "Womenswear",
+      "attribute_set": ["material", "size", "color", "style", "consumer_segment"],
+      "categories": [
+        { "code": "DRESSES", "name": "Dresses", "subcategories": ["MAXI_DRESS", "MIDI_DRESS", "MINI_DRESS", "CAMISOLE_DRESS", "CASUAL_DRESS"] },
+        { "code": "TOPS", "name": "Tops", "subcategories": ["BLOUSE", "SHIRT", "CAMISOLE_TOP", "T_SHIRT", "KNIT_TOP"] },
+        { "code": "BOTTOMS", "name": "Bottoms", "subcategories": ["SKIRT", "TROUSERS", "SHORTS", "LEGGINGS"] },
+        { "code": "SETS", "name": "Sets", "subcategories": ["CO_ORD_SET", "SUIT_SET"] },
+        { "code": "KNITWEAR", "name": "Knitwear", "subcategories": ["SWEATER", "CARDIGAN"] },
+        { "code": "LINGERIE", "name": "Lingerie", "subcategories": ["BRA", "PANTY", "SHAPEWEAR"] },
+        { "code": "SLEEPWEAR", "name": "Sleepwear", "subcategories": ["PAJAMA", "NIGHTDRESS"] },
+        { "code": "ACTIVEWEAR", "name": "Activewear", "subcategories": ["SPORTS_TOP", "SPORTS_BOTTOM"] },
+        { "code": "OUTERWEAR", "name": "Outerwear", "subcategories": ["JACKET", "COAT"] }
+      ]
+    },
+    {
+      "code": "GENERAL_MERCHANDISE",
+      "name": "General Merchandise",
+      "attribute_set": ["material", "size", "color", "pack_format", "use_case"],
+      "categories": [
+        { "code": "HOUSEHOLD", "name": "Household", "subcategories": ["BEDDING", "CLEANING", "DAILY_USE"] },
+        { "code": "KITCHEN", "name": "Kitchen", "subcategories": ["COOKWARE", "DRINKWARE", "KITCHEN_STORAGE", "UTENSIL"] },
+        { "code": "BATH", "name": "Bath", "subcategories": ["BATH_ACCESSORY"] },
+        { "code": "STORAGE", "name": "Storage", "subcategories": ["STORAGE_BAG", "ORGANIZER"] },
+        { "code": "PET", "name": "Pet", "subcategories": ["PET_PAD", "PET_ACCESSORY"] },
+        { "code": "HOME_LIVING", "name": "Home and Living", "subcategories": ["FURNITURE", "HOME_DECOR", "LIGHTING"] },
+        { "code": "OUTDOOR", "name": "Outdoor", "subcategories": ["TENT", "GRILL", "AWNING"] },
+        { "code": "PERSONAL_ACCESSORIES", "name": "Personal Accessories", "subcategories": ["BAG", "BEAUTY_ACCESSORY"] },
+        { "code": "SPORT_FITNESS", "name": "Sport and Fitness", "subcategories": ["FITNESS_EQUIPMENT", "BICYCLE"] }
+      ]
+    },
+    {
+      "code": "UNKNOWN",
+      "name": "Unknown",
+      "attribute_set": [],
+      "categories": []
+    }
+  ],
+  "relations": [
+    { "left": "DRESSES", "right": "TOPS", "relation": "ADJACENT" },
+    { "left": "TOPS", "right": "KNITWEAR", "relation": "ADJACENT" },
+    { "left": "TOPS", "right": "OUTERWEAR", "relation": "ADJACENT" },
+    { "left": "HOUSEHOLD", "right": "HOME_LIVING", "relation": "PARENT" },
+    { "left": "KITCHEN", "right": "HOUSEHOLD", "relation": "PARENT" },
+    { "left": "BATH", "right": "HOUSEHOLD", "relation": "PARENT" },
+    { "left": "STORAGE", "right": "HOUSEHOLD", "relation": "PARENT" },
+    { "left": "OUTDOOR", "right": "HOME_LIVING", "relation": "ADJACENT" },
+    { "left": "SPORT_FITNESS", "right": "OUTDOOR", "relation": "ADJACENT" }
+  ]
+}

@@ -5,8 +5,10 @@ RUN npm ci --omit=dev
 COPY services/demo-dashboard/src ./src
 COPY services/demo-dashboard/public ./public
 COPY services/demo-dashboard/test ./test
+COPY database/migrations ./database/migrations
 COPY rules ./rules
 ENV DPV_RULES_DIR=/app/rules
+ENV DPV_PROJECT_ROOT=/app
 USER node
 EXPOSE 3000
 CMD ["npm", "start"]

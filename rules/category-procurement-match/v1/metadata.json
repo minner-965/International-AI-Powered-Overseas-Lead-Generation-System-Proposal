@@ -1,0 +1,13 @@
+{
+  "rule_version": "category-procurement-match-v1",
+  "score_maximum": 100,
+  "publish_coverage_minimum": 70,
+  "pass_score_minimum": 60,
+  "dimensions": {
+    "target_category_procurement_evidence": 45,
+    "buyer_business_model_fit": 25,
+    "assortment_depth": 15,
+    "external_sourcing_import": 10,
+    "recent_category_activity": 5
+  }
+}

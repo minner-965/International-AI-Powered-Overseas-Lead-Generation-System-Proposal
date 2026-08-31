@@ -1,0 +1,161 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { calculateCategoryProcurementMatch } from '../src/categoryProcurement/categoryProcurementMatch.js';
+
+const observed=(points,maximum,evidence_ids=['synthetic-evidence-1'])=>({state:'OBSERVED',points,maximum,evidence_ids,reason_codes:[]});
+const unknown=maximum=>({state:'UNKNOWN',points:null,maximum,evidence_ids:[],reason_codes:['MISSING_EVIDENCE']});
+
+const dimensions=overrides=>({
+  target_category_procurement_evidence:unknown(45),
+  buyer_business_model_fit:unknown(25),
+  assortment_depth:unknown(15),
+  external_sourcing_import:unknown(10),
+  recent_category_activity:unknown(5),
+  ...overrides
+});
+
+function calculate(overrides={}){
+  return calculateCategoryProcurementMatch({
+    company_id:'00000000-0000-4000-8000-000000000010',
+    product_profile:'WOMENSWEAR',
+    catalog_snapshot:{
+      id:'00000000-0000-4000-8000-000000000011',product_profile:'WOMENSWEAR',eligible_product_count:8,
+      classified_product_count:8,unknown_product_count:0,snapshot_version:'synthetic-catalog-v1'
+    },
+    buyer_business_model:{
+      id:'00000000-0000-4000-8000-000000000012',buyer_model:'DIRECT_END_BUYER',
+      buyer_subtype:'CHAIN_RETAILER',eligibility_status:'ELIGIBLE'
+    },
+    dimensions:dimensions({
+      target_category_procurement_evidence:observed(45,45,['synthetic-category-evidence']),
+      buyer_business_model_fit:observed(25,25,['synthetic-buyer-evidence'])
+    }),
+    ...overrides
+  });
+}
+
+test('Category Procurement Match weights and band boundaries are frozen',()=>{
+  const result=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:observed(25,25),
+    assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
+  })});
+  assert.equal(result.score,100);
+  assert.equal(result.coverage_percent,100);
+  assert.equal(result.band,'VERY_HIGH');
+  for(const [targetPoints,expectedBand] of [[40,'HIGH'],[35,'MEDIUM'],[34,'LOW'],[4,'VERY_LOW']]){
+    const boundary=calculate({dimensions:dimensions({
+      target_category_procurement_evidence:observed(targetPoints,45),buyer_business_model_fit:observed(25,25)
+    })});
+    assert.equal(boundary.band,expectedBand);
+  }
+});
+
+test('direct retailer with official target-category evidence passes at the 70 coverage and 60 score gates',()=>{
+  const result=calculate();
+  assert.equal(result.score,70);
+  assert.equal(result.coverage_percent,70);
+  assert.equal(result.band,'HIGH');
+  assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+});
+
+test('eligible distribution buyer passes when category, sourcing and operating evidence satisfy its model gate',()=>{
+  const result=calculate({
+    buyer_business_model:{
+      id:'00000000-0000-4000-8000-000000000013',buyer_model:'DISTRIBUTION_BUYER',buyer_subtype:'IMPORTER',eligibility_status:'ELIGIBLE'
+    },
+    dimensions:dimensions({
+      target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:observed(18,25),
+      external_sourcing_import:observed(8,10)
+    })
+  });
+  assert.equal(result.score,71);
+  assert.equal(result.coverage_percent,80);
+  assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+});
+
+test('optional dimensions cannot compensate for a missing category or buyer-model core gate',()=>{
+  const missingCategory=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:unknown(45),buyer_business_model_fit:observed(25,25),
+    assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
+  })});
+  assert.equal(missingCategory.score,null);
+  assert.equal(missingCategory.band,'UNKNOWN');
+  assert.equal(missingCategory.match_status,'NEEDS_PRODUCT_EVIDENCE');
+
+  const missingBuyer=calculate({
+    buyer_business_model:{buyer_model:'UNKNOWN',buyer_subtype:'OTHER',eligibility_status:'NEEDS_EVIDENCE'},
+    dimensions:dimensions({
+      target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:unknown(25),
+      assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
+    })
+  });
+  assert.equal(missingBuyer.score,null);
+  assert.equal(missingBuyer.band,'UNKNOWN');
+  assert.equal(missingBuyer.match_status,'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE');
+});
+
+test('score 60 is the PASS floor and an observed score below 60 is WEAK_CATEGORY_MATCH',()=>{
+  const atGate=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:observed(35,45),buyer_business_model_fit:observed(25,25)
+  })});
+  assert.equal(atGate.score,60);
+  assert.equal(atGate.match_status,'CATEGORY_PROCUREMENT_MATCH');
+
+  const belowGate=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:observed(34,45),buyer_business_model_fit:observed(25,25)
+  })});
+  assert.equal(belowGate.score,59);
+  assert.equal(belowGate.match_status,'WEAK_CATEGORY_MATCH');
+});
+
+test('sufficient observed unrelated assortment is PRODUCT_MISMATCH; absence of evidence is not',()=>{
+  const mismatch=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:observed(0,45,['synthetic-unrelated-assortment']),
+    buyer_business_model_fit:observed(25,25)
+  }),confirmed_unrelated_assortment:true});
+  assert.equal(mismatch.score,25);
+  assert.equal(mismatch.match_status,'PRODUCT_MISMATCH');
+
+  const absent=calculate({dimensions:dimensions({
+    target_category_procurement_evidence:unknown(45),buyer_business_model_fit:observed(25,25)
+  })});
+  assert.equal(absent.score,null);
+  assert.equal(absent.match_status,'NEEDS_PRODUCT_EVIDENCE');
+});
+
+test('unclear and excluded intermediaries never publish an eligible Product Match score',()=>{
+  const unclear=calculate({
+    buyer_business_model:{buyer_model:'UNCLEAR_INTERMEDIARY',buyer_subtype:'DISTRIBUTOR',eligibility_status:'NEEDS_EVIDENCE'},
+    dimensions:dimensions({target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:unknown(25)})
+  });
+  assert.equal(unclear.score,null);
+  assert.equal(unclear.match_status,'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE');
+
+  const excluded=calculate({
+    buyer_business_model:{buyer_model:'EXCLUDED_INTERMEDIARY',buyer_subtype:'SOURCING_AGENT',eligibility_status:'INELIGIBLE'},
+    dimensions:dimensions({target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:observed(0,25)})
+  });
+  assert.equal(excluded.match_status,'INELIGIBLE_BUYER_MODEL');
+  assert.notEqual(excluded.match_status,'CATEGORY_PROCUREMENT_MATCH');
+});
+
+test('missing confirmed/supported DPV profile snapshot blocks publication independently of prospect evidence',()=>{
+  for(const snapshot of [null,{eligible_product_count:0,classified_product_count:0,unknown_product_count:9}]){
+    const result=calculate({catalog_snapshot:snapshot});
+    assert.equal(result.score,null);
+    assert.equal(result.band,'UNKNOWN');
+    assert.equal(result.match_status,'NEEDS_INTERNAL_CATALOG_EVIDENCE');
+  }
+});
+
+test('requested product categories, Management Match and DPV Score cannot create category facts',()=>{
+  const result=calculate({
+    dimensions:dimensions({}),
+    companies_product_categories:['WOMENSWEAR'],
+    management_match_score:100,
+    mexico_historical_reference_match:100,
+    dpv_score:100
+  });
+  assert.equal(result.score,null);
+  assert.equal(result.match_status,'NEEDS_PRODUCT_EVIDENCE');
+});

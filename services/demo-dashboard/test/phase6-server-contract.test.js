@@ -8,6 +8,7 @@ import { hiddenMarketCodes, visibleMarketCodes } from '../public/market-visibili
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const server = fs.readFileSync(path.join(root,'services/demo-dashboard/src/server.js'),'utf8');
 const queue = fs.readFileSync(path.join(root,'services/demo-dashboard/src/jobs/phase5Queue.js'),'utf8');
+const opportunitySource = fs.readFileSync(path.join(root,'services/demo-dashboard/src/categoryProcurement/opportunitiesRoute.js'),'utf8');
 const envExample = fs.readFileSync(path.join(root,'.env.example'),'utf8');
 const workflow = fs.readFileSync(path.join(root,'workflows/02-phase6-enrichment.json'),'utf8');
 const enrichmentSources = fs.readdirSync(path.join(root,'services/demo-dashboard/src/enrichment'))
@@ -59,17 +60,17 @@ test('pg-boss retains its bounded policy and adds a dedicated enrichment queue',
   assert.match(server,/PHASE5_QUEUES\.ENRICH_DECISION_MAKERS/);
 });
 
-test('opportunities keep Phase 5 and Phase 6 matrices separate and sort access first', () => {
+test('opportunities keep Phase 5, Phase 6 and Phase 6.1 matrices separate under the buyer-first V3 order', () => {
   const block = routeBlock("app.get('/api/opportunities'","app.get('/api/internal/data-cleanup/dry-run'");
-  assert.match(block,/mr\.opportunity_matrix/);
-  assert.match(block,/f\.access_opportunity_matrix AS cooperation_matrix/);
-  assert.match(block,/CASE f\.feasibility_band WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW_MEDIUM' THEN 3 WHEN 'LOW' THEN 4/);
-  assert.match(block,/CASE f\.access_opportunity_matrix WHEN 'HIGH_FIT_HIGH_ACCESS' THEN 1/);
-  assert.match(block,/mr\.match_score DESC NULLS LAST,hmr\.match_score DESC NULLS LAST,sr\.final_score DESC NULLS LAST/);
-  assert.match(block,/fd\.research_job_id=f\.research_job_id/);
-  assert.match(block,/fc\.research_job_id=f\.research_job_id/);
-  assert.match(block,/dx\.research_job_id=f\.research_job_id/);
-  assert.match(block,/px\.research_job_id=f\.research_job_id/);
+  assert.match(`${block}\n${opportunitySource}`,/mr\.opportunity_matrix/);
+  assert.match(opportunitySource,/f\.access_opportunity_matrix cooperation_matrix/);
+  assert.match(opportunitySource,/f\.product_access_matrix/);
+  assert.match(opportunitySource,/CATEGORY_PROCUREMENT_MATCH/);
+  assert.match(opportunitySource,/DIRECT_END_BUYER/);
+  assert.match(opportunitySource,/mr\.match_score DESC NULLS LAST,hmr\.match_score DESC NULLS LAST,sr\.final_score DESC NULLS LAST/);
+  assert.match(opportunitySource,/dx\.company_id=c\.id/);
+  assert.match(opportunitySource,/cx\.decision_maker_id=dm\.id/);
+  assert.doesNotMatch(opportunitySource,/dx\.research_job_id=f\.research_job_id/);
 });
 
 test('decision-maker API exposes traceable business fields but not hashes or shared-folder internals', () => {

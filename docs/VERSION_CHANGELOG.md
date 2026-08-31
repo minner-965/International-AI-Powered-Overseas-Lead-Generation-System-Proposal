@@ -1,5 +1,38 @@
 # Version Changelog
 
+## phase6.1 — 2026-08-31
+
+### Added
+
+- Added buyer-first Category Procurement Match using independent target-category and Buyer Business Model evidence gates.
+- Added versioned product-profile catalog snapshots, bilingual taxonomy, prospect category/channel evidence, Product Opportunity recommendations and real-product foreign-key boundaries.
+- Added Supplier Access V3, Product Access Matrix V3 and deterministic Readiness V3 without redefining Phase 5/6 matrices or scores.
+- Added a dedicated ResearchJob type, five pg-boss queues, an n8n workflow, Express APIs and fresh-discovery integration at company × product-profile granularity.
+- Extended Opportunities and Company Detail with bilingual Buyer Model, Product Match, Product Opportunity, Supplier Access, matrix and readiness views.
+
+### Data integrity
+
+- Completed the official 7-company × 2-profile run with 14 unique results and 70/70 queue steps completed.
+- Retained all unknown evidence as unknown; trading/distributor wording alone did not qualify a company and excluded intermediary evidence remained ineligible.
+- Kept Product Opportunity secondary to the category gate and returned 0 real candidates without padding or changing customer match facts.
+- Preserved the Phase 6 fixed acceptance job, historical evidence, `collection_runs`, raw `product_master`, DPV Score and both historical/reference matches.
+- Kept internal products, prices, orders, customers and private paths out of public provider payloads, ordinary APIs, UI and Git reports.
+
+### Verification
+
+- 325 tests executed: 322 passed, 0 failed and 3 conditionally skipped.
+- The official ResearchJob completed with 198 source rows, 116 distinct public URLs, 131 observations and 0 job errors/timeouts.
+- Migration 024 applied and replayed through the explicit advisory-lock/checksum ledger.
+- Six browser viewport checks, light/dark, comfortable/compact, detail navigation, focus restoration and long bilingual status wrapping passed with no page-level horizontal overflow.
+- Fixed a progress-aggregation join that could create an excessive PostgreSQL temporary spill; the accepted run recorded zero temporary bytes/files.
+
+### Current evidence result
+
+- Buyer models: 1 direct end buyer, 0 distribution buyers, 10 unclear intermediaries, 2 excluded intermediaries and 1 unknown.
+- Category Procurement Match: 0 pass, 6 customer-evidence required, 7 internal-catalog evidence required and 1 ineligible buyer-model result.
+- All 14 Product Opportunity rows are `NOT_RUN_GATE_FAILED`; Supplier Access remains an independent axis.
+- No outreach, form submission, supplier registration or Phase 7 work was added.
+
 ## phase6 — 2026-08-29
 
 ### Added

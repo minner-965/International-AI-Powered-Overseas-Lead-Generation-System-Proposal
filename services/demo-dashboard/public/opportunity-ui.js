@@ -10,6 +10,14 @@ const readinessLabels = Object.freeze({
   EXISTING_CUSTOMER: pair('现有客户', 'Existing customer'),
   SUPPRESSED: pair('暂停跟进', 'Suppressed'),
   STRATEGIC_LONG_SHOT: pair('战略长期机会', 'Strategic long shot'),
+  INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
+  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('需补充公司商品资料', 'Internal catalog evidence required'),
+  CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('品类匹配，采购模式待确认', 'Category match; buying evidence required'),
+  WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
+  NEEDS_PRODUCT_RECOMMENDATION: pair('需补充产品推荐', 'Product recommendation required'),
+  PRODUCT_MISMATCH: pair('产品不匹配', 'Product mismatch'),
+  WEAK_PRODUCT_MATCH: pair('产品匹配较弱', 'Weak product match'),
+  NEEDS_PRODUCT_EVIDENCE: pair('需补充产品资料', 'Needs product evidence'),
   REVIEW: pair('待业务审核', 'Business review')
 });
 
@@ -207,13 +215,15 @@ export function buildOpportunityQuery(filters = {}, limit = 100) {
   const allowed = [
     'country', 'product_profile', 'readiness', 'decision_maker_status', 'normalized_role',
     'contact_type', 'contact_verification', 'historical_crm_status', 'management_match_band',
-    'historical_match_band', 'tier', 'feasibility_band', 'cooperation_matrix', 'sort'
+    'historical_match_band', 'buyer_business_model', 'buyer_subtype',
+    'category_procurement_match_band', 'category_procurement_match_status',
+    'product_access_matrix', 'tier', 'feasibility_band', 'cooperation_matrix', 'sort'
   ];
   for (const key of allowed) {
     const value = String(filters[key] ?? '').trim();
     if (value) query.set(key, value);
   }
-  if (!query.has('sort')) query.set('sort', 'feasibility_desc');
+  if (!query.has('sort')) query.set('sort', 'category_procurement_desc');
   query.set('limit', String(Math.max(1, Math.min(500, Number(limit) || 100))));
   return query;
 }

@@ -1,0 +1,20 @@
+{
+  "metadata": { "version": "category-procurement-match-v1" },
+  "nodes": [
+    { "id": "input", "type": "inputNode", "name": "Category procurement facts", "position": { "x": 0, "y": 0 }, "content": { "schema": "" } },
+    {
+      "id": "score",
+      "type": "functionNode",
+      "name": "Category Procurement Match v1",
+      "position": { "x": 280, "y": 0 },
+      "content": {
+        "source": "export const handler=async(input)=>{const maxima={target_category_procurement_evidence:45,buyer_business_model_fit:25,assortment_depth:15,external_sourcing_import:10,recent_category_activity:5};const dimensions={},missing_evidence=[],reason_codes=[];let coverage=0,raw=0;for(const[key,maximum]of Object.entries(maxima)){const fact=input.dimensions?.[key]||{};const ids=Array.isArray(fact.evidence_ids)?fact.evidence_ids.filter(Boolean):[];const state=String(fact.state||'UNKNOWN').toUpperCase();const observed=state==='OBSERVED'&&(key==='buyer_business_model_fit'||ids.length>0)&&Number.isFinite(Number(fact.points));const points=observed?Math.max(0,Math.min(maximum,Math.round(Number(fact.points)))):null;if(observed){coverage+=maximum;raw+=points;}else missing_evidence.push(key);const rc=Array.isArray(fact.reason_codes)&&fact.reason_codes.length?fact.reason_codes:[observed?key.toUpperCase()+'_OBSERVED':key.toUpperCase()+'_UNKNOWN'];dimensions[key]={state:observed?'OBSERVED':state==='NOT_APPLICABLE'?'NOT_APPLICABLE':'UNKNOWN',points,maximum,evidence_ids:ids,reason_codes:rc};reason_codes.push(...rc);}const model=String(input.buyer_model||'UNKNOWN').toUpperCase();const categoryObserved=dimensions.target_category_procurement_evidence.state==='OBSERVED';const buyerObserved=dimensions.buyer_business_model_fit.state==='OBSERVED'&&['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(model);const catalog=Number(input.catalog_eligible_product_count||0)>0&&input.catalog_supported!==false;let score=null,band='UNKNOWN',match_status='NEEDS_PRODUCT_EVIDENCE';if(!catalog)match_status='NEEDS_INTERNAL_CATALOG_EVIDENCE';else if(model==='EXCLUDED_INTERMEDIARY')match_status='INELIGIBLE_BUYER_MODEL';else if(categoryObserved&&input.confirmed_unrelated_assortment===true&&buyerObserved&&coverage>=70){score=raw;match_status='PRODUCT_MISMATCH';}else if(categoryObserved&&!buyerObserved&&['UNCLEAR_INTERMEDIARY','UNKNOWN'].includes(model))match_status='CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE';else if(categoryObserved&&buyerObserved&&coverage>=70){score=raw;match_status=score>=60?'CATEGORY_PROCUREMENT_MATCH':'WEAK_CATEGORY_MATCH';}else match_status='NEEDS_PRODUCT_EVIDENCE';if(score!==null)band=score>=80?'VERY_HIGH':score>=65?'HIGH':score>=60?'MEDIUM':score>=30?'LOW':'VERY_LOW';reason_codes.push(match_status);return{score,band,match_status,coverage_percent:coverage,dimensions,reason_codes:[...new Set(reason_codes)],missing_evidence:[...new Set(missing_evidence)],calculation_version:'category-procurement-match-v1'};};"
+      }
+    },
+    { "id": "output", "type": "outputNode", "name": "Category procurement result", "position": { "x": 600, "y": 0 }, "content": { "schema": "" } }
+  ],
+  "edges": [
+    { "id": "e1", "sourceId": "input", "targetId": "score", "sourceHandle": null, "type": "edge" },
+    { "id": "e2", "sourceId": "score", "targetId": "output", "sourceHandle": null, "type": "edge" }
+  ]
+}

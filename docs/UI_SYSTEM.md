@@ -70,6 +70,7 @@ Use `--radius-card` for major panels, `--radius-control` for inputs and buttons,
 - Phase 6 opportunity controls: `#opportunity-filter-disclosure`, `#opportunity-filters`, `#opportunity-sort`, `#start-enrichment` and `#enrichment-job-status`
 - Phase 6 opportunity columns: `.op-col-company`, `.op-col-market-product`, `.op-col-feasibility`, `.op-col-readiness`, `.op-col-contact` and `.op-col-secondary`
 - Phase 6 detail: the reusable company dialog adds Buying Contacts and Cooperation Feasibility tabs using `.crm-decision-maker-*`, `.crm-contact-route-*` and `.crm-feasibility-*`
+- Phase 6.1 Product Match: Opportunities use `.op-col-buyer-model`, `.op-col-product-match`, `.op-col-product-opportunity`, `.op-col-supplier-access` and `.op-col-product-access`; company detail uses `#detail-tab-product-match`, `#detail-panel-product-match`, `#product-match-panel`, `.crm-product-profile-card[data-product-profile]` and `.crm-product-match-*`
 
 When a future feature matches one of these roles, extend the existing component rather than creating a visually separate card, button, badge, or table system.
 
@@ -98,6 +99,7 @@ Visual work must preserve these hooks and their behavior:
 - `#opportunity-table`, `#opportunity-sort`, `#opportunity-filters` and `GET /api/opportunities`
 - `#start-enrichment`, `#enrichment-job-status`, `POST /api/enrichment/jobs` and `GET /api/enrichment/jobs/:id`
 - `GET /api/leads/:id/decision-makers`, `GET /api/leads/:id/contact-routes` and `GET /api/companies/:id/cooperation-feasibility`
+- `GET /api/companies/:id/category-procurement-matches`, `GET /api/companies/:id/buyer-business-model` and `GET /api/companies/:id/product-opportunities`
 
 IDs are JavaScript and accessibility hooks. New styling should use classes. Do not rename endpoints, payload keys, returned fields, or source evidence during a visual refactor.
 
@@ -118,8 +120,9 @@ IDs are JavaScript and accessibility hooks. New styling should use classes. Do n
 - At 768px and below: section headers, command actions, filters and forms stack without overlapping.
 - At 390px: filters use two columns where possible, the third control spans the row, KPI facts use two columns, and long company tables stay inside a horizontal scroll container.
 - At 390px, customer and opportunity tables show the decision-critical columns first. Secondary evidence, freshness and reference fields remain available in the detail window instead of forcing a 1,000px-wide first view. The View action stays next to the company name.
-- At 390px, Phase 6 opportunities retain Company, Market / Product, Cooperation Feasibility and Readiness. Buying-contact, supplier-access, barrier and score details remain in the horizontally scrollable desktop table and the detail window.
-- Customer details use a viewport-contained native dialog with nine tabs and vertical scrolling when required.
+- At 390px and 375px, Phase 6.1 opportunities retain Company, Market / Product Profile, Buyer Model, Product Match, Supplier Access and Readiness. Buyer Model and Product Match never use a hidden or secondary column. Product Opportunity, Product Access Matrix, buyer/contact detail and secondary scores remain available in the company detail instead of widening the phone viewport.
+- At 420px and below, those six decision-critical fields use one full-width column. Long bilingual badges wrap inside the card; clipping content to simulate a two-column overview is not acceptable.
+- Customer details use a viewport-contained native dialog with ten tabs and vertical scrolling when required.
 - Comfortable and Compact change row/cell/form spacing only; they never scale the whole document.
 - Wide data tables remain inside labeled, keyboard-focusable horizontal scroll regions. They must never expand the page viewport.
 - The Customer Match / ICP view renders the active Womenswear, General Merchandise and Mexico Historical profiles as equal cards on desktop and stacked cards on mobile.
@@ -169,3 +172,19 @@ Before adding a new feature:
 - The ordinary UI must not expose internal OKKI links, source hashes, evidence hashes, shared-folder paths, staging paths or raw record payloads.
 - The `#start-enrichment` action calls Express `POST /api/enrichment/jobs`; the browser never calls n8n or an enrichment provider directly. Its live region reports persisted job state and safe aggregate counters only.
 - Enrichment controls do not send email, WhatsApp, forms, supplier registrations or professional-network messages.
+
+## Phase 6.1 V3：品类采购匹配与产品机会
+
+- Opportunities remain one page and use one row per `company × product profile`. The stable `opportunity_key` distinguishes Womenswear and General Merchandise rows for the same company.
+- Five business layers stay independent: Category Procurement Match, Buyer Business Model, Product Opportunity, Supplier Access / Cooperation Feasibility, and Decision Maker / Contactability. Management Baseline Match, Mexico Historical Reference Match and DPV Score remain separate reference signals.
+- The default opportunity ordering is `category_procurement_desc`. The eleven desktop columns are Company, Market / Product Profile, Buyer Model, Product Match, Product Opportunity, Supplier Access, Product Access Matrix, Buyer / Department, Best Contact, Secondary Scores and Readiness.
+- Product Match is the customer-facing name for `Category Procurement Match`. It displays score and band, `category_procurement_match_status`, and evidence coverage. A score is published only when the category and buyer-model gates have enough evidence.
+- Buyer Model displays a deterministic bilingual label for direct end buyer, distribution buyer, channel model to confirm, excluded intermediary or unknown, plus a buyer subtype when available. Company-level category demand never implies that a named buyer has been found; named people remain in Buying Contacts.
+- Product Opportunity is a second-stage recommendation layer. It displays observed category, recommendation status, real candidate count and top product when available. `NO_REAL_CANDIDATE` never reverses a confirmed Category Procurement Match, while `NOT_RUN_GATE_FAILED` states that recommendations were not run because the category gate did not pass.
+- `supplier_access_band` and `product_access_matrix` remain distinct from Product Match. The V3 matrix differentiates direct and distribution buyers at high Product Match, includes medium/low/unknown product states, and includes an ineligible-buyer state. It does not replace the Phase 6 `cooperation_matrix` or Customer Match `opportunity_matrix`.
+- Opportunity filters use `buyer_business_model`, `buyer_subtype`, `category_procurement_match_band`, `category_procurement_match_status` and `product_access_matrix`. Clear Filters restores `category_procurement_desc`; prior Phase 6 contact, feasibility and reference-score filters remain available.
+- The Product Match detail tab always presents two independent `.crm-product-profile-card` cards with `data-product-profile="WOMENSWEAR"` and `data-product-profile="GENERAL_MERCHANDISE"`. Each card shows Category Procurement Match, Buyer Business Model with subtype/eligibility/confidence, observed categories, retail/store/distribution evidence, Product Opportunity candidates and recommendation status, Supplier Access, missing evidence, public source references and last assessed time.
+- Loading, empty, API error, evidence-required/unknown, weak match, confirmed mismatch, excluded intermediary and ready are distinct states. Stable state classes are `.is-loading`, `.is-empty`, `.is-error`, `.is-unknown`, `.is-weak`, `.is-mismatch`, `.is-excluded` and `.is-ready`. Every state includes text as well as color. Missing scores never render as `0/100`; API errors offer a bilingual retry action without replacing the rest of the company detail.
+- Product candidate names and public source URLs remain verbatim. Buyer-model, subtype, eligibility, confidence, category status, product-opportunity status, supplier-access band, readiness and matrix codes pass through deterministic bilingual mappings; unknown system codes fall back to “待确认 / To confirm” and snake-case values do not appear in customer-facing copy.
+- Product Match source references are public prospect-product sources. The ordinary UI never renders supplier/customer prices, margins, internal order/customer identities, source-import keys, shared-folder paths, asset references, raw internal payloads or internal product descriptions.
+- At 390px and 375px, Company and Market / Product Profile appear above a two-column decision grid containing Buyer Model, Product Match, Supplier Access and Readiness. Product Opportunity and the longer supporting fields remain available in the detail window. Cards and text use `min-width: 0` plus `overflow-wrap: anywhere`, and the page itself must not gain horizontal overflow.

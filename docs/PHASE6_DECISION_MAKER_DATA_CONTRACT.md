@@ -326,3 +326,33 @@ historical-customer linkage and existing-customer exclusion
 ```
 
 Phase 6 reads those outputs as separate context fields and adds decision-maker evidence, contact-route quality, cooperation feasibility, access matrix and readiness. Migration 023 does not change the Phase 5 score components, match thresholds, profile calculation or stored Phase 5 results.
+
+## Phase 6.1 V3 independence contract
+
+Phase 6.1 adds five separately persisted decision layers; none may substitute for another:
+
+```text
+Category Procurement Match
+Buyer Business Model
+Product Opportunity
+Supplier Access
+Decision Maker / Contactability
+```
+
+Product Match in the management UI means Category Procurement Match. A named buyer is not required for this category-level result, but remains independently required for `SALES_READY`. Product Opportunity candidates are optional recommendations backed by real `product_master.id` rows; zero candidates do not reverse a confirmed category match.
+
+`supplier_access_score`, `supplier_access_band` and `product_access_matrix` are separate from the Category Procurement Match score and from the legacy `access_opportunity_matrix` and Customer Match `opportunity_matrix`. Phase 6.1 stores its category-match result reference on the V3 cooperation row without rewriting Phase 6 history.
+
+The V3 browser API surface is:
+
+```text
+POST /api/category-procurement/jobs
+GET  /api/category-procurement/jobs/:id
+GET  /api/category-procurement/jobs/:id/results
+GET  /api/companies/:id/category-procurement-matches
+GET  /api/companies/:id/buyer-business-model
+GET  /api/companies/:id/product-opportunities
+GET  /api/opportunities
+```
+
+Search-provider payloads contain only public prospect identity and controlled market/category terms. Internal product rows, prices, customer/order records and private source paths stay inside PostgreSQL.
