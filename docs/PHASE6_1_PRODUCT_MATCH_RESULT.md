@@ -236,13 +236,13 @@ Desktop detail was measured at 960 × 774 inside a 1440 × 900 viewport; mobile 
 ```text
 repository: https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal
 branch: main
-implementation_commit: PENDING_HANDOFF_UPDATE
-implementation_push_status: PENDING_HANDOFF_UPDATE
-implementation_pushed_at: PENDING_HANDOFF_UPDATE
-handoff_commit: PENDING_HANDOFF_UPDATE
+implementation_commit: 858a8554d743c4b2984d36960987da6eb5754982
+implementation_push_status: pushed and remote-verified
+implementation_pushed_at: 2026-08-31T13:26:04+08:00
+handoff_commit: the documentation commit referenced by annotated tag phase6.1
 tag: phase6.1
 ```
 
-The Git metadata placeholders are replaced in the second, documentation-only handoff commit after the implementation commit has been pushed and remotely verified.
+The implementation commit was verified against `refs/heads/main` before this documentation-only handoff commit was created.
 
 STOP — Phase 7 not started.
