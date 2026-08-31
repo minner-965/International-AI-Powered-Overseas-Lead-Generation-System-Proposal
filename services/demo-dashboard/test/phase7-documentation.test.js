@@ -39,7 +39,7 @@ test('Phase 7 workflow is credential-free and delegates only to the Express inte
   assert.doesNotMatch(text, /api\.resend\.com|smtp\.|\\\\[^\s"']+/i);
 });
 
-test('Phase 7 contracts and release-ready result record completed acceptance without a premature release claim', async () => {
+test('Phase 7 contracts and final result record the verified release boundary', async () => {
   const required = [
     'docs/PHASE7_REUSE_RESEARCH.md',
     'docs/PHASE7_OUTREACH_POLICY.md',
@@ -58,15 +58,15 @@ test('Phase 7 contracts and release-ready result record completed acceptance wit
   }
 
   const result = await read('docs/PHASE7_RESULT.md');
-  assert.match(result, /READY FOR RELEASE — COMMIT\/TAG PENDING/);
+  assert.match(result, /^状态：`PASS`/m);
   assert.match(result, /LIVE PILOT: NOT STARTED/);
   assert.match(result, /REAL PROSPECT SENDS: 0/);
   assert.match(result, /Provider calls = 0/);
-  assert.doesNotMatch(result, /^状态：`PASS`/m);
+  assert.match(result, /annotated tag `phase7`/);
 
   const changelog = await read('docs/VERSION_CHANGELOG.md');
-  assert.match(changelog, /phase7[^\n]*release candidate/);
-  assert.match(changelog, /Release push and tag verification remain pending/);
+  assert.match(changelog, /phase7[^\n]*released/);
+  assert.match(changelog, /annotated tag `phase7` were pushed and verified/);
 });
 
 test('Phase 6.1 V2 and V3 plans remain restored as historical inputs', async () => {

@@ -1,6 +1,6 @@
 # Version Changelog
 
-## phase7 — 2026-08-31 — release candidate
+## phase7 — 2026-08-31 — released
 
 ### Added to the working tree
 
@@ -25,7 +25,8 @@
 - Database zero-send proof recorded 0 outbound messages, 0 Provider call starts, 0 outbound events and 0 real prospect sends.
 - Workflow JSON and documentation static checks are covered by a Phase 7 documentation test.
 - `npm audit` reports 2 moderate findings in ExcelJS 4.4.0 transitive dependencies. The proposed forced remediation would downgrade ExcelJS to 3.4.0, outside the pinned and tested runtime, so no forced downgrade was applied; the transitive findings remain tracked pending an upstream-compatible resolution.
-- Browser matrix, real XLSX/CSV export and download audit, template endpoints, and shared-folder final three-hash runtime proof passed. Release push and tag verification remain pending; see `docs/PHASE7_RESULT.md`.
+- Browser matrix, real XLSX/CSV export and download audit, template endpoints, and shared-folder final three-hash runtime proof passed.
+- Implementation commit `3ffcdb613d9ea4a3b0fc1990774c1d189d204fa5`, documentation handoff, and annotated tag `phase7` were pushed and verified against the remote repository.
 
 ## phase6.1 — 2026-08-31
 
