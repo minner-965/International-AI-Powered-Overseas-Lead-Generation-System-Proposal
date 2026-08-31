@@ -122,9 +122,7 @@ a:hover { color: var(--crm-brand-strong); }
 .crm-kpi-strip .metric:last-child { border-right: 0; }
 .crm-kpi-strip .metric strong { display: block; margin-bottom: .28rem; color: var(--crm-text); font-variant-numeric: tabular-nums; font-size: 1.45rem; line-height: 1; }
 .crm-kpi-strip .metric .bi { color: var(--crm-muted); font-size: .72rem; }
-.metric-loading { background: linear-gradient(90deg,var(--crm-surface-subtle),var(--crm-accent-soft),var(--crm-surface-subtle)) !important; background-size: 200% 100% !important; }
-@media (prefers-reduced-motion:no-preference) { .metric-loading { animation: crm-loading 1.4s linear infinite; } }
-@keyframes crm-loading { to { background-position: -200% 0; } }
+.metric-loading { background: var(--crm-surface-subtle); }
 
 .crm-overview-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(280px,.8fr); gap: 1rem; }
 .crm-panel.card, .crm-panel { min-width: 0; margin: 0; border: 1px solid var(--crm-border); border-radius: var(--crm-radius); background: var(--crm-surface); color: var(--crm-text); box-shadow: var(--crm-shadow); }

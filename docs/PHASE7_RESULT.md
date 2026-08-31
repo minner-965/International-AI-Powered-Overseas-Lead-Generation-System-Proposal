@@ -1,8 +1,10 @@
 # Phase 7 实施结果
 
 日期：2026-08-31
-计划：`DPV_PHASE7_CODEX_EXECUTION_PLAN_V1.md`（V1.1）
+计划：`DPV_PHASE7_CODEX_EXECUTION_PLAN_V1.md`（V1.2）
 状态：`PASS`
+
+> 文档勘误（2026-08-31）：此前本结果文件将已发布计划版本写为 V1.1；`phase7` 标签内的权威计划文件实际为 V1.2。本次仅校正版本标注，不改变 Phase 7 的行数、验收结论、提交历史或标签位置。
 
 ## 当前结论
 

@@ -1,190 +1,408 @@
 # DPV Frontend UI System
 
-This document is the source of truth for company-facing frontend work in this repository.
+版本：Phase 8
+日期：2026-08-31
+状态：公司工作台前端 Source of Truth
+
+本文件定义现在和以后全部公司可见前端的硬规则。详细 tokens 与组件规范见 [PHASE8_DESIGN_SYSTEM.md](./PHASE8_DESIGN_SYSTEM.md)，基线问题见 [PHASE8_VISUAL_AUDIT.md](./PHASE8_VISUAL_AUDIT.md)，第三方采用边界见 [PHASE8_UI_UX_REUSE_RESEARCH.md](./PHASE8_UI_UX_REUSE_RESEARCH.md)。
 
 ## Product direction
 
-- Product: internal B2B prospect research and lead review workspace for an international trading business covering full-category womenswear and general merchandise.
-- Audience: company management and overseas sales users.
-- Visual language: trustworthy, modern, compact, and operational. It must read as a working business system, not a consumer fashion store or a generic analytics template.
-- Theme: maritime blue, mist-blue surfaces and neutral text, with System, Light and Dark modes.
-- Design dials: variance 3/10, motion 2/10, density 8/10.
-- Existing features receive this UI directly. Future features must extend the same tokens and component patterns.
-- Current visible market context is `AE / MX`. BD remains supported by the backend and historical model but is temporarily hidden by `public/market-visibility.js`; the same flag filters the selector, sidebar summary, ICP display, management metrics, company directory, opportunities, lead detail and export. Set its single `visible` flag to `true` and rebuild the dashboard to restore those surfaces without migrating historical data.
+- Product：国际贸易公司内部 B2B 客户研究、机会判断、联系准备与数据交换工作台。
+- Audience：公司管理层和海外销售人员。
+- Product scope：全品类女装与 general merchandise；当前可见市场 `AE / MX`。
+- Visual language：calm、operational、human、evidence-first；不是女装商城、营销 Landing Page 或通用 dashboard 模板。
+- Design dials：variance 3/10、motion 2/10、density 8/10。
+- Existing features 直接使用本系统；未来功能只扩展同一 tokens、components 和 business language。
+- BD 继续由 backend/historical model 支持，但由 `public/market-visibility.js` 的单一 `visible` flag 隐藏。恢复时修改该 flag 并重建，不迁移或伪造历史数据。
+
+真实业务事实优先于视觉完整感。`RECOMMENDED=0`、`MANAGEMENT_APPROVED=0`、`Provider calls=0`、`real sends=0` 是合法结果，不得回退到 Tier A、DPV Score、演示记录或虚构图表填充。
+
+## Foundation and dependency boundary
+
+```text
+Express static frontend
+vanilla HTML / CSS / JavaScript
+@tabler/core 1.4.0
+@tabler/icons-webfont 3.46.0
+native dialog/details/form/table/grid
+```
+
+- 不迁移 React、Vue、Svelte 或 Tailwind。
+- 不增加 CDN、Google Fonts、遥测或远程 UI assets。
+- Tabler/Core 和 Icons 固定版本、本地 `/vendor` 提供，保留 MIT license notices。
+- 只使用 Tabler Icons 一套 icon family。
+- AG Grid、Grid.js 和另一个 design system 在 Phase 8 不引入。
 
 ## CSS layers
 
-Styles load in this order:
+Phase 8 最终加载顺序：
 
-1. Local `@tabler/core` and `@tabler/icons-webfont` assets: base controls, tables and icons.
-2. `services/demo-dashboard/public/styles.css`: legacy-compatible tokens and business components.
-3. `services/demo-dashboard/public/bilingual.css`: bilingual layout plus ResearchJob, tier, status, and candidate-table components.
-4. `services/demo-dashboard/public/contact-results.css`: contact and evidence result components.
-5. `services/demo-dashboard/public/phase5.css`: authoritative CRM shell, responsive layout, theme and density specialization.
+1. Local `@tabler/core` CSS。
+2. Local `@tabler/icons-webfont` CSS。
+3. `public/ui/phase8-tokens.css`：唯一 semantic token source。
+4. `public/ui/phase8-foundation.css`：typography、focus、shell foundation。
+5. `public/ui/phase8-components.css`：controls、status、chips、tables、dialog、drawer。
+6. `public/ui/phase8-pages.css`：page composition。
+7. `public/ui/phase8-responsive.css`：breakpoints、mobile decision cards/sheets、safe areas。
 
-Later files may specialize a component but must not redefine global brand or spacing tokens.
+Legacy `styles.css`、`bilingual.css`、`contact-results.css`、`phase5.css`、`phase7.css` 只在逐段迁移期间加载。Phase 8 接管某 selector 后，应删除 superseded declaration，禁止用一个新的大型 override 文件盖住旧层。
 
-## Core tokens
+组件和页面只能引用 semantic tokens。禁止在 page/component 文件新增 raw hex、随机 radius/shadow 或为解决 specificity 大量使用 `!important`。
 
-New UI must reuse semantic tokens instead of adding raw component colors.
+## Core visual tokens
+
+### Light
 
 | Role | Token | Value |
 | --- | --- | --- |
-| Brand | `--color-brand` | `#214a86` |
-| Brand strong | `--color-brand-strong` | `#173f75` |
-| Brand soft | `--color-brand-soft` | `#e7effb` |
-| Primary action | `--color-accent` | `#2f63d9` |
-| Selected surface | `--color-accent-soft` | `#edf3ff` |
-| Main text | `--ink` | `#182235` |
-| Secondary text | `--ink-soft` | `#34435a` |
-| Muted text | `--muted` | `#5d6a7e` |
-| Canvas | `--paper` | `#f2f5fa` |
-| Surface | `--card` | `#ffffff` |
-| Subtle surface | `--card-subtle` | `#f7f9fc` |
-| Control border | `--color-control-border` | `#8293a9` |
-| Divider | `--line-soft` | `#d8e0eb` |
-| Focus | `--focus` | `#b24b19` |
+| Canvas | `--p8-canvas` | `#F6F5F2` |
+| Surface | `--p8-surface` | `#FFFFFF` |
+| Surface subtle | `--p8-surface-subtle` | `#F1F2F6` |
+| Main ink | `--p8-ink` | `#172033` |
+| Muted ink | `--p8-muted` | `#5F6B7A` |
+| Border | `--p8-border` | `#DDDDE3` |
+| Primary | `--p8-primary` | `#4F46E5` |
+| Primary hover | `--p8-primary-hover` | `#4338CA` |
+| Success | `--p8-success` | `#166534` |
+| Warning | `--p8-warning` | `#92400E` |
+| Danger | `--p8-danger` | `#B91C1C` |
 
-Status colors are semantic exceptions. Tier A is green, Tier B is amber, and Tier C is red. Every state must also include a visible letter or text label; color is never the only signal.
+### Dark
 
-Use `--radius-card` for major panels, `--radius-control` for inputs and buttons, and a full pill radius only for compact status labels. Use the existing shadow tokens.
+```text
+canvas #10131A
+surface #171B24
+surface raised #1D2230
+main ink #F3F4F6
+muted ink #A8B0BF
+border #303747
+primary #818CF8
+```
 
-## Reusable components
+### Type, shape and spacing
 
-- App shell: `.crm-shell`, `.crm-sidebar`, `.crm-topbar`, `.crm-main`, `.crm-content`
-- Primary navigation: `[data-app-nav]` and matching `[data-app-view]`
-- Brand and market context: `.crm-brand`, `.crm-brand-mark`, `.market-code`
-- Section heading and commands: `.crm-section-head`, `.crm-command-bar`, `.crm-context`, `.crm-description`
-- Panels: `.crm-panel`, `.research-panel`, `.list-panel`
-- Forms and filters: `.research-form`, `.filter-control`
-- KPI overview: `.metrics`, `.metric`
-- Lead review: `.table-wrap`, `#leads`, `.lead-select`, `.tier-score`, `.pill`, `.size-tag`
-- Data quality states: `.data-state-badge` with visible Verification and Lifecycle text
-- Lead detail: `.crm-detail-drawer`, `.crm-detail-header`, `.crm-detail-tabs`, `.crm-tab-panel`, `.crm-detail-score-set`
-- Tables: `.crm-table` inside `.table-responsive`
-- Display controls: `#theme-toggle`, `#theme-mode`, `#density-toggle`, `#density-mode`
-- Research results: `.research-job`, `.research-job-grid`, `.candidate-*`, `.contact-*`, `.result-status`
-- Import batches: the Jobs view reuses `.crm-panel`, `.crm-table`, `.table-responsive` and existing state badges; it displays aggregate counts only
-- ICP comparison: the Customer Match view uses equal profile cards for Womenswear Management Baseline, General Merchandise Management Baseline and Mexico Historical Customer ICP
-- Dual match: Opportunities and company detail display Management Baseline Match and Mexico Historical Reference Match in separate columns/cards
-- Phase 6 opportunity controls: `#opportunity-filter-disclosure`, `#opportunity-filters`, `#opportunity-sort`, `#start-enrichment` and `#enrichment-job-status`
-- Phase 6 opportunity columns: `.op-col-company`, `.op-col-market-product`, `.op-col-feasibility`, `.op-col-readiness`, `.op-col-contact` and `.op-col-secondary`
-- Phase 6 detail: the reusable company dialog adds Buying Contacts and Cooperation Feasibility tabs using `.crm-decision-maker-*`, `.crm-contact-route-*` and `.crm-feasibility-*`
-- Phase 6.1 Product Match: Opportunities use `.op-col-buyer-model`, `.op-col-product-match`, `.op-col-product-opportunity`, `.op-col-supplier-access` and `.op-col-product-access`; company detail uses `#detail-tab-product-match`, `#detail-panel-product-match`, `#product-match-panel`, `.crm-product-profile-card[data-product-profile]` and `.crm-product-match-*`
+```text
+font sans: Inter Var, Inter, Segoe UI Variable, Segoe UI,
+  Microsoft YaHei UI, Microsoft YaHei, sans-serif
+font mono: Cascadia Mono, SFMono-Regular, Consolas, monospace
+page title: 28-32px desktop / 24-26px mobile
+body: 15-16px / line-height 1.5
+table metadata: minimum 12px
+shell radius: 18px
+panel radius: 16px
+control radius: 10px
+base spacing: 4px
+page gap: 24px desktop / 16px mobile
+panel padding: 20-24px desktop / 16px mobile
+touch target: minimum 44 x 44px
+```
 
-When a future feature matches one of these roles, extend the existing component rather than creating a visually separate card, button, badge, or table system.
+Panel shadow 只用于真实浮层层级；popover/dialog 使用更强一档。Table cell、KPI 和详情字段不单独做卡片或阴影。
 
-### Detail windows and decision actions
+## Information architecture
 
-- Desktop detail windows are centered and content-sized. Use a practical minimum width, a bounded maximum width and `max-height` below the viewport; short content must not be stretched to full screen.
-- Every detail window keeps an always-visible bilingual Back or Close action and a separate icon close button. Escape and backdrop click dismiss when no unsaved operation is in progress.
-- Use one scroll container only: the toolbar and decision footer remain outside the scrolling body. Focused content must never be hidden behind the footer.
-- Closing restores focus to the exact company or action that opened the window, or to its refreshed replacement after a table rerender.
-- On phones, the window may become near-fullscreen but must respect safe-area insets. Tabs may scroll horizontally; decision buttons stay visible with at least 44px touch targets.
-- Approval is the primary action. Rejection is a clearly labelled danger-secondary action. While saving, disable only the decision group, expose `aria-busy`, and show bilingual progress, success and recoverable error feedback inside the window.
+Primary navigation 按老板的工作路径分组：
 
-## Stable functionality hooks
+```text
+决策 / Decide
+  总览 / Overview
+  业务机会 / Opportunities
 
-Visual work must preserve these hooks and their behavior:
+执行 / Act
+  待联系 / Contact Queue
+  市场研究 / Research
+  研究任务 / Jobs
 
-- `#reset` and `POST /api/live/collect`
-- `#research-form` and all existing input IDs, names, option values, request fields, and `POST /api/research/jobs`
-- `#metrics` and `GET /api/metrics`
-- `#leads`, `#tier`, `#size`, and `GET /api/leads`
-- `#detail` and `GET /api/leads/:id`
-- score, score-history, Customer Match, match-history and ICP read endpoints
-- `[data-app-nav]`, `[data-app-view]`, `#sidebar-toggle` and the eight-page information architecture
-- `.actions button[data-status]` and approval updates
-- `#research-job` plus ResearchJob polling, query, and candidate endpoints
-- `#opportunity-table`, `#opportunity-sort`, `#opportunity-filters` and `GET /api/opportunities`
-- `#start-enrichment`, `#enrichment-job-status`, `POST /api/enrichment/jobs` and `GET /api/enrichment/jobs/:id`
-- `GET /api/leads/:id/decision-makers`, `GET /api/leads/:id/contact-routes` and `GET /api/companies/:id/cooperation-feasibility`
-- `GET /api/companies/:id/category-procurement-matches`, `GET /api/companies/:id/buyer-business-model` and `GET /api/companies/:id/product-opportunities`
+资料 / Records
+  客户名录 / Companies
+  客户匹配 / ICP
+  资料依据 / Evidence
 
-IDs are JavaScript and accessibility hooks. New styling should use classes. Do not rename endpoints, payload keys, returned fields, or source evidence during a visual refactor.
+数据 / Data
+  数据导入 / Data Import
+  数据导出 / Data Export
+
+设置 / Settings
+```
+
+- Opportunities 是登录后的默认业务决策页。
+- Overview 是管理摘要，priority list 只来自 Recommended。
+- Companies 是全量主档，出现不代表建议联系。
+- Evidence Required 是 Opportunities 一级 view，不是后台错误列表。
+- Contact Queue 是独立执行页，只显示当前可执行项。
+- 同时只有一个 primary nav item 使用 `aria-current="page"`。
+- 所有主要页面保持 URL hash/deep-link，Back 恢复 view、filters、scroll 和触发器 focus。
+
+## Stable hooks and API contracts
+
+Visual refactor 必须保留以下 ID、`data-*`、request fields、enum values 和行为：
+
+```text
+[data-app-nav] / [data-app-view]
+#sidebar-toggle
+#reset and POST /api/live/collect
+#research-form and POST /api/research/jobs
+#research-job and ResearchJob polling/query/candidate endpoints
+#metrics and GET /api/metrics
+#leads, #tier, #size and GET /api/leads
+#detail and GET /api/leads/:id
+#opportunity-table
+#opportunity-sort
+#opportunity-filters
+#start-enrichment
+#enrichment-job-status
+all data import/export form IDs
+all Phase 7 management auth / role / CSRF flows
+```
+
+新增 stable hooks：
+
+```text
+[data-app-nav="contact-queue"]
+[data-app-view="contact-queue"]
+#opportunity-status-tabs
+#opportunity-primary-filters
+#opportunity-advanced-filter-drawer
+#evidence-required-list
+#contact-queue-list
+#detail-section-nav
+```
+
+继续保留：
+
+- score/history、Customer Match/history、ICP read endpoints。
+- Phase 6 decision-makers、contact-routes、cooperation-feasibility endpoints。
+- Phase 6.1 category-procurement、buyer-business-model、product-opportunities endpoints。
+- Phase 7 opportunities、decisions、management approval、Contact Queue、draft/message、import/export endpoints。
+
+不得在纯视觉重构中改 endpoint、payload key、returned field、evidence content、product master ID、历史 OKKI fact 或后端 enum。样式使用 class，不把 ID 变成装饰选择器。
 
 ## Bilingual presentation
 
-- Company-facing labels use `.bi` with Chinese above English.
-- Both languages use the same inherited font size and weight.
-- Add `lang="zh-CN"` and `lang="en"` to the respective lines.
-- Use short functional business wording.
-- Do not rewrite, translate, or embellish company names, emails, phones, URLs, source evidence, or other returned business data.
-- Native select options may use concise `中文 / English` text because nested markup is not supported.
-- Internal enum values must be converted to readable labels before display; snake-case database codes do not appear as customer-facing copy.
+- 公司可见 label 使用 `.bi`，中文在上、英文在下。
+- `.bi` 内两行在同一组件角色中使用相同字号、相同字重、相同行高和相同文字颜色。
+- 中英文语义同等完整；不得用更小字号、更轻字重或 muted 颜色降级英文。
+- 信息层级由 page/section/label 等组件角色、间距、布局与容器建立，而不是由语言差异建立。
+- 使用 `lang="zh-CN"` 与 `lang="en"`。
+- Native `<option>` 使用简洁 `中文 / English`。
+- Internal enum 通过确定性 label map，snake_case 不进入可见文案。
+- 不翻译、重写或 embellish 公司名、邮箱、电话、URL、产品名、source finding/evidence 原文。
+- Loading、empty、error、disabled reason、success 和 recovery action 全部双语。
 
-## Responsive rules
+## Business wording rule
 
-- At 992px and above: fixed vertical sidebar, sticky top bar and full-width management workspace.
-- Below 992px: sidebar becomes off canvas with a scrim and explicit menu button; main content occupies the full viewport.
-- At 768px and below: section headers, command actions, filters and forms stack without overlapping.
-- At 390px: filters use two columns where possible, the third control spans the row, KPI facts use two columns, and long company tables stay inside a horizontal scroll container.
-- At 390px, customer and opportunity tables show the decision-critical columns first. Secondary evidence, freshness and reference fields remain available in the detail window instead of forcing a 1,000px-wide first view. The View action stays next to the company name.
-- At 390px and 375px, Phase 6.1 opportunities retain Company, Market / Product Profile, Buyer Model, Product Match, Supplier Access and Readiness. Buyer Model and Product Match never use a hidden or secondary column. Product Opportunity, Product Access Matrix, buyer/contact detail and secondary scores remain available in the company detail instead of widening the phone viewport.
-- At 420px and below, those six decision-critical fields use one full-width column. Long bilingual badges wrap inside the card; clipping content to simulate a two-column overview is not acceptable.
-- Customer details use a viewport-contained native dialog with ten tabs and vertical scrolling when required.
-- Comfortable and Compact change row/cell/form spacing only; they never scale the whole document.
-- Wide data tables remain inside labeled, keyboard-focusable horizontal scroll regions. They must never expand the page viewport.
-- The Customer Match / ICP view renders the active Womenswear, General Merchandise and Mexico Historical profiles as equal cards on desktop and stacked cards on mobile.
-- Browser zoom, Ctrl/Command zoom, and mobile pinch zoom must remain available. Never add `maximum-scale`, `user-scalable=no`, fixed page scaling, or viewport rules that prevent reflow.
+UI、Excel、CSV 和导出说明必须使用短、具体、可由当前字段证明的业务语言。
 
-## Accessibility and interaction
+不得出现：
 
-- All text and controls must meet WCAG AA contrast.
-- Inputs and primary controls use a minimum 44px target height.
-- Every interactive element has a visible `:focus-visible` ring.
-- Customer selection must work from a native button and keyboard.
-- Async buttons expose disabled and busy states.
-- Short status text may use `role="status"`; do not announce an entire polling result panel on every refresh.
-- Respect `prefers-reduced-motion`.
-- Do not use emoji as structural icons or add decorative charts that are not backed by actual business data.
+```text
+AI-powered / AI generated
+智能生成 / 自动智能推荐
+革命性 / 赋能 / 下一代 / 无缝
+Demo / phase number / provider name
+raw enum / snake_case / not_checked
+internal queue / token / path / hash / stack trace
+```
+
+不要重复用 “real” 表现真实性。通过来源、captured/verified time、verification status、SHA/audit 和业务计数证明。机会建议只来自 current deterministic decision 和 Gate，不从 Tier/DPV Score 语言暗示建议联系。
+
+## Status, badge and chip
+
+```text
+badge = static business state
+chip = selected filter/value/action
+```
+
+可使用状态色：`RECOMMENDED`、`MANAGEMENT_APPROVED`、`EVIDENCE_REQUIRED`、`HOLD`、`NOT_SUITABLE`、`SUPPRESSED`、hard bounce、complaint、opt-out。
+
+普通属性不使用彩色 pill：company size、market、business type、data active、DPV Score、Tier numeric、product profile、source count。
+
+每个列表行最多一个主 decision status + 一个 blocker/risk marker。状态必须有可见中英文字或 icon + text，颜色不是唯一信号。Filter chips 可换行；unavoidable truncation 必须有 keyboard/touch 可操作的完整 disclosure，不能只用 hover tooltip。
+
+## Page contracts
+
+### Overview
+
+- Page header + one-sentence operating summary + last refresh + one primary action。
+- 4 个指标：Recommended、Management Approved/Contact Queue、Evidence Required、Active Companies。
+- Recommended list 最多 5 条，只来自 opportunities decision。
+- 0 时显示“尚无联系就绪机会”和 CONTACT/BUYER_ROLE/EMAIL/PRODUCT/COMPANY 聚合原因；不回退 Tier A/DPV Score。
+- 不显示无业务动作含义的装饰图表。
+
+### Opportunities
+
+- 默认 status = `RECOMMENDED`。
+- Tabs：Recommended、Evidence Required、Management Approved、Hold、Not Suitable、All。
+- 常显 Search、Status、Market、Product Profile、Sort；其他 15 个参数进入 advanced drawer。
+- Active filters 以 removable chips 显示，保留所有现有 query semantics。
+- 默认 7 列：Company；Market/Profile；Opportunity Status；Buyer Model/role；Product Match；Buyer/VALID contact；Supplier Access/action。
+- Secondary score、matrix、full reasons、freshness 和 routes 进入 detail。
+- Recommended 为 0 时不渲染宽空 table，显示 compact empty state + View Evidence Required。
+- Confirm Contact 只在 Gate 0 当前全部通过时出现。
+
+### Evidence Required
+
+按 Product/Category、Buyer model、Contact missing、Buyer role、Email、Identity、History 主阻断原因分组。每行只显示 Company/Profile、business fit、一个 blocker、owner、last checked、next safe action。Phase 8 不自动启动 Phase 9 批量补证。
+
+### Contact Queue
+
+只显示当前 `MANAGEMENT_APPROVED` 且 Gate 0 仍有效记录。包含 Buyer/role、VALID contact expiry、approver/time、draft/message state、last contact/reply、owner/next action。空时显示真实业务状态，不生成示例记录。
+
+### Companies
+
+- 标题为 Company Directory，说明“出现在此处不代表建议联系”。
+- 默认列：Company/Website、Market、Business Type、Verification、Relationship、Latest Evidence、Related Opportunity、Action。
+- 无 Confirm Contact、message approval 或 send 入口。
+- Legacy company review 叫 Confirm Company Record / Exclude Company Record，不叫 Opportunity approval。
+
+### Detail workspace
+
+4 个一级区域：
+
+```text
+Snapshot
+Business Fit
+Buyer & Contact
+Activity & Records
+```
+
+Desktop content-sized，max 1,200-1,280px，left section nav + main content + optional 260px sticky summary。Tablet near-fullscreen；Mobile 单栏 full-height，Back 固定，section nav 变 select/accordion。
+
+顶部只显示 Company、Market/Profile、一个 primary status、一个 blocker、source freshness。一个 scroll container；Back/Close 始终可见；sticky footer 只在 valid action 存在时显示。
+
+Legacy data actions 使用 Confirm Company Record / Exclude Company Record，与 Management Approval 完全分离。
+
+### Research and Jobs
+
+- Research：Market & Product -> Buyer target -> Scope review & create job。
+- 所有 input name/value 和 `POST /api/research/jobs` 不变。
+- Jobs 区分 Research Jobs、Import Jobs、Export Jobs。
+- UI 不显示内部 token、queue、path 或 raw payload。
+
+### Data Import
+
+```text
+Select Type & File
+-> Check
+-> Review Rows
+-> Submit Approval
+-> Approve Version
+-> Commit
+```
+
+一次只突出当前动作；disabled 同时解释缺少什么。常显 accepted/review/rejected/duplicate summary，row table 按需展开。保留 Phase 7 type、template、approval、commit、result report 和 service-side validation。
+
+### Data Export
+
+```text
+Dataset -> Scope -> Format -> Column preview -> Generate -> Download
+```
+
+保留 Phase 7 field allowlist、role projection、token expiry、SHA、download audit 和 private path boundary。0 行结果不显示正常 download success；Column Permission 是 form 下方普通 summary，不做同权空卡。
+
+### Customer Match / Evidence / Settings
+
+- ICP 三套 profile 保持独立，使用对齐 comparison rows，不做三张重复装饰卡。
+- Evidence 是按 company/opportunity 的 reader，显示 evidence type、finding、source、freshness、supports/contradicts；不是共享目录浏览器。
+- Settings 保留 system/light/dark、comfortable/compact；新增 bilingual detail standard/compact。偏好只在浏览器保存，不改变数据库资格、机会或审批状态。
+
+## Dialog and interaction
+
+- 使用 native `<dialog>` + `showModal()`。
+- 打开时 focus title/Back 或最合适动作；Tab/Shift+Tab 留在 dialog；Escape 在无未保存操作时关闭。
+- 始终有可见双语 Back/Close 和独立 icon close。
+- 关闭恢复到准确触发器或其 table refresh 后 replacement。
+- 一个 scroll container；header/nav/footer 在滚动 body 外，focused content 不被 sticky footer 遮挡。
+- 无未保存操作时可 backdrop dismiss；有 unsaved action 先确认。
+- Async 只禁用相关 action group，设置 `aria-busy`，在同一区域显示 progress/success/recoverable error。
+- Destructive action 使用 danger-secondary，与 primary action 分离。
+
+## Responsive contract
+
+验收 viewport：
+
+```text
+1440 x 900
+1024 x 768
+768 x 900
+390 x 844
+375 x 667
+844 x 390
+```
+
+- Desktop >=1024px：grouped fixed sidebar、sticky topbar、content max 1600px、default operational table 无页面级横向 overflow。
+- Tablet 768-1023px：collapsible sidebar、filters 两行、detail near-fullscreen、sticky action 可见且不遮 focus。
+- Mobile <768px：off-canvas nav、decision cards/reduced columns、advanced filter full-height sheet、44px targets、safe-area padding。
+- Mobile 不把 11 列表格缩小；保留 status、company、profile、Buyer/contact、action，secondary information 进入 detail。
+- 长 company、URL、email、phone、bilingual reason 使用 `min-width:0` + `overflow-wrap:anywhere`。
+- 使用 `100dvh`；禁止 `h-screen`、page scale hack、`maximum-scale` 或 `user-scalable=no`。
+- Browser zoom、Ctrl/Command zoom 和 mobile pinch zoom 保持可用。
+- Comfortable/Compact 只改 spacing，不缩放 document。
+
+## Accessibility
+
+- WCAG AA normal text >=4.5:1；non-text/control boundary >=3:1。
+- Web target 使用更强的 44 x 44px 项目标准。
+- 每个 interactive element 有 visible `:focus-visible`；focus 不被 sticky UI 隐藏。
+- Logical heading hierarchy；view change 后 focus main/page title。
+- Visible input labels、inline validation、cause + recovery error。
+- Multi-error form focus error summary，同时保留 inline errors。
+- Icon-only control 有 accessible name；visible text 旁 decorative icon `aria-hidden="true"`。
+- Status 不是 color-only；async operation 一个 contextual live region。
+- `prefers-reduced-motion` 移除非必要 transition/animation/smooth scroll。
+- Keyboard-only 完成 navigation、filters、drawer、detail、pagination、import/export 和返回路径。
+
+## Motion
+
+```text
+hover/focus/selection 120-180ms
+drawer/modal entry 180-220ms
+no page scroll reveal
+no bouncing counters
+no animated gradients
+```
+
+只动画 opacity/transform，不动画 width/height/top/left。Motion 只表达 feedback/state transition/hierarchy，correctness 不依赖 animation end。
+
+## Data and security boundaries
+
+Ordinary UI 不显示：
+
+```text
+shared-folder path / staging path
+raw filename for sensitive internal source
+source or evidence hash outside approved audit view
+raw payload
+internal OKKI link
+supplier cost / margin / internal order identity
+token / credential / key
+private export path
+email body outside approved message workflow
+```
+
+Phase 8 保持：
+
+```text
+OUTREACH_ENABLED=false
+LIVE_PROSPECT_SEND_APPROVED=false
+OUTBOUND_EMAIL_PROVIDER=NONE
+RESEND_USE_CASE=DISABLED
+```
+
+UI 不直接调用 n8n、Hunter 或 outbound Provider。Phase 7 import/export/approval/suppression/webhook/CRM 行为与共享目录严格只读边界保持不变。
 
 ## Extension checklist
 
-Before adding a new feature:
+每个未来功能必须：
 
-1. Reuse the tokens and closest existing component.
-2. Preserve the feature's API and data semantics.
-3. Add equal-size Chinese and English labels.
-4. Define loading, empty, error, success, keyboard, and disabled states when applicable.
-5. Test at desktop, 1024px, 768px, and 390px widths.
-6. Confirm there is no page-level horizontal overflow and no clipped long company name, URL, phone, or email.
-7. Verify existing lead counts and data still match before and after the UI change.
-8. For internal imports, expose aggregate batch status and counts only; never render shared-folder paths, raw filenames, raw row payloads, HR/finance content or passwords.
-## Phase 5 V2.3.1：历史 CRM
-
-- Jobs 页面承载“历史客户记录 / Historical CRM Records”列表与导入汇总，避免把内部 CRM 资料混入 Evidence 或 Customer Match。
-- 历史详情复用 `#detail.crm-detail-drawer`，包含概览、联系概况、历史活动三个页签；没有 `lead_review` 时不显示批准与拒绝。
-- 活动类型只显示“营销邮件已发送 / Marketing email sent”和“人工跟进 / Manual follow-up”等已支持语义。
-- 服务端对详情响应使用字段白名单；内部链接、附件、来源路径、文件哈希和原始 payload 不进入 API/DOM。
-- 390px 仅保留公司、历史状态、分类、最近活动和操作；其他字段在详情查看，表格横向滚动限制在组件内。
-- 手机详情窗按内容高度显示并受 `100dvh` 安全区限制；返回与关闭按钮保持至少 44px，原生浏览器缩放不受限制。
-
-## Phase 6：采购联系人与合作可行性
-
-- Phase 6 extends the existing Opportunities page and company detail dialog. It does not add a separate navigation system.
-- The default opportunity ordering is `feasibility_desc`. Cooperation Feasibility, Cooperation Matrix, Management Baseline Match, Mexico Historical Reference Match and DPV Score remain separate visible signals.
-- `cooperation_matrix` is the supplier-access matrix (`HIGH_FIT_HIGH_ACCESS`, `HIGH_FIT_LOW_ACCESS` and related states). It must not replace the existing Customer Match `opportunity_matrix` field.
-- Opportunity filters use the reusable disclosure and filter-grid pattern. The active filter count is visible, all fields retain native select semantics, and Clear Filters restores `feasibility_desc`.
-- The Buying Contacts tab shows named people or buying departments, raw job titles, normalized roles, role and product relevance, business contact routes, verification and clickable source references.
-- The Cooperation Feasibility tab shows the score and band, cooperation matrix, readiness, relationship context, supplier onboarding routes, known barriers, missing evidence, six dimension rows and source references.
-- LinkedIn and other professional-profile URLs may be displayed only as source references for manual review. They never replace independent role or contact verification.
-- The ordinary UI must not expose internal OKKI links, source hashes, evidence hashes, shared-folder paths, staging paths or raw record payloads.
-- The `#start-enrichment` action calls Express `POST /api/enrichment/jobs`; the browser never calls n8n or an enrichment provider directly. Its live region reports persisted job state and safe aggregate counters only.
-- Enrichment controls do not send email, WhatsApp, forms, supplier registrations or professional-network messages.
-
-## Phase 6.1 V3：品类采购匹配与产品机会
-
-- Opportunities remain one page and use one row per `company × product profile`. The stable `opportunity_key` distinguishes Womenswear and General Merchandise rows for the same company.
-- Five business layers stay independent: Category Procurement Match, Buyer Business Model, Product Opportunity, Supplier Access / Cooperation Feasibility, and Decision Maker / Contactability. Management Baseline Match, Mexico Historical Reference Match and DPV Score remain separate reference signals.
-- The default opportunity ordering is `category_procurement_desc`. The eleven desktop columns are Company, Market / Product Profile, Buyer Model, Product Match, Product Opportunity, Supplier Access, Product Access Matrix, Buyer / Department, Best Contact, Secondary Scores and Readiness.
-- Product Match is the customer-facing name for `Category Procurement Match`. It displays score and band, `category_procurement_match_status`, and evidence coverage. A score is published only when the category and buyer-model gates have enough evidence.
-- Buyer Model displays a deterministic bilingual label for direct end buyer, distribution buyer, channel model to confirm, excluded intermediary or unknown, plus a buyer subtype when available. Company-level category demand never implies that a named buyer has been found; named people remain in Buying Contacts.
-- Product Opportunity is a second-stage recommendation layer. It displays observed category, recommendation status, real candidate count and top product when available. `NO_REAL_CANDIDATE` never reverses a confirmed Category Procurement Match, while `NOT_RUN_GATE_FAILED` states that recommendations were not run because the category gate did not pass.
-- `supplier_access_band` and `product_access_matrix` remain distinct from Product Match. The V3 matrix differentiates direct and distribution buyers at high Product Match, includes medium/low/unknown product states, and includes an ineligible-buyer state. It does not replace the Phase 6 `cooperation_matrix` or Customer Match `opportunity_matrix`.
-- Opportunity filters use `buyer_business_model`, `buyer_subtype`, `category_procurement_match_band`, `category_procurement_match_status` and `product_access_matrix`. Clear Filters restores `category_procurement_desc`; prior Phase 6 contact, feasibility and reference-score filters remain available.
-- The Product Match detail tab always presents two independent `.crm-product-profile-card` cards with `data-product-profile="WOMENSWEAR"` and `data-product-profile="GENERAL_MERCHANDISE"`. Each card shows Category Procurement Match, Buyer Business Model with subtype/eligibility/confidence, observed categories, retail/store/distribution evidence, Product Opportunity candidates and recommendation status, Supplier Access, missing evidence, public source references and last assessed time.
-- Loading, empty, API error, evidence-required/unknown, weak match, confirmed mismatch, excluded intermediary and ready are distinct states. Stable state classes are `.is-loading`, `.is-empty`, `.is-error`, `.is-unknown`, `.is-weak`, `.is-mismatch`, `.is-excluded` and `.is-ready`. Every state includes text as well as color. Missing scores never render as `0/100`; API errors offer a bilingual retry action without replacing the rest of the company detail.
-- Product candidate names and public source URLs remain verbatim. Buyer-model, subtype, eligibility, confidence, category status, product-opportunity status, supplier-access band, readiness and matrix codes pass through deterministic bilingual mappings; unknown system codes fall back to “待确认 / To confirm” and snake-case values do not appear in customer-facing copy.
-- Product Match source references are public prospect-product sources. The ordinary UI never renders supplier/customer prices, margins, internal order/customer identities, source-import keys, shared-folder paths, asset references, raw internal payloads or internal product descriptions.
-- At 390px and 375px, Company and Market / Product Profile appear above a two-column decision grid containing Buyer Model, Product Match, Supplier Access and Readiness. Product Opportunity and the longer supporting fields remain available in the detail window. Cards and text use `min-width: 0` plus `overflow-wrap: anywhere`, and the page itself must not gain horizontal overflow.
+1. 先复用现有 token 和最接近 component。
+2. 保持 API/data semantics，不把 UI preference 写成业务状态。
+3. 使用中文主标签 + 英文 companion，enum 有确定性映射。
+4. 定义 loading、empty、error、success、disabled、keyboard 和 recovery。
+5. 每 screen 一个 primary action，每 row 最多一个 status + 一个 risk。
+6. 测试六个 viewport、light/dark、comfortable/compact、200% zoom、reduced motion。
+7. 确认无 page-level horizontal overflow、clipped bilingual label 或被 sticky UI 遮挡的 focus。
+8. 确认真实 counts 和 business decisions 在 UI 前后相同。
+9. 确认 UI、Excel、CSV 没有 AI 宣传、snake_case、乱码、内部路径或私密内容。
+10. 第三方依赖先记录 version、license、cost、privacy、maintenance、deployment 和 integration boundary，固定版本后才能引入。

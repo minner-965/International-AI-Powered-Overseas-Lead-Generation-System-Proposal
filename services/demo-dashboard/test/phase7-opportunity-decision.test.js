@@ -20,8 +20,10 @@ const eligible = (overrides = {}) => ({
 test('verified direct buyer and exact category match becomes recommended', () => {
   const result = deriveOpportunityDecision(eligible());
   assert.equal(result.system_recommendation_status, 'RECOMMENDED');
+  assert.equal(result.business_fit_status, 'FIT');
   assert.equal(result.contact_readiness, 'READY');
   assert.equal(result.display_opportunity_status, 'RECOMMENDED');
+  assert.equal(result.rule_version, 'business-opportunity-decision-v2');
   assert.match(result.input_digest, /^[a-f0-9]{64}$/);
 });
 
@@ -55,13 +57,35 @@ test('certain exclusions become not suitable while unresolved facts require evid
   ]) assert.equal(deriveOpportunityDecision(input).system_recommendation_status, 'EVIDENCE_REQUIRED');
 });
 
-test('contact readiness sorts independently and never compensates failed business gates', () => {
+test('contact evidence is required before a business-fit opportunity can be recommended', () => {
   const missingContact = deriveOpportunityDecision(eligible({
     cooperation: { opportunity_readiness: 'NEEDS_DECISION_MAKER', verified_decision_maker_count: 0 },
     verified_email_route_count: 0
   }));
-  assert.equal(missingContact.system_recommendation_status, 'RECOMMENDED');
+  assert.equal(missingContact.business_fit_status, 'FIT');
+  assert.equal(missingContact.system_recommendation_status, 'EVIDENCE_REQUIRED');
   assert.equal(missingContact.contact_readiness, 'EVIDENCE_REQUIRED');
+  assert.ok(missingContact.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT'));
+
+  const unclearRole = deriveOpportunityDecision(eligible({
+    profile_relevant_buyer_count: 1, verified_buyer_role_count: 0,
+    active_valid_email_route_count: 1
+  }));
+  assert.equal(unclearRole.system_recommendation_status, 'EVIDENCE_REQUIRED');
+  assert.ok(unclearRole.reason_codes.includes('EVIDENCE_REQUIRED_BUYER_ROLE'));
+
+  for (const emailFacts of [
+    { business_email_route_count:1,active_valid_email_route_count:0,email_route_statuses:['ACCEPT_ALL'] },
+    { business_email_route_count:1,active_valid_email_route_count:0,email_route_statuses:['UNKNOWN'] },
+    { business_email_route_count:1,active_valid_email_route_count:0,expired_valid_email_route_count:1,email_route_statuses:['VALID'] }
+  ]) {
+    const emailRequired=deriveOpportunityDecision(eligible(emailFacts));
+    assert.equal(emailRequired.system_recommendation_status,'EVIDENCE_REQUIRED');
+    assert.ok(emailRequired.reason_codes.includes('EVIDENCE_REQUIRED_EMAIL'));
+  }
+});
+
+test('contact readiness never compensates failed product or business gates', () => {
 
   const highAccessMismatch = deriveOpportunityDecision(eligible({
     category: { match_status: 'PRODUCT_MISMATCH' },
@@ -69,6 +93,7 @@ test('contact readiness sorts independently and never compensates failed busines
     verified_email_route_count: 5
   }));
   assert.equal(highAccessMismatch.system_recommendation_status, 'NOT_SUITABLE');
+  assert.equal(highAccessMismatch.business_fit_status, 'NOT_SUITABLE');
 });
 
 test('policy hold and exact current management event deterministically derive five display states', () => {

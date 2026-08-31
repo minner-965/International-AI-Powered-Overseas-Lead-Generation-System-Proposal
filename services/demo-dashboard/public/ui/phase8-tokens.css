@@ -1,0 +1,136 @@
+:root {
+  color-scheme: light dark;
+  --font-sans: "Inter Var", Inter, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --p8-canvas: #f6f5f2;
+  --p8-surface: #ffffff;
+  --p8-surface-subtle: #f1f2f6;
+  --p8-surface-raised: #ffffff;
+  --p8-ink: #172033;
+  --p8-ink-soft: #334155;
+  --p8-muted: #5f6b7a;
+  --p8-border: #dddde3;
+  --p8-border-strong: #9aa3b2;
+  --p8-primary: #4f46e5;
+  --p8-primary-hover: #4338ca;
+  --p8-primary-soft: #eeedff;
+  --p8-on-primary: #ffffff;
+  --p8-warm: #b45309;
+  --p8-warm-soft: #fff7ed;
+  --p8-success: #166534;
+  --p8-success-soft: #f0fdf4;
+  --p8-warning: #92400e;
+  --p8-warning-soft: #fff7ed;
+  --p8-danger: #b91c1c;
+  --p8-danger-soft: #fef2f2;
+  --p8-info: #1d4ed8;
+  --p8-info-soft: #eff6ff;
+  --p8-focus: #4f46e5;
+  --p8-radius-shell: 18px;
+  --p8-radius-panel: 16px;
+  --p8-radius-control: 10px;
+  --p8-shadow-panel: 0 6px 24px rgb(23 32 51 / .06);
+  --p8-shadow-popover: 0 16px 48px rgb(23 32 51 / .14);
+  --p8-space-1: .25rem;
+  --p8-space-2: .5rem;
+  --p8-space-3: .75rem;
+  --p8-space-4: 1rem;
+  --p8-space-5: 1.25rem;
+  --p8-space-6: 1.5rem;
+  --p8-space-8: 2rem;
+  --p8-page-gap: 1.5rem;
+  --p8-control-height: 44px;
+  --p8-motion-fast: 140ms;
+  --p8-motion-panel: 200ms;
+  --p8-sidebar-width: 16.5rem;
+  --p8-topbar-height: 4.25rem;
+  --p8-z-sidebar: 30;
+  --p8-z-scrim: 25;
+  --p8-z-sticky: 20;
+  --p8-z-dialog: 50;
+
+  /* Compatibility aliases keep established components on one token system. */
+  --paper: var(--p8-canvas);
+  --card: var(--p8-surface);
+  --card-subtle: var(--p8-surface-subtle);
+  --ink: var(--p8-ink);
+  --ink-soft: var(--p8-ink-soft);
+  --muted: var(--p8-muted);
+  --line-soft: var(--p8-border);
+  --color-control-border: var(--p8-border-strong);
+  --color-brand: var(--p8-primary);
+  --color-brand-strong: var(--p8-primary-hover);
+  --color-brand-soft: var(--p8-primary-soft);
+  --color-accent: var(--p8-primary);
+  --color-accent-soft: var(--p8-primary-soft);
+  --focus: var(--p8-focus);
+  --radius-card: var(--p8-radius-panel);
+  --radius-control: var(--p8-radius-control);
+  --shadow-sm: var(--p8-shadow-panel);
+  --shadow-lg: var(--p8-shadow-popover);
+  --crm-sidebar-width: var(--p8-sidebar-width);
+  --crm-header-height: var(--p8-topbar-height);
+  --crm-bg: var(--p8-canvas);
+  --crm-surface: var(--p8-surface);
+  --crm-surface-subtle: var(--p8-surface-subtle);
+  --crm-text: var(--p8-ink);
+  --crm-text-soft: var(--p8-ink-soft);
+  --crm-muted: var(--p8-muted);
+  --crm-border: var(--p8-border);
+  --crm-border-strong: var(--p8-border-strong);
+  --crm-brand: var(--p8-primary);
+  --crm-brand-strong: var(--p8-primary-hover);
+  --crm-accent: var(--p8-primary);
+  --crm-accent-soft: var(--p8-primary-soft);
+  --crm-focus: var(--p8-focus);
+  --crm-success: var(--p8-success);
+  --crm-warning: var(--p8-warning);
+  --crm-danger: var(--p8-danger);
+  --crm-radius: var(--p8-radius-control);
+  --crm-shadow: var(--p8-shadow-panel);
+  --crm-control-height: var(--p8-control-height);
+}
+
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --p8-canvas: #10131a;
+  --p8-surface: #171b24;
+  --p8-surface-subtle: #1d2230;
+  --p8-surface-raised: #202633;
+  --p8-ink: #f3f4f6;
+  --p8-ink-soft: #d9dee8;
+  --p8-muted: #a8b0bf;
+  --p8-border: #303747;
+  --p8-border-strong: #667085;
+  --p8-primary: #818cf8;
+  --p8-primary-hover: #a5b4fc;
+  --p8-primary-soft: #292d54;
+  --p8-on-primary: #10131a;
+  --p8-warm: #fdba74;
+  --p8-warm-soft: #3b2417;
+  --p8-success: #86efac;
+  --p8-success-soft: #153724;
+  --p8-warning: #fdba74;
+  --p8-warning-soft: #3b2417;
+  --p8-danger: #fca5a5;
+  --p8-danger-soft: #421d24;
+  --p8-info: #93c5fd;
+  --p8-info-soft: #172b4d;
+  --p8-focus: #a5b4fc;
+  --p8-shadow-panel: 0 8px 28px rgb(0 0 0 / .22);
+  --p8-shadow-popover: 0 20px 56px rgb(0 0 0 / .46);
+}
+
+[data-density="compact"] {
+  --p8-page-gap: 1rem;
+  --p8-control-height: 44px;
+  --crm-row-pad-y: .42rem;
+}
+
+@media (max-width: 767px) {
+  :root,
+  [data-density="compact"] {
+    --p8-page-gap: 1rem;
+    --p8-control-height: 44px;
+  }
+}

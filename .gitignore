@@ -38,6 +38,7 @@ outputs/phase7-exports/
 runtime/phase7-exports/
 runtime/phase7-import-staging/
 runtime/phase7/
+runtime/phase8-visual-audit/
 services/demo-dashboard/runtime/phase7-exports/
 services/demo-dashboard/runtime/phase7-import-staging/
 services/demo-dashboard/runtime/phase7/

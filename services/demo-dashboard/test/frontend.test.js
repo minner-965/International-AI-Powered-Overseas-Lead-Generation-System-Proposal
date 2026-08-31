@@ -179,17 +179,19 @@ test('Phase 5 preserves stable business hooks and adds locally persisted display
   assert.match(shell,/dataset\.bsTheme/);
 });
 
-test('company detail extends CRM tabs with V3 Product Match while keeping existing scores separate', async () => {
+test('company detail groups preserved V3 records into four Phase 8 sections while keeping scores separate', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  for (const tab of ['overview','product-match','buying','feasibility','evidence','contacts','social','matching','scoring','history']) assert.equal(app.includes(`['${tab}'`),true);
+  assert.match(app,/id="detail-section-nav"/);
+  for (const section of ['snapshot','business-fit','buyer-contact','activity-records']) assert.match(app,new RegExp(`data-detail-section="${section}"`));
+  for (const panel of ['overview','product-match','buying','feasibility','evidence','contacts','social','matching','scoring','history']) assert.match(app,new RegExp(`id="detail-panel-${panel}"`));
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/customer-match/);
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/score/);
   assert.match(app,/\/api\/leads\/\$\{encodeURIComponent\(companyId\)\}\/decision-makers/);
   assert.match(app,/\/api\/leads\/\$\{encodeURIComponent\(companyId\)\}\/contact-routes/);
   assert.match(app,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/cooperation-feasibility/);
   for(const endpoint of ['category-procurement-matches','buyer-business-model','product-opportunities']) assert.match(app,new RegExp(`/api/companies/\\$\\{encodedCompanyId\\}/${endpoint}`));
-  assert.match(html,/<span lang="en">Customer Match<\/span>[\s\S]*<span lang="en">DPV Score<\/span>/);
+  assert.match(app,/id="detail-panel-matching"/);
+  assert.match(app,/id="detail-panel-scoring"/);
   assert.match(app,/managementMatchScoreValue/);
   assert.match(app,/leadScoreValue/);
 });
@@ -210,20 +212,21 @@ test('company detail offers explicit dismissal paths and restores focus to its o
   assert.match(app,/usableCurrentLead/);
 });
 
-test('company approval actions expose scoped saving and failure feedback', async () => {
+test('company-record review actions expose scoped saving and failure feedback', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(app,/class="crm-detail-action-status" role="status" aria-live="polite" aria-atomic="true"/);
   assert.match(app,/actions\?\.setAttribute\('aria-busy','true'\)/);
   assert.match(app,/buttons\.forEach\(action=>\{ action\.disabled=true;/);
-  assert.match(app,/正在保存审核结果/);
-  assert.match(app,/审核结果保存失败，请重试/);
+  assert.match(app,/正在保存公司主档审核/);
+  assert.match(app,/公司主档审核保存失败，请重试/);
   assert.match(app,/await json\(`\/api\/leads\/\$\{encodeURIComponent\(id\)\}\/approval`, \{ method:'PATCH'/);
   assert.match(app,/body:JSON\.stringify\(\{status\}\)/);
   assert.match(app,/await Promise\.allSettled\(\[showLead\(id\), loadMetrics\(\)\]\)/);
   assert.match(app,/if \(detailRefresh\.status === 'rejected'\) throw detailRefresh\.reason/);
   assert.match(app,/if \(actions\?\.isConnected\) actions\.setAttribute\('aria-busy','false'\)/);
-  assert.match(app,/已保存：人工批准/);
-  assert.match(app,/Saved: rejected/);
+  assert.match(app,/已保存：公司记录已确认/);
+  assert.match(app,/Saved: company record excluded/);
+  assert.doesNotMatch(app,/Approve manually|人工批准/);
 });
 
 test('workspace navigation preserves return paths and mobile controls retain focus semantics', async () => {
@@ -246,11 +249,14 @@ test('verification detail has a permanent name and backdrop dismissal', async ()
   assert.match(app,/dialog\.getBoundingClientRect\(\)/);
 });
 
-test('opportunity table uses the combined endpoint and retains the lead-directory fallback', async () => {
+test('opportunity table uses the combined endpoint and never substitutes Company-directory records', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(app,/buildOpportunityQuery\(collectOpportunityFilters\(\),100\)/);
   assert.match(app,/json\(`\/api\/opportunities\?\$\{query\}`\)/);
-  assert.match(app,/state\.opportunities = \[\.\.\.state\.leads\]/);
+  assert.match(app,/state\.opportunities = \[\]/);
+  assert.match(app,/state\.opportunitiesError = true/);
+  assert.match(app,/data-opportunity-retry/);
+  assert.doesNotMatch(app,/state\.opportunities = \[\.\.\.state\.leads\]/);
   assert.match(app,/managementMatchScoreValue/);
   assert.match(app,/customer_match_score \?\? lead\?\.customer_match \?\? lead\?\.match_score/);
 });
@@ -284,11 +290,12 @@ test('V3 opportunity labels and filter query remain deterministic and bilingual'
 test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps the Express enrichment trigger', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
+  const css = `${await readFile(new URL('../public/ui/phase8-pages.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/phase8-responsive.css', import.meta.url), 'utf8')}`;
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
   for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-product-access-matrix','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
-  for (const column of ['op-col-company','op-col-market-product','op-col-buyer-model','op-col-product-match','op-col-product-opportunity','op-col-supplier-access','op-col-product-access','op-col-readiness','op-col-secondary','op-col-contact']) assert.match(html,new RegExp(column));
+  for (const column of ['op-col-company','op-col-market-product','op-col-status','op-col-buyer-model','op-col-product-match','op-col-contact','op-col-supplier-action']) assert.match(html,new RegExp(column));
+  for (const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
   assert.match(html,/id="start-enrichment"/);
   assert.match(html,/id="enrichment-job-status"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(app,/json\('\/api\/enrichment\/jobs',\{ method:'POST'/);
@@ -302,16 +309,13 @@ test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps 
   assert.doesNotMatch(pollCatch,/setEnrichmentButtonBusy\(false\)/);
   const startJobSegment = app.slice(app.indexOf('async function startEnrichmentJob()'),app.indexOf('const detailDialog'));
   assert.doesNotMatch(startJobSegment,/finally\s*\{/);
-  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.crm-opportunity-table \.op-col-secondary, \.crm-opportunity-table \.op-col-contact, \.crm-opportunity-table \.op-col-product-access, \.crm-opportunity-table \.op-col-product-opportunity, \.crm-opportunity-table \.op-col-feasibility\s*\{[^}]*display:\s*none/);
+  assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table thead\s*\{\s*display:\s*none/);
+  assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table,[\s\S]*display:\s*block/);
   assert.match(css,/\.crm-opportunity-table \.op-col-company/);
   assert.match(css,/\.crm-opportunity-table \.op-col-market-product/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-buyer-model\s*\{[^}]*grid-column:\s*1/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-product-match\s*\{[^}]*grid-column:\s*2/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-supplier-access\s*\{[^}]*grid-column:\s*1/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-readiness\s*\{[^}]*grid-column:\s*2/);
-  assert.match(css,/\.crm-opportunity-table :is\(\.op-col-buyer-model,\.op-col-product-match,\.op-col-supplier-access,\.op-col-readiness\)::before\s*\{[^}]*content:\s*attr\(data-label\)/);
-  assert.match(css,/#opportunity-table td\[colspan\]\s*\{[^}]*grid-column:\s*1 \/ -1/);
-  assert.match(css,/\.crm-opportunity-table \.lead-select-action\s*\{[^}]*display:\s*block/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-status/);
+  assert.match(css,/\.crm-opportunity-table td::before\s*\{[^}]*content:\s*attr\(data-label\)/);
+  assert.match(css,/table-layout:\s*fixed/);
   assert.doesNotMatch(`${html}\n${app}`,/source_hash|evidence_hash|source_unc_path|local_staging_path|raw_payload|raw_row/i);
 });
 
@@ -339,18 +343,21 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&product_access_matrix=DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS&sort=category_procurement_desc&limit=100');
 });
 
-test('Phase 6.1 V3 uses eleven buyer-first opportunity columns and two independent Product Match cards', async () => {
+test('Phase 6.1 V3 capabilities remain available behind the seven-column Phase 8 decision surface', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
+  const phase7Ui = await readFile(new URL('../public/phase7-ui.js', import.meta.url), 'utf8');
+  const css = `${await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/phase8-pages.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/phase8-responsive.css', import.meta.url), 'utf8')}`;
   const productStart = app.indexOf('const PRODUCT_MATCH_PROFILES');
   const productEnd = app.indexOf('const crmBusinessText',productStart);
   assert.ok(productStart >= 0 && productEnd > productStart);
   const productSegment = app.slice(productStart,productEnd);
-  for (const label of ['Buyer Model','Product Match','Product Opportunity','Supplier Access','Product Access Matrix','Secondary Scores','Readiness']) assert.match(html,new RegExp(label));
-  assert.match(html,/id="opportunity-table"[\s\S]*colspan="11"/);
+  for (const label of ['Buyer Model / Role','Product Match','Buyer / VALID Contact','Supplier Access / Action']) assert.match(html,new RegExp(label));
+  const productCapabilitySurface = `${html}\n${app}\n${phase7Ui}`;
+  for (const preserved of ['Product Opportunity','Product Access Matrix','opportunitySecondaryScores','Readiness']) assert.match(productCapabilitySurface,new RegExp(preserved));
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="7"/);
   assert.match(app,/const PRODUCT_MATCH_PROFILES = Object\.freeze\(\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\)/);
-  assert.match(app,/id="detail-tab-\$\{key\}"/);
+  assert.match(app,/id="detail-section-nav"/);
   assert.match(app,/\['product-match','产品匹配','Product Match'\]/);
   assert.match(app,/id="detail-panel-product-match"/);
   for(const endpoint of ['category-procurement-matches','buyer-business-model','product-opportunities']) assert.match(app,new RegExp(`/api/companies/\\$\\{encodedCompanyId\\}/${endpoint}`));
@@ -360,10 +367,9 @@ test('Phase 6.1 V3 uses eleven buyer-first opportunity columns and two independe
   assert.match(productSegment,/score == null \|\| !band \|\| band === 'UNKNOWN'/);
   assert.match(productSegment,/Category Procurement Match/);
   assert.match(productSegment,/Buyer Business Model/);
-  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.op-col-product-match\s*\{[^}]*grid-column:\s*2/);
-  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.op-col-buyer-model\s*\{[^}]*grid-column:\s*1/);
+  assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table td::before\s*\{[^}]*content:\s*attr\(data-label\)/);
   assert.match(css,/\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(css,/@media \(max-width:560px\)[\s\S]*\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(css,/@media \(max-width:\s*560px\)[\s\S]*\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css,/\.crm-detail-tabs button\s*\{[^}]*min-height:\s*44px/);
   assert.doesNotMatch(productSegment,/supplier_price|supplier_currency|customer_sales_price|customer_sales_currency|profit|historical_customer_id|historical_order_id|source_import_row_id|source_identity_key|shared_folder_path|asset_reference|raw_internal_payload|internal_description/i);
 });
@@ -427,7 +433,7 @@ test('Phase 5 V2.3 keeps management and Mexico historical matches separate', asy
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(html,/Management Baseline Match/);
   assert.match(html,/Mexico Historical Reference Match/);
-  assert.match(html,/id="opportunity-table"[\s\S]*colspan="11"/);
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="7"/);
   assert.match(app,/matchRecord\(payload, 'management_baseline'\)/);
   assert.match(app,/matchRecord\(payload, 'mx_historical_reference'\)/);
   assert.match(app,/matchReferencePanel\(managementMatch,'management_baseline'\)/);

@@ -232,20 +232,14 @@ export class Phase7Service {
     const reason=text(body?.reason,1000)||null;
     const current=await this.repository.resolveOpportunity(reference);
     if(!current)throw notFound('Opportunity decision not found','OPPORTUNITY_DECISION_NOT_FOUND');
-    if(action==='MANAGEMENT_APPROVED'&&current.system_recommendation_status!=='RECOMMENDED'){
-      const error=new Error('Only a current RECOMMENDED opportunity may enter Contact Queue');error.code='OPPORTUNITY_APPROVAL_GATE_BLOCKED';error.status=409;throw error;
-    }
     const idempotencyKey=digestCanonical({decision_snapshot_id:current.id,event_type:action,actor:user.identity,
       reason,request_id:text(body?.request_id,120)||null});
     const result=await this.repository.recordOpportunityManagement(reference,{event_type:action,
       management_contact_status:mapping[action],actor:user.identity,role:user.role,reason,idempotency_key:idempotencyKey,
-      owner_identity:text(body?.owner_identity,160)||null,reason_codes:arrays(body?.reason_codes)});
-    const recipients = action === 'MANAGEMENT_APPROVED'
-      ? await this.repository.createEligibleRecipients({ companyId:result.current.company_id,
-        productProfile:result.current.product_profile,
-        verificationTtlDays:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS || this.env.OUTREACH_VERIFICATION_TTL_DAYS || 30) })
-      : [];
-    return {...result,recipients_created:recipients.length,provider_calls:0,messages_approved:0};
+      owner_identity:text(body?.owner_identity,160)||null,reason_codes:arrays(body?.reason_codes),
+      expected_decision_snapshot_id:current.id,expected_assessment_revision:current.assessment_revision,
+      verification_ttl_days:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS || this.env.OUTREACH_VERIFICATION_TTL_DAYS || 30)});
+    return {...result,recipients_created:Number(result.recipients_created||0),provider_calls:0,messages_approved:0};
   }
 
   async enqueueContactVerification(id, user) {

@@ -7,11 +7,13 @@ import pg from 'pg';
 export const PHASE7_MIGRATION_KEY = '025_phase7_outreach_and_data_exchange.sql';
 export const PHASE7_HARDENING_MIGRATION_KEY = '026_phase7_data_exchange_crm_hardening.sql';
 export const PHASE7_ROLE_HARDENING_MIGRATION_KEY = '027_phase7_management_role_hardening.sql';
+export const PHASE8_CONTACT_READY_MIGRATION_KEY = '028_phase8_contact_ready_recommendation.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
 const hardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_HARDENING_MIGRATION_KEY);
 const roleHardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_ROLE_HARDENING_MIGRATION_KEY);
+const contactReadyPath = path.resolve(projectRoot, 'database/migrations', PHASE8_CONTACT_READY_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -97,13 +99,35 @@ export async function verifyPhase7RoleHardeningMigration(client) {
   return{management_role_constraint_verified:true};
 }
 
+export async function verifyPhase8ContactReadyMigration(client) {
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='business_opportunity_decision_snapshots' AND column_name='business_fit_status') business_fit_column,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='business_opportunity_current' AND column_name='business_fit_status') current_view_column,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.business_opportunity_decision_snapshots'::regclass
+      AND conname='business_opportunity_decision_snapshots_business_fit_status_check'
+      AND pg_get_constraintdef(oid) LIKE '%FIT%') business_fit_constraint,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.business_opportunity_decision_snapshots'::regclass
+      AND conname='business_opportunity_decision_snapshots_v2_contact_ready_check'
+      AND pg_get_constraintdef(oid) LIKE '%business-opportunity-decision-v2%') v2_contact_ready_constraint`);
+  const row=result.rows[0]||{};
+  if(!row.business_fit_column||!row.current_view_column||!row.business_fit_constraint||!row.v2_contact_ready_constraint){
+    throw new Error('Phase 8 contact-ready recommendation migration verification failed');
+  }
+  return{business_fit_column_verified:true,current_view_business_fit_verified:true,
+    business_fit_constraint_verified:true,v2_contact_ready_constraint_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
     appliedBy:options.appliedBy||'dpv-phase7-explicit-migration-runner'});
   const roleHardening=await applyPhase7Migration({...options,migrationPath:options.roleHardeningMigrationPath||roleHardeningPath,
     appliedBy:options.appliedBy||'dpv-phase7-explicit-migration-runner'});
-  return {base,hardening,roleHardening,status:roleHardening.status,database:roleHardening.database};
+  const contactReady=await applyPhase7Migration({...options,migrationPath:options.contactReadyMigrationPath||contactReadyPath,
+    appliedBy:options.appliedBy||'dpv-phase8-explicit-migration-runner'});
+  return {base,hardening,roleHardening,contactReady,status:contactReady.status,database:contactReady.database};
 }
 
 export async function applyPhase7Migration({
@@ -149,7 +173,9 @@ export async function applyPhase7Migration({
       const verification = migrationKey===PHASE7_HARDENING_MIGRATION_KEY
         ? await verifyPhase7HardeningMigration(client)
         :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
-          ?await verifyPhase7RoleHardeningMigration(client):await verifyPhase7Migration(client);
+          ?await verifyPhase7RoleHardeningMigration(client)
+          :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
+            ?await verifyPhase8ContactReadyMigration(client):await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
         migration_key: migrationKey,
@@ -168,7 +194,9 @@ export async function applyPhase7Migration({
     const verification = migrationKey===PHASE7_HARDENING_MIGRATION_KEY
       ? await verifyPhase7HardeningMigration(client)
       :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
-        ?await verifyPhase7RoleHardeningMigration(client):await verifyPhase7Migration(client);
+        ?await verifyPhase7RoleHardeningMigration(client)
+        :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
+          ?await verifyPhase8ContactReadyMigration(client):await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

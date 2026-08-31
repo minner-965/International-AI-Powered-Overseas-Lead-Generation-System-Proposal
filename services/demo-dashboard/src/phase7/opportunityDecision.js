@@ -6,6 +6,12 @@ export const SYSTEM_RECOMMENDATION_STATUSES = Object.freeze([
   'NOT_SUITABLE'
 ]);
 
+export const BUSINESS_FIT_STATUSES = Object.freeze([
+  'FIT',
+  'EVIDENCE_REQUIRED',
+  'NOT_SUITABLE'
+]);
+
 export const DISPLAY_OPPORTUNITY_STATUSES = Object.freeze([
   'RECOMMENDED',
   'MANAGEMENT_APPROVED',
@@ -63,6 +69,8 @@ export function deriveOpportunityDecision(input = {}) {
   );
   const rawRelationship = normalizeOpportunityRelationship(input.relationship_status || cooperation.relationship_status);
   const policyHold = input.company_suppressed === true
+    || input.contact_suppressed === true
+    || input.recipient_suppressed === true
     || input.market_policy_hold === true
     || input.channel_policy_hold === true
     || rawRelationship === 'SUPPRESSED';
@@ -93,30 +101,43 @@ export function deriveOpportunityDecision(input = {}) {
   if (input.identity_conflict === true) evidenceReasons.push('COMPANY_IDENTITY_CONFLICT');
   if (input.evidence_conflict === true) evidenceReasons.push('BUSINESS_EVIDENCE_CONFLICT');
 
-  let systemStatus = 'RECOMMENDED';
-  if (exclusionReasons.length) systemStatus = 'NOT_SUITABLE';
-  else if (evidenceReasons.length) systemStatus = 'EVIDENCE_REQUIRED';
+  let businessFitStatus = 'FIT';
+  if (exclusionReasons.length) businessFitStatus = 'NOT_SUITABLE';
+  else if (evidenceReasons.length) businessFitStatus = 'EVIDENCE_REQUIRED';
 
-  const namedBuyerCount = Number(input.verified_named_buyer_count ?? cooperation.verified_decision_maker_count ?? 0);
-  const verifiedRouteCount = Number(input.verified_email_route_count ?? 0);
+  const profileRelevantBuyerCount = Number(input.profile_relevant_buyer_count
+    ?? input.verified_named_buyer_count ?? cooperation.verified_decision_maker_count ?? 0);
+  const verifiedBuyerRoleCount = Number(input.verified_buyer_role_count ?? profileRelevantBuyerCount);
+  const freshValidRouteCount = Number(input.active_valid_email_route_count ?? input.verified_email_route_count ?? 0);
+  const businessEmailRouteCount = Number(input.business_email_route_count ?? freshValidRouteCount);
+  const expiredValidRouteCount = Number(input.expired_valid_email_route_count ?? 0);
+  const emailRouteStatuses = [...new Set((Array.isArray(input.email_route_statuses)
+    ? input.email_route_statuses : []).map(upper).filter(Boolean))];
   const cooperationReadiness = upper(cooperation.opportunity_readiness);
   let contactReadiness = 'EVIDENCE_REQUIRED';
-  if (systemStatus === 'NOT_SUITABLE') contactReadiness = 'BLOCKED';
-  else if (namedBuyerCount > 0 && verifiedRouteCount > 0 && cooperationReadiness === 'SALES_READY') contactReadiness = 'READY';
+  if (businessFitStatus === 'NOT_SUITABLE' || policyHold) contactReadiness = 'BLOCKED';
+  else if (profileRelevantBuyerCount > 0 && verifiedBuyerRoleCount > 0 && freshValidRouteCount > 0
+    && cooperationReadiness === 'SALES_READY') contactReadiness = 'READY';
   else {
-    if (namedBuyerCount <= 0) reasons.push('VERIFIED_BUYER_REQUIRED');
-    if (verifiedRouteCount <= 0) reasons.push('VERIFIED_EMAIL_ROUTE_REQUIRED');
+    if (profileRelevantBuyerCount <= 0) reasons.push('EVIDENCE_REQUIRED_CONTACT');
+    else if (verifiedBuyerRoleCount <= 0) reasons.push('EVIDENCE_REQUIRED_BUYER_ROLE');
+    if (freshValidRouteCount <= 0) reasons.push('EVIDENCE_REQUIRED_EMAIL');
     if (cooperationReadiness !== 'SALES_READY') reasons.push('SALES_READINESS_REQUIRED');
   }
 
+  let systemStatus = 'EVIDENCE_REQUIRED';
+  if (businessFitStatus === 'NOT_SUITABLE') systemStatus = 'NOT_SUITABLE';
+  else if (businessFitStatus === 'FIT' && contactReadiness === 'READY' && !policyHold) systemStatus = 'RECOMMENDED';
+
   const reasonCodes = [...new Set([...exclusionReasons, ...evidenceReasons, ...reasons, ...(policyHold ? ['POLICY_CONTACT_HOLD'] : [])])];
   const decision = {
+    business_fit_status: businessFitStatus,
     system_recommendation_status: systemStatus,
     contact_readiness: contactReadiness,
     policy_contact_status: policyHold ? 'HOLD' : 'OPEN',
     relationship_status: normalizedRelationship,
     reason_codes: reasonCodes,
-    rule_version: 'business-opportunity-decision-v1'
+    rule_version: 'business-opportunity-decision-v2'
   };
   return {
     ...decision,
@@ -130,8 +151,14 @@ export function deriveOpportunityDecision(input = {}) {
       policy_hold: policyHold,
       confirmed_existing_customer: input.confirmed_existing_customer === true,
       procurement_resale_evidence: input.procurement_resale_evidence === true,
-      verified_named_buyer_count: namedBuyerCount,
-      verified_email_route_count: verifiedRouteCount,
+      profile_relevant_buyer_count: profileRelevantBuyerCount,
+      verified_buyer_role_count: verifiedBuyerRoleCount,
+      active_valid_email_route_count: freshValidRouteCount,
+      business_email_route_count: businessEmailRouteCount,
+      expired_valid_email_route_count: expiredValidRouteCount,
+      email_route_statuses: emailRouteStatuses,
+      contact_suppressed: input.contact_suppressed === true,
+      recipient_suppressed: input.recipient_suppressed === true,
       identity_conflict: input.identity_conflict === true,
       evidence_conflict: input.evidence_conflict === true,
       website_status: websiteStatus

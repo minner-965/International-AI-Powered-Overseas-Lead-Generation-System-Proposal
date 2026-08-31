@@ -48,6 +48,14 @@ function mapImportStatus(row) {
   return { ...row, api_status: status };
 }
 
+function approvalGateBlocked(reasons = []) {
+  const error = new Error('Opportunity approval requires a current contact-ready decision, fresh eligibility and an unsuppressed VALID recipient');
+  error.code = 'OPPORTUNITY_APPROVAL_GATE_BLOCKED';
+  error.status = 409;
+  error.details = { reasons:[...new Set(reasons)] };
+  return error;
+}
+
 export class Phase7Repository {
   constructor({ pool }) {
     if (!pool?.query) throw new TypeError('pool.query is required');
@@ -158,8 +166,89 @@ export class Phase7Repository {
 
   async recordOpportunityManagement(reference, input) {
     return this.transaction(async client => {
-      const current = await this.resolveOpportunity(reference,client);
+      const initiallyCurrent = await this.resolveOpportunity(reference,client);
+      if (!initiallyCurrent) throw notFound('Opportunity decision not found','OPPORTUNITY_DECISION_NOT_FOUND');
+      await client.query(`SELECT id FROM leadgen.business_opportunity_decision_snapshots
+        WHERE company_id=$1 AND product_profile=$2
+        ORDER BY assessment_revision DESC,created_at DESC,id DESC LIMIT 1 FOR UPDATE`,
+      [initiallyCurrent.company_id,initiallyCurrent.product_profile]);
+      const companyLock=await client.query(`SELECT id,verification_status,lifecycle_status FROM leadgen.companies
+        WHERE id=$1 FOR UPDATE`,[initiallyCurrent.company_id]);
+      const current=await this.resolveOpportunity(`${initiallyCurrent.company_id}:${initiallyCurrent.product_profile}`,client);
       if (!current) throw notFound('Opportunity decision not found','OPPORTUNITY_DECISION_NOT_FOUND');
+
+      let approvalRecipients=[];
+      let recipientsCreated=0;
+      if(input.event_type==='MANAGEMENT_APPROVED'){
+        const reasons=[];
+        if(current.id!==input.expected_decision_snapshot_id
+          ||Number(current.assessment_revision)!==Number(input.expected_assessment_revision))reasons.push('DECISION_REVISION_CHANGED');
+        if(current.display_opportunity_status!=='RECOMMENDED')reasons.push('DISPLAY_STATUS_NOT_RECOMMENDED');
+        if(current.system_recommendation_status!=='RECOMMENDED')reasons.push('SYSTEM_STATUS_NOT_RECOMMENDED');
+        if(current.business_fit_status!=='FIT')reasons.push('BUSINESS_FIT_NOT_READY');
+        if(current.contact_readiness!=='READY')reasons.push('CONTACT_NOT_READY');
+        if(current.policy_contact_status!=='OPEN'||current.relationship_status!=='NEW_PROSPECT')reasons.push('CONTACT_POLICY_BLOCKED');
+        if(current.rule_version!=='business-opportunity-decision-v2')reasons.push('DECISION_RULE_VERSION_STALE');
+        if(companyLock.rows[0]?.verification_status!=='VERIFIED'||companyLock.rows[0]?.lifecycle_status!=='ACTIVE')reasons.push('COMPANY_NOT_ACTIVE_VERIFIED');
+        if(reasons.length)throw approvalGateBlocked(reasons);
+
+        const eligibility=await client.query(`SELECT * FROM leadgen.outreach_eligibility_snapshots
+          WHERE company_id=$1 AND product_profile=$2 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`,
+        [current.company_id,current.product_profile]);
+        const eligible=eligibility.rows[0];
+        if(!eligible)reasons.push('ELIGIBILITY_MISSING');
+        else{
+          if(eligible.eligibility_status!=='ELIGIBLE'||new Date(eligible.expires_at)<=new Date())reasons.push('ELIGIBILITY_NOT_CURRENT');
+          if(eligible.rule_version!==current.rule_version||eligible.input_digest!==current.input_digest)reasons.push('ELIGIBILITY_VERSION_STALE');
+          if(eligible.buyer_business_model_result_id!==current.buyer_business_model_result_id
+            ||eligible.category_procurement_match_result_id!==current.category_procurement_match_result_id
+            ||eligible.product_opportunity_result_id!==current.product_opportunity_result_id
+            ||eligible.cooperation_feasibility_result_id!==current.cooperation_feasibility_result_id)reasons.push('ELIGIBILITY_DECISION_MISMATCH');
+        }
+        if(reasons.length)throw approvalGateBlocked(reasons);
+
+        const ttlDays=Math.max(1,Number(input.verification_ttl_days)||30);
+        const contacts=await client.query(`SELECT dc.id decision_maker_contact_id,
+          lower(btrim(dc.contact_value_normalized)) normalized_recipient,dc.verification_status,
+          dc.verification_provider,dc.last_verified_at
+          FROM leadgen.decision_maker_contacts dc
+          JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id AND dm.id=$1
+            AND dm.company_id=$2 AND dm.verification_status='VERIFIED' AND dm.lifecycle_status='ACTIVE'
+            AND dm.normalized_role IN('BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT',
+              'CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id
+            AND pr.product_profile=$3 AND pr.relevance IN('HIGH','MEDIUM')
+          WHERE dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+            AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($4::int*interval '1 day')
+            AND position('@' in dc.contact_value_normalized)>1
+            AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions cs
+              WHERE cs.company_id=$2 AND cs.lifted_at IS NULL)
+            AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx
+              WHERE sx.company_id=$2 AND sx.lifted_at IS NULL AND (
+                sx.decision_maker_contact_id=dc.id OR
+                sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))
+          ORDER BY dc.last_verified_at DESC,dc.id LIMIT 1 FOR UPDATE OF dm,dc`,
+        [eligible.decision_maker_id,current.company_id,current.product_profile,ttlDays]);
+        if(!contacts.rowCount)throw approvalGateBlocked(['ACTIVE_VALID_RECIPIENT_REQUIRED']);
+        const contact=contacts.rows[0];
+        const recipient=await client.query(`INSERT INTO leadgen.outreach_recipients
+          (eligibility_snapshot_id,company_id,decision_maker_contact_id,normalized_recipient,
+           consent_status,verification_status,verification_provider,verified_at,lifecycle_status)
+          VALUES($1,$2,$3,$4,'UNKNOWN','VALID',$5,$6,'ACTIVE')
+          ON CONFLICT(eligibility_snapshot_id,normalized_recipient) DO UPDATE SET
+            verification_status=EXCLUDED.verification_status,
+            verification_provider=EXCLUDED.verification_provider,
+            verified_at=EXCLUDED.verified_at
+          WHERE leadgen.outreach_recipients.lifecycle_status='ACTIVE'
+          RETURNING *`,[eligible.id,current.company_id,contact.decision_maker_contact_id,
+          contact.normalized_recipient,contact.verification_provider,contact.last_verified_at]);
+        approvalRecipients=recipient.rows;
+        recipientsCreated=recipient.rowCount;
+        if(!approvalRecipients.some(row=>row.lifecycle_status==='ACTIVE'&&row.verification_status==='VALID'
+          &&row.verified_at&&Date.now()-new Date(row.verified_at).getTime()<=ttlDays*86_400_000)){
+          throw approvalGateBlocked(['ACTIVE_VALID_RECIPIENT_REQUIRED']);
+        }
+      }
       const inserted = await client.query(`INSERT INTO leadgen.business_opportunity_management_events
         (decision_snapshot_id,company_id,product_profile,event_type,management_contact_status,
          actor_identity,actor_role,reason,idempotency_key)
@@ -181,7 +270,8 @@ export class Phase7Repository {
         await client.query(`UPDATE leadgen.contact_work_queue SET queue_status=$3,updated_at=now()
           WHERE company_id=$1 AND product_profile=$2 AND queue_status='ACTIVE'`, [current.company_id,current.product_profile,queueStatus]);
       }
-      return { current, management_event:managementEvent, queue };
+      return { current, management_event:managementEvent, queue,recipients:approvalRecipients,
+        recipients_created:recipientsCreated,provider_calls:0,messages_approved:0 };
     });
   }
 
@@ -217,16 +307,57 @@ export class Phase7Repository {
         EXISTS(SELECT 1 FROM leadgen.category_procurement_match_dimensions md
           WHERE md.category_procurement_match_result_id=cpm.id AND md.dimension='EXTERNAL_SOURCING_IMPORT' AND md.state='OBSERVED') procurement_resale_evidence,
         (SELECT count(DISTINCT dm.id)::int FROM leadgen.decision_makers dm
-          LEFT JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
-            AND coalesce(pr.relevance,'HIGH') IN('HIGH','MEDIUM')) verified_named_buyer_count,
+            AND pr.relevance IN('HIGH','MEDIUM')) profile_relevant_buyer_count,
+        (SELECT count(DISTINCT dm.id)::int FROM leadgen.decision_makers dm
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
+            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
+              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
+              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')) verified_buyer_role_count,
+        (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc
+          JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
+            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
+              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
+              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+            AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) business_email_route_count,
+        (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc
+          JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
+            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
+              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
+              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+            AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+            AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($1::int*interval '1 day')
+            AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
+              AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
+                sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) active_valid_email_route_count,
         (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
-          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
-            AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($1::int*interval '1 day')) verified_email_route_count,
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
+            AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+            AND dc.verification_status='VALID' AND (dc.last_verified_at IS NULL OR dc.last_verified_at<now()-($1::int*interval '1 day'))) expired_valid_email_route_count,
+        (SELECT coalesce(array_agg(DISTINCT dc.verification_status),'{}'::text[]) FROM leadgen.decision_maker_contacts dc
+          JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
+            AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) email_route_statuses,
+        EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id AND sx.lifted_at IS NULL) contact_suppressed,
         (SELECT dm.id FROM leadgen.decision_makers dm
-          LEFT JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
+          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
-          ORDER BY CASE coalesce(pr.relevance,'LOW') WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,dm.updated_at DESC LIMIT 1) decision_maker_id
+            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
+              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
+              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+          ORDER BY CASE WHEN EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc WHERE dc.decision_maker_id=dm.id
+              AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+              AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($1::int*interval '1 day')
+              AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
+                AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
+                  sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) THEN 0 ELSE 1 END,
+            CASE pr.relevance WHEN 'HIGH' THEN 1 ELSE 2 END,
+            dm.updated_at DESC LIMIT 1) decision_maker_id
       FROM current_match cpm JOIN leadgen.companies c ON c.id=cpm.company_id
       JOIN leadgen.buyer_business_model_results bbm ON bbm.id=cpm.buyer_business_model_result_id
       LEFT JOIN leadgen.product_opportunity_results po ON po.category_procurement_match_result_id=cpm.id
@@ -244,8 +375,13 @@ export class Phase7Repository {
         underlying_relationship_status:fact.relationship_status,company_suppressed:fact.company_suppressed,
         confirmed_existing_customer:fact.confirmed_existing_customer,
         procurement_resale_evidence:fact.procurement_resale_evidence,
-        verified_named_buyer_count:fact.verified_named_buyer_count,
-        verified_email_route_count:fact.verified_email_route_count,
+        profile_relevant_buyer_count:fact.profile_relevant_buyer_count,
+        verified_buyer_role_count:fact.verified_buyer_role_count,
+        business_email_route_count:fact.business_email_route_count,
+        active_valid_email_route_count:fact.active_valid_email_route_count,
+        expired_valid_email_route_count:fact.expired_valid_email_route_count,
+        email_route_statuses:fact.email_route_statuses,
+        contact_suppressed:fact.contact_suppressed,
         identity_conflict:Boolean(fact.explicit_exclusion_reason),website_status:fact.verification_freshness==='STALE'?'UNKNOWN':'SUPPORTED'
       });
       const inputDigest=sha256(JSON.stringify({decision_digest:decision.input_digest,
@@ -256,13 +392,13 @@ export class Phase7Repository {
       const stored=await this.transaction(async client=>{
         const inserted=await client.query(`INSERT INTO leadgen.business_opportunity_decision_snapshots
           (company_id,product_profile,research_job_id,buyer_business_model_result_id,category_procurement_match_result_id,
-           product_opportunity_result_id,cooperation_feasibility_result_id,system_recommendation_status,contact_readiness,
+           product_opportunity_result_id,cooperation_feasibility_result_id,business_fit_status,system_recommendation_status,contact_readiness,
            policy_contact_status,relationship_status,reason_codes,rule_version,assessment_revision,input_digest)
-          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::text[],$13,
-            coalesce((SELECT max(assessment_revision)+1 FROM leadgen.business_opportunity_decision_snapshots WHERE company_id=$1 AND product_profile=$2),1),$14
+          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[],$14,
+            coalesce((SELECT max(assessment_revision)+1 FROM leadgen.business_opportunity_decision_snapshots WHERE company_id=$1 AND product_profile=$2),1),$15
           ON CONFLICT(company_id,product_profile,input_digest) DO NOTHING RETURNING *`, [fact.company_id,fact.product_profile,
           fact.research_job_id,fact.buyer_business_model_result_id,fact.category_procurement_match_result_id,
-          fact.product_opportunity_result_id,fact.cooperation_feasibility_result_id,decision.system_recommendation_status,
+          fact.product_opportunity_result_id,fact.cooperation_feasibility_result_id,decision.business_fit_status,decision.system_recommendation_status,
           decision.contact_readiness,decision.policy_contact_status,decision.relationship_status,decision.reason_codes,
           decision.rule_version,inputDigest]);
         const snapshot=inserted.rows[0]||(await client.query(`SELECT * FROM leadgen.business_opportunity_decision_snapshots

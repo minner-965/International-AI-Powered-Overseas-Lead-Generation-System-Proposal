@@ -1,0 +1,97 @@
+@media (min-width: 992px) {
+  .crm-sidebar { top: .75rem; bottom: .75rem; left: .75rem; height: calc(100dvh - 1.5rem); }
+  .crm-main { margin-left: calc(var(--p8-sidebar-width) + 1.5rem); }
+}
+
+@media (max-width: 1199px) {
+  .crm-opportunity-primary-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crm-opportunity-search { grid-column: 1 / -1; }
+  .crm-advanced-filter-button { width: 100%; }
+  .crm-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crm-kpi-strip .metric:nth-child(2) { border-right: 0; }
+  .crm-kpi-strip .metric:nth-child(-n+2) { border-bottom: 1px solid var(--p8-border); }
+  .crm-overview-grid { grid-template-columns: 1fr; }
+  .crm-opportunity-table .op-col-market-product { display: none; }
+  .crm-opportunity-table .op-col-company { width: 18%; }
+  .crm-opportunity-table .op-col-status { width: 14%; }
+  .crm-opportunity-table .op-col-buyer-model { width: 18%; }
+  .crm-opportunity-table .op-col-product-match { width: 16%; }
+  .crm-opportunity-table .op-col-contact { width: 17%; }
+  .crm-opportunity-table .op-col-supplier-action { width: 17%; }
+}
+
+@media (max-width: 991px) {
+  .crm-sidebar { width: min(var(--p8-sidebar-width), calc(100vw - 3rem)); overflow: hidden auto; border-radius: 0 var(--p8-radius-shell) var(--p8-radius-shell) 0; }
+  .crm-sidebar-scrim { z-index: var(--p8-z-scrim); background: rgb(16 19 26 / .52); }
+  .crm-sidebar { z-index: var(--p8-z-sidebar); }
+  .crm-data-workspace { grid-template-columns: 1fr; }
+  .crm-detail-drawer[open] { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+  .crm-detail-body { grid-template-columns: 11rem minmax(0, 1fr); }
+}
+
+@media (max-width: 767px) {
+  .container-xl.crm-content { padding: 1rem; }
+  .crm-topbar .container-fluid { padding-inline: 1rem; }
+  .crm-page-title .crm-context { display: none; }
+  .crm-command-bar,
+  .crm-section-head,
+  .crm-section-head-actions { display: grid; gap: 1rem; }
+  .crm-command-actions,
+  .crm-opportunity-actions { align-items: stretch; flex-wrap: wrap; }
+  .crm-command-actions .btn,
+  .crm-opportunity-actions .btn { width: 100%; }
+  .crm-status-tabs { margin-inline: -1rem; padding-inline: 1rem; border-inline: 0; border-radius: 0; }
+  .crm-opportunity-primary-filters,
+  .p8-form-grid,
+  .crm-settings-grid { grid-template-columns: 1fr; }
+  .crm-filter-group-grid { grid-template-columns: 1fr; }
+  .crm-drawer { width: 100vw; max-width: none; max-height: 100dvh; margin: 0; border-radius: 0; }
+  .crm-drawer-body { max-height: calc(100dvh - 9rem); padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)); }
+  .p8-stepper { display: flex; overflow-x: auto; scroll-snap-type: x proximity; }
+  .p8-stepper li { min-width: 9rem; scroll-snap-align: start; }
+  .crm-opportunity-panel { border: 0; background: transparent; }
+  .crm-opportunity-table,
+  .crm-opportunity-table tbody,
+  .crm-opportunity-table tr,
+  .crm-opportunity-table td { display: block; width: 100% !important; }
+  .crm-opportunity-table thead { display: none; }
+  .crm-opportunity-table tbody { display: grid; gap: .75rem; }
+  .crm-opportunity-table tr { padding: 1rem; overflow: hidden; border: 1px solid var(--p8-border); border-radius: var(--p8-radius-panel); background: var(--p8-surface); }
+  .crm-opportunity-table td { display: grid; grid-template-columns: minmax(7.25rem, .7fr) minmax(0, 1.3fr); gap: .75rem; padding: .65rem 0; border: 0; border-bottom: 1px solid var(--p8-border); }
+  .crm-opportunity-table td:last-child { border-bottom: 0; }
+  .crm-opportunity-table td::before { content: attr(data-label); color: var(--p8-muted); font-size: .74rem; font-weight: 700; }
+  .crm-opportunity-table .op-col-company { display: block; padding-top: 0; }
+  .crm-opportunity-table .op-col-company::before { content: none; }
+  .crm-opportunity-table .op-col-market-product { display: grid; }
+  .crm-evidence-row,
+  .crm-contact-queue-row { grid-template-columns: 1fr; }
+  .crm-detail-drawer[open] { inset: 0; width: 100vw; max-width: none; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .crm-detail-body { display: block; padding: 1rem; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+  .crm-detail-header { grid-template-columns: 1fr; }
+  .crm-detail-score-set { overflow-x: auto; }
+  .crm-detail-tabs.p8-detail-section-nav { position: static; display: flex; margin-bottom: 1rem; overflow-x: auto; }
+  .crm-detail-tabs.p8-detail-section-nav [role="tab"] { width: auto; flex: 0 0 auto; white-space: nowrap; }
+}
+
+@media (max-width: 420px) {
+  .crm-kpi-strip { grid-template-columns: 1fr; }
+  .crm-kpi-strip .metric { min-height: 5.75rem; border-right: 0; border-bottom: 1px solid var(--p8-border); }
+  .crm-kpi-strip .metric:last-child { border-bottom: 0; }
+  .crm-opportunity-table td { grid-template-columns: 1fr; gap: .3rem; }
+  .crm-topbar-actions .btn:not(.btn-icon) .bi { display: none; }
+}
+
+@media (max-width: 390px) {
+  .container-xl.crm-content { padding-inline: .75rem; }
+  .crm-status-tab { padding-inline: .6rem; }
+  .crm-drawer-header,
+  .crm-drawer-footer { padding-inline: 1rem; }
+}
+
+@media (max-height: 450px) and (orientation: landscape) {
+  .crm-topbar { position: static; }
+  .crm-detail-drawer[open],
+  .crm-drawer { max-height: 100dvh; }
+  .crm-detail-body,
+  .crm-drawer-body { overscroll-behavior: contain; }
+}

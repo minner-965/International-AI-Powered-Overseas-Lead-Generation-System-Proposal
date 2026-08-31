@@ -183,11 +183,14 @@ test('draft submit and exact approval rerun the database-authoritative determini
   assert.match(repository,/input\.decision==='APPROVED'[\s\S]*assertCurrentDraftGate/);
 });
 
-test('migration runner applies additive management-role hardening after immutable 025 and 026',async()=>{
+test('migration runner applies additive Phase 8 contact-ready gate after immutable 025 through 027',async()=>{
   const runner=await textFile('services/demo-dashboard/src/phase7/migrationRunner.js');
   assert.match(runner,/027_phase7_management_role_hardening\.sql/);
   assert.match(runner,/verifyPhase7RoleHardeningMigration/);
+  assert.match(runner,/028_phase8_contact_ready_recommendation\.sql/);
+  assert.match(runner,/verifyPhase8ContactReadyMigration/);
   assert.ok(runner.indexOf('roleHardening=await applyPhase7Migration')>runner.indexOf('hardening=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('contactReady=await applyPhase7Migration')>runner.indexOf('roleHardening=await applyPhase7Migration'));
 });
 
 test('opportunity list projects the current Phase 7 five-state decision without replacing Phase 6 facts', async () => {
@@ -232,14 +235,17 @@ test('repository keeps immutable conflicts insert-only, filters inbox by company
 });
 
 test('management approval creates recipients only through the verified current-eligibility hard gate', async () => {
-  let recipientInput=null;
+  let managementInput=null;
   const service=new Phase7Service({pool:{query:async()=>({rows:[],rowCount:0})},env:{OUTBOUND_EMAIL_PROVIDER:'NONE'}});
-  service.repository.resolveOpportunity=async()=>({id:U.draft,company_id:U.company,product_profile:'WOMENSWEAR',system_recommendation_status:'RECOMMENDED'});
-  service.repository.recordOpportunityManagement=async()=>({current:{company_id:U.company,product_profile:'WOMENSWEAR'},management_event:{id:U.draft},queue:{id:U.recipient}});
-  service.repository.createEligibleRecipients=async input=>{recipientInput=input;return[{id:U.recipient}];};
+  service.repository.resolveOpportunity=async()=>({id:U.draft,company_id:U.company,product_profile:'WOMENSWEAR',
+    assessment_revision:2,business_fit_status:'FIT',system_recommendation_status:'RECOMMENDED',contact_readiness:'READY'});
+  service.repository.recordOpportunityManagement=async(_reference,input)=>{managementInput=input;return{current:{company_id:U.company,
+    product_profile:'WOMENSWEAR'},management_event:{id:U.draft},queue:{id:U.recipient},recipients_created:1};};
+  service.repository.createEligibleRecipients=async()=>{throw new Error('approval must not create recipients outside the approval transaction');};
   const result=await service.manageOpportunity(U.draft,'MANAGEMENT_APPROVED',{}, {identity:'owner',role:'MANAGEMENT'});
   assert.equal(result.recipients_created,1);assert.equal(result.provider_calls,0);assert.equal(result.messages_approved,0);
-  assert.equal(recipientInput.companyId,U.company);assert.equal(recipientInput.productProfile,'WOMENSWEAR');
+  assert.equal(managementInput.expected_decision_snapshot_id,U.draft);
+  assert.equal(managementInput.expected_assessment_revision,2);
 
   let sql='';const repository=new Phase7Repository({pool:{query:async(query)=>{sql=query;return{rows:[],rowCount:0};}}});
   await repository.createEligibleRecipients({companyId:U.company,verificationTtlDays:30});
@@ -249,6 +255,33 @@ test('management approval creates recipients only through the verified current-e
     's.category_procurement_match_result_id=o.category_procurement_match_result_id',
     's.product_opportunity_result_id IS NOT DISTINCT FROM o.product_opportunity_result_id',
     's.cooperation_feasibility_result_id=o.cooperation_feasibility_result_id','company_suppressions','contact_suppressions'])assert.ok(sql.includes(gate),gate);
+
+  const repositorySource=await textFile('services/demo-dashboard/src/phase7/repository.js');
+  const approvalBody=repositorySource.slice(repositorySource.indexOf('async recordOpportunityManagement'),repositorySource.indexOf('async listContactQueue'));
+  for(const boundary of ["display_opportunity_status!=='RECOMMENDED'","system_recommendation_status!=='RECOMMENDED'",
+    "business_fit_status!=='FIT'","contact_readiness!=='READY'","eligibility_status!=='ELIGIBLE'",
+    'ELIGIBILITY_VERSION_STALE','DECISION_REVISION_CHANGED',"dc.verification_status='VALID'",
+    "leadgen.outreach_recipients.lifecycle_status='ACTIVE'",'company_suppressions','contact_suppressions',
+    "error.code = 'OPPORTUNITY_APPROVAL_GATE_BLOCKED'"])assert.ok(approvalBody.includes(boundary)||repositorySource.includes(boundary),boundary);
+  assert.ok(approvalBody.indexOf('INSERT INTO leadgen.outreach_recipients')<approvalBody.indexOf('INSERT INTO leadgen.business_opportunity_management_events'));
+  assert.ok(approvalBody.indexOf('INSERT INTO leadgen.business_opportunity_management_events')<approvalBody.indexOf('INSERT INTO leadgen.contact_work_queue'));
+  const serviceSource=await textFile('services/demo-dashboard/src/phase7/service.js');
+  const manageBody=serviceSource.slice(serviceSource.indexOf('async manageOpportunity'),serviceSource.indexOf('async enqueueContactVerification'));
+  assert.doesNotMatch(manageBody,/createEligibleRecipients/);
+});
+
+test('blocked or stale management approval returns 409 without event, queue, recipient or provider side effects', async()=>{
+  const service=new Phase7Service({pool:{query:async()=>({rows:[],rowCount:0})},env:{OUTBOUND_EMAIL_PROVIDER:'NONE'}});
+  service.repository.resolveOpportunity=async()=>({id:U.draft,company_id:U.company,product_profile:'WOMENSWEAR',assessment_revision:2});
+  let createRecipients=0;
+  service.repository.createEligibleRecipients=async()=>{createRecipients+=1;return[];};
+  service.repository.recordOpportunityManagement=async()=>{
+    const error=new Error('gate blocked');error.code='OPPORTUNITY_APPROVAL_GATE_BLOCKED';error.status=409;throw error;
+  };
+  await assert.rejects(()=>service.manageOpportunity(U.draft,'MANAGEMENT_APPROVED',{},
+    {identity:'owner',role:'MANAGEMENT'}),error=>error.code==='OPPORTUNITY_APPROVAL_GATE_BLOCKED'&&error.status===409);
+  assert.equal(createRecipients,0);
+  assert.equal(service.outboundProvider.calls,undefined);
 });
 
 test('send worker persists retryable 429/5xx outcomes and asks pg-boss to retry', async () => {

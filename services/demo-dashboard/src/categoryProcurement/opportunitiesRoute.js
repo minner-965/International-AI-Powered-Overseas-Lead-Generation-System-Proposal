@@ -84,7 +84,7 @@ export async function queryCategoryProcurementOpportunities({
     hmr.match_score historical_customer_match,hmr.coverage_percent historical_match_coverage,
     hmr.display_status historical_match_status,hmr.profile_version historical_profile_version,hmr.calculated_at historical_matched_at,
     cpm.id category_procurement_match_result_id,cpm.product_profile,
-    bod.id opportunity_decision_id,bod.display_opportunity_status,bod.system_recommendation_status,
+    bod.id opportunity_decision_id,bod.display_opportunity_status,bod.system_recommendation_status,bod.business_fit_status,
     bod.contact_readiness,bod.policy_contact_status,bod.reason_codes opportunity_decision_reason_codes,
     bod.latest_management_event_id,bod.management_contact_status,bod.created_at opportunity_decision_assessed_at,
     cpm.score category_procurement_match_score,cpm.band category_procurement_match_band,
