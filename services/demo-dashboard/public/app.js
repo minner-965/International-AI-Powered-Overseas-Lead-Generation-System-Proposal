@@ -97,6 +97,10 @@ const displayValue = value => {
   return normalized.toLowerCase() === 'null' ? '' : normalized;
 };
 const displayQuery = value => displayValue(value).replace(/\s+null(?=\s|$)/gi, '').replace(/\s+/g, ' ').trim();
+const normalizeLegacyResearchEvidence = payload => ({
+  queries: valueList(payload?.queries).map(item=>displayQuery(item.query)).filter(Boolean),
+  evidence: valueList(payload?.evidence).map(displayValue).filter(Boolean)
+});
 const bi = (zh, en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const tierClass = value => `tier-${String(value || 'C').toLowerCase()}`;
 const tierScore = lead => {
@@ -269,7 +273,7 @@ function candidateEvidence(candidate) {
   const primary = fetches[0] || {};
   const captured = candidate.checked_at || primary.captured_at;
   return `<details class="candidate-evidence"><summary>${bi('查看依据','View evidence')}</summary><dl>
-    <dt>${bi('搜索相关度','Provider score')}</dt><dd>${candidate.provider_score == null ? '-' : esc(Number(candidate.provider_score).toFixed(3))}</dd>
+    <dt>${bi('搜索相关度','Search relevance')}</dt><dd>${candidate.provider_score == null ? '-' : esc(Number(candidate.provider_score).toFixed(3))}</dd>
     <dt>${bi('请求网址','Fetch URL')}</dt><dd><a href="${esc(safeUrl(primary.requested_url || candidate.url))}" target="_blank" rel="noreferrer">${esc(primary.requested_url || candidate.url)}</a></dd>
     <dt>${bi('最终网址','Final URL')}</dt><dd>${candidate.final_url ? `<a href="${esc(safeUrl(candidate.final_url))}" target="_blank" rel="noreferrer">${esc(candidate.final_url)}</a>` : '-'}</dd>
     <dt>${bi('HTTP 状态','HTTP status')}</dt><dd>${esc(candidate.http_status ?? '-')}</dd>
@@ -512,7 +516,8 @@ function renderResearchJob(job) {
   const taskErrors = Math.max(Number(job.search_failed_requests || 0), Number(job.error_count || 0));
   const compactCompleted = window.matchMedia('(max-width: 560px)').matches && job.status === 'COMPLETED';
   $('#research-job').hidden = false;
-  $('#research-job').setAttribute('aria-busy', String(!['COMPLETED','FAILED'].includes(job.status)));
+  const terminalStatuses = ['COMPLETED','FAILED','FAILED_RETRYABLE','FAILED_FINAL','WAITING_EVIDENCE','CANCELLED'];
+  $('#research-job').setAttribute('aria-busy', String(!terminalStatuses.includes(String(job.status || '').toUpperCase())));
   $('#research-job').innerHTML = `<div class="research-job-head"><div><p class="kicker">${bi('研究任务','Research job')}</p><h4>${esc(job.job_id || job.id || '-')}</h4></div><span class="job-status status-${esc(String(job.status || '').toLowerCase())}" role="status" aria-live="polite" aria-atomic="true">${bi(status[0],status[1])}</span></div>
     <details class="job-disclosure"${compactCompleted ? '' : ' open'}>
       <summary>${bi('查看任务详情与结果','View job details and results')}</summary>
@@ -524,24 +529,7 @@ function renderResearchJob(job) {
 }
 
 async function loadResearchResults(jobId) {
-  const [queryResult,candidateResult] = await Promise.allSettled([
-    json(`/api/research/jobs/${encodeURIComponent(jobId)}/queries`),
-    json(`/api/research/jobs/${encodeURIComponent(jobId)}/candidates?limit=100`)
-  ]);
-  const queries = queryResult.status === 'fulfilled' ? queryResult.value : [];
-  const candidates = candidateResult.status === 'fulfilled' ? candidateResult.value : [];
-  const queryBox = $('#research-query-summary');
-  const candidateBox = $('#research-candidate-results');
-  const queryCount = $('#research-query-count');
-  if (queryCount) queryCount.textContent = String(queries.length);
-  if (queryBox) queryBox.innerHTML = queries.length ? `<details class="query-summary"><summary>${bi(`搜索查询 ${queries.length} 条`,`Search queries: ${queries.length}`)}</summary><div class="candidate-table-wrap" role="region" aria-label="${esc('搜索查询明细 Search query details')}" tabindex="0"><table class="candidate-table query-table"><caption class="sr-only">${bi('搜索查询明细','Search query details')}</caption><thead><tr><th>${bi('查询','Query')}</th><th>${bi('来源','Provider')}</th><th>${bi('状态','Status')}</th><th>${bi('结果数','Result count')}</th></tr></thead><tbody>${queries.map(query=>{const status=queryStatusLabel(query.status);return `<tr><td>${esc(displayQuery(query.query_text))}</td><td>${esc(query.provider)}</td><td>${bi(status[0],status[1])}</td><td>${esc(query.result_count)}</td></tr>`}).join('')}</tbody></table></div></details>` : queryResult.status === 'rejected' ? `<p class="candidate-note">${bi('搜索查询明细读取失败。','Search query details could not be loaded.')}</p>` : '';
-  if (candidateBox && !candidates.length) {
-    candidateBox.innerHTML = `<p class="candidate-note">${candidateResult.status === 'rejected' ? bi('搜索候选页面读取失败。','Research candidates could not be loaded.') : bi('当前任务没有可显示的搜索候选页面。','No research candidates are available for this job.')}</p>`;
-  }
-  if (candidateBox && candidates.length) candidateBox.innerHTML = `<div class="candidate-head"><div><p class="kicker">${bi('搜索结果','Search results')}</p><h4>${bi('企业与业务页面','Business Pages')}</h4></div><p>${bi('企业资料、网站可访问性和商务联系方式列于下方，采购身份留待业务审核。','Company details, website reachability and business contacts are listed below for commercial review.')}</p></div>
-    <div class="candidate-table-wrap" role="region" aria-label="${esc('企业与业务页面 Business pages')}" tabindex="0"><table class="candidate-table contact-result-table"><caption class="sr-only">${bi('企业与业务页面','Business pages')}</caption><thead><tr><th>${bi('标题','Title')}</th><th>${bi('类型','Type')}</th><th>${bi('域名','Domain')}</th><th>${bi('来源网址','Source URL')}</th><th>${bi('可访问','Reachable')}</th><th>${bi('可联系','Contactable')}</th><th>${bi('邮箱','Email')}</th><th>${bi('电话','Phone')}</th><th>${bi('WhatsApp','WhatsApp')}</th><th>${bi('联系表单','Contact form')}</th><th>${bi('搜索查询','Found by')}</th><th>${bi('搜索服务','Provider')}</th></tr></thead><tbody>${candidates.map(candidate=>{const type=candidateTypeLabel(candidate.candidate_type);const found=candidate.found_by_queries?.map(item=>displayQuery(item.query)).filter(Boolean).join(' / ') || '-';const href=safeUrl(candidate.url);const reachable=reachabilityLabel(candidate.website_reachable);const contactability=contactabilityLabel(candidate.contactability_status);return `<tr><td><a href="${esc(href)}" target="_blank" rel="noreferrer">${esc(candidate.title)}</a>${candidateEvidence(candidate)}</td><td>${bi(type[0],type[1])}</td><td>${esc(candidate.root_domain)}</td><td><a href="${esc(href)}" target="_blank" rel="noreferrer">${bi('打开页面','Open page')}</a></td><td><span class="result-status ${candidate.website_reachable===true?'yes':'no'}">${bi(reachable[0],reachable[1])}</span></td><td><span class="result-status ${candidate.contactability_status==='CONTACTABLE'?'yes':'no'}">${bi(contactability[0],contactability[1])}</span></td><td>${candidateContactCell(candidate,'EMAIL')}</td><td>${candidateContactCell(candidate,'PHONE')}</td><td>${candidateContactCell(candidate,'WHATSAPP')}</td><td>${candidateContactCell(candidate,'CONTACT_FORM')}</td><td>${esc(found)}</td><td>${esc(candidate.provider)}</td></tr>`}).join('')}</tbody></table></div>`;
-  renderVerificationShell(jobId);
-  await refreshVerifications(jobId);
+  document.dispatchEvent(new CustomEvent('phase9:research-job-terminal',{ detail:{ jobId } }));
 }
 
 async function pollResearchJob(jobId) {
@@ -549,7 +537,8 @@ async function pollResearchJob(jobId) {
   try {
     const job = await json(`/api/research/jobs/${encodeURIComponent(jobId)}`);
     if (!renderResearchJob(job)) return;
-    if (!['COMPLETED','FAILED'].includes(job.status)) {
+    const terminalStatuses = ['COMPLETED','FAILED','FAILED_RETRYABLE','FAILED_FINAL','WAITING_EVIDENCE','CANCELLED'];
+    if (!terminalStatuses.includes(String(job.status || '').toUpperCase())) {
       state.researchPollTimer = setTimeout(() => pollResearchJob(jobId), 1200);
     } else await loadResearchResults(jobId);
   } catch (error) {
@@ -697,7 +686,7 @@ function renderOverviewCompanies() {
   const host = $('#overview-opportunities');
   if (!host) return;
   const items = state.overviewOpportunities.filter(item => phase7OpportunityStatus(item) === 'RECOMMENDED').slice(0,5);
-  host.innerHTML = items.length ? `<div class="crm-evidence-required-list">${items.map(lead=>`<article class="crm-evidence-row"><div><button class="crm-company-link" type="button" data-overview-id="${esc(leadIdFor(lead))}">${esc(lead.company_name || '-')}</button><span class="crm-row-secondary">${esc(marketValue(lead))}</span></div><div>${productProfilesCell(lead)}</div><div>${phase7OpportunityBadge('RECOMMENDED')}</div><button class="btn btn-outline-primary" type="button" data-overview-id="${esc(leadIdFor(lead))}">${bi('查看机会','View Opportunity')}</button></article>`).join('')}</div>` : `<div class="p8-empty-state"><i class="ti ti-target-off" aria-hidden="true"></i><h3>${bi('尚无联系就绪机会','No contact-ready opportunities yet')}</h3><p>${bi('产品与采购匹配、采购职责和有效邮箱全部通过后，机会才会出现在这里。','Product fit, buying responsibility and a VALID email must all pass before an opportunity appears here.')}</p><ul class="p8-overview-reason-list"><li><span>${bi('品类采购匹配','Category Procurement Match')}</span><b>0</b></li><li><span>${bi('已核验采购人员或部门','Verified Buyer / Procurement')}</span><b>0</b></li><li><span>${bi('有效商务邮箱','Hunter VALID')}</span><b>0</b></li></ul><button class="btn btn-outline-primary" type="button" data-open-view="opportunities" data-opportunity-view="EVIDENCE_REQUIRED">${bi('查看待补资料机会','View Evidence Required')}</button></div>`;
+  host.innerHTML = items.length ? `<div class="crm-evidence-required-list">${items.map(lead=>`<article class="crm-evidence-row"><div><button class="crm-company-link" type="button" data-overview-id="${esc(leadIdFor(lead))}">${esc(lead.company_name || '-')}</button><span class="crm-row-secondary">${esc(marketValue(lead))}</span></div><div>${productProfilesCell(lead)}</div><div>${phase7OpportunityBadge('RECOMMENDED')}</div><button class="btn btn-outline-primary" type="button" data-overview-id="${esc(leadIdFor(lead))}">${bi('查看机会','View Opportunity')}</button></article>`).join('')}</div>` : `<div class="p8-empty-state"><i class="ti ti-target-off" aria-hidden="true"></i><h3>${bi('尚无联系就绪机会','No contact-ready opportunities yet')}</h3><p>${bi('产品与采购匹配、采购职责和有效邮箱全部通过后，机会才会出现在这里。','Product fit, buying responsibility and a VALID email must all pass before an opportunity appears here.')}</p><ul class="p8-overview-reason-list"><li><span>${bi('品类采购匹配','Category Procurement Match')}</span><b>0</b></li><li><span>${bi('已核验采购人员或部门','Verified Buyer / Procurement')}</span><b>0</b></li><li><span>${bi('邮箱核验有效','Email verification VALID')}</span><b>0</b></li></ul><button class="btn btn-outline-primary" type="button" data-open-view="opportunities" data-opportunity-view="EVIDENCE_REQUIRED">${bi('查看待补资料机会','View Evidence Required')}</button></div>`;
   host.querySelectorAll('[data-overview-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.overviewId)));
   host.querySelector('[data-opportunity-view]')?.addEventListener('click',event=>{
     const select=$('#opportunity-status');
@@ -821,6 +810,50 @@ function opportunityBarrierCell(item) {
   return `${pairHtml(barrierSignalLabel(barriers[0]))}${extra}`;
 }
 
+function phase9BlockerGroup(item,reasons = []) {
+  const explicit = displayValue(item.blocker_group || item.task_type || item.latest_blocker).toUpperCase();
+  if (['PRODUCT','BUYER_MODEL','SUPPLIER_ACCESS','CONTACT','BUYER_ROLE','EMAIL','TEMPORARY_ERROR','HISTORY','IDENTITY'].includes(explicit)) return explicit;
+  const codes = reasons.map(value=>String(value || '').toUpperCase()).join(' ');
+  if (/TEMPORARY|PROVIDER|NETWORK|TIMEOUT/.test(codes)) return 'TEMPORARY_ERROR';
+  if (/HISTORY|HISTORICAL|CRM/.test(codes)) return 'HISTORY';
+  if (/IDENTITY|COMPANY_VERIFICATION|PUBLIC_WEBSITE/.test(codes)) return 'IDENTITY';
+  if (/EMAIL|MAILBOX/.test(codes)) return 'EMAIL';
+  if (/SUPPLIER|ACCESS/.test(codes)) return 'SUPPLIER_ACCESS';
+  if (/BUYER_MODEL|DISTRIBUTION|RESALE/.test(codes)) return 'BUYER_MODEL';
+  if (/BUYER_ROLE|DECISION_MAKER|PROCUREMENT_RESPONSIBILITY/.test(codes)) return 'BUYER_ROLE';
+  if (/CONTACT|BUYER_REQUIRED/.test(codes)) return 'CONTACT';
+  return 'PRODUCT';
+}
+
+function phase9BlockerLabel(code) {
+  return ({
+    PRODUCT:['产品资料','Product evidence'], BUYER_MODEL:['采购模式','Buyer Model'],
+    SUPPLIER_ACCESS:['供应商准入','Supplier Access'], CONTACT:['采购联系人','Buyer Contact'],
+    BUYER_ROLE:['采购职责','Buyer Role'], EMAIL:['邮箱核验','Email verification'],
+    TEMPORARY_ERROR:['暂时错误','Temporary Error'], HISTORY:['历史记录','History'],
+    IDENTITY:['企业身份','Identity']
+  })[code] || ['待补资料','Evidence Required'];
+}
+
+function phase9BlockerAction(code) {
+  return ({
+    PRODUCT:['收集品类资料','Collect category evidence'],
+    BUYER_MODEL:['核验采购与转售模式','Verify buyer model and resale'],
+    SUPPLIER_ACCESS:['复核供应商准入','Review supplier access'],
+    CONTACT:['查找采购联系人','Find profile buyer'],
+    BUYER_ROLE:['核验采购职责','Verify procurement responsibility'],
+    EMAIL:['核验商务邮箱','Verify business email'],
+    TEMPORARY_ERROR:['复核并重试任务','Review and retry task'],
+    HISTORY:['打开客户记录复核','Open company record review'],
+    IDENTITY:['打开企业身份复核','Open company identity review']
+  })[code] || ['打开研究任务','Open research job'];
+}
+
+function phase9RouteEvidenceTask(item,blocker,trigger) {
+  const jobId = displayValue(item.research_job_id || item.job_id);
+  document.dispatchEvent(new CustomEvent('phase9:jobs-route',{ detail:{ blocker,jobId,companyId:companyIdFor(item),opportunityId:item.opportunity_id,trigger } }));
+}
+
 function renderOpportunityTable() {
   const host = $('#opportunity-table');
   if (!host) return;
@@ -871,12 +904,26 @@ function renderOpportunityTable() {
   if (selectedStatus === 'EVIDENCE_REQUIRED' && evidenceHost) {
     if (table) table.hidden = true;
     evidenceHost.hidden = false;
-    evidenceHost.innerHTML = items.map(item=>{
+    const grouped = new Map();
+    items.forEach(item=>{
       const reasons = valueList(item.reason_codes || item.evidence_required_reasons || item.blocker_reasons);
-      const reason = reasons[0] ? phase7ReasonLabel(reasons[0]) : ['待补资料项待确认','Evidence requirement to confirm'];
-      return `<article class="p8-evidence-row"><div><strong>${esc(item.company_name || item.resolved_company_name || '-')}</strong><span>${productProfilesCell(item)}</span></div><div>${pairHtml(reason)}</div><div><span>${bi('最近评估','Last assessed')}</span><time>${esc(shortDate(item.calculated_at || item.updated_at || item.created_at))}</time></div><button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button></article>`;
+      const blocker = phase9BlockerGroup(item,reasons);
+      if (!grouped.has(blocker)) grouped.set(blocker,[]);
+      grouped.get(blocker).push({ item,reasons });
+    });
+    evidenceHost.innerHTML = [...grouped.entries()].map(([blocker,records])=>{
+      const label = phase9BlockerLabel(blocker);
+      const action = phase9BlockerAction(blocker);
+      return `<section class="p9-blocker-group" data-blocker-group="${esc(blocker)}"><header><h3>${bi(label[0],label[1])}</h3><span>${records.length}</span></header>${records.map(({item,reasons})=>{
+        const reason = reasons[0] ? phase7ReasonLabel(reasons[0]) : ['待补资料项待确认','Evidence requirement to confirm'];
+        return `<article class="p8-evidence-row"><div><strong>${esc(item.company_name || item.resolved_company_name || '-')}</strong><span>${productProfilesCell(item)}</span></div><div>${pairHtml(reason)}</div><div><span>${bi('最近评估','Last assessed')}</span><time>${esc(shortDate(item.calculated_at || item.updated_at || item.created_at))}</time></div><div class="p9-evidence-actions"><button class="btn btn-primary" type="button" data-evidence-task="${esc(leadIdFor(item))}" data-evidence-blocker="${esc(blocker)}">${bi(action[0],action[1])}</button><button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button></div></article>`;
+      }).join('')}</section>`;
     }).join('');
     evidenceHost.querySelectorAll('[data-opportunity-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.opportunityId)));
+    evidenceHost.querySelectorAll('[data-evidence-task]').forEach(button=>button.addEventListener('click',()=>{
+      const item = items.find(record=>String(leadIdFor(record)) === button.dataset.evidenceTask);
+      if (item) phase9RouteEvidenceTask(item,button.dataset.evidenceBlocker,button);
+    }));
     return;
   }
   if (evidenceHost) evidenceHost.hidden = true;
@@ -1031,7 +1078,7 @@ const crmHistoryClassificationBadge = item => {
 
 function ensureCrmHistoryPanel() {
   if ($('#crm-history-panel')) return;
-  const jobsView = $('#view-jobs');
+  const jobsView = $('#jobs-legacy-records') || $('#view-jobs');
   if (!jobsView) return;
   const panel = document.createElement('section');
   panel.id = 'crm-history-panel';
@@ -2188,12 +2235,17 @@ $('#verification-filter')?.addEventListener('change', () => { state.companyPage=
 $('#lifecycle-filter')?.addEventListener('change', () => { state.companyPage=1; loadLeads(); });
 $('#company-sort')?.addEventListener('change',()=>{state.companyPage=1;renderCompanyTable()});
 $('#opportunity-filters')?.addEventListener('change',()=>loadOpportunities());
+document.addEventListener('p8:opportunity-search',()=>renderOpportunityTable());
 $('#opportunity-clear-filters')?.addEventListener('click',()=>{
   $('#opportunity-filters')?.reset();
   if ($('#opportunity-sort')) $('#opportunity-sort').value='category_procurement_desc';
   loadOpportunities();
 });
 $('#start-enrichment')?.addEventListener('click',startEnrichmentJob);
+document.addEventListener('phase9:research-job-open',()=>{
+  clearTimeout(state.researchPollTimer);
+  state.researchPollTimer = null;
+});
 document.addEventListener('crm:densitychange',renderCompanyTable);
 $('#research-country').addEventListener('change', () => {
   $('#research-city').value = '';
@@ -2222,14 +2274,19 @@ $('#research-form').addEventListener('submit', async event => {
     const created = await json('/api/research/jobs', {
       method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(request)
     });
-    history.replaceState(null, '', `${location.pathname}?job=${encodeURIComponent(created.job_id || created.id)}#jobs`);
+    const createdJobId = created.job_id || created.id;
+    const jobUrl = new URL(location.href);
+    jobUrl.searchParams.set('job',createdJobId);
+    jobUrl.searchParams.set('jobs_tab','research');
+    jobUrl.hash = 'jobs';
+    history.pushState(null,'',jobUrl);
     activateView('jobs',{ updateHash:false });
     renderResearchJob({ ...request, ...created, candidates_found:0, websites_found:0, companies_qualified:0 });
-    pollResearchJob(created.job_id || created.id);
+    document.dispatchEvent(new CustomEvent('phase9:research-job-created',{ detail:{ jobId:createdJobId,job:{ ...request,...created } } }));
+    pollResearchJob(createdJobId);
   } catch (error) {
     const failedJobId = error.payload?.job_id;
-    activateView('jobs');
-    renderResearchJob({ ...request, job_id:failedJobId, status:'FAILED', candidates_found:0, websites_found:0, companies_qualified:0 });
+    document.dispatchEvent(new CustomEvent('phase9:research-job-create-failed',{ detail:{ jobId:failedJobId || '' } }));
   } finally {
     button.disabled = false;
     button.setAttribute('aria-busy', 'false');
@@ -2255,7 +2312,7 @@ $('#reset').addEventListener('click', async () => {
   try {
     const result = await json('/api/live/collect', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({limit:50})});
     state.selected=null;
-    $('#detail').innerHTML=`<div class="empty"><p>${bi(`客户名录更新完成，新增 ${result.newCompanies} 家，更新 ${result.updatedCompanies} 家`,`Company directory updated, ${result.newCompanies} new, ${result.updatedCompanies} updated`)}<br>${result.providers.map(esc).join(' / ')}</p></div>`;
+    $('#detail').innerHTML=`<div class="empty"><p>${bi(`客户名录更新完成，新增 ${result.newCompanies} 家，更新 ${result.updatedCompanies} 家。公开来源已更新。`,`Company directory updated, ${result.newCompanies} new, ${result.updatedCompanies} updated. Public sources were refreshed.`)}</p></div>`;
     await Promise.all([loadMetrics(),loadLeads()]);
   } catch (error) {
     $('#run-status').innerHTML = bi(`更新失败：${error.message}。当前名录不受影响。`,`Update failed: ${error.message}. The current directory is unchanged.`);
@@ -2277,7 +2334,7 @@ if (initialLoads[0].status === 'rejected') {
 }
 if (initialLoads[1].status === 'rejected') {
   $('#leads').innerHTML = `<tr><td colspan="11" class="crm-loading-cell">${bi('客户名录读取失败。','Company directory could not be loaded.')}<button id="leads-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
-  $('#opportunity-table').innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
+  $('#opportunity-table').innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
   $('#leads-retry')?.addEventListener('click',loadLeads);
 }
 const requestedJobId = new URLSearchParams(location.search).get('job');

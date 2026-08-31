@@ -401,8 +401,32 @@ UI 不直接调用 n8n、Hunter 或 outbound Provider。Phase 7 import/export/ap
 3. 使用中文主标签 + 英文 companion，enum 有确定性映射。
 4. 定义 loading、empty、error、success、disabled、keyboard 和 recovery。
 5. 每 screen 一个 primary action，每 row 最多一个 status + 一个 risk。
-6. 测试六个 viewport、light/dark、comfortable/compact、200% zoom、reduced motion。
+6. 测试七个 viewport（增加 1280 × 720）、light/dark、comfortable/compact、200% zoom、reduced motion。
 7. 确认无 page-level horizontal overflow、clipped bilingual label 或被 sticky UI 遮挡的 focus。
 8. 确认真实 counts 和 business decisions 在 UI 前后相同。
 9. 确认 UI、Excel、CSV 没有 AI 宣传、snake_case、乱码、内部路径或私密内容。
 10. 第三方依赖先记录 version、license、cost、privacy、maintenance、deployment 和 integration boundary，固定版本后才能引入。
+
+## Phase 9 Research and Jobs contract
+
+Research 和 Jobs 已由 Phase 9 统一为同一套证据工作流：
+
+1. Research Workbench 只读取真实聚合：active jobs、Evidence Required opportunities、verified profile buyers、contact-ready opportunities。
+2. Priority Evidence Work 最多三项，排序由当前 blocker、contact proximity 和 evidence age 确定，不使用 DPV Score 或 Tier 代替机会判断。
+3. New Research Job 是三步 native dialog，保留原字段、POST payload、唯一 dispatch 和轮询链路。
+4. Jobs Inbox 包含 Research/Data/Outreach 三类任务；Research 行固定七列，detail 固定七个 evidence stages。
+5. Browser Back、URL state、exact opener focus、safe evidence links、loading/empty/error/retry 都是稳定合同。
+6. 手机长列表和弹窗内容使用内部滚动；页面级横向 overflow、document scale hack 和禁止缩放属性不允许出现。
+7. 公司可见状态写“邮箱核验 / Email verification”，不显示 provider 名称、key、credits、raw payload 或内部错误。
+
+Stable management read endpoints:
+
+```text
+GET /api/research/workbench-summary
+GET /api/research/tasks
+GET /api/research/jobs?view=inbox
+GET /api/research/jobs/:id
+GET /api/research/jobs/:id/results
+```
+
+Stable frontend hooks include `#research-form`, `#research-job`, `#research-job-dialog`, `#research-workbench-summary`, `#research-priority-tasks`, `#research-recent-jobs`, `#jobs-inbox-tabs`, `#jobs-list-body` and `#research-job-detail`.

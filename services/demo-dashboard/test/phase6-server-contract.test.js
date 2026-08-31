@@ -39,7 +39,8 @@ test('Phase 6 API surface exists and preserves Express as the browser boundary',
 
 test('POST creates a queued enrichment ResearchJob before n8n dispatch', () => {
   const block = routeBlock("app.post('/api/enrichment/jobs'","app.get('/api/enrichment/jobs'");
-  assert.match(block, /'QUEUED','DECISION_MAKER_ENRICHMENT'/);
+  assert.match(block, /'QUEUED',\$13/);
+  assert.match(block, /researchWave\?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT'/);
   assert.match(block, /res\.status\(202\)\.json\(\{ job_id:job\.id,id:job\.id,status:'QUEUED',dispatch:'accepted' \}\)/);
   assert.match(block, /marketCodes\.some\(code=>!\['AE','MX'\]\.includes\(code\)\)/);
   assert.match(block, /productProfiles\.some\(value=>!\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\.includes\(value\)\)/);

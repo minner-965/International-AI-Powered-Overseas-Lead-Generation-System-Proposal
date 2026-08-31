@@ -8,12 +8,14 @@ export const PHASE7_MIGRATION_KEY = '025_phase7_outreach_and_data_exchange.sql';
 export const PHASE7_HARDENING_MIGRATION_KEY = '026_phase7_data_exchange_crm_hardening.sql';
 export const PHASE7_ROLE_HARDENING_MIGRATION_KEY = '027_phase7_management_role_hardening.sql';
 export const PHASE8_CONTACT_READY_MIGRATION_KEY = '028_phase8_contact_ready_recommendation.sql';
+export const PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY = '029_phase9_real_opportunity_research_audit.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
 const hardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_HARDENING_MIGRATION_KEY);
 const roleHardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_ROLE_HARDENING_MIGRATION_KEY);
 const contactReadyPath = path.resolve(projectRoot, 'database/migrations', PHASE8_CONTACT_READY_MIGRATION_KEY);
+const realOpportunityPath = path.resolve(projectRoot, 'database/migrations', PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -119,6 +121,37 @@ export async function verifyPhase8ContactReadyMigration(client) {
     business_fit_constraint_verified:true,v2_contact_ready_constraint_verified:true};
 }
 
+export async function verifyPhase9RealOpportunityMigration(client) {
+  const result=await client.query(`SELECT
+    (SELECT count(*)::integer FROM information_schema.columns
+      WHERE table_schema='leadgen' AND table_name='research_jobs'
+        AND column_name=ANY(ARRAY['idempotency_key','request_digest','created_by_identity','created_by_role',
+          'research_wave','run_budget_cap_units','stop_reason_code'])) phase9_job_columns,
+    to_regclass('leadgen.research_job_cohort_items') cohort_table,
+    to_regclass('leadgen.research_job_stage_events') stage_events_table,
+    to_regclass('leadgen.contact_verification_events') contact_verification_table,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.research_jobs'::regclass
+      AND conname='research_jobs_job_type_check'
+      AND pg_get_constraintdef(oid) LIKE '%REAL_OPPORTUNITY_RESEARCH%') phase9_job_type,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_research_jobs_phase9_idempotency'
+      AND indexdef LIKE '%WHERE (idempotency_key IS NOT NULL)%') idempotency_index,
+    (SELECT count(*)::integer FROM pg_trigger
+      WHERE NOT tgisinternal AND tgname=ANY(ARRAY[
+        'trg_research_job_cohort_items_immutable','trg_research_job_stage_events_immutable',
+        'trg_contact_verification_events_immutable','trg_contact_verification_events_exact_reference',
+        'trg_research_jobs_phase9_request_guard'
+      ])) phase9_triggers`);
+  const row=result.rows[0]||{};
+  if(Number(row.phase9_job_columns)!==7||!row.cohort_table||!row.stage_events_table
+    ||!row.contact_verification_table||!row.phase9_job_type||!row.idempotency_index
+    ||Number(row.phase9_triggers)!==5){
+    throw new Error('Phase 9 real-opportunity research audit migration verification failed');
+  }
+  return {phase9_job_columns_verified:7,phase9_tables_verified:3,
+    phase9_audit_and_reference_triggers_verified:5,idempotency_index_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -127,7 +160,10 @@ export async function applyPhase7Migrations(options = {}) {
     appliedBy:options.appliedBy||'dpv-phase7-explicit-migration-runner'});
   const contactReady=await applyPhase7Migration({...options,migrationPath:options.contactReadyMigrationPath||contactReadyPath,
     appliedBy:options.appliedBy||'dpv-phase8-explicit-migration-runner'});
-  return {base,hardening,roleHardening,contactReady,status:contactReady.status,database:contactReady.database};
+  const realOpportunity=await applyPhase7Migration({...options,migrationPath:options.phase9MigrationPath||realOpportunityPath,
+    appliedBy:options.appliedBy||'dpv-phase9-explicit-migration-runner'});
+  return {base,hardening,roleHardening,contactReady,realOpportunity,
+    status:realOpportunity.status,database:realOpportunity.database};
 }
 
 export async function applyPhase7Migration({
@@ -175,7 +211,9 @@ export async function applyPhase7Migration({
         :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
           ?await verifyPhase7RoleHardeningMigration(client)
           :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
-            ?await verifyPhase8ContactReadyMigration(client):await verifyPhase7Migration(client);
+            ?await verifyPhase8ContactReadyMigration(client)
+            :migrationKey===PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY
+              ?await verifyPhase9RealOpportunityMigration(client):await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
         migration_key: migrationKey,
@@ -196,7 +234,9 @@ export async function applyPhase7Migration({
       :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
         ?await verifyPhase7RoleHardeningMigration(client)
         :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
-          ?await verifyPhase8ContactReadyMigration(client):await verifyPhase7Migration(client);
+          ?await verifyPhase8ContactReadyMigration(client)
+          :migrationKey===PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY
+            ?await verifyPhase9RealOpportunityMigration(client):await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

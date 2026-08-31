@@ -368,7 +368,7 @@ Load order：Tabler Core、Tabler Icons、Phase 8 tokens、foundation、componen
 
 - [ ] 一套 design system、一个 icon family、一个 primary accent。
 - [ ] light/dark/system 与 comfortable/compact 全部通过。
-- [ ] 六个 viewport 和 200% zoom 无页面级 overflow/遮挡。
+- [ ] 七个 viewport 和 200% zoom 无页面级 overflow/遮挡。
 - [ ] 每个 view 一个 primary action；每行最多一个 status + 一个 risk。
 - [ ] loading/empty/error/success/disabled 有双语和恢复动作。
 - [ ] Opportunities 真实 0 不渲染宽空表或虚构项。
@@ -378,3 +378,29 @@ Load order：Tabler Core、Tabler Icons、Phase 8 tokens、foundation、componen
 - [ ] 无 emoji、gradient、glow、glass、fake KPI/avatar/company/opportunity。
 - [ ] UI 和导出没有 AI 化宣传、snake_case 或乱码。
 - [ ] Phase 7 既有测试 0 failed，Provider calls/sends 继续为 0。
+
+## Phase 9 — Research Workbench refinement
+
+Phase 9 extends the same Phase 8 design system; it does not introduce a second visual language.
+
+- Research starts with a compact command header, four real metrics, one priority-evidence surface and recent jobs. It has no marketing hero, fake trend or score-based recommendation.
+- Priority Evidence Work is deterministic and displays at most three items. Each row exposes company/profile, one current blocker, evidence age and one recovery action.
+- New Research Job uses a native three-step dialog: market/profile, buyer scope and final review. Close, Escape, validation, internal scroll and exact trigger-focus restoration are mandatory.
+- Jobs is an Inbox with Research/Data/Outreach tabs. Research rows use seven decision columns and open a seven-stage evidence detail view.
+- Completed jobs project terminal `100%`; queued work projects `0%`; active work derives progress from attempted companies divided by its frozen cohort.
+- Evidence links accept HTTP(S) only and open with `noreferrer`. Company-facing UI says “邮箱核验 / Email verification”; provider names remain internal.
+- Long mobile job lists and dialog bodies use bounded internal scrolling. The document remains normally zoomable and has no page-level horizontal overflow.
+
+Phase 9 visual acceptance adds `1280 × 720` to the existing matrix:
+
+```text
+1440 × 900
+1280 × 720
+1024 × 768
+768 × 900
+390 × 844
+375 × 667
+844 × 390
+```
+
+All seven sizes must pass in light/dark and comfortable/compact combinations with equal-size, equal-weight stacked Chinese/English labels. The detailed deployed result is recorded in [PHASE9_VISUAL_AUDIT.md](./PHASE9_VISUAL_AUDIT.md).

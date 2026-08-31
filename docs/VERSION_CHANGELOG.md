@@ -1,5 +1,31 @@
 # Version Changelog
 
+## phase9 — 2026-08-31 — released
+
+### Added
+
+- Added immutable Phase 9 cohort, stage-event and contact-verification audit contracts through migration 029.
+- Added bounded Wave A/Wave B real-opportunity enrichment with deterministic selection, one frozen profile per company, budget/stop controls and strict history/suppression gates.
+- Added the real-data Research Workbench, three-step New Research Job dialog, Jobs Inbox, seven-stage detail and opportunity-blocker deep links.
+- Added management-authenticated summary/task/job projections while keeping provider payloads, credentials and internal errors out of client responses.
+
+### Actual controlled result
+
+- Wave A completed 5/5 companies; Wave B completed the only remaining strict eligible candidate, 1/1.
+- Persisted 20 public references, 6 decision-person source records, 6 immutable cohort items and 42 stage events with 0 job errors.
+- All six identities were ready, but no named profile Buyer or current VALID business email was proven.
+- Provider calls/units, contact-verification events, recommendations, sales-ready opportunities, approvals, sends and outbound messages all remained 0.
+- Current opportunity truth remains 12 Evidence Required and 2 Not Suitable; Phase 10 eligibility is `NO`.
+
+### Verification
+
+- Migration checksum `052cdf4bdbfe1a33ed024e228f1a5b8b78b2bab03b36356fec63949e41e59bdf` applied and replayed successfully.
+- Five deployed Workbench API reads returned 200 without sensitive projection fields.
+- Seven browser viewports, light/dark, comfortable/compact, dialog/back/focus, mobile internal scroll and safe evidence links passed.
+- Deployed export produced a verified 14-row, 31-column XLSX with a recorded download audit.
+- Full suite: 477 tests, 473 passed, 0 failed and 4 conditionally skipped.
+- Exact release ref hashes are reported by the post-push handoff verification; `docs/PHASE9_RESULT.md` records why a commit does not embed its own hash.
+
 ## phase8 — 2026-08-31 — released
 
 ### Added to the working tree

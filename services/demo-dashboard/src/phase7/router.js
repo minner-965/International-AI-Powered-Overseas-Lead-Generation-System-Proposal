@@ -51,7 +51,7 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   router.post('/api/outreach/marketing-context/versions', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.createMarketingContext(req.body,req.managementUser))));
   router.post('/api/outreach/marketing-context/:id/approve', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.approveMarketingContext(req.params.id,req.body,req.managementUser))));
 
-  router.post('/api/contacts/:id/hunter-verify', ...draftWrite, asyncRoute(async(req,res)=>res.status(202).json(await service.enqueueContactVerification(req.params.id,req.managementUser))));
+  router.post('/api/contacts/:id/hunter-verify', ...dataWrite, asyncRoute(async(req,res)=>res.status(202).json(await service.enqueueContactVerification(req.params.id,req.managementUser))));
   router.get('/api/contacts/:id/verification-history', ...read, asyncRoute(async(req,res)=>res.json(await service.repository.getContactVerificationHistory(req.params.id))));
 
   router.post('/api/outreach/drafts', ...draftWrite, asyncRoute(async(req,res)=>res.status(201).json(await service.createDraft(req.body,req.managementUser))));

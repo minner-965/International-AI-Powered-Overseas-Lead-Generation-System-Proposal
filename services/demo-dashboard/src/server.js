@@ -1,5 +1,6 @@
 import express from 'express';
 import pg from 'pg';
+import { createHash, randomUUID } from 'node:crypto';
 import { load } from 'cheerio';
 import { resolveMx } from 'node:dns/promises';
 import { persistGeneratedQueries, discoverResearchCandidates } from './search/discoveryService.js';
@@ -26,6 +27,8 @@ import { Phase7Service } from './phase7/service.js';
 import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
 import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/router.js';
 import { createManagementAuth } from './phase7/managementAuth.js';
+import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
+import { createResearchRouter } from './research/router.js';
 
 const { Pool } = pg;
 const app = express();
@@ -51,6 +54,11 @@ const telemetry = createTelemetryService({
   enabled: /^(1|true|yes|on)$/i.test(process.env.OTEL_ENABLED || ''),
   serviceName: 'dpv-leadgen-dashboard'
 });
+
+function canonicalDigest(value) {
+  const canonical = Object.fromEntries(Object.entries(value || {}).sort(([left],[right])=>left.localeCompare(right)));
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
 const searchConfig = Object.freeze({
   provider: String(process.env.SEARCH_PROVIDER || 'tavily').toLowerCase(),
   braveApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
@@ -121,6 +129,7 @@ const enrichmentService = new EnrichmentService({
   maxCompanies: Number(process.env.ENRICHMENT_MAX_COMPANIES || 100),
   maxQueriesPerCompany: Number(process.env.ENRICHMENT_MAX_QUERIES_PER_COMPANY || 5),
   maxPagesPerCompany: Number(process.env.ENRICHMENT_MAX_PAGES_PER_COMPANY || 6),
+  providerTemporaryErrorThreshold:Number(process.env.ENRICHMENT_PROVIDER_TEMPORARY_ERROR_THRESHOLD || 3),
   audit
 });
 const categoryEvidenceService = new CategoryEvidenceService({
@@ -316,7 +325,22 @@ const phase5Queue = createPhase5Queue({
       }
       return scoreCompanySet(data, job);
     },
-    [PHASE5_QUEUES.ENRICH_DECISION_MAKERS]: data => enrichmentService.runJob(data.research_job_id),
+    [PHASE5_QUEUES.ENRICH_DECISION_MAKERS]: async data => {
+      const enrichment = await enrichmentService.runJob(data.research_job_id);
+      const decisions = await phase7Service.repository.refreshOpportunityDecisions({
+        ttlDays:Number(process.env.OUTREACH_ELIGIBILITY_TTL_DAYS || 7)
+      });
+      const stageEvents = await researchWorkbenchService.recordDecisionRefreshEvents(data.research_job_id);
+      return {
+        ...enrichment,
+        decision_refresh:{
+          evaluated:Number(decisions.evaluated || 0),
+          inserted:Number(decisions.inserted || 0),
+          unchanged:Number(decisions.unchanged || 0),
+          stage_events:stageEvents.length
+        }
+      };
+    },
     [PHASE5_QUEUES.COLLECT_CATEGORY_BUYER_EVIDENCE]: collectCategoryBuyerEvidenceWork,
     [PHASE5_QUEUES.CLASSIFY_BUYER_BUSINESS_MODEL]: classifyBuyerBusinessModelWork,
     [PHASE5_QUEUES.CALCULATE_CATEGORY_PROCUREMENT_MATCH]: calculateCategoryProcurementMatchWork,
@@ -335,6 +359,14 @@ const publicDataOrigins = [
   'legacy_public_web'
 ];
 const publicDataOriginSql = publicDataOrigins.map(value => `'${value}'`).join(',');
+const researchWorkbenchService = new ResearchWorkbenchService({
+  pool,
+  hunter:enrichmentService.hunter,
+  contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
+  runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
+  billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000),
+  publicDataOrigins
+});
 
 registerPhase7RawWebhookRoutes(app,{service:phase7Service,queue:phase7QueueProxy});
 
@@ -361,6 +393,7 @@ function requireInternalToken(req, res, next) {
 }
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
+app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 
 const verifiedCompanySources = [
   ['Al Sammran Garments Trading LLC', 'https://sammran.com/'],
@@ -985,14 +1018,29 @@ app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requi
     if (explicitProductProfile && mappedProductProfile && explicitProductProfile !== mappedProductProfile) {
       return res.status(400).json({ error: 'Invalid research job', detail: 'product_profile does not match product_category' });
     }
+    const requestPayload = {
+      country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
+      preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
+      buyer_types:buyerTypes,max_results:maxResults
+    };
+    const requestDigest = canonicalDigest(requestPayload);
+    const idempotencyKey = clean(req.get('idempotency-key') || req.body?.idempotency_key).slice(0,200) || randomUUID();
     const { rows } = await pool.query(`
       INSERT INTO leadgen.research_jobs
         (country,country_code,country_name,city,region,preferred_language,market_profile,
-         product_category,product_profile,buyer_types,max_results,status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'QUEUED')
-      RETURNING *`, [country, marketProfile.countryCode, country, city || null, region || null,
-      preferredLanguage, marketProfile.profileKey, productCategory, productProfile, buyerTypes, maxResults]);
+         product_category,product_profile,buyer_types,max_results,status,idempotency_key,request_digest,
+         created_by_identity,created_by_role,run_budget_cap_units)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'QUEUED',$12,$13,$14,$15,$16)
+      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+      DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
+      RETURNING *, (xmax=0) AS inserted`, [country, marketProfile.countryCode, country, city || null, region || null,
+      preferredLanguage, marketProfile.profileKey, productCategory, productProfile, buyerTypes, maxResults,
+      idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
+      Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000)]);
     const job = rows[0];
+    if (!job.inserted) {
+      return res.status(200).json({ id:job.id,job_id:job.id,status:job.status,idempotent_replay:true });
+    }
     audit('RESEARCH_JOB_CREATED', { job_id: job.id });
     audit('N8N_DISPATCH_REQUESTED', { job_id: job.id });
     try {
@@ -1035,9 +1083,9 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate, managementAuth.req
   try {
     const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
-    const productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
+    let productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
-    const companyIds = [...new Set((Array.isArray(req.body?.company_ids) ? req.body.company_ids : [])
+    let companyIds = [...new Set((Array.isArray(req.body?.company_ids) ? req.body.company_ids : [])
       .map(value=>optionalUuid(value,'company_id')).filter(Boolean))];
     if (!marketCodes.length || marketCodes.some(code=>!['AE','MX'].includes(code))) {
       return res.status(400).json({ error:'Invalid enrichment job',detail:'market_codes must contain AE and/or MX' });
@@ -1045,17 +1093,50 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate, managementAuth.req
     if (!productProfiles.length || productProfiles.some(value=>!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(value))) {
       return res.status(400).json({ error:'Invalid enrichment job',detail:'product_profiles must contain WOMENSWEAR and/or GENERAL_MERCHANDISE' });
     }
-    const requestedMaxResults = Number(req.body?.max_results ?? 100);
-    const maxResults = Number.isFinite(requestedMaxResults) ? Math.max(1,Math.min(100,Math.trunc(requestedMaxResults))) : 100;
+    const researchWave = clean(req.body?.research_wave).slice(0,1).toUpperCase();
+    if(researchWave && !['A','B'].includes(researchWave))return res.status(400).json({error:'Invalid enrichment wave',code:'PHASE9_WAVE_INVALID'});
+    const waveCap=researchWave==='A'?5:researchWave==='B'?15:100;
+    const requestedMaxResults = Number(req.body?.max_results ?? waveCap);
+    const maxResults = Number.isFinite(requestedMaxResults) ? Math.max(1,Math.min(waveCap,Math.trunc(requestedMaxResults))) : waveCap;
+    let selectedCohort=[];
+    if(researchWave){
+      let excluded=[];
+      if(researchWave==='B'){
+        const waveAJobId=optionalUuid(req.body?.wave_a_job_id,'wave_a_job_id');
+        await researchWorkbenchService.assertWaveBGate(waveAJobId);
+        const prior=await pool.query('SELECT company_id FROM leadgen.research_job_cohort_items WHERE research_job_id=$1',[waveAJobId]);
+        excluded=prior.rows.map(row=>row.company_id);
+      }
+      selectedCohort=await researchWorkbenchService.selectCohort({limit:maxResults,excludeCompanyIds:excluded});
+      if(!selectedCohort.length)return res.status(409).json({error:'No eligible enrichment cohort',code:'PHASE9_COHORT_EMPTY'});
+      companyIds=selectedCohort.map(item=>item.company_id);
+      productProfiles=[...new Set(selectedCohort.map(item=>item.product_profile))];
+    }
+    const requestPayload={market_codes:marketCodes,product_profiles:productProfiles,company_ids:companyIds,max_results:maxResults,research_wave:researchWave||null};
+    const requestDigest=canonicalDigest(requestPayload);
+    const idempotencyKey=clean(req.get('idempotency-key')||req.body?.idempotency_key).slice(0,200)||randomUUID();
     const result = await pool.query(`INSERT INTO leadgen.research_jobs
       (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
-       buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids)
+       buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
+       idempotency_key,request_digest,created_by_identity,created_by_role,research_wave,run_budget_cap_units)
       VALUES ('AE / MX','XX','AE / MX','en','MULTI_MARKET','Buyer / Procurement Enrichment',$1,$2,$3,
-        'QUEUED','DECISION_MAKER_ENRICHMENT',$4,$5,$6) RETURNING *`,[
+        'QUEUED',$13,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+      DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *, (xmax=0) AS inserted`,[
       productProfiles[0],['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],maxResults,
-      marketCodes,productProfiles,companyIds
+      marketCodes,productProfiles,companyIds,idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
+      researchWave||null,Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000),
+      researchWave?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT'
     ]);
     const job = result.rows[0];
+    if(!job.inserted)return res.status(200).json({job_id:job.id,id:job.id,status:job.status,idempotent_replay:true});
+    if(researchWave){
+      try{await researchWorkbenchService.freezeCohort({jobId:job.id,wave:researchWave,items:selectedCohort});}
+      catch(error){
+        await pool.query(`UPDATE leadgen.research_jobs SET status='FAILED',completed_at=now(),stop_reason_code=$2,error_count=error_count+1 WHERE id=$1`,[job.id,error.code||'COHORT_FREEZE_FAILED']);
+        throw error;
+      }
+    }
     audit('PHASE6_ENRICHMENT_JOB_CREATED',{ job_id:job.id,markets:marketCodes,product_profiles:productProfiles });
     try {
       const dispatch = await triggerEnrichmentWorkflow(job);
@@ -1070,14 +1151,17 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate, managementAuth.req
   } catch (error) { next(error); }
 });
 
-app.get('/api/enrichment/jobs', async (_req,res,next) => {
+app.get('/api/enrichment/jobs', managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'), async (_req,res,next) => {
   try {
-    const result = await pool.query(`SELECT * FROM leadgen.research_jobs WHERE job_type='DECISION_MAKER_ENRICHMENT' ORDER BY created_at DESC,id DESC LIMIT 100`);
+    const result = await pool.query(`SELECT * FROM leadgen.research_jobs
+      WHERE job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH') ORDER BY created_at DESC,id DESC LIMIT 100`);
     res.json(result.rows.map(researchJobResponse));
   } catch (error) { next(error); }
 });
 
-app.get('/api/enrichment/jobs/:id', async (req,res,next) => {
+app.get('/api/enrichment/jobs/:id', managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'), async (req,res,next) => {
   try {
     const job = await enrichmentService.getJob(optionalUuid(req.params.id,'enrichment_job_id'));
     if (!job) return res.status(404).json({ error:'Enrichment job not found' });
@@ -1085,7 +1169,8 @@ app.get('/api/enrichment/jobs/:id', async (req,res,next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/enrichment/jobs/:id/results', async (req,res,next) => {
+app.get('/api/enrichment/jobs/:id/results', managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'), async (req,res,next) => {
   try {
     const jobId = optionalUuid(req.params.id,'enrichment_job_id');
     const job = await enrichmentService.getJob(jobId);
@@ -1132,7 +1217,7 @@ app.patch('/api/internal/enrichment/jobs/:id/status', requireInternalToken, asyn
       started_at=CASE WHEN $2<>'QUEUED' THEN coalesce(started_at,now()) ELSE started_at END,
       completed_at=CASE WHEN $2 IN ('COMPLETE','PARTIAL','FAILED') THEN now() ELSE NULL END,
       last_error=CASE WHEN $2='FAILED' THEN $3 ELSE last_error END
-      WHERE id=$1 AND job_type='DECISION_MAKER_ENRICHMENT' RETURNING *`,[
+      WHERE id=$1 AND job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH') RETURNING *`,[
       optionalUuid(req.params.id,'enrichment_job_id'),status,clean(req.body?.error,500)||null
     ]);
     if (!result.rowCount) return res.status(404).json({ error:'Enrichment job not found' });
@@ -1725,7 +1810,8 @@ app.post('/api/category-procurement/jobs', managementAuth.authenticate, manageme
   }catch(error){next(error);}
 });
 
-app.get('/api/category-procurement/jobs/:id', async (req,res,next) => {
+app.get('/api/category-procurement/jobs/:id', managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'), async (req,res,next) => {
   try{
     const id=optionalUuid(req.params.id,'category_procurement_job_id');
     const result=await pool.query(`SELECT * FROM leadgen.research_jobs WHERE id=$1 AND job_type='CATEGORY_PROCUREMENT_ENRICHMENT'`,[id]);
@@ -1734,7 +1820,8 @@ app.get('/api/category-procurement/jobs/:id', async (req,res,next) => {
   }catch(error){next(error);}
 });
 
-app.get('/api/category-procurement/jobs/:id/results', async (req,res,next) => {
+app.get('/api/category-procurement/jobs/:id/results', managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'), async (req,res,next) => {
   try{
     const id=optionalUuid(req.params.id,'category_procurement_job_id');
     const job=await pool.query(`SELECT * FROM leadgen.research_jobs WHERE id=$1 AND job_type='CATEGORY_PROCUREMENT_ENRICHMENT'`,[id]);
@@ -2061,7 +2148,9 @@ app.use((error, _req, res, _next) => {
     'CLEANUP_BATCH_INVALID','CLEANUP_BACKUP_REQUIRED','CLEANUP_BATCH_EXISTS','OPPORTUNITY_STATUS_INVALID'
   ]);
   const notFoundCodes = new Set(['COMPANY_NOT_FOUND','IMPORT_NOT_FOUND','CLEANUP_BATCH_NOT_FOUND']);
-  const status = badRequestCodes.has(error.code) ? 400 : notFoundCodes.has(error.code) ? 404 : 500;
+  const declaredStatus=Number(error.status);
+  const status = Number.isInteger(declaredStatus)&&declaredStatus>=400&&declaredStatus<=599
+    ? declaredStatus : badRequestCodes.has(error.code) ? 400 : notFoundCodes.has(error.code) ? 404 : 500;
   res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message, code: error.code || undefined });
 });
 

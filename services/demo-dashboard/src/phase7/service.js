@@ -264,6 +264,27 @@ export class Phase7Service {
       verification_status:result.verification_status, verification_score:result.verification_score,
       provider:'HUNTER',captured_at:provider.captured_at || new Date()
     });
+    const capturedAt=provider.captured_at||new Date();
+    if(contact.contact_record_type==='DECISION_MAKER_CONTACT'){
+      const inputDigest=sha256(String(email).trim().toLowerCase());
+      const usageEventId=provider.usage_event?.id||null;
+      if(usageEventId)await this.pool.query(`INSERT INTO leadgen.contact_verification_events
+        (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
+         verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
+        VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7,$7,$7+($8::int*interval '1 day'),$9,$9,$10)
+        ON CONFLICT (idempotency_key) DO NOTHING`,[
+        contact.research_job_id,contact.company_id,contact.id,usageEventId,result.verification_status,
+        result.verification_score,capturedAt,Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),inputDigest,
+        sha256(`${contact.research_job_id}|${contact.id}|${usageEventId}|${result.verification_status}`)
+      ]);
+    }
+    if(result.verification_status==='INVALID'){
+      await this.pool.query(`INSERT INTO leadgen.contact_suppressions
+        (company_id,contact_id,decision_maker_contact_id,suppression_type,reason,recorded_by)
+        VALUES ($1,$2,$3,'INVALID_EMAIL','Email verification returned INVALID','CONTACT_VERIFICATION')
+        ON CONFLICT DO NOTHING`,[contact.company_id,contact.contact_record_type==='CONTACT'?contact.id:null,
+        contact.contact_record_type==='DECISION_MAKER_CONTACT'?contact.id:null]);
+    }
     const recipients = result.verification_status === 'VALID'
       ? await this.repository.createEligibleRecipients({ companyId:contact.company_id, contactId:contact.id,
         verificationTtlDays:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS || this.env.OUTREACH_VERIFICATION_TTL_DAYS || 30) })

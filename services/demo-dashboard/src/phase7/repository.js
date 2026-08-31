@@ -462,11 +462,14 @@ export class Phase7Repository {
   async getContactVerificationHistory(id) {
     const contact = await this.findContact(id);
     if (!contact) throw notFound('Contact not found', 'CONTACT_NOT_FOUND');
-    const usage = await this.pool.query(`SELECT id,provider,endpoint,status,error_code,
-      reserved_units,used_units,created_at,completed_at
-      FROM leadgen.provider_usage_events WHERE company_id=$1 AND provider='HUNTER'
-      AND endpoint='email-verifier' ORDER BY created_at DESC LIMIT 50`, [contact.company_id]);
-    return { contact, provider_events: usage.rows };
+    if(contact.contact_record_type!=='DECISION_MAKER_CONTACT')return {contact,verification_events:[]};
+    const history=await this.pool.query(`SELECT v.id,v.provider,v.endpoint,v.verification_status,v.verification_score,
+      v.verified_at,v.captured_at,v.expires_at,v.created_at,
+      p.status provider_status,p.error_code,p.reserved_units,p.used_units
+      FROM leadgen.contact_verification_events v
+      LEFT JOIN leadgen.provider_usage_events p ON p.id=v.provider_usage_event_id
+      WHERE v.decision_maker_contact_id=$1 ORDER BY v.verified_at DESC,v.id DESC LIMIT 50`,[contact.id]);
+    return { contact,verification_events:history.rows };
   }
 
   async createEligibleRecipients({ companyId, productProfile = null, contactId = null, verificationTtlDays = 30 }) {
