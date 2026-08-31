@@ -1,7 +1,7 @@
 # Phase 8 基线视觉审计
 
-日期：2026-08-31  
-审计基线：`phase7` 发布提交 `bd4af24634069aa3ee9b009c1e8799d627eff118`  
+日期：2026-08-31
+审计基线：`phase7` 发布提交 `bd4af24634069aa3ee9b009c1e8799d627eff118`
 审计模式：浏览器可见页面、DOM 测量、源代码和 CSS 静态计数
 
 ## Design Read
@@ -143,8 +143,8 @@ Primary action: Update Company Directory
 - 右侧 Directory status 与 KPI 重复。
 - 双语标题、说明、更新时间和主按钮在同一横排，窄屏挤压。
 
-保留：数据更新时间、真实计数、跳转到业务页的动作。  
-淘汰：DPV Score 优先榜、重复名录指标、装饰图表。  
+保留：数据更新时间、真实计数、跳转到业务页的动作。
+淘汰：DPV Score 优先榜、重复名录指标、装饰图表。
 Phase 8：4 个管理指标 + 最多 5 条真实 Recommended；为 0 时显示确定性缺证原因，绝不回退 Tier A/DPV Score。
 
 ### Opportunities
@@ -169,8 +169,8 @@ current Recommended rows: 0
 - “Update Buying Contacts” 在老板默认页上比真实 0 状态更突出。
 - 当前 table min-width CSS 为 1,840px，真实内容进一步扩展到 2,199px。
 
-保留：所有 20 个 query 参数、原生表单语义、排序、深链、详情入口。  
-淘汰：默认 11 列、空宽表、同权 filter wall、Secondary Scores 第一层。  
+保留：所有 20 个 query 参数、原生表单语义、排序、深链、详情入口。
+淘汰：默认 11 列、空宽表、同权 filter wall、Secondary Scores 第一层。
 Phase 8：六态 status tabs、5 个 primary filters、advanced drawer、7 个决策列和真实 0 空状态。
 
 ### Companies
@@ -183,8 +183,8 @@ Phase 8：六态 status tabs、5 个 primary filters、advanced drawer、7 个�
 - 公司主档和机会管理的边界不清。
 - 默认排序仍是 score，强化了“高分等于应联系”。
 
-保留：全量 106 公司、分页、核验/生命周期/规模/Tier 筛选、公司详情。  
-淘汰：Confirm Contact 或消息动作、普通属性胶囊、把 legacy review 叫批准/拒绝。  
+保留：全量 106 公司、分页、核验/生命周期/规模/Tier 筛选、公司详情。
+淘汰：Confirm Contact 或消息动作、普通属性胶囊、把 legacy review 叫批准/拒绝。
 Phase 8：8 个主档列，legacy action 改为 Confirm Company Record / Exclude Company Record。
 
 ### Company Detail

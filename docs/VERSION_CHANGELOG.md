@@ -1,5 +1,33 @@
 # Version Changelog
 
+## phase8 — 2026-08-31 — released
+
+### Added to the working tree
+
+- Added migration 028 and the V2 opportunity-decision contract so product/business fit remains separate from contact readiness; missing Buyer responsibility or a current VALID contact route cannot become Recommended.
+- Hardened management approval against stale revisions, non-contact-ready decisions, missing eligibility, recipient mismatch and current suppressions before any queue or recipient side effect.
+- Rebuilt the management workspace around Opportunities, a Recommended-only Overview, Evidence Required routing, an independent Contact Queue and a simplified Company Directory.
+- Replaced the 11-column default opportunity surface and 15 equal-weight detail tabs with a seven-column decision table and four-section detail workspace while retaining the accepted Product Match, reference matching and Phase 7 lazy records.
+- Added explicit six-step Import/Export presentation, modular Phase 8 tokens/components/pages/responsive assets and persistent display preferences.
+- Added Phase 8 reuse research, visual audit, design system, result report and UI contracts.
+
+### Data integrity and release boundary
+
+- Preserved 106 companies, 366 product-master records and every Phase 7 decision revision; the V2 refresh added 14 append-only revisions.
+- Current business fit is 12 Evidence Required and 2 Not Suitable. Current Recommended and Management Approved remain 0.
+- Kept management events, Contact Queue, outreach recipients, outbound messages, provider calls and email events at 0.
+- Did not start a Hunter batch, Phase 9 enrichment, prospect message or Phase 10 live-contact pilot.
+
+### Verification status
+
+- Full suite: 449 tests, 446 passed, 0 failed and 3 conditionally skipped; Phase 8 UI contracts pass 17/17.
+- Migration 028 applied with SHA-256 `c45f4d3be0e97583fd1b05a76120cec8b9d78b937f268f6f8150c9149c6252f4`; replay of 025 through 028 returned `SKIPPED_ALREADY_APPLIED`.
+- Six browser dimensions passed with no page-level horizontal overflow; mobile sidebar, dialog/detail focus return, theme/density and equal-size/equal-weight bilingual rendering were checked in the deployed UI.
+- The deployed export workflow generated and downloaded a 14-row, 31-column XLSX with a valid ZIP header and a recorded download audit.
+- PostgreSQL and the dashboard remained healthy; category, data and outreach workers remained running; n8n behaviour was unchanged.
+- `npm audit --omit=dev` still reports the two tracked moderate ExcelJS/uuid findings; no incompatible forced downgrade was applied.
+- Implementation commit: `6579d57f79fbc2646a03e219923fef6d570fd105`.
+
 ## phase7 — 2026-08-31 — released
 
 ### Added to the working tree
