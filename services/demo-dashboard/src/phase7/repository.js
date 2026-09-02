@@ -188,7 +188,7 @@ export class Phase7Repository {
         if(current.business_fit_status!=='FIT')reasons.push('BUSINESS_FIT_NOT_READY');
         if(current.contact_readiness!=='READY')reasons.push('CONTACT_NOT_READY');
         if(current.policy_contact_status!=='OPEN'||current.relationship_status!=='NEW_PROSPECT')reasons.push('CONTACT_POLICY_BLOCKED');
-        if(current.rule_version!=='business-opportunity-decision-v2')reasons.push('DECISION_RULE_VERSION_STALE');
+        if(current.rule_version!=='business-opportunity-decision-v3')reasons.push('DECISION_RULE_VERSION_STALE');
         if(companyLock.rows[0]?.verification_status!=='VERIFIED'||companyLock.rows[0]?.lifecycle_status!=='ACTIVE')reasons.push('COMPANY_NOT_ACTIVE_VERIFIED');
         if(reasons.length)throw approvalGateBlocked(reasons);
 
@@ -296,6 +296,7 @@ export class Phase7Repository {
       SELECT c.id company_id,c.verification_status,c.lifecycle_status,c.replaced_by_company_id,
         c.explicit_exclusion_reason,c.verification_freshness,cpm.product_profile,cpm.research_job_id,
         cpm.id category_procurement_match_result_id,cpm.match_status,cpm.score,cpm.coverage_percent,
+        cpm.calculation_version category_calculation_version,cpm.scope_revision_id,cpm.match_basis,
         bbm.id buyer_business_model_result_id,bbm.buyer_model,bbm.eligibility_status,bbm.reason_codes buyer_reason_codes,
         po.id product_opportunity_result_id,po.recommendation_status product_opportunity_status,
         f.id cooperation_feasibility_result_id,f.opportunity_readiness,f.relationship_status,
@@ -369,7 +370,9 @@ export class Phase7Repository {
         company:{verification_status:fact.verification_status,lifecycle_status:fact.lifecycle_status,
           replaced_by_company_id:fact.replaced_by_company_id},
         buyer:{buyer_model:fact.buyer_model,eligibility_status:fact.eligibility_status},
-        category:{match_status:fact.match_status,score:fact.score,coverage_percent:fact.coverage_percent},
+        category:{match_status:fact.match_status,score:fact.score,coverage_percent:fact.coverage_percent,
+          calculation_version:fact.category_calculation_version,scope_revision_id:fact.scope_revision_id,
+          match_basis:fact.match_basis},
         cooperation:{opportunity_readiness:fact.opportunity_readiness,relationship_status:fact.relationship_status,
           verified_decision_maker_count:fact.verified_decision_maker_count},
         underlying_relationship_status:fact.relationship_status,company_suppressed:fact.company_suppressed,
@@ -1355,6 +1358,7 @@ export class Phase7Repository {
         AND row_status='ACCEPTED' ORDER BY row_number FOR UPDATE`, [id]);
       let mutations = 0;
       const affectedCompanies = new Set();
+      const autoEvidenceCompanies = new Set();
       for (const row of rows.rows) {
         const payload = row.normalized_payload || {};
         if (item.import_type === 'PROSPECT_LEADS') {
@@ -1367,12 +1371,14 @@ export class Phase7Repository {
             payload.city,payload.website_url,payload.company_type,payload.product_profile && payload.product_profile !== 'UNKNOWN' ? [payload.product_profile] : []]);
           if (inserted.rowCount) {
             mutations += 1;
+            autoEvidenceCompanies.add(inserted.rows[0].id);
             await client.query(`UPDATE leadgen.reference_data_import_rows SET canonical_entity_type='COMPANY',
               canonical_entity_id=$2,row_status='COMMITTED' WHERE id=$1`, [row.id,inserted.rows[0].id]);
             continue;
           }
           const existing = await client.query('SELECT id FROM leadgen.companies WHERE normalized_domain=$1', [domain]);
           if (existing.rowCount) {
+            autoEvidenceCompanies.add(existing.rows[0].id);
             await client.query(`UPDATE leadgen.reference_data_import_rows SET canonical_entity_type='COMPANY',
               canonical_entity_id=$2,row_status='DUPLICATE' WHERE id=$1`, [row.id,existing.rows[0].id]);
             continue;
@@ -1496,6 +1502,7 @@ export class Phase7Repository {
             reason_codes=array_append(reason_codes,'CONFIRMED_EXISTING_CUSTOMER')
             WHERE company_id=$1 AND queue_status='ACTIVE'`,[payload.crosswalk_company_id]);
           affectedCompanies.add(payload.crosswalk_company_id);
+          autoEvidenceCompanies.add(payload.crosswalk_company_id);
           continue;
         }
         const error = new Error(`Import row ${row.row_number} was not committed`);
@@ -1517,7 +1524,8 @@ export class Phase7Repository {
       }
       const committed = await client.query(`UPDATE leadgen.reference_data_imports SET status='COMMITTED',committed_at=now()
         WHERE id=$1 RETURNING *`, [id]);
-      return { import: mapImportStatus(committed.rows[0]), replay:false, mutations, affected_company_ids:[...affectedCompanies] };
+      return { import: mapImportStatus(committed.rows[0]), replay:false, mutations,
+        affected_company_ids:[...new Set([...autoEvidenceCompanies,...affectedCompanies])] };
     });
   }
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DpvZenRulesAdapter } from '../scoring/zenRulesAdapter.js';
 
-export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-procurement-match-v1';
+export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-procurement-match-v2';
 const upper=value=>String(value||'').trim().toUpperCase();
 const unique=values=>[...new Set((values||[]).filter(Boolean))];
 const projectRoot=process.env.DPV_PROJECT_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../..');
@@ -11,6 +11,64 @@ const rulePath=path.join(rulesRoot,'category-procurement-match/v1/decision.json'
 const observed=(points,maximum,evidence_ids,reason_codes)=>({state:'OBSERVED',points,maximum,evidence_ids:unique(evidence_ids),reason_codes});
 const unknown=(maximum,reason)=>({state:'UNKNOWN',points:null,maximum,evidence_ids:[],reason_codes:[reason]});
 export function resolveCategoryProcurementMatchBand(score){if(score===null||score===undefined||!Number.isFinite(Number(score)))return'UNKNOWN';const value=Number(score);return value>=80?'VERY_HIGH':value>=65?'HIGH':value>=60?'MEDIUM':value>=30?'LOW':'VERY_LOW';}
+
+function normalizedCategory(value){return upper(value).replace(/&/g,' AND ').replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+function effectiveRevision(input={}){
+  const revision=input.scope_revision||input.approved_scope_revision||{};
+  const now=input.assessed_at?new Date(input.assessed_at):new Date();
+  const from=revision.effective_from?new Date(revision.effective_from):null;
+  const to=revision.effective_to?new Date(revision.effective_to):null;
+  const approved=upper(revision.approval_status)==='APPROVED'&&revision.id
+    &&from instanceof Date&&!Number.isNaN(from.getTime())&&from<=now
+    &&(!to||(!Number.isNaN(to.getTime())&&to>now));
+  return approved?revision:null;
+}
+
+export function resolveApprovedCategoryScopeMatch(input={}){
+  const profile=upper(input.product_profile);
+  const revision=effectiveRevision(input);
+  const scopes=(input.approved_category_scopes||input.category_scopes||[]).filter(scope=>
+    revision&&String(scope.scope_revision_id)===String(revision.id)
+      &&upper(scope.product_profile)===profile&&upper(scope.scope_status||'ACTIVE')==='ACTIVE');
+  if(!revision||!scopes.length)return {scope_revision_id:null,match_basis:null,matched_scope_ids:[],
+    observed_customer_category_ids:[],similarity_rule:null,scope_status:'APPROVAL_REQUIRED'};
+  const aliases=(input.category_scope_aliases||input.scope_aliases||[]).filter(alias=>
+    String(alias.scope_revision_id)===String(revision.id)&&upper(alias.status||'ACTIVE')==='ACTIVE');
+  const observations=(input.observed_customer_categories||input.observations||[]).filter(item=>
+    item?.id&&upper(item.verification_status||'VERIFIED')==='VERIFIED'
+      &&upper(item.source_authority||'OFFICIAL')!=='SEARCH_DISCOVERY'
+      &&[profile,'UNKNOWN'].includes(upper(item.normalized_profile||profile))
+      &&normalizedCategory(item.normalized_category||item.raw_category));
+  if(!observations.length)return {scope_revision_id:revision.id,match_basis:null,matched_scope_ids:[],
+    observed_customer_category_ids:[],similarity_rule:null,scope_status:'CUSTOMER_EVIDENCE_REQUIRED'};
+  const result=(basis,scope,observation,rule)=>({scope_revision_id:revision.id,match_basis:basis,
+    matched_scope_ids:[scope.id],observed_customer_category_ids:[observation.id],similarity_rule:rule,scope_status:'MATCHED'});
+  for(const observation of observations){
+    const observed=normalizedCategory(observation.normalized_category||observation.raw_category);
+    const exact=scopes.find(scope=>normalizedCategory(scope.normalized_category)===observed);
+    if(exact)return result('EXACT_CATEGORY',exact,observation,'NORMALIZED_CATEGORY_EQUALITY');
+  }
+  for(const observation of observations){
+    const ancestors=unique([...(observation.taxonomy_ancestor_ids||[]),...(observation.taxonomy_descendant_ids||[])]).map(String);
+    const related=scopes.find(scope=>scope.taxonomy_node_id&&ancestors.includes(String(scope.taxonomy_node_id)));
+    if(related)return result('SIMILAR_CATEGORY',related,observation,'APPROVED_TAXONOMY_PARENT_CHILD');
+  }
+  for(const observation of observations){
+    const observed=normalizedCategory(observation.normalized_category||observation.raw_category);
+    const alias=aliases.find(item=>normalizedCategory(item.normalized_alias||item.raw_alias)===observed
+      &&['EXACT','SYNONYM','PARENT','CHILD','SIMILAR'].includes(upper(item.alias_type)));
+    const scope=alias&&scopes.find(item=>String(item.id)===String(alias.scope_id));
+    if(scope)return result('SIMILAR_CATEGORY',scope,observation,
+      ['PARENT','CHILD'].includes(upper(alias.alias_type))?'APPROVED_ALIAS_PARENT_CHILD':'APPROVED_ALIAS_SYNONYM');
+  }
+  const profileObservation=observations.find(item=>upper(item.normalized_profile)===profile);
+  if(profileObservation){
+    const profileScope=scopes.find(scope=>normalizedCategory(scope.normalized_category)===profile)||scopes[0];
+    return result('PROFILE_SCOPE',profileScope,profileObservation,'APPROVED_PRODUCT_PROFILE_SCOPE');
+  }
+  return {scope_revision_id:revision.id,match_basis:'OUT_OF_SCOPE',matched_scope_ids:[],
+    observed_customer_category_ids:observations.map(item=>item.id),similarity_rule:'NO_APPROVED_SCOPE_RELATION',scope_status:'OUT_OF_SCOPE'};
+}
 
 function relevantEvidence(observations,profile){
   return (observations||[]).filter(item=>upper(item.verification_status)==='VERIFIED'&&upper(item.source_authority)!=='SEARCH_DISCOVERY'
@@ -75,27 +133,29 @@ export function calculateCategoryProcurementMatch(input={}){
     const codes=fact.reason_codes?.length?fact.reason_codes:[isObserved?`${key.toUpperCase()}_OBSERVED`:`${key.toUpperCase()}_UNKNOWN`];
     dimensions[key]={state:isObserved?'OBSERVED':state==='NOT_APPLICABLE'?'NOT_APPLICABLE':'UNKNOWN',points,maximum,evidence_ids:ids,reason_codes:codes};reason_codes.push(...codes);
   }
-  const buyer=input.buyer_business_model_result||input.buyer_business_model||{};const model=upper(input.buyer_model||buyer.buyer_model);const catalog=input.product_profile_catalog_snapshot??input.catalog_snapshot;const catalogCount=Number(input.catalog_eligible_product_count??catalog?.eligible_product_count??0);
+  const buyer=input.buyer_business_model_result||input.buyer_business_model||{};const model=upper(input.buyer_model||buyer.buyer_model);
+  const scopeMatch=resolveApprovedCategoryScopeMatch(input);
   const categoryObserved=dimensions.target_category_procurement_evidence.state==='OBSERVED';
   const buyerObserved=dimensions.buyer_business_model_fit.state==='OBSERVED'&&['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(model);
   let score=null,band='UNKNOWN',match_status='NEEDS_PRODUCT_EVIDENCE';
-  if(catalogCount<=0||input.catalog_supported===false)match_status='NEEDS_INTERNAL_CATALOG_EVIDENCE';
+  if(scopeMatch.scope_status==='APPROVAL_REQUIRED')match_status='NEEDS_DPV_CATEGORY_SCOPE_APPROVAL';
   else if(model==='EXCLUDED_INTERMEDIARY')match_status='INELIGIBLE_BUYER_MODEL';
-  else if(categoryObserved&&(built.confirmed_unrelated_assortment||dimensions.target_category_procurement_evidence.points===0)&&buyerObserved&&coverage>=70){score=raw;match_status='PRODUCT_MISMATCH';}
+  else if(categoryObserved&&(scopeMatch.match_basis==='OUT_OF_SCOPE'||built.confirmed_unrelated_assortment||dimensions.target_category_procurement_evidence.points===0)&&buyerObserved&&coverage>=70){score=raw;match_status='PRODUCT_MISMATCH';}
   else if(categoryObserved&&!buyerObserved&&['UNCLEAR_INTERMEDIARY','UNKNOWN'].includes(model))match_status='CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE';
-  else if(categoryObserved&&buyerObserved&&coverage>=70){score=raw;match_status=score>=60?'CATEGORY_PROCUREMENT_MATCH':'WEAK_CATEGORY_MATCH';}
+  else if(categoryObserved&&buyerObserved&&scopeMatch.scope_status==='MATCHED'&&coverage>=70){score=raw;match_status=score>=60?'CATEGORY_PROCUREMENT_MATCH':'WEAK_CATEGORY_MATCH';}
   band=resolveCategoryProcurementMatchBand(score);
   reason_codes.push(match_status);
-  return {score,band,match_status,coverage_percent:coverage,dimensions,observed_categories:built.observed_categories,reason_codes:unique(reason_codes),missing_evidence:unique(missing_evidence),calculation_version:CATEGORY_PROCUREMENT_MATCH_VERSION};
+  return {score,band,match_status,coverage_percent:coverage,dimensions,observed_categories:built.observed_categories,
+    ...scopeMatch,catalog_completeness_non_blocking:true,reason_codes:unique(reason_codes),
+    missing_evidence:unique(missing_evidence),calculation_version:CATEGORY_PROCUREMENT_MATCH_VERSION};
 }
 
 export class CategoryProcurementMatchEngine{
   constructor({adapter=new DpvZenRulesAdapter({rulePaths:{categoryProcurementMatch:rulePath}})}={}){this.adapter=adapter;}
   async evaluate(input={}){
     const built=input.dimensions?{dimensions:input.dimensions,observed_categories:input.observed_categories||[],confirmed_unrelated_assortment:Boolean(input.confirmed_unrelated_assortment)}:buildCategoryProcurementDimensions(input);
-    const result=await this.adapter.evaluate('categoryProcurementMatch',{...input,...built,buyer_model:input.buyer_model||input.buyer_business_model?.buyer_model,catalog_eligible_product_count:input.catalog_eligible_product_count??input.catalog_snapshot?.eligible_product_count??0},{trace:false});
-    const {zen_trace:_trace,zen_performance:_performance,...clean}=result;
-    return {...clean,observed_categories:built.observed_categories};
+    return calculateCategoryProcurementMatch({...input,...built,
+      buyer_model:input.buyer_model||input.buyer_business_model?.buyer_model});
   }
   dispose(){this.adapter.dispose();}
 }

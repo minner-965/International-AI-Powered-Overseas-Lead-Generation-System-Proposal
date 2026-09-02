@@ -1,4 +1,9 @@
 import { PgBoss } from 'pg-boss';
+import { writeFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+const WORKER_READINESS_FILE = path.join(tmpdir(), 'dpv-phase5-worker-ready.json');
 
 export const PHASE5_QUEUES = Object.freeze({
   SCORE_COMPANY: 'score-company',
@@ -27,7 +32,15 @@ export const PHASE5_QUEUES = Object.freeze({
   PARSE_REFERENCE_IMPORT: 'parse-reference-import',
   COMMIT_REFERENCE_IMPORT: 'commit-reference-import',
   EXPORT_BUSINESS_DATA: 'export-business-data',
-  RECALCULATE_AFTER_IMPORT: 'recalculate-after-import'
+  RECALCULATE_AFTER_IMPORT: 'recalculate-after-import',
+  SCHEDULE_AUTO_EVIDENCE: 'schedule-auto-evidence',
+  DISCOVER_OPPORTUNITY_EVIDENCE: 'discover-opportunity-evidence',
+  NORMALIZE_OPPORTUNITY_CATEGORY: 'normalize-opportunity-category',
+  REFRESH_CATEGORY_SCOPE_MATCH: 'refresh-category-scope-match',
+  FIND_PROFILE_BUYER: 'find-profile-buyer',
+  VERIFY_PROFILE_BUYER_EMAIL: 'verify-profile-buyer-email',
+  REFRESH_BUSINESS_OPPORTUNITY_V3: 'refresh-business-opportunity-v3',
+  REFRESH_AUTO_EVIDENCE_EXCEPTION: 'refresh-auto-evidence-exception'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -54,7 +67,15 @@ function queuePolicy(name) {
       PHASE5_QUEUES.PARSE_REFERENCE_IMPORT,
       PHASE5_QUEUES.COMMIT_REFERENCE_IMPORT,
       PHASE5_QUEUES.EXPORT_BUSINESS_DATA,
-      PHASE5_QUEUES.RECALCULATE_AFTER_IMPORT
+      PHASE5_QUEUES.RECALCULATE_AFTER_IMPORT,
+      PHASE5_QUEUES.SCHEDULE_AUTO_EVIDENCE,
+      PHASE5_QUEUES.DISCOVER_OPPORTUNITY_EVIDENCE,
+      PHASE5_QUEUES.NORMALIZE_OPPORTUNITY_CATEGORY,
+      PHASE5_QUEUES.REFRESH_CATEGORY_SCOPE_MATCH,
+      PHASE5_QUEUES.FIND_PROFILE_BUYER,
+      PHASE5_QUEUES.VERIFY_PROFILE_BUYER_EMAIL,
+      PHASE5_QUEUES.REFRESH_BUSINESS_OPPORTUNITY_V3,
+      PHASE5_QUEUES.REFRESH_AUTO_EVIDENCE_EXCEPTION
     ].includes(name) ? 900 : 300,
     heartbeatSeconds: 60,
     deleteAfterSeconds: 86400,
@@ -97,11 +118,38 @@ export function createPhase5Queue({
 } = {}) {
   const enabled = booleanEnv(env.PGBOSS_ENABLED, true);
   const processJobs = booleanEnv(env.PGBOSS_PROCESS_JOBS, true);
+  const strictWorkerAllowlist = Boolean(String(env.PGBOSS_QUEUE_ALLOWLIST || '').trim());
   const workerQueueNames = queueAllowlist(env.PGBOSS_QUEUE_ALLOWLIST);
   const boss = enabled ? bossFactory(pgBossOptions(env)) : null;
   const workerIds = new Map();
   let started = false;
   let startupError = null;
+
+  async function clearReadinessFile() {
+    if (!processJobs) return;
+    try { await unlink(WORKER_READINESS_FILE); } catch (error) {
+      if (error?.code !== 'ENOENT') audit('phase5_queue_readiness_cleanup_failed', { code: error?.code || 'UNKNOWN' });
+    }
+  }
+
+  async function publishReadinessFile() {
+    if (!processJobs) return;
+    const registered = [...workerIds.keys()];
+    const missingHandlers = strictWorkerAllowlist ? workerQueueNames.filter(name => !handlers[name]) : [];
+    if (!registered.length || missingHandlers.length) {
+      const error = new Error(missingHandlers.length
+        ? `Worker queue allowlist has no handler for: ${missingHandlers.join(', ')}`
+        : 'Worker queue allowlist has no registered handlers');
+      error.code = 'PHASE5_WORKER_HANDLER_MISSING';
+      throw error;
+    }
+    await writeFile(WORKER_READINESS_FILE, JSON.stringify({
+      pid: process.pid,
+      ready: true,
+      queues: registered,
+      started_at: new Date().toISOString()
+    }), { encoding: 'utf8', mode: 0o600 });
+  }
 
   async function registerQueue(name) {
     await boss.createQueue(`${name}-dead-letter`, {
@@ -134,6 +182,7 @@ export function createPhase5Queue({
     async start() {
       if (!enabled || started) return { enabled, started, startup_error: startupError?.message || null };
       try {
+        await clearReadinessFile();
         boss.on('error', error => audit('phase5_queue_error', { message: String(error?.message || error).slice(0, 240) }));
         await boss.start();
         for (const name of PHASE5_QUEUE_NAMES) await registerQueue(name);
@@ -148,6 +197,7 @@ export function createPhase5Queue({
           }, jobs => runHandler(name, jobs));
           workerIds.set(name, workerId);
         }
+        await publishReadinessFile();
         started = true;
         startupError = null;
         audit('phase5_queue_started', {
@@ -157,6 +207,7 @@ export function createPhase5Queue({
           process_jobs:processJobs
         });
       } catch (error) {
+        await clearReadinessFile();
         startupError = error;
         audit('phase5_queue_start_failed', { message: String(error?.message || error).slice(0, 240) });
         throw error;
@@ -166,10 +217,12 @@ export function createPhase5Queue({
     async enqueue(name, data = {}, options = {}) {
       if (!PHASE5_QUEUE_NAMES.includes(name)) throw new Error(`Unsupported Phase 5 queue: ${name}`);
       if (!enabled || !started) throw new Error('Phase 5 queue is not started');
-      return boss.send(name, data, {
+      const sendOptions = {
         singletonKey: options.singletonKey || null,
         priority: Number.isInteger(options.priority) ? options.priority : 0
-      });
+      };
+      if (options.startAfter) sendOptions.startAfter = options.startAfter;
+      return boss.send(name, data, sendOptions);
     },
     async enqueueFlow(steps) {
       if (!enabled || !started) throw new Error('Phase 5 queue is not started');
@@ -189,7 +242,19 @@ export function createPhase5Queue({
         queues: []
       };
       const queues = await boss.getQueues(workerQueueNames.flatMap(name => [name, `${name}-dead-letter`]));
-      return { enabled: true, started: true, status: 'ready', queues };
+      const expectedWorkerCount = strictWorkerAllowlist
+        ? workerQueueNames.length
+        : workerQueueNames.filter(name => Boolean(handlers[name])).length;
+      const workerReady = !processJobs || workerIds.size === expectedWorkerCount;
+      return {
+        enabled: true,
+        started: true,
+        process_jobs: processJobs,
+        status: workerReady ? 'ready' : 'degraded',
+        worker_count: workerIds.size,
+        worker_queues: [...workerIds.keys()],
+        queues
+      };
     },
     async find(name, options = {}) {
       if (!enabled || !started) return [];
@@ -210,9 +275,10 @@ export function createPhase5Queue({
     },
     async stop() {
       if (boss && started) await boss.stop({ graceful: true, timeout: 30000 });
+      await clearReadinessFile();
       started = false;
     }
   });
 }
 
-export { booleanEnv, pgBossOptions, queueAllowlist, queuePolicy };
+export { booleanEnv, pgBossOptions, queueAllowlist, queuePolicy, WORKER_READINESS_FILE };

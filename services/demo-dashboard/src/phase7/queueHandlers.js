@@ -1,5 +1,12 @@
 import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
 
+async function scheduleAutoEvidence(service,eventKey,payload={}){
+  if(!service.queue?.enqueue||!eventKey)return null;
+  return service.queue.enqueue(PHASE5_QUEUES.SCHEDULE_AUTO_EVIDENCE,
+    {schedule_source:'EVENT',event_id:eventKey,...payload},
+    {singletonKey:`phase10:auto-evidence:event:${String(eventKey).slice(0,180)}`});
+}
+
 export function createPhase7QueueHandlers({ service }) {
   if (!service) throw new TypeError('Phase7 service is required');
   return Object.freeze({
@@ -12,8 +19,22 @@ export function createPhase7QueueHandlers({ service }) {
       return {status:draft?.draft_status||'MISSING',draft_id:data.draft_id};
     },
     [PHASE5_QUEUES.SEND_OUTREACH_EMAIL]: data => service.sendMessageWork(data),
-    [PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT]: data => service.processProviderEventWork(data),
-    [PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE]: data => service.processInboundWork(data),
+    [PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT]: async data => {
+      const result=await service.processProviderEventWork(data);
+      const sourceId=data.webhook_id||data.event_id||data.message_id||null;
+      const scheduleJobId=await scheduleAutoEvidence(service,sourceId&&`email-provider-event:${sourceId}`,{
+        company_id:data.company_id||null,resource_id:data.resource_id||null,message_id:data.message_id||null
+      });
+      return {...result,auto_evidence_schedule_job_id:scheduleJobId};
+    },
+    [PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE]: async data => {
+      const result=await service.processInboundWork(data);
+      const sourceId=data.inbound_id||data.message_id||null;
+      const scheduleJobId=await scheduleAutoEvidence(service,sourceId&&`inbound-message:${sourceId}`,{
+        company_id:data.company_id||null,resource_id:data.resource_id||null,message_id:data.message_id||null
+      });
+      return {...result,auto_evidence_schedule_job_id:scheduleJobId};
+    },
     [PHASE5_QUEUES.CLASSIFY_INBOUND_REPLY]: data => service.classifyInboundWork(data),
     [PHASE5_QUEUES.CREATE_SALES_FOLLOWUP]: async data => ({
       ...(await service.createSalesFollowupWork(data)),automatic_send_allowed:false
@@ -34,13 +55,21 @@ export function createPhase7QueueHandlers({ service }) {
       status:'RECHECK_COMPLETED',resource_id:data.resource_id||data.import_id||null,
       ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0
     }),
-    [PHASE5_QUEUES.RECALCULATE_BUSINESS_OPPORTUNITIES]: async data => ({
-      status:'RECHECK_COMPLETED',resource_id:data.resource_id||null,
-      ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0
-    }),
-    [PHASE5_QUEUES.REFRESH_OPPORTUNITY_EXCEPTION_QUEUE]: async data => ({
-      status:'EXCEPTION_QUEUE_REFRESHED',resource_id:data.resource_id||null,
-      ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0
-    })
+    [PHASE5_QUEUES.RECALCULATE_BUSINESS_OPPORTUNITIES]: async data => {
+      const result={status:'RECHECK_COMPLETED',resource_id:data.resource_id||null,
+        ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0};
+      return {...result,auto_evidence_schedule_job_id:await scheduleAutoEvidence(service,
+        `opportunity-recalculated:${data.resource_id||'all'}`,{
+          company_id:data.company_id||null,resource_id:data.resource_id||null,product_profile:data.product_profile||null
+        })};
+    },
+    [PHASE5_QUEUES.REFRESH_OPPORTUNITY_EXCEPTION_QUEUE]: async data => {
+      const result={status:'EXCEPTION_QUEUE_REFRESHED',resource_id:data.resource_id||null,
+        ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0};
+      return {...result,auto_evidence_schedule_job_id:await scheduleAutoEvidence(service,
+        `opportunity-exception:${data.resource_id||'all'}`,{
+          company_id:data.company_id||null,resource_id:data.resource_id||null,product_profile:data.product_profile||null
+        })};
+    }
   });
 }

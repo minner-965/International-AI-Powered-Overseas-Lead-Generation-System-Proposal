@@ -7,7 +7,7 @@ const enabled = /^(1|true|yes)$/i.test(process.env.RUN_PHASE5_POSTGRES_INTEGRATI
 const { Pool } = pg;
 const hex = value => String(value).repeat(64).slice(0, 64);
 
-function bundle(batchKey, sourceHash, identityToken) {
+function bundle(batchKey, sourceHash, identityToken, fixtureKey = 'test') {
   const provenance = {
     source_file_hash: sourceHash,
     source_sheet: 'Orders',
@@ -27,14 +27,14 @@ function bundle(batchKey, sourceHash, identityToken) {
     }],
     entities: {
       HISTORICAL_CUSTOMERS: [{ ...provenance,source_row: 1,source_identity_key: hex(identityToken),
-        external_customer_id: 'MX:test-customer',source_system: 'SHARED_CAVANNA_PO',company_name: 'TEST CUSTOMER',
+        external_customer_id: `MX:${fixtureKey}-customer`,source_system: 'SHARED_CAVANNA_PO',company_name: 'TEST CUSTOMER',
         normalized_company_name: 'test customer',country_code: 'MX',market_code: 'MX',buyer_type: 'BUYER',company_size: null,
         first_order_date: '2026-01-01',last_order_date: '2026-01-01',repeat_order_count: 0,
         customer_role: 'INTERNAL_EXISTING_CUSTOMER',customer_type: 'CUSTOMER',channel_type: null,
         product_profiles: ['WOMENSWEAR'],identity_resolution_status: 'CONFIRMED',record_digest: hex(identityToken) }],
       CUSTOMER_ALIASES: [],
       HISTORICAL_ORDERS: [{ ...provenance,source_row: 2,source_identity_key: hex(String(Number(identityToken) + 1)),
-        external_order_id: 'PO-TEST-1',external_customer_id: 'MX:test-customer',source_system: 'SHARED_CAVANNA_PO',
+        external_order_id: `PO-${fixtureKey}`,external_customer_id: `MX:${fixtureKey}-customer`,source_system: 'SHARED_CAVANNA_PO',
         order_date: '2026-01-01',customer_resolution_status: 'RESOLVED',order_status: 'CONFIRMED',delivery_date: null,
         order_date_source: 'EXPLICIT',quantity: 100,unit: 'PCS',unit_price: 2,order_value: 200,
         commercial_value_type: 'CUSTOMER_SALES_REVENUE',currency: 'USD',incoterm: 'FOB',container_sequence: null,
@@ -52,15 +52,17 @@ test('PostgreSQL import keeps replay ownership and appends a changed PO source v
   });
   const service = new SharedHistoryImportService({ pool });
   try {
-    const first = bundle('truth-first',hex('a'),'1');
+    const fixtureKey=`phase10-${process.pid}-${Date.now()}`;
+    const batchKeys=[`${fixtureKey}-truth-first`,`${fixtureKey}-truth-replay`,`${fixtureKey}-truth-changed`];
+    const first = bundle(batchKeys[0],hex('a'),'1',fixtureKey);
     await service.dryRun(first); await service.commit(first.batch_key);
-    const replay = bundle('truth-replay',hex('a'),'1');
+    const replay = bundle(batchKeys[1],hex('a'),'1',fixtureKey);
     await service.dryRun(replay); await service.commit(replay.batch_key);
-    const changed = bundle('truth-changed',hex('b'),'3');
+    const changed = bundle(batchKeys[2],hex('b'),'3',fixtureKey);
     await service.dryRun(changed); await service.commit(changed.batch_key);
 
     const orders = await pool.query(`SELECT source_version,supersedes_historical_order_id
-      FROM leadgen.historical_orders WHERE external_order_id='PO-TEST-1' ORDER BY source_version`);
+      FROM leadgen.historical_orders WHERE external_order_id=$1 ORDER BY source_version`,[`PO-${fixtureKey}`]);
     assert.equal(orders.rowCount, 2);
     assert.deepEqual(orders.rows.map(row => Number(row.source_version)), [1,2]);
     assert.equal(orders.rows[0].supersedes_historical_order_id, null);
@@ -68,7 +70,7 @@ test('PostgreSQL import keeps replay ownership and appends a changed PO source v
 
     const imports = await pool.query(`SELECT b.import_batch_key,i.import_version,i.supersedes_import_id
       FROM leadgen.reference_data_imports i JOIN leadgen.reference_data_import_batches b ON b.id=i.import_batch_id
-      WHERE i.import_type='HISTORICAL_ORDERS' ORDER BY b.created_at`);
+      WHERE i.import_type='HISTORICAL_ORDERS' AND b.import_batch_key=ANY($1::text[]) ORDER BY b.created_at`,[batchKeys]);
     assert.deepEqual(imports.rows.map(row => Number(row.import_version)), [1,1,2]);
     assert.equal(imports.rows[0].supersedes_import_id, null);
     assert.equal(imports.rows[1].supersedes_import_id, null);
@@ -77,7 +79,7 @@ test('PostgreSQL import keeps replay ownership and appends a changed PO source v
     const duplicate = await pool.query(`SELECT r.row_status,r.replays_import_row_id
       FROM leadgen.reference_data_import_rows r JOIN leadgen.reference_data_imports i ON i.id=r.import_id
       JOIN leadgen.reference_data_import_batches b ON b.id=i.import_batch_id
-      WHERE b.import_batch_key='truth-replay' AND i.import_type='HISTORICAL_ORDERS'`);
+      WHERE b.import_batch_key=$1 AND i.import_type='HISTORICAL_ORDERS'`,[batchKeys[1]]);
     assert.deepEqual([duplicate.rows[0].row_status,Boolean(duplicate.rows[0].replays_import_row_id)], ['DUPLICATE',true]);
   } finally { await pool.end(); }
 });

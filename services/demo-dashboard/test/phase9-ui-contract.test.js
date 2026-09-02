@@ -10,7 +10,8 @@ test('Research Workbench keeps four real metrics and at most three priority task
     readPublic('ui/phase9-research-workbench.js')
   ]);
   assert.match(html,/id="research-workbench-summary"[\s\S]*?(?:class="p9-metric is-loading"[\s\S]*?){4}<\/section>/);
-  assert.match(ui,/\/api\/research\/tasks\?limit=3&sort=priority_desc/);
+  assert.match(ui,/\/api\/research\/tasks\?limit=12&sort=priority_desc/);
+  assert.match(ui,/reviewItems\.slice\(0,3\)/);
   assert.match(ui,/\/api\/research\/jobs\?view=inbox&limit=6&sort=updated_desc/);
 });
 
@@ -38,7 +39,7 @@ test('Jobs Inbox preserves three tabs, seven decision columns and seven pipeline
   ]){
     assert.ok(html.includes(`>${zh}<`)&&html.includes(`>${en}<`),`missing jobs heading: ${zh} / ${en}`);
   }
-  for(const stage of ['Identity','Buyer Model','Category Procurement','Supplier Access','Buyer / Role','Email verification','Decision refresh']){
+  for(const stage of ['Identity','Buyer Model','Category Procurement','Supplier Access','Buyer / Role','Email verification','Status refresh']){
     assert.ok(ui.includes(`'${stage}'`),`missing pipeline stage: ${stage}`);
   }
 });

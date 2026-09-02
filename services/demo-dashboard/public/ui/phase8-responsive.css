@@ -22,6 +22,19 @@
 
 @media (max-width: 991px) {
   .crm-sidebar { width: min(var(--p8-sidebar-width), calc(100vw - 3rem)); overflow: hidden auto; border-radius: 0 var(--p8-radius-shell) var(--p8-radius-shell) 0; }
+  .crm-sidebar > .container-fluid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
+    justify-content: stretch;
+  }
+  .crm-sidebar .crm-brand,
+  .crm-sidebar .navbar-nav,
+  .crm-sidebar .crm-sidebar-foot { width: 100%; min-width: 0; }
+  .crm-sidebar .navbar-nav { overflow-x: hidden; }
+  .crm-sidebar .nav-link { min-width: 0; }
+  .crm-sidebar .nav-link .bi { min-width: 0; overflow-wrap: anywhere; }
   .crm-sidebar-scrim { z-index: var(--p8-z-scrim); background: rgb(16 19 26 / .52); }
   .crm-sidebar { z-index: var(--p8-z-sidebar); }
   .crm-data-workspace { grid-template-columns: 1fr; }

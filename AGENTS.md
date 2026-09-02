@@ -65,3 +65,13 @@ At the start of every task, complete both checks below before implementation beg
 - Before implementing any Phase 5 or later capability, evaluate mature official/open-source modules first. Record the candidate's license, deployment fit, data privacy, operating cost, maintenance activity, and integration boundary, and reuse a suitable module instead of rebuilding the same infrastructure.
 - Use `docs/PHASE5_REUSE_RESEARCH.md` as the initial shortlist, then re-check current official documentation and release status before adoption.
 - This rule does not authorize Phase 5 work during Phase 4: do not add these dependencies, change Phase 4 scope, or begin Phase 5 until Phase 4 has passed and Phase 5 is explicitly started.
+
+## New-customer product opportunity rule
+
+- Treat new-customer product scoring as a category-level supply-opportunity decision.
+- Compare the target company's public procurement demand or operated product categories with DPV's approved supply categories/profile scope.
+- Exact, similar, or same approved profile scope means DPV can supply that category and therefore has a product-category cooperation opportunity.
+- Do not require or present an exact individual SKU match. Do not create product-master candidates or manual tasks to supplement a corresponding product.
+- Product and historical customer-deal imports are inputs for approved category/profile scope, historical ICP, and customer scoring baselines only.
+- Keep customer-side missing procurement/category evidence as `NEEDS_PRODUCT_EVIDENCE`; keep confirmed out-of-scope categories as `PRODUCT_MISMATCH`.
+- Company-facing wording must use `商品类目评分 / Product Category Score` for this score.

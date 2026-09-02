@@ -2,7 +2,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DpvZenRulesAdapter } from '../scoring/zenRulesAdapter.js';
 
-export const COOPERATION_V3_VERSION='cooperation-feasibility-v3';
+export const COOPERATION_V4_VERSION='cooperation-feasibility-v4';
+export const COOPERATION_V3_VERSION=COOPERATION_V4_VERSION;
 const upper=value=>String(value||'').trim().toUpperCase();
 const unique=values=>[...new Set((values||[]).filter(Boolean))];
 const projectRoot=process.env.DPV_PROJECT_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../..');
@@ -44,15 +45,19 @@ export function resolveReadinessV3(input={}){
   if(input.existing_customer===true||relationship==='INTERNAL_EXISTING_CUSTOMER')blockers.push('EXISTING_CUSTOMER');
   if(model==='EXCLUDED_INTERMEDIARY')blockers.push('INELIGIBLE_BUYER_MODEL');else if(!['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(model))blockers.push('REVIEW');
   if(['HISTORICAL_CRM_LEAD','HISTORICAL_CONTACTED_LEAD'].includes(relationship))blockers.push('HISTORICAL_REVIEW');
-  const status=upper(input.category_procurement_match_status||'NEEDS_PRODUCT_EVIDENCE');
+  if(input.supplier_route_closed===true||upper(input.supplier_route_status)==='CLOSED')blockers.push('HOLD');
+  const rawStatus=upper(input.category_procurement_match_status||'NEEDS_PRODUCT_EVIDENCE');
+  const status=rawStatus==='NEEDS_INTERNAL_CATALOG_EVIDENCE'?'CATEGORY_PROCUREMENT_MATCH':rawStatus;
   if(status!=='CATEGORY_PROCUREMENT_MATCH')blockers.push(status);else if(input.category_procurement_match_score==null||Number(input.category_procurement_match_score)<60)blockers.push('WEAK_CATEGORY_MATCH');else if(Number(input.category_procurement_coverage||0)<70)blockers.push('NEEDS_PRODUCT_EVIDENCE');
   if(input.has_verified_decision_route!==true)blockers.push('NEEDS_DECISION_MAKER');
-  if(input.has_usable_contact_route!==true)blockers.push('NEEDS_CONTACT_ROUTE');
+  if(input.has_current_valid_contact_route!==true)blockers.push('NEEDS_CONTACT_ROUTE');
   const verifiedActive=input.company_verified_active===true||(upper(input.company_verification_status)==='VERIFIED'&&upper(input.company_lifecycle_status)==='ACTIVE');
   if(input.has_traceable_evidence!==true||!verifiedActive||input.eligible_target_organization!==true)blockers.push('NEEDS_VERIFICATION');
   if(upper(input.cooperation_feasibility_band)==='LOW'||upper(input.supplier_access_band)==='LOW')blockers.push('STRATEGIC_LONG_SHOT');
-  if(Number(input.product_opportunity_count||0)===0&&status==='CATEGORY_PROCUREMENT_MATCH')blockers.push('NEEDS_PRODUCT_RECOMMENDATION');
-  const order=['SUPPRESSED','EXISTING_CUSTOMER','INELIGIBLE_BUYER_MODEL','HISTORICAL_REVIEW','NEEDS_INTERNAL_CATALOG_EVIDENCE','NEEDS_PRODUCT_EVIDENCE','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','PRODUCT_MISMATCH','WEAK_CATEGORY_MATCH','NEEDS_DECISION_MAKER','NEEDS_CONTACT_ROUTE','NEEDS_VERIFICATION','STRATEGIC_LONG_SHOT','REVIEW'];
+  const order=['SUPPRESSED','EXISTING_CUSTOMER','INELIGIBLE_BUYER_MODEL','HISTORICAL_REVIEW','HOLD',
+    'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL','NEEDS_PRODUCT_EVIDENCE',
+    'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','PRODUCT_MISMATCH','WEAK_CATEGORY_MATCH','NEEDS_DECISION_MAKER',
+    'NEEDS_CONTACT_ROUTE','NEEDS_VERIFICATION','STRATEGIC_LONG_SHOT','REVIEW'];
   const readiness=order.find(value=>blockers.includes(value))||'SALES_READY';return {readiness,opportunity_readiness:readiness,readiness_blockers:unique(blockers)};
 }
 
@@ -66,6 +71,15 @@ export function mapCategoryProcurementToFeasibilityDimension({category_procureme
 
 export class CooperationFeasibilityV3Engine{
   constructor({adapter=new DpvZenRulesAdapter({rulePaths:{cooperationFeasibilityV3:rulePath}})}={}){this.adapter=adapter;}
-  async evaluate(input={}){const result=await this.adapter.evaluate('cooperationFeasibilityV3',input,{trace:false});const{zen_trace:_trace,zen_performance:_performance,...clean}=result;return clean;}
+  async evaluate(input={}){
+    const supplier=calculateSupplierAccess({dimensions:input.supplier_access_dimensions||{}});
+    const readiness=resolveReadinessV3({...input,...supplier});
+    return {...supplier,
+      product_access_matrix:resolveProductAccessMatrixV3({...input,supplier_access_band:supplier.supplier_access_band}),
+      ...readiness,cooperation_calculation_version:COOPERATION_V4_VERSION,
+      rule_version:COOPERATION_V4_VERSION,
+      supplier_route_status:input.supplier_route_closed===true||upper(input.supplier_route_status)==='CLOSED'
+        ?'CLOSED':upper(input.supplier_route_status)==='SUPPORTED'?'SUPPORTED':'UNKNOWN'};
+  }
   dispose(){this.adapter.dispose();}
 }

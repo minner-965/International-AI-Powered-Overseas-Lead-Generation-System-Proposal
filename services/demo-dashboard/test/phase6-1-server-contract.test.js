@@ -15,7 +15,7 @@ function routeBlock(start,next,length=24000){
   return server.slice(from,to>from?to:from+length);
 }
 
-test('V3 exposes the frozen category procurement, buyer model and Product Opportunity API surface',()=>{
+test('V3 exposes category procurement, buyer model and category-level opportunity API surface',()=>{
   for(const route of [
     '/api/companies/:id/category-procurement-matches','/api/companies/:id/buyer-business-model',
     '/api/companies/:id/product-opportunities','/api/category-procurement/jobs',
@@ -45,7 +45,7 @@ test('ordinary V3 APIs project business-safe allowlisted fields only',()=>{
   for(const field of [
     'category_procurement_match_score','category_procurement_match_band','category_procurement_match_status',
     'category_procurement_coverage','buyer_business_model','buyer_subtype','observed_categories',
-    'product_opportunity_status','product_opportunity_count','supplier_access_band','product_access_matrix',
+    'match_basis','matched_scopes','observed_customer_categories','supplier_access_band','product_access_matrix',
     'readiness','readiness_blockers'
   ]) assert.match(block,new RegExp(`\\b${field}\\b`));
   assert.doesNotMatch(block,/supplier_price|supplier_currency|customer_sales_price|customer_sales_currency|margin|profit|historical_order_lines|historical_customer_id|historical_order_id|source_import_row_id|source_identity_key|shared_folder_path|asset_reference|raw_internal_payload|internal_description/i);
@@ -56,9 +56,12 @@ test('opportunities use one stable row per company and product profile with all 
   for(const field of [
     'opportunity_key','product_profile','category_procurement_match_score','category_procurement_match_band',
     'category_procurement_match_status','category_procurement_coverage','buyer_business_model','buyer_subtype',
-    'observed_categories','top_product_opportunity','product_opportunity_count','product_opportunity_status',
+    'observed_categories','match_basis','matched_scopes','observed_customer_categories',
     'supplier_access_band','product_access_matrix','readiness','readiness_blockers'
   ]) assert.match(block,new RegExp(`\\b${field}\\b`));
+  for(const removed of ['top_product_opportunity','product_opportunity_count','product_opportunity_status','sku_readiness_status']){
+    assert.doesNotMatch(block,new RegExp(`\\b${removed}\\b`));
+  }
   assert.match(block,/company_id[^\n]*(?:\|\||concat)[^\n]*product_profile|concat[^\n]*company_id[^\n]*product_profile/i);
   assert.doesNotMatch(block,/DISTINCT\s+ON\s*\(\s*c\.id\s*\)/i);
 });

@@ -46,7 +46,7 @@ test('Category Procurement Match V3 rules freeze five weights and 70/60 publicat
   for(const status of ['CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_INTERNAL_CATALOG_EVIDENCE','INELIGIBLE_BUYER_MODEL']) assert.match(serialized,new RegExp(status));
 });
 
-test('Cooperation V3 rules preserve Supplier Access independence, Matrix V3 and Readiness V3 precedence',()=>{
+test('legacy Cooperation V3 rule remains preserved for historical audit',()=>{
   const decision=readJson('rules/cooperation-feasibility/v3/decision.json');
   const metadata=readJson('rules/cooperation-feasibility/v3/metadata.json');
   const serialized=JSON.stringify({decision,metadata});
@@ -58,4 +58,16 @@ test('Cooperation V3 rules preserve Supplier Access independence, Matrix V3 and 
   assert.equal(positions.every(position=>position>=0),true);
   for(let index=1;index<positions.length;index+=1) assert.ok(positions[index]>positions[index-1],`${precedence[index]} is out of order`);
   assert.match(serialized,/SALES_READY/);
+});
+
+test('current Cooperation V4 rule is approved-category-only and creates no catalog or SKU gate',()=>{
+  const metadata=readJson('rules/cooperation-feasibility/v4/metadata.json');
+  const implementation=fs.readFileSync(path.join(root,'services/demo-dashboard/src/categoryProcurement/cooperationV3.js'),'utf8');
+  assert.equal(metadata.opportunity_gate,'APPROVED_CATEGORY_SCOPE_ONLY');
+  assert.equal(metadata.exact_sku_required,false);
+  assert.equal(metadata.catalog_maintenance_task_allowed,false);
+  assert.match(implementation,/rawStatus==='NEEDS_INTERNAL_CATALOG_EVIDENCE'\?'CATEGORY_PROCUREMENT_MATCH'/);
+  assert.doesNotMatch(implementation,/blockers\.push\('NEEDS_PRODUCT_RECOMMENDATION'\)/);
+  const currentOrder=implementation.slice(implementation.lastIndexOf("const order="));
+  assert.doesNotMatch(currentOrder,/NEEDS_INTERNAL_CATALOG_EVIDENCE|NEEDS_PRODUCT_RECOMMENDATION/);
 });

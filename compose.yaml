@@ -46,6 +46,11 @@ services:
       N8N_SECURE_COOKIE: "false"
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: 168
+      AUTO_EVIDENCE_ENABLED: ${AUTO_EVIDENCE_ENABLED:-false}
+      AUTO_EVIDENCE_RECONCILE_MINUTES: ${AUTO_EVIDENCE_RECONCILE_MINUTES:-30}
+      AUTO_EVIDENCE_BATCH_SIZE: ${AUTO_EVIDENCE_BATCH_SIZE:-10}
+      AUTO_EVIDENCE_MARKET_CODES: ${AUTO_EVIDENCE_MARKET_CODES:-AE,MX}
+      AUTO_EVIDENCE_PRODUCT_PROFILES: ${AUTO_EVIDENCE_PRODUCT_PROFILES:-WOMENSWEAR,GENERAL_MERCHANDISE}
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
       TZ: ${TZ}
     volumes:
@@ -92,11 +97,23 @@ services:
       HUNTER_REQUEST_TIMEOUT_MS: ${HUNTER_REQUEST_TIMEOUT_MS:-12000}
       MAX_HUNTER_CREDITS_PER_RUN_UNITS: ${MAX_HUNTER_CREDITS_PER_RUN_UNITS:-20000}
       MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS: ${MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS:-20000}
+      MAX_HUNTER_CREDITS_PER_DAY_UNITS: ${MAX_HUNTER_CREDITS_PER_DAY_UNITS:-20000}
+      MAX_TAVILY_CREDITS_PER_RUN_UNITS: ${MAX_TAVILY_CREDITS_PER_RUN_UNITS:-25}
+      MAX_TAVILY_CREDITS_PER_DAY_UNITS: ${MAX_TAVILY_CREDITS_PER_DAY_UNITS:-100}
+      MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS: ${MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS:-1000}
+      TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS: ${TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS:-1}
+      AUTO_EVIDENCE_ENABLED: ${AUTO_EVIDENCE_ENABLED:-false}
+      AUTO_EVIDENCE_RECONCILE_MINUTES: ${AUTO_EVIDENCE_RECONCILE_MINUTES:-30}
+      AUTO_EVIDENCE_BATCH_SIZE: ${AUTO_EVIDENCE_BATCH_SIZE:-10}
+      AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS: ${AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS:-168}
+      AUTO_EVIDENCE_MAX_ATTEMPTS: ${AUTO_EVIDENCE_MAX_ATTEMPTS:-3}
+      AUTO_EVIDENCE_SOURCE_TTL_DAYS: ${AUTO_EVIDENCE_SOURCE_TTL_DAYS:-90}
+      AUTO_EVIDENCE_STAGE_LEASE_MINUTES: ${AUTO_EVIDENCE_STAGE_LEASE_MINUTES:-15}
+      AUTO_EVIDENCE_HUNTER_ENABLED: ${AUTO_EVIDENCE_HUNTER_ENABLED:-true}
+      AUTO_EVIDENCE_TAVILY_ENABLED: ${AUTO_EVIDENCE_TAVILY_ENABLED:-true}
+      AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED: ${AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED:-false}
       TZ: ${TZ}
     volumes:
-      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
-      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
-      - ./services/demo-dashboard/public/phase5.css:/app/public/phase5.css:ro
       - phase7_runtime:/app/runtime/phase7
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
@@ -118,7 +135,7 @@ services:
       PORT: 3000
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_PROCESS_JOBS: "true"
-      PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,refresh-opportunity-exception-queue"
+      PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,refresh-opportunity-exception-queue,schedule-auto-evidence,discover-opportunity-evidence,normalize-opportunity-category,refresh-category-scope-match,find-profile-buyer,verify-profile-buyer-email,refresh-business-opportunity-v3,refresh-auto-evidence-exception"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       POSTGRES_HOST: postgres
@@ -132,11 +149,29 @@ services:
       HUNTER_REQUEST_TIMEOUT_MS: ${HUNTER_REQUEST_TIMEOUT_MS:-12000}
       MAX_HUNTER_CREDITS_PER_RUN_UNITS: ${MAX_HUNTER_CREDITS_PER_RUN_UNITS:-20000}
       MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS: ${MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS:-20000}
+      MAX_HUNTER_CREDITS_PER_DAY_UNITS: ${MAX_HUNTER_CREDITS_PER_DAY_UNITS:-20000}
+      MAX_TAVILY_CREDITS_PER_RUN_UNITS: ${MAX_TAVILY_CREDITS_PER_RUN_UNITS:-25}
+      MAX_TAVILY_CREDITS_PER_DAY_UNITS: ${MAX_TAVILY_CREDITS_PER_DAY_UNITS:-100}
+      MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS: ${MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS:-1000}
+      TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS: ${TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS:-1}
+      AUTO_EVIDENCE_ENABLED: ${AUTO_EVIDENCE_ENABLED:-false}
+      AUTO_EVIDENCE_RECONCILE_MINUTES: ${AUTO_EVIDENCE_RECONCILE_MINUTES:-30}
+      AUTO_EVIDENCE_BATCH_SIZE: ${AUTO_EVIDENCE_BATCH_SIZE:-10}
+      AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS: ${AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS:-168}
+      AUTO_EVIDENCE_MAX_ATTEMPTS: ${AUTO_EVIDENCE_MAX_ATTEMPTS:-3}
+      AUTO_EVIDENCE_SOURCE_TTL_DAYS: ${AUTO_EVIDENCE_SOURCE_TTL_DAYS:-90}
+      AUTO_EVIDENCE_STAGE_LEASE_MINUTES: ${AUTO_EVIDENCE_STAGE_LEASE_MINUTES:-15}
+      AUTO_EVIDENCE_HUNTER_ENABLED: ${AUTO_EVIDENCE_HUNTER_ENABLED:-true}
+      AUTO_EVIDENCE_TAVILY_ENABLED: ${AUTO_EVIDENCE_TAVILY_ENABLED:-true}
+      AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED: ${AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED:-false}
       TZ: ${TZ}
     volumes:
-      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
-      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
       - phase7_runtime:/app/runtime/phase7
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');const p='/tmp/dpv-phase5-worker-ready.json';const s=JSON.parse(fs.readFileSync(p,'utf8'));if(!s.ready||!Array.isArray(s.queues)||!s.queues.length)process.exit(1);process.kill(Number(s.pid),0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   outreach-worker:
     image: dpv-leadgen-demo-dashboard
@@ -171,11 +206,15 @@ services:
       HUNTER_REQUEST_TIMEOUT_MS: ${HUNTER_REQUEST_TIMEOUT_MS:-12000}
       MAX_HUNTER_CREDITS_PER_RUN_UNITS: ${MAX_HUNTER_CREDITS_PER_RUN_UNITS:-20000}
       MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS: ${MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS:-20000}
+      MAX_HUNTER_CREDITS_PER_DAY_UNITS: ${MAX_HUNTER_CREDITS_PER_DAY_UNITS:-20000}
       TZ: ${TZ}
     volumes:
-      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
-      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
       - phase7_runtime:/app/runtime/phase7
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');const p='/tmp/dpv-phase5-worker-ready.json';const s=JSON.parse(fs.readFileSync(p,'utf8'));if(!s.ready||!Array.isArray(s.queues)||!s.queues.length)process.exit(1);process.kill(Number(s.pid),0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   data-worker:
     image: dpv-leadgen-demo-dashboard
@@ -199,9 +238,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: ${TZ}
     volumes:
-      - ./services/demo-dashboard/src/server.js:/app/src/server.js:ro
-      - ./services/demo-dashboard/src/jobs/phase5Queue.js:/app/src/jobs/phase5Queue.js:ro
       - phase7_runtime:/app/runtime/phase7
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');const p='/tmp/dpv-phase5-worker-ready.json';const s=JSON.parse(fs.readFileSync(p,'utf8'));if(!s.ready||!Array.isArray(s.queues)||!s.queues.length)process.exit(1);process.kill(Number(s.pid),0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   n8n_data:

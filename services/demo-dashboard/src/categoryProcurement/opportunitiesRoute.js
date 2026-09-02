@@ -89,10 +89,13 @@ export async function queryCategoryProcurementOpportunities({
     bod.latest_management_event_id,bod.management_contact_status,bod.created_at opportunity_decision_assessed_at,
     cpm.score category_procurement_match_score,cpm.band category_procurement_match_band,
     cpm.match_status category_procurement_match_status,cpm.coverage_percent category_procurement_coverage,
+    cpm.scope_revision_id,cpm.match_basis,cpm.similarity_rule,cpm.matched_scope_ids,
+    cpm.observed_customer_category_ids,cpm.catalog_completeness_non_blocking,
+    scope_revision.revision scope_revision,
+    coalesce(matched_scope.scopes,'{}'::text[]) matched_scopes,
+    coalesce(observed_scope.categories,cpm.observed_categories,'{}'::text[]) observed_customer_categories,
     bbm.buyer_model buyer_business_model,bbm.buyer_subtype,bbm.eligibility_status buyer_eligibility_status,
     bbm.confidence_band buyer_confidence_band,cpm.observed_categories,
-    top_product.safe_product_name top_product_opportunity,coalesce(po.candidate_count,0) product_opportunity_count,
-    coalesce(po.recommendation_status,'NOT_RUN_GATE_FAILED') product_opportunity_status,
     f.cooperation_feasibility_score,f.feasibility_band,f.access_opportunity_matrix cooperation_matrix,
     coalesce(f.supplier_access_band,'UNKNOWN') supplier_access_band,coalesce(f.supplier_access_coverage,0) supplier_access_coverage,
     coalesce(f.product_access_matrix,'UNKNOWN_PRODUCT') product_access_matrix,
@@ -104,6 +107,11 @@ export async function queryCategoryProcurementOpportunities({
     dm.last_verified_at decision_maker_last_verified_at,
     bc.contact_type best_contact_type,bc.contact_value_raw best_contact,bc.verification_status contact_verification,
     bc.source_url contact_source_url,portal.contact_type supplier_route_type,portal.contact_value_raw supplier_portal_url,
+    auto_task.id auto_evidence_task_id,auto_task.task_status auto_evidence_status,
+    auto_task.current_stage auto_evidence_stage,auto_task.category_research_job_id auto_category_research_job_id,
+    auto_task.contact_research_job_id auto_contact_research_job_id,
+    (auto_task.task_status='HUMAN_REVIEW_REQUIRED') human_review_required,
+    CASE WHEN auto_task.task_status='HUMAN_REVIEW_REQUIRED' THEN 'HUMAN_REVIEW' ELSE 'AUTO_ENRICHMENT' END task_class,
     EXISTS(SELECT 1 FROM leadgen.contacts ct WHERE ct.company_id=c.id AND ct.lifecycle_status='ACTIVE'
       AND(ct.business_email IS NOT NULL OR ct.business_phone IS NOT NULL)) contactable
     FROM leadgen.companies c
@@ -113,9 +121,11 @@ export async function queryCategoryProcurementOpportunities({
       ORDER BY x.product_profile)cpm ON true
     JOIN leadgen.buyer_business_model_results bbm ON bbm.id=cpm.buyer_business_model_result_id
     LEFT JOIN leadgen.business_opportunity_current bod ON bod.company_id=c.id AND bod.product_profile=cpm.product_profile
-    LEFT JOIN leadgen.product_opportunity_results po ON po.category_procurement_match_result_id=cpm.id
-    LEFT JOIN LATERAL(SELECT pc.safe_product_name FROM leadgen.product_opportunity_candidates pc
-      WHERE pc.product_opportunity_result_id=po.id ORDER BY pc.rank LIMIT 1)top_product ON true
+    LEFT JOIN leadgen.dpv_product_category_scope_revisions scope_revision ON scope_revision.id=cpm.scope_revision_id
+    LEFT JOIN LATERAL(SELECT array_agg(s.normalized_category ORDER BY s.normalized_category) scopes
+      FROM leadgen.dpv_product_category_scopes s WHERE s.id=ANY(cpm.matched_scope_ids))matched_scope ON true
+    LEFT JOIN LATERAL(SELECT array_agg(o.normalized_category ORDER BY o.normalized_category) categories
+      FROM leadgen.prospect_category_observations o WHERE o.id=ANY(cpm.observed_customer_category_ids))observed_scope ON true
     LEFT JOIN leadgen.cooperation_feasibility_results f ON f.category_procurement_match_result_id=cpm.id
     LEFT JOIN leadgen.lead_reviews lr ON lr.company_id=c.id
     LEFT JOIN LATERAL(SELECT * FROM leadgen.research_candidate_verifications vx WHERE vx.company_id=c.id
@@ -142,6 +152,9 @@ export async function queryCategoryProcurementOpportunities({
     LEFT JOIN LATERAL(SELECT px.* FROM leadgen.decision_maker_contacts px JOIN leadgen.decision_makers pd ON pd.id=px.decision_maker_id
       WHERE pd.company_id=c.id AND px.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
       ORDER BY px.updated_at DESC LIMIT 1)portal ON true
+    LEFT JOIN LATERAL(SELECT t.* FROM leadgen.auto_evidence_tasks t
+      WHERE t.company_id=c.id AND t.product_profile=cpm.product_profile
+      ORDER BY t.created_at DESC,t.id DESC LIMIT 1)auto_task ON true
     WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy} LIMIT $${params.length}`,params);
   return result.rows;
 }

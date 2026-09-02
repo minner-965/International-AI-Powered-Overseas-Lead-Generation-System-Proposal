@@ -21,7 +21,9 @@ import { createCompanyLifecycleService } from './lifecycle/companyLifecycleServi
 import { EnrichmentService } from './enrichment/EnrichmentService.js';
 import { CategoryEvidenceService } from './categoryProcurement/CategoryEvidenceService.js';
 import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './categoryProcurement/CategoryProcurementService.js';
+import { CategoryScopeService } from './categoryProcurement/CategoryScopeService.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
+import { AutoEvidenceOrchestrator,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
 import { Phase7Service } from './phase7/service.js';
 import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
@@ -90,6 +92,12 @@ const searchConfig = Object.freeze({
     socialMaxSearches: Math.max(0, Math.min(3, Number(process.env.SOCIAL_ENRICHMENT_MAX_SEARCHES_PER_JOB || 3)))
   })
 });
+const tavilyUsageConfig = Object.freeze({
+  runCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_RUN_UNITS || 25)),
+  dailyCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_DAY_UNITS || 100)),
+  billingPeriodCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS || 1000)),
+  reservationUnits: Math.max(1,Number(process.env.TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS || 1))
+});
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'postgres',
   port: Number(process.env.POSTGRES_PORT || 5432),
@@ -109,6 +117,7 @@ const companyLifecycleService = createCompanyLifecycleService({ pool });
 const enrichmentService = new EnrichmentService({
   pool,
   searchConfig,
+  tavilyUsageConfig,
   crawlerConfig: searchConfig.contactConfig,
   hunterConfig: {
     apiKey: process.env.HUNTER_API_KEY || '',
@@ -116,6 +125,7 @@ const enrichmentService = new EnrichmentService({
     endpoint: process.env.HUNTER_API_ENDPOINT || 'https://api.hunter.io/v2',
     timeoutMs: Number(process.env.HUNTER_REQUEST_TIMEOUT_MS || 12000),
     runCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
+    dailyCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_DAY_UNITS || 20000),
     billingPeriodCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000)
   },
   linkedInConfig: {
@@ -133,13 +143,14 @@ const enrichmentService = new EnrichmentService({
   audit
 });
 const categoryEvidenceService = new CategoryEvidenceService({
-  pool,searchConfig,crawlerConfig:searchConfig.contactConfig,
+  pool,searchConfig,tavilyUsageConfig,crawlerConfig:searchConfig.contactConfig,
   maxQueriesPerProfile:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_PROFILE || 4),
   maxQueriesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_COMPANY || 8),
   maxPagesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_PAGES_PER_COMPANY || 12),
   maxDiscoveryDepth:Number(process.env.CATEGORY_PROCUREMENT_MAX_DISCOVERY_DEPTH || 2)
 });
 const categoryProcurementService = new CategoryProcurementService({pool});
+const categoryScopeService = new CategoryScopeService({pool});
 
 function optionalUuid(value, label) {
   if (value === null || value === undefined || value === '') return null;
@@ -303,6 +314,26 @@ const phase7Service = new Phase7Service({
   })
 });
 const phase7QueueHandlers = createPhase7QueueHandlers({service:phase7Service});
+const autoEvidenceExecutors=createAutoEvidenceExecutors({
+  pool,categoryEvidenceService,categoryProcurementService,enrichmentService,
+  phase7Repository:phase7Service.repository,
+  tavilyEnabled:/^(1|true|yes|on)$/i.test(process.env.AUTO_EVIDENCE_TAVILY_ENABLED||'true'),
+  hunterEnabled:/^(1|true|yes|on)$/i.test(process.env.AUTO_EVIDENCE_HUNTER_ENABLED||'true'),
+  sourceTtlDays:Number(process.env.AUTO_EVIDENCE_SOURCE_TTL_DAYS||90),
+  contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS||30)
+});
+const autoEvidenceService = new AutoEvidenceOrchestrator({
+  pool,
+  queue:phase7QueueProxy,
+  env:process.env,
+  audit,
+  executors:autoEvidenceExecutors
+});
+const autoEvidenceQueueHandlers=createAutoEvidenceQueueHandlers({service:autoEvidenceService});
+
+const enqueueAutoEvidenceEvent=(eventKey,payload={})=>phase5Queue.enqueue(PHASE5_QUEUES.SCHEDULE_AUTO_EVIDENCE,
+  {schedule_source:'RECONCILIATION',reconcile_bucket:String(eventKey),batch_size:10,...payload},
+  {singletonKey:`phase10:auto-evidence:event:${String(eventKey).slice(0,180)}`});
 
 const phase5Queue = createPhase5Queue({
   telemetry,
@@ -331,6 +362,8 @@ const phase5Queue = createPhase5Queue({
         ttlDays:Number(process.env.OUTREACH_ELIGIBILITY_TTL_DAYS || 7)
       });
       const stageEvents = await researchWorkbenchService.recordDecisionRefreshEvents(data.research_job_id);
+      const autoEvidenceScheduleJobId=await enqueueAutoEvidenceEvent(`enrichment-completed:${data.research_job_id}`,
+        {research_job_id:data.research_job_id});
       return {
         ...enrichment,
         decision_refresh:{
@@ -338,7 +371,7 @@ const phase5Queue = createPhase5Queue({
           inserted:Number(decisions.inserted || 0),
           unchanged:Number(decisions.unchanged || 0),
           stage_events:stageEvents.length
-        }
+        },auto_evidence_schedule_job_id:autoEvidenceScheduleJobId
       };
     },
     [PHASE5_QUEUES.COLLECT_CATEGORY_BUYER_EVIDENCE]: collectCategoryBuyerEvidenceWork,
@@ -346,6 +379,7 @@ const phase5Queue = createPhase5Queue({
     [PHASE5_QUEUES.CALCULATE_CATEGORY_PROCUREMENT_MATCH]: calculateCategoryProcurementMatchWork,
     [PHASE5_QUEUES.CALCULATE_PRODUCT_OPPORTUNITIES]: calculateProductOpportunitiesWork,
     [PHASE5_QUEUES.RECALCULATE_COOPERATION_V3]: recalculateCooperationV3Work,
+    ...autoEvidenceQueueHandlers,
     ...phase7QueueHandlers
   }
 });
@@ -362,6 +396,7 @@ const publicDataOriginSql = publicDataOrigins.map(value => `'${value}'`).join(',
 const researchWorkbenchService = new ResearchWorkbenchService({
   pool,
   hunter:enrichmentService.hunter,
+  autoEvidence:autoEvidenceService,
   contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
   runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
   billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000),
@@ -394,6 +429,79 @@ function requireInternalToken(req, res, next) {
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
+
+const categoryScopeRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
+const categoryScopeWrite=[managementAuth.authenticate,managementAuth.requireCsrf,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN')];
+const categoryScopeApprove=[managementAuth.authenticate,managementAuth.requireCsrf,
+  managementAuth.requireRoles('MANAGEMENT','MANAGEMENT_APPROVER')];
+
+app.get('/api/category-scopes/candidates',...categoryScopeRead,async(req,res,next)=>{
+  try{res.json({items:await categoryScopeService.listCandidates(req.query)});}catch(error){next(error);}
+});
+app.get('/api/category-scopes/revisions',...categoryScopeRead,async(req,res,next)=>{
+  try{res.json({items:await categoryScopeService.listRevisions(req.query)});}catch(error){next(error);}
+});
+app.get('/api/category-scopes/current',...categoryScopeRead,async(req,res,next)=>{
+  try{
+    const params=[];let where='';
+    if(req.query.product_profile){params.push(clean(req.query.product_profile,80).toUpperCase());where='WHERE product_profile=$1';}
+    const result=await pool.query(`SELECT * FROM leadgen.dpv_product_category_scope_current ${where}
+      ORDER BY product_profile,normalized_category,id`,params);
+    res.json({items:result.rows});
+  }catch(error){next(error);}
+});
+app.post('/api/category-scopes/revisions',...categoryScopeWrite,async(req,res,next)=>{
+  try{
+    const result=await categoryScopeService.createDraft({...req.body,actor:req.managementUser.identity});
+    audit('CATEGORY_SCOPE_DRAFT_CREATED',{revision_id:result.id,revision:result.revision,actor:req.managementUser.identity});
+    res.status(result.idempotent_replay?200:201).json(result);
+  }catch(error){next(error);}
+});
+app.post('/api/category-scopes/revisions/:id/approve',...categoryScopeApprove,async(req,res,next)=>{
+  try{
+    const result=await categoryScopeService.approveRevision({...req.body,draft_revision_id:optionalUuid(req.params.id,'draft_revision_id'),
+      actor:req.managementUser.identity,actor_role:req.managementUser.role});
+    audit('CATEGORY_SCOPE_REVISION_APPROVED',{revision_id:result.id,revision:result.revision,actor:req.managementUser.identity});
+    const scheduleJobId=await enqueueAutoEvidenceEvent(`category-scope-approved:${result.id}`,
+      {category_scope_revision_id:result.id});
+    res.status(result.idempotent_replay?200:201).json({...result,auto_evidence_schedule_job_id:scheduleJobId});
+  }catch(error){next(error);}
+});
+
+app.get('/api/auto-evidence/summary',...categoryScopeRead,async(_req,res,next)=>{
+  try{res.json({...autoEvidenceService.status(),...(await autoEvidenceService.repository.summary())});}catch(error){next(error);}
+});
+app.get('/api/auto-evidence/tasks',...categoryScopeRead,async(req,res,next)=>{
+  try{res.json({items:await autoEvidenceService.repository.listTasks(req.query)});}catch(error){next(error);}
+});
+app.get('/api/auto-evidence/exceptions',...categoryScopeRead,async(req,res,next)=>{
+  try{res.json({items:await autoEvidenceService.repository.listExceptions(req.query)});}catch(error){next(error);}
+});
+app.post('/api/internal/auto-evidence/events',requireInternalToken,async(req,res,next)=>{
+  try{res.status(202).json(await autoEvidenceService.scheduleEvent(req.body||{}));}catch(error){next(error);}
+});
+app.post('/api/internal/auto-evidence/reconcile',requireInternalToken,async(req,res,next)=>{
+  try{
+    if(req.body?.controlled_batch===true){
+      const error=new Error('Controlled batches require an authenticated management session');
+      error.code='AUTO_EVIDENCE_CONTROLLED_BATCH_AUTH_REQUIRED';error.status=403;throw error;
+    }
+    res.status(202).json(await autoEvidenceService.reconcile(req.body||{}));
+  }catch(error){next(error);}
+});
+app.post('/api/auto-evidence/controlled-batch',managementAuth.authenticate,managementAuth.requireCsrf,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN'),async(req,res,next)=>{
+    try{
+      const result=await autoEvidenceService.runControlledBatch(req.body||{}, {
+        trusted_management:true,
+        operator_identity:req.managementUser.identity,
+        operator_role:req.managementUser.role,
+        approval_reference:clean(req.body?.approval_reference,160)
+      });
+      res.status(202).json(result);
+    }catch(error){next(error);}
+  });
 
 const verifiedCompanySources = [
   ['Al Sammran Garments Trading LLC', 'https://sammran.com/'],
@@ -697,6 +805,7 @@ async function collectLive(limit = 50) {
   const client = await pool.connect();
   let newCompanies = 0;
   let updatedCompanies = 0;
+  const touchedCompanyIds=[];
   try {
     await client.query('BEGIN');
     for (const record of ranked) {
@@ -741,6 +850,7 @@ async function collectLive(limit = 50) {
           record.dataOrigin || 'legacy_public_web'
         ]);
       const companyId = company.rows[0].id;
+      touchedCompanyIds.push(companyId);
       const sources = [[record.provider, record.sourceUrl, record.providerReference, record.evidenceKind]];
       if (record.sourceUrl2) sources.push([record.sourceProvider2, record.sourceUrl2, null, 'corroborating_listing']);
       for (const source of sources) await client.query(`
@@ -788,24 +898,38 @@ async function collectLive(limit = 50) {
           buying_signal_score=EXCLUDED.buying_signal_score, decision_maker_score=EXCLUDED.decision_maker_score,
           contact_validity_score=EXCLUDED.contact_validity_score, updated_at=now()`, [
           companyId, s.total, s.tier,
-          `评估日期：${new Date().toISOString()}。评估依据：产品匹配、目标市场、渠道属性、企业规模、采购信号和联系方式。`,
+          `评估日期：${new Date().toISOString()}。评估依据：商品类目适配、目标市场、渠道属性、企业规模、采购信号和联系方式。`,
           s.excludedModel ? '不联系：不符合女装目标或属于排除模式' : s.tier === 'A' ? '外联前人工核验公司、联系人和需求' : '继续补充女装采购与联系人证据', ...s.components
         ]);
     }
     const providers = [...new Set(ranked.map(record => record.provider))];
-    await client.query(`
+    const collectionRun = await client.query(`
       INSERT INTO leadgen.collection_runs
         (target_product,providers,fetched_records,new_companies,updated_companies,source_errors)
-      VALUES ('全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）',$1,$2,$3,$4,$5)`,
+      VALUES ('全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）',$1,$2,$3,$4,$5)
+      RETURNING id,completed_at`,
       [providers, results.length, newCompanies, updatedCompanies, errors]);
     await client.query('COMMIT');
+    let autoEvidenceScheduleJobId=null;
+    let autoEvidenceScheduleStatus='QUEUED';
+    try {
+      autoEvidenceScheduleJobId=await enqueueAutoEvidenceEvent(`live-collection:${collectionRun.rows[0].id}`,{
+        collection_run_id:collectionRun.rows[0].id,new_companies:newCompanies,updated_companies:updatedCompanies,
+        company_ids:[...new Set(touchedCompanyIds)]
+      });
+    } catch (queueError) {
+      autoEvidenceScheduleStatus='RETRYABLE_ERROR';
+      audit('AUTO_EVIDENCE_EVENT_ENQUEUE_FAILED',{source:'LIVE_COLLECTION',code:queueError?.code||'QUEUE_UNAVAILABLE'});
+    }
+    return {
+      metrics: await metrics(pool), providers, sourceErrors: errors,
+      fetchedRecords: results.length, newCompanies, updatedCompanies,
+      auto_evidence_schedule_job_id:autoEvidenceScheduleJobId,
+      auto_evidence_schedule_status:autoEvidenceScheduleStatus
+    };
   } catch (error) {
     await client.query('ROLLBACK'); throw error;
   } finally { client.release(); }
-  return {
-    metrics: await metrics(pool), providers: [...new Set(ranked.map(r => r.provider))], sourceErrors: errors,
-    fetchedRecords: results.length, newCompanies, updatedCompanies
-  };
 }
 
 async function metrics(db = pool) {
@@ -860,7 +984,8 @@ app.post('/api/live/collect', managementAuth.authenticate, managementAuth.requir
   try {
     const requested = Number(req.body?.limit || 50);
     const limit = Math.max(10, Math.min(100, requested));
-    res.json({ run: 'completed', ...await collectLive(limit) });
+    const result=await collectLive(limit);
+    res.json({ run: 'completed', ...result });
   } catch (e) { next(e); }
 });
 
@@ -1531,6 +1656,8 @@ app.post('/api/internal/research/jobs/:id/verify-companies', requireInternalToke
         audit('PHASE6_1_FRESH_DISCOVERY_ENQUEUE_FAILED',{source_job_id:req.params.id,code:categoryError.code||'CATEGORY_PROCUREMENT_DISPATCH_ERROR'});
       }
     }
+    result.auto_evidence_schedule_job_id=await enqueueAutoEvidenceEvent(`company-verification:${req.params.id}`,
+      {research_job_id:req.params.id,company_ids:categoryProcurementCompanyIds});
     res.json(result);
   } catch (error) {
     audit('PHASE4_COMPANY_VERIFICATION_FAILED', { job_id: req.params.id, code: error.code || 'PHASE4_VERIFICATION_ERROR' });
@@ -1583,7 +1710,23 @@ app.patch('/api/research/jobs/:id/status', requireInternalToken, async (req, res
             : requestedStatus === 'COMPLETED' ? 'RESEARCH_JOB_COMPLETED'
         : requestedStatus === 'FAILED' ? 'RESEARCH_JOB_FAILED' : 'RESEARCH_JOB_STATUS_UPDATED';
     audit(event, { job_id: job.id, status: requestedStatus });
-    res.json(researchJobResponse(rows[0]));
+    let autoEvidenceScheduleJobId=null;
+    let autoEvidenceScheduleStatus=null;
+    if(requestedStatus==='COMPLETED'){
+      try{
+        autoEvidenceScheduleJobId=await phase5Queue.enqueue(PHASE5_QUEUES.SCHEDULE_AUTO_EVIDENCE,{
+          schedule_source:'RECONCILIATION',reconcile_bucket:`research-job-completed:${job.id}`,
+          research_job_id:job.id,batch_size:10
+        },{singletonKey:`phase10:auto-evidence:research-job-completed:${job.id}`});
+        autoEvidenceScheduleStatus='QUEUED';
+      }catch(queueError){
+        autoEvidenceScheduleStatus='RETRYABLE_ERROR';
+        audit('AUTO_EVIDENCE_EVENT_ENQUEUE_FAILED',{source:'RESEARCH_JOB_COMPLETED',job_id:job.id,
+          code:queueError?.code||'QUEUE_UNAVAILABLE'});
+      }
+    }
+    res.json({...researchJobResponse(rows[0]),auto_evidence_schedule_job_id:autoEvidenceScheduleJobId,
+      auto_evidence_schedule_status:autoEvidenceScheduleStatus});
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -1748,16 +1891,25 @@ app.get('/api/companies/:id/category-procurement-matches', async (req,res,next) 
     const profile=clean(req.query.product_profile).toUpperCase();
     if(profile&&!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(profile))return res.status(400).json({error:'Invalid product profile'});
     const rows=(await categoryProcurementService.getCompanyResults(companyId)).filter(item=>!profile||item.product_profile===profile);
+    const auto=await pool.query(`SELECT DISTINCT ON(product_profile) product_profile,id,task_status,current_stage,
+      category_research_job_id,contact_research_job_id FROM leadgen.auto_evidence_tasks
+      WHERE company_id=$1 ORDER BY product_profile,created_at DESC,id DESC`,[companyId]);
+    const autoByProfile=new Map(auto.rows.map(item=>[item.product_profile,item]));
     res.json(rows.map(item=>({
       category_procurement_match_result_id:item.category_procurement_match_result_id,product_profile:item.product_profile,
       category_procurement_match_score:item.category_procurement_match_score,category_procurement_match_band:item.category_procurement_match_band,
       category_procurement_match_status:item.category_procurement_match_status,category_procurement_coverage:item.category_procurement_coverage,
       buyer_business_model:item.buyer_business_model,buyer_subtype:item.buyer_subtype,observed_categories:item.observed_categories,
+      observed_customer_categories:item.observed_customer_categories,matched_scopes:item.matched_scopes,
+      scope_revision_id:item.scope_revision_id,scope_revision:item.scope_revision,match_basis:item.match_basis,
+      similarity_rule:item.similarity_rule,catalog_completeness_non_blocking:item.catalog_completeness_non_blocking,
       reason_codes:item.reason_codes,missing_evidence:item.missing_evidence,dimensions:item.dimensions,
-      product_opportunity_status:item.product_opportunity?.recommendation_status||'NOT_RUN_GATE_FAILED',
-      product_opportunity_count:Number(item.product_opportunity?.candidate_count||0),
       supplier_access_band:item.supplier_access_band,product_access_matrix:item.product_access_matrix,
-      readiness:item.readiness,readiness_blockers:item.readiness_blockers,created_at:item.created_at
+      readiness:item.readiness,readiness_blockers:item.readiness_blockers,created_at:item.created_at,
+      auto_evidence_task_id:autoByProfile.get(item.product_profile)?.id||null,
+      auto_evidence_status:autoByProfile.get(item.product_profile)?.task_status||null,
+      auto_evidence_stage:autoByProfile.get(item.product_profile)?.current_stage||null,
+      human_review_required:autoByProfile.get(item.product_profile)?.task_status==='HUMAN_REVIEW_REQUIRED'
     })));
   }catch(error){next(error);}
 });
@@ -1780,10 +1932,13 @@ app.get('/api/companies/:id/product-opportunities', async (req,res,next) => {
     res.json(rows.map(item=>({product_profile:item.product_profile,
       category_procurement_match_result_id:item.category_procurement_match_result_id,
       category_procurement_match_status:item.category_procurement_match_status,
-      product_opportunity_status:item.product_opportunity?.recommendation_status||'NOT_RUN_GATE_FAILED',
-      product_opportunity_count:Number(item.product_opportunity?.candidate_count||0),
-      candidates:item.product_opportunity?.candidates||[],gaps:item.product_opportunity?.gaps||[],
-      missing_catalog_evidence:item.product_opportunity?.missing_catalog_evidence||[],created_at:item.product_opportunity?.created_at||null})));
+      category_procurement_match_score:item.category_procurement_match_score,
+      category_procurement_match_band:item.category_procurement_match_band,
+      category_procurement_coverage:item.category_procurement_coverage,
+      match_basis:item.match_basis,matched_scopes:item.matched_scopes||[],
+      observed_customer_categories:item.observed_customer_categories||[],
+      reason_codes:item.reason_codes||[],
+      created_at:item.product_opportunity?.created_at||null})));
   }catch(error){next(error);}
 });
 
@@ -1830,11 +1985,9 @@ app.get('/api/category-procurement/jobs/:id/results', managementAuth.authenticat
       r.product_profile,r.score category_procurement_match_score,r.band category_procurement_match_band,
       r.match_status category_procurement_match_status,r.coverage_percent category_procurement_coverage,
       b.buyer_model buyer_business_model,b.buyer_subtype,r.observed_categories,
-      o.recommendation_status product_opportunity_status,o.candidate_count product_opportunity_count,
       f.supplier_access_band,f.product_access_matrix,f.opportunity_readiness readiness,f.readiness_blockers,r.created_at
       FROM leadgen.category_procurement_match_results r JOIN leadgen.companies c ON c.id=r.company_id
       JOIN leadgen.buyer_business_model_results b ON b.id=r.buyer_business_model_result_id
-      LEFT JOIN leadgen.product_opportunity_results o ON o.category_procurement_match_result_id=r.id
       LEFT JOIN leadgen.cooperation_feasibility_results f ON f.category_procurement_match_result_id=r.id
       WHERE r.research_job_id=$1 ORDER BY c.country_code,c.company_name,r.product_profile`,[id]);
     res.json({job:categoryProcurementJobResponse(job.rows[0]),items:result.rows});
@@ -1894,7 +2047,7 @@ app.get('/api/opportunities', async (req,res,next) => {
     // Stable opportunity_key = concat(company_id, product_profile). Public V3 fields:
     // category_procurement_match_score, category_procurement_match_band, category_procurement_match_status,
     // category_procurement_coverage, buyer_business_model, buyer_subtype, observed_categories,
-    // top_product_opportunity, product_opportunity_count, product_opportunity_status,
+    // match_basis, matched_scopes, observed_customer_categories,
     // supplier_access_band, product_access_matrix, readiness, readiness_blockers.
     // Default priority: CATEGORY_PROCUREMENT_MATCH → DIRECT_END_BUYER → category_procurement_match_band/score
     // → decision_maker → best_contact → supplier_access_band → product_access_matrix

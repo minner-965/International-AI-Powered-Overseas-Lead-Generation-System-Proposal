@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createSearchProvider } from '../search/discoveryService.js';
+import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { extractPublicContacts } from '../contact/ContactExtractor.js';
 import { domainService } from '../platform/DomainService.js';
@@ -14,6 +15,7 @@ import { normalizedIdentity, normalizeDecisionRole, productRoleRelevance, roleRe
 
 const clean = (value,max=1000) => String(value || '').replace(/\s+/g,' ').trim().slice(0,max);
 const nowIso = () => new Date().toISOString();
+const isHunterBudgetError = error => ['HUNTER_CREDIT_CAP','HUNTER_DAILY_CREDIT_CAP'].includes(String(error?.code||''));
 
 function unique(items,keyFn) {
   const seen = new Set();
@@ -119,12 +121,14 @@ export class EnrichmentService {
   constructor({
     pool, searchConfig = {}, crawlerConfig = {}, hunterConfig = {}, linkedInConfig = {},
     provider = null, checker = null, hunter = null, linkedIn = null, feasibilityEngine = null,
+    searchAudit = null, tavilyUsageConfig = {},
     maxCompanies = 100, maxQueriesPerCompany = 5, maxPagesPerCompany = 6,
     providerTemporaryErrorThreshold = 3, audit = () => {}
   } = {}) {
     this.pool = pool;
     this.searchConfig = searchConfig;
     this.provider = provider || createSearchProvider(searchConfig);
+    this.searchAudit = searchAudit || new TavilyUsageAudit({ provider:this.provider,pool,...tavilyUsageConfig });
     this.checker = checker || new WebsiteReachabilityChecker({ ...crawlerConfig,blockedDomains:['linkedin.com'] });
     this.hunter = hunter || new HunterProvider({ ...hunterConfig,pool });
     this.linkedIn = linkedIn || new LinkedInDiscoveryAdapter(linkedInConfig);
@@ -180,11 +184,13 @@ export class EnrichmentService {
         ${requestedClause}
       ORDER BY c.country_code,c.company_name LIMIT $${params.length}`,params);
     const productScope = new Set(job.product_profiles?.length ? job.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE']);
+    const requestedSingleProfile=requestedIds&&productScope.size===1?[...productScope][0]:null;
     const frozen = await this.pool.query(`SELECT company_id,product_profile FROM leadgen.research_job_cohort_items
       WHERE research_job_id=$1 ORDER BY selection_rank`,[job.id]);
     const frozenProfiles = new Map(frozen.rows.map(item=>[String(item.company_id),item.product_profile]));
     return result.rows.map(company=>({ ...company,active_product_profiles:frozenProfiles.has(String(company.id))
       ? [frozenProfiles.get(String(company.id))]
+      : requestedSingleProfile ? [requestedSingleProfile]
       : inferCompanyProductProfiles(company).filter(value=>productScope.has(value)) }))
       .filter(company=>company.active_product_profiles.length);
   }
@@ -206,7 +212,10 @@ export class EnrichmentService {
     return result.rows[0];
   }
 
-  async runSearchQueries(job,company) {
+  async runSearchQueries(job,company,{tavilyEnabled=true}={}) {
+    if(!tavilyEnabled&&String(this.provider.name||'').toLowerCase()==='tavily') {
+      return {queries:0,results:[],failures:0,search_skipped:true};
+    }
     const queries = generateDecisionMakerQueries(company,{ maxQueries:this.maxQueriesPerCompany });
     const results = [];
     let failures = 0;
@@ -214,10 +223,15 @@ export class EnrichmentService {
       const stored = await this.persistQuery(job,company,query);
       await this.pool.query(`UPDATE leadgen.research_search_queries SET status='RUNNING',error_message=NULL WHERE id=$1`,[stored.id]);
       try {
-        const response = await this.provider.search({ query:stored.query_text,count:5,country:company.country_code,countryName:company.country_name });
-        await this.pool.query(`UPDATE leadgen.research_search_queries SET status='COMPLETED',result_count=$2,executed_at=now() WHERE id=$1`,[stored.id,response.results.length]);
+        const response = await this.searchAudit.search({ researchJobId:job.id,companyId:company.id,purpose:'DECISION_MAKER_DISCOVERY',
+          request:{ query:stored.query_text,count:5,country:company.country_code,countryName:company.country_name },
+          persistResults:async results=>{const referenceIds=[];for(const item of results){const discovered=this.linkedIn.discoverReference({url:item.url,title:item.title,snippet:item.snippet,provider:this.provider.name,capturedAt:new Date()});const saved=await this.persistReference(job.id,company.id,discovered?{...discovered,discovered_via:`TAVILY_QUERY:${stored.id}`}:{platform:'PUBLIC_WEB',profile_url:item.url,profile_kind:'SEARCH_RESULT',title_hint:item.title,snippet_hint:item.snippet,discovered_via:`TAVILY_QUERY:${stored.id}`,verification_status:'REVIEW',evidence_strength:'DISCOVERY_HINT',content_fetched:false,captured_at:new Date()});if(saved?.id)referenceIds.push(saved.id);}return{referenceIds};},
+          loadPersistedResults:async({referenceIds})=>{const params=[job.id,company.id];let filter='AND discovered_via=$3';if(referenceIds.length){params.push(referenceIds);filter='AND id=ANY($3::uuid[])';}else params.push(`TAVILY_QUERY:${stored.id}`);const found=await this.pool.query(`SELECT id,profile_url,title_hint,snippet_hint FROM leadgen.enrichment_public_references WHERE research_job_id=$1 AND company_id=$2 ${filter} ORDER BY captured_at,id`,params);return found.rows.map((row,index)=>({title:row.title_hint||'',url:row.profile_url,snippet:row.snippet_hint||'',provider_score:null,rank:index+1}));}
+        });
+        await this.pool.query(`UPDATE leadgen.research_search_queries SET status='COMPLETED',result_count=$2,executed_at=now() WHERE id=$1`,[stored.id,response.result_count??response.results.length]);
         results.push(...response.results.map(item=>({ ...item,query_id:stored.id,query_type:stored.query_type,provider:response.provider || this.provider.name })));
       } catch (error) {
+        if(error?.code==='TAVILY_CREDIT_CAP'||error?.retryable===true)throw error;
         failures += 1;
         await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',result_count=0,error_message=$2,executed_at=now() WHERE id=$1`,[stored.id,clean(error.message,500)]);
       }
@@ -226,15 +240,20 @@ export class EnrichmentService {
   }
 
   async persistReference(jobId,companyId,reference) {
-    await this.pool.query(`INSERT INTO leadgen.enrichment_public_references
+    const result=await this.pool.query(`INSERT INTO leadgen.enrichment_public_references
       (research_job_id,company_id,platform,profile_url,profile_kind,title_hint,snippet_hint,discovered_via,
        verification_status,evidence_strength,content_fetched,captured_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      ON CONFLICT (research_job_id,company_id,profile_url) DO NOTHING`,[
+      ON CONFLICT (research_job_id,company_id,profile_url) DO UPDATE SET
+        title_hint=coalesce(EXCLUDED.title_hint,leadgen.enrichment_public_references.title_hint),
+        snippet_hint=coalesce(EXCLUDED.snippet_hint,leadgen.enrichment_public_references.snippet_hint),
+        captured_at=greatest(leadgen.enrichment_public_references.captured_at,EXCLUDED.captured_at)
+      RETURNING *`,[
       jobId,companyId,reference.platform,reference.profile_url,reference.profile_kind,reference.title_hint,
       reference.snippet_hint,reference.discovered_via,reference.verification_status,reference.evidence_strength,
       reference.content_fetched,reference.captured_at
     ]);
+    return result.rows[0]||null;
   }
 
   async fetchAllowedPage(url, { officialRootDomain = '' } = {}) {
@@ -360,6 +379,38 @@ export class EnrichmentService {
     return result.rows[0];
   }
 
+  async persistHunterContactCheckpoint({job,company,named,domain,result,capturedAt,verificationCompleted=false}) {
+    if(!result?.email)return{referenceIds:[]};
+    const client=await this.pool.connect();
+    try{
+      await client.query('BEGIN');
+      const contact=await this.upsertContact(client,job.id,named.id,{
+        contact_type:'BUSINESS_EMAIL',contact_value_raw:result.email,contact_value_normalized:result.email,
+        evidence_origin:'PROVIDER_FOUND',verification_status:verificationCompleted
+          ? result.verification_status||'NOT_VERIFIED':'NOT_VERIFIED',
+        verification_provider:'HUNTER',verification_score:result.verification_score??null,
+        last_verified_at:capturedAt||new Date(),source_url:`https://${domain}`,is_generic:false,is_department:false
+      });
+      await client.query('COMMIT');
+      return{referenceIds:contact?.id?[contact.id]:[]};
+    }catch(error){
+      try{await client.query('ROLLBACK');}catch{}
+      throw error;
+    }finally{client.release();}
+  }
+
+  async loadHunterContactCheckpoint({company,named,referenceIds}) {
+    if(!Array.isArray(referenceIds)||!referenceIds.length)return[];
+    const found=await this.pool.query(`SELECT c.id,c.contact_value_normalized,c.verification_status,c.verification_score
+      FROM leadgen.decision_maker_contacts c JOIN leadgen.decision_makers d ON d.id=c.decision_maker_id
+      WHERE c.id=ANY($1::uuid[]) AND c.decision_maker_id=$2 AND d.company_id=$3
+        AND c.contact_type='BUSINESS_EMAIL'
+      ORDER BY c.updated_at DESC,c.id`,[referenceIds,named.id,company.id]);
+    return found.rows.map(row=>({email:row.contact_value_normalized,person_name:named.person_name||null,
+      raw_title:named.raw_title||null,verification_status:row.verification_status,
+      verification_score:row.verification_score===null?null:Number(row.verification_score),sources:[]}));
+  }
+
   async persistCompanyFindings(job,company,pages) {
     const client = await this.pool.connect();
     try {
@@ -398,90 +449,109 @@ export class EnrichmentService {
     } finally { client.release(); }
   }
 
-  async applyHunter(job,company,findings) {
+  async applyHunter(job,company,findings,{hunterEnabled=true}={}) {
+    if(!hunterEnabled)return {calls:0,used_units:0,mode:'AUTO_EVIDENCE_POLICY_DISABLED'};
     if (!this.hunter.capabilities.enabled) return { calls:0,used_units:0,mode:'DISABLED' };
     let calls = 0;
     let usedUnits = 0;
-    const named = findings.decision_makers.find(item=>item.person_name && item.verification_status === 'VERIFIED'
+    const namedCandidates = findings.decision_makers.filter(item=>item.person_name && item.verification_status === 'VERIFIED'
       && ['BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING']
         .includes(item.normalized_role));
     const domain = company.official_root_domain || domainService.getRegistrableDomain(company.website_url);
-    if (named && domain) {
+    for (const named of domain ? namedCandidates : []) {
       const parts = named.person_name.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        let result;
-        try {
-          result = await this.hunter.findEmail({ researchJobId:job.id,companyId:company.id,domain,firstName:parts[0],lastName:parts.at(-1) });
-        } catch (error) {
-          if (error?.code === 'HUNTER_CREDIT_CAP') return { calls:0,used_units:0,mode:this.hunter.mode,budget_reached:true,stop_reason:'HUNTER_BUDGET_CAP' };
-          throw error;
-        }
-        calls += result.status === 'SKIPPED' ? 0 : 1; usedUnits += Number(result.credits?.used || 0);
-        if (result.error_code === 'AUTHENTICATION_FAILED') {
-          return { calls,used_units:usedUnits,mode:this.hunter.mode,stop_reason:'HUNTER_AUTHENTICATION_FAILED' };
-        }
-        if (result.status === 'TEMPORARY_ERROR') {
-          return { calls,used_units:usedUnits,mode:this.hunter.mode,temporary_error:true };
-        }
-        const found = result.results?.[0];
-        if (found?.email) {
-          let verification;
-          try {
-            verification = await this.hunter.verifyEmail({ researchJobId:job.id,companyId:company.id,email:found.email });
-          } catch (error) {
-            if (error?.code === 'HUNTER_CREDIT_CAP') {
-              return { calls,used_units:usedUnits,mode:this.hunter.mode,budget_reached:true,stop_reason:'HUNTER_BUDGET_CAP' };
-            }
-            throw error;
-          }
-          calls += verification.status === 'SKIPPED' ? 0 : 1;
-          usedUnits += Number(verification.credits?.used || 0);
-          if (verification.error_code === 'AUTHENTICATION_FAILED') {
-            return { calls,used_units:usedUnits,mode:this.hunter.mode,stop_reason:'HUNTER_AUTHENTICATION_FAILED' };
-          }
-          const verified = verification.results?.[0];
-          const verificationStatus = verification.status === 'TEMPORARY_ERROR'
-            ? 'TEMPORARY_ERROR'
-            : verified?.verification_status || 'NOT_VERIFIED';
-          const capturedAt = verification.captured_at || new Date();
-          const client = await this.pool.connect();
-          try {
-            await client.query('BEGIN');
-            const contact = await this.upsertContact(client,job.id,named.id,{ contact_type:'BUSINESS_EMAIL',contact_value_raw:found.email,contact_value_normalized:found.email,
-              evidence_origin:'PROVIDER_FOUND',verification_status:verificationStatus,verification_provider:'HUNTER',
-              verification_score:verified?.verification_score ?? found.verification_score,last_verified_at:capturedAt,
-              source_url:`https://${domain}`,is_generic:false,is_department:false });
-            if (contact) {
-              const inputDigest = sha(String(found.email).trim().toLowerCase());
-              const usageEventId = verification.usage_event?.id || null;
-              if(usageEventId)await client.query(`INSERT INTO leadgen.contact_verification_events
-                  (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
-                   verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
-                  VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7,$7,$7+($8::int*interval '1 day'),$9,$9,$10)
-                  ON CONFLICT (idempotency_key) DO NOTHING`,[
-                  job.id,company.id,contact.id,usageEventId,verificationStatus,verified?.verification_score ?? found.verification_score ?? null,
-                  capturedAt,Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30)),inputDigest,
-                  sha(job.id,contact.id,usageEventId,verificationStatus)
-                ]);
-              if (verificationStatus === 'INVALID') {
-                await client.query(`INSERT INTO leadgen.contact_suppressions
-                  (company_id,decision_maker_contact_id,suppression_type,reason,recorded_by)
-                  VALUES ($1,$2,'INVALID_EMAIL','Email verification returned INVALID','CONTACT_VERIFICATION')
-                  ON CONFLICT DO NOTHING`,[company.id,contact.id]);
-              }
-            }
-            await client.query('COMMIT');
-          } catch (error) {
-            try { await client.query('ROLLBACK'); } catch {}
-            throw error;
-          } finally { client.release(); }
-          if (verification.status === 'TEMPORARY_ERROR') {
-            return { calls,used_units:usedUnits,mode:this.hunter.mode,temporary_error:true };
-          }
-        }
+      if (parts.length < 2) continue;
+      let result;
+      try {
+        result = await this.hunter.findEmail({ researchJobId:job.id,companyId:company.id,domain,firstName:parts[0],lastName:parts.at(-1),
+          persistResults:async(results,{capturedAt})=>this.persistHunterContactCheckpoint({
+            job,company,named,domain,result:results[0],capturedAt,verificationCompleted:false
+          }),
+          loadPersistedResults:async({referenceIds})=>this.loadHunterContactCheckpoint({job,company,named,referenceIds})
+        });
+      } catch (error) {
+        if (isHunterBudgetError(error)) return { calls,used_units:usedUnits,mode:this.hunter.mode,budget_reached:true,stop_reason:'HUNTER_BUDGET_CAP' };
+        throw error;
       }
+      calls += result.status === 'SKIPPED' ? 0 : 1;
+      usedUnits += Number(result.credits?.used || 0);
+      if (result.error_code === 'AUTHENTICATION_FAILED') {
+        return { calls,used_units:usedUnits,mode:this.hunter.mode,stop_reason:'HUNTER_AUTHENTICATION_FAILED' };
+      }
+      if (result.status === 'TEMPORARY_ERROR') {
+        return { calls,used_units:usedUnits,mode:this.hunter.mode,temporary_error:true };
+      }
+      if(result.status==='REPLAY_LOOKUP_REQUIRED')return{calls,used_units:usedUnits,mode:this.hunter.mode,
+        temporary_error:true,stop_reason:'HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'};
+      const found = result.results?.[0];
+      if (!found?.email) continue;
+      let verification;
+      try {
+        verification = await this.hunter.verifyEmail({ researchJobId:job.id,companyId:company.id,email:found.email,
+          persistResults:async(results,{capturedAt})=>this.persistHunterContactCheckpoint({
+            job,company,named,domain,result:{...results[0],email:found.email},capturedAt,verificationCompleted:true
+          }),
+          loadPersistedResults:async({referenceIds})=>this.loadHunterContactCheckpoint({job,company,named,referenceIds})
+        });
+      } catch (error) {
+        if (isHunterBudgetError(error)) {
+          return { calls,used_units:usedUnits,mode:this.hunter.mode,budget_reached:true,stop_reason:'HUNTER_BUDGET_CAP' };
+        }
+        throw error;
+      }
+      calls += verification.status === 'SKIPPED' ? 0 : 1;
+      usedUnits += Number(verification.credits?.used || 0);
+      if (verification.error_code === 'AUTHENTICATION_FAILED') {
+        return { calls,used_units:usedUnits,mode:this.hunter.mode,stop_reason:'HUNTER_AUTHENTICATION_FAILED' };
+      }
+      if(verification.status==='REPLAY_LOOKUP_REQUIRED')return{calls,used_units:usedUnits,mode:this.hunter.mode,
+        temporary_error:true,stop_reason:'HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'};
+      const verified = verification.results?.[0];
+      const verificationStatus = verification.status === 'TEMPORARY_ERROR'
+        ? 'TEMPORARY_ERROR'
+        : verified?.verification_status || 'NOT_VERIFIED';
+      const capturedAt = verification.captured_at || new Date();
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        const contact = await this.upsertContact(client,job.id,named.id,{ contact_type:'BUSINESS_EMAIL',contact_value_raw:found.email,contact_value_normalized:found.email,
+          evidence_origin:'PROVIDER_FOUND',verification_status:verificationStatus,verification_provider:'HUNTER',
+          verification_score:verified?.verification_score ?? found.verification_score,last_verified_at:capturedAt,
+          source_url:`https://${domain}`,is_generic:false,is_department:false });
+        if (contact) {
+          const inputDigest = sha(String(found.email).trim().toLowerCase());
+          const usageEventId = verification.usage_event?.id || null;
+          if(usageEventId)await client.query(`INSERT INTO leadgen.contact_verification_events
+              (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
+               verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
+              VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7,$7,$7+($8::int*interval '1 day'),$9,$9,$10)
+              ON CONFLICT (idempotency_key) DO NOTHING`,[
+              job.id,company.id,contact.id,usageEventId,verificationStatus,verified?.verification_score ?? found.verification_score ?? null,
+              capturedAt,Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30)),inputDigest,
+              sha(job.id,contact.id,usageEventId,verificationStatus)
+            ]);
+          if (verificationStatus === 'INVALID') {
+            await client.query(`INSERT INTO leadgen.contact_suppressions
+              (company_id,decision_maker_contact_id,suppression_type,reason,recorded_by)
+              VALUES ($1,$2,'INVALID_EMAIL','Email verification returned INVALID','CONTACT_VERIFICATION')
+              ON CONFLICT DO NOTHING`,[company.id,contact.id]);
+          }
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch {}
+        throw error;
+      } finally { client.release(); }
+      if (verification.status === 'TEMPORARY_ERROR') {
+        return { calls,used_units:usedUnits,mode:this.hunter.mode,temporary_error:true };
+      }
+      if (verificationStatus === 'VALID') {
+        return { calls,used_units:usedUnits,mode:this.hunter.mode,valid_contact_found:true,decision_maker_id:named.id };
+      }
+      // ACCEPT_ALL, UNKNOWN/NOT_VERIFIED and INVALID are evidence, but not a send-ready route.
+      // Continue through the bounded, already verified candidate list before opening a human exception.
     }
-    return { calls,used_units:usedUnits,mode:this.hunter.mode };
+    return { calls,used_units:usedUnits,mode:this.hunter.mode,alternatives_exhausted:namedCandidates.length > 0 };
   }
 
   async persistFeasibility(job,company,findings) {
@@ -626,14 +696,14 @@ export class EnrichmentService {
     return inserted;
   }
 
-  async enrichCompany(job,company) {
+  async enrichCompany(job,company,{tavilyEnabled=true,hunterEnabled=true}={}) {
     await this.pool.query(`INSERT INTO leadgen.enrichment_job_companies(research_job_id,company_id,market_code,product_profiles,attempt_status,started_at)
       VALUES ($1,$2,$3,$4,'DISCOVERING',now()) ON CONFLICT (research_job_id,company_id) DO UPDATE SET attempt_status='DISCOVERING',started_at=coalesce(leadgen.enrichment_job_companies.started_at,now()),updated_at=now()`,[
       job.id,company.id,company.country_code,company.active_product_profiles
     ]);
     try {
-      const search = await this.runSearchQueries(job,company);
-      for (const result of search.results) {
+      const search = await this.runSearchQueries(job,company,{tavilyEnabled});
+      for (const result of String(this.provider.name||'').toLowerCase()==='tavily'?[]:search.results) {
         const linkedIn = this.linkedIn.discoverReference({ url:result.url,title:result.title,snippet:result.snippet,provider:result.provider,capturedAt:new Date() });
         if (linkedIn) await this.persistReference(job.id,company.id,linkedIn);
       }
@@ -643,7 +713,7 @@ export class EnrichmentService {
       await this.pool.query(`UPDATE leadgen.enrichment_job_companies SET attempt_status='VERIFYING',sources_found=$3,decision_makers_found=$4,contact_routes_found=$5,updated_at=now() WHERE research_job_id=$1 AND company_id=$2`,[
         job.id,company.id,pages.filter(page=>page.reachable).length,findings.decision_makers.length,findings.routes.length+findings.observed_contacts.length
       ]);
-      const hunter = await this.applyHunter(job,company,findings);
+      const hunter = await this.applyHunter(job,company,findings,{hunterEnabled});
       const feasibility = await this.persistFeasibility(job,company,findings);
       await this.recordCompanyStageEvents(job,company,{findings,hunter,feasibility});
       const partial = search.failures > 0 || pages.some(page=>['TIMEOUT','NETWORK_ERROR'].includes(page.fetch_status))
@@ -657,11 +727,13 @@ export class EnrichmentService {
       await this.pool.query(`UPDATE leadgen.enrichment_job_companies SET attempt_status='FAILED',last_error=$3,completed_at=now(),updated_at=now() WHERE research_job_id=$1 AND company_id=$2`,[
         job.id,company.id,clean(error.message,500)
       ]);
+      if(error?.code==='TAVILY_CREDIT_CAP')return {company_id:company.id,status:'PARTIAL',
+        stop_reason:'TAVILY_CREDIT_CAP',error:clean(error.message,500)};
       return { company_id:company.id,status:'FAILED',error:clean(error.message,500) };
     }
   }
 
-  async runJob(jobId) {
+  async runJob(jobId,{tavilyEnabled=true,hunterEnabled=true}={}) {
     const claimed = await this.pool.query(`UPDATE leadgen.research_jobs
       SET status='DISCOVERING',started_at=coalesce(started_at,now()),completed_at=NULL,last_error=NULL
       WHERE id=$1 AND job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
@@ -684,11 +756,11 @@ export class EnrichmentService {
       let stopReason = null;
       let consecutiveProviderTemporaryErrors = 0;
       for (const company of companies) {
-        const result = await this.enrichCompany(job,company);
+        const result = await this.enrichCompany(job,company,{tavilyEnabled,hunterEnabled});
         results.push(result);
         if (result.hunter?.temporary_error === true) consecutiveProviderTemporaryErrors += 1;
         else consecutiveProviderTemporaryErrors = 0;
-        if (result.hunter?.stop_reason) stopReason = result.hunter.stop_reason;
+        if (result.stop_reason || result.hunter?.stop_reason) stopReason = result.stop_reason || result.hunter.stop_reason;
         if (!stopReason && consecutiveProviderTemporaryErrors >= this.providerTemporaryErrorThreshold) {
           stopReason = 'PROVIDER_TEMPORARY_ERROR_THRESHOLD';
         }

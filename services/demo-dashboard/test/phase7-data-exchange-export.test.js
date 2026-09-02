@@ -10,6 +10,7 @@ import {
   resolveExportRequest,
   serializeCsv,
 } from '../src/dataExchange/index.js';
+import {Phase7Service} from '../src/phase7/service.js';
 
 test('export request enforces role-based columns, finance-only supplier cost and full-export restrictions', () => {
   assert.throws(
@@ -109,6 +110,40 @@ test('export jobs carry digest, storage, token and expiry fields through ready/d
   });
   assert.equal(audit.authorizationStatus, 'AUTHORIZED');
   assert.match(audit.requestDigest, /^[0-9a-f]{64}$/);
+});
+
+test('sales opportunity export uses approved category scope and omits SKU/catalog maintenance gates',async()=>{
+  const service=new Phase7Service({pool:{query:async()=>({rows:[],rowCount:0})},env:{OUTBOUND_EMAIL_PROVIDER:'NONE'},opportunityQuery:async()=>[{
+    company_id:'company-1',company_name:'Category Buyer',country_code:'AE',
+    product_profile:'WOMENSWEAR',category_procurement_match_score:87,category_procurement_match_band:'VERY_HIGH',
+    observed_customer_categories:['DRESSES',{canonical_name:'TOPS'}],matched_scopes:['WOMENSWEAR'],match_basis:'PROFILE_SCOPE',
+    category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',product_opportunity_status:'INTERNAL_CATALOG_UPLOAD_REQUIRED',
+    product_opportunity_count:3,top_product_opportunity:'Legacy Dress',
+    sku_readiness_status:'INTERNAL_CATALOG_UPLOAD_REQUIRED',catalog_enrichment_required:true,
+    readiness_blockers:[],supplier_access_band:'UNKNOWN'
+  }]});
+  const [row]=await service.queryExportRows({exportType:'SALES_OPPORTUNITY',mode:'CURRENT_FILTER',filters:{},selectedEntityIds:[]});
+  for(const removed of ['product_opportunity_status','product_opportunity_count','top_product_opportunity',
+    'sku_readiness_status','catalog_enrichment_required'])assert.equal(removed in row,false);
+  assert.equal(row.product_profile,'WOMENSWEAR');
+  assert.equal(row.product_category_score,87);
+  assert.equal(row.product_category_score_band,'VERY_HIGH');
+  assert.equal(row.customer_procurement_categories,'DRESSES; TOPS');
+  assert.equal(row.dpv_supply_categories,'WOMENSWEAR');
+  assert.equal(row.category_opportunity_basis,'PROFILE_SCOPE');
+});
+
+test('default sales-opportunity export exposes category score context without exact-product fields',()=>{
+  const request=resolveExportRequest({
+    exportType:'SALES_OPPORTUNITY',format:'XLSX',mode:'FULL_AUTHORIZED_MASTER',
+    requesterRole:'MANAGEMENT',requesterIdentity:'manager@example.com'
+  });
+  for(const field of ['product_profile','product_category_score','product_category_score_band',
+    'customer_procurement_categories','dpv_supply_categories','category_opportunity_basis']) {
+    assert.ok(request.columns.includes(field),`missing category export field ${field}`);
+  }
+  for(const removed of ['product_opportunity_status','product_opportunity_count','top_product_opportunity',
+    'sku_readiness_status','catalog_enrichment_required']) assert.ok(!request.columns.includes(removed));
 });
 
 test('snapshot digest stays stable for the same filtered rows and schema', () => {

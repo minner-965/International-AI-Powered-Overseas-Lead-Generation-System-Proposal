@@ -3,7 +3,7 @@ const normalized = value => String(value || '').trim().toUpperCase();
 
 const readinessLabels = Object.freeze({
   SALES_READY: pair('可安排销售跟进', 'Sales ready'),
-  NEEDS_DECISION_MAKER: pair('需补充采购决策人', 'Needs decision-maker'),
+  NEEDS_DECISION_MAKER: pair('需补充采购负责人', 'Needs buying contact'),
   NEEDS_CONTACT_ROUTE: pair('需补充联系路径', 'Needs contact route'),
   NEEDS_VERIFICATION: pair('需补充核验', 'Needs verification'),
   HISTORICAL_REVIEW: pair('需复核历史记录', 'Historical review'),
@@ -11,13 +11,13 @@ const readinessLabels = Object.freeze({
   SUPPRESSED: pair('暂停跟进', 'Suppressed'),
   STRATEGIC_LONG_SHOT: pair('战略长期机会', 'Strategic long shot'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
-  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('需补充公司商品资料', 'Internal catalog evidence required'),
+  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('历史状态（现按批准类目）', 'Legacy state (approved category now applies)'),
   CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('品类匹配，采购模式待确认', 'Category match; buying evidence required'),
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
-  NEEDS_PRODUCT_RECOMMENDATION: pair('需补充产品推荐', 'Product recommendation required'),
-  PRODUCT_MISMATCH: pair('产品不匹配', 'Product mismatch'),
-  WEAK_PRODUCT_MATCH: pair('产品匹配较弱', 'Weak product match'),
-  NEEDS_PRODUCT_EVIDENCE: pair('需补充产品资料', 'Needs product evidence'),
+  NEEDS_PRODUCT_RECOMMENDATION: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  PRODUCT_MISMATCH: pair('商品类目不匹配', 'Product category mismatch'),
+  WEAK_PRODUCT_MATCH: pair('商品类目适配较弱', 'Weak product category fit'),
+  NEEDS_PRODUCT_EVIDENCE: pair('需补充客户类目资料', 'Customer category evidence required'),
   REVIEW: pair('待业务审核', 'Business review')
 });
 
@@ -106,7 +106,7 @@ const feasibilityDimensions = Object.freeze({
   external_supplier_openness: pair('外部供应商开放度', 'External supplier openness'),
   supplier_onboarding_accessibility: pair('供应商准入便利度', 'Supplier onboarding accessibility'),
   buying_procurement_accessibility: pair('采购部门可达性', 'Buying and procurement accessibility'),
-  product_category_buying_fit: pair('产品与品类采购匹配', 'Product and category buying fit'),
+  product_category_buying_fit: pair('商品类目供货适配', 'Product category supply fit'),
   commercial_operational_feasibility: pair('商务与运营可行性', 'Commercial and operational feasibility'),
   supplier_lock_in_barrier: pair('供应商锁定障碍', 'Supplier lock-in barrier')
 });
@@ -196,8 +196,8 @@ export function systemReasonLabel(value) {
   if (systemReasonLabels[text]) return systemReasonLabels[text];
   const product = text.match(/^Company product scope evaluated for (WOMENSWEAR|GENERAL_MERCHANDISE)$/);
   if (product) return product[1] === 'WOMENSWEAR'
-    ? pair('已按全品类女装范围评估企业产品匹配', "Company product scope evaluated for Women's Apparel")
-    : pair('已按日用百货范围评估企业产品匹配', 'Company product scope evaluated for General Merchandise');
+    ? pair('已按全品类女装范围评估企业类目适配', "Company category scope evaluated for Women's Apparel")
+    : pair('已按日用百货范围评估企业类目适配', 'Company category scope evaluated for General Merchandise');
   return null;
 }
 

@@ -59,6 +59,10 @@ test('Domain Search uses a header key, bounded filters and normalized provider o
   assert.equal(result.results[0].email, 'avery.buyer@buyer.example');
   assert.equal(result.results[0].verification_status, 'ACCEPT_ALL');
   assert.equal(result.credits.used, HUNTER_CREDIT_UNITS.DOMAIN_SEARCH);
+  const usage=JSON.stringify(result.usage_event.result_payload);
+  assert.doesNotMatch(usage,/Avery|Buyer@|Senior Womenswear|buyer\.example\/team|sources/i);
+  assert.deepEqual(result.usage_event.result_payload.verification_status_counts,{ACCEPT_ALL:1});
+  assert.equal(result.usage_event.result_payload.result_count,1);
 });
 
 test('Email Finder requires an identified person and charges only when found', async () => {
@@ -130,17 +134,98 @@ test('budget enforces per-run and billing-period caps with atomic-style reservat
   );
 });
 
+test('persistent Hunter ledger immediately applies a lower environment limit and never raises a stored limit',async()=>{
+  const fixture=({limit,used=0})=>{const calls=[];const state={provider:'HUNTER',billing_period:'2026-09',credit_limit_units:limit,reserved_units:0,used_units:used};
+    const client={async query(sql,params){calls.push({sql,params});
+      if(['BEGIN','COMMIT','ROLLBACK'].includes(sql))return{rows:[],rowCount:0};
+      if(/INSERT INTO leadgen\.provider_credit_ledger/.test(sql))return{rows:[],rowCount:0};
+      if(/provider_credit_ledger[\s\S]*FOR UPDATE/.test(sql))return{rows:[{...state}],rowCount:1};
+      if(/SET credit_limit_units=\$2/.test(sql)){state.credit_limit_units=params[1];return{rows:[],rowCount:1};}
+      if(/WITH stale_events/.test(sql))return{rows:[],rowCount:0};
+      if(/logical_request_fingerprint/.test(sql)&&/FOR UPDATE/.test(sql))return{rows:[],rowCount:0};
+      if(/research_job_id=\$1 AND provider='HUNTER'/.test(sql))return{rows:[{total:0}],rowCount:1};
+      if(/date_trunc\('day'/.test(sql))return{rows:[{total:0}],rowCount:1};
+      if(/reserved_units=reserved_units\+\$2/.test(sql)){state.reserved_units+=params[1];return{rows:[],rowCount:1};}
+      if(/INSERT INTO leadgen\.provider_usage_events/.test(sql))return{rows:[{id:'hunter-tight',status:'RESERVED',reserved_units:1000,result_payload:{logical_request_fingerprint:'x',retry_number:0}}],rowCount:1};
+      throw new Error(`Unexpected SQL: ${sql}`);},release(){}};return{pool:{async connect(){return client;}},calls,state};};
+  const lowered=fixture({limit:5000});
+  await new HunterCreditBudget({pool:lowered.pool,runCapUnits:5000,dailyCapUnits:5000,billingPeriodCapUnits:2000})
+    .reserve({researchJobId:'lower-job',endpoint:'domain-search',payload:{domain:'buyer.example'},units:1000});
+  assert.equal(lowered.state.credit_limit_units,2000);
+  assert.ok(lowered.calls.some(item=>/SET credit_limit_units/.test(item.sql)&&item.params[1]===2000));
+
+  const cannotRaise=fixture({limit:1000,used:1000});
+  await assert.rejects(()=>new HunterCreditBudget({pool:cannotRaise.pool,runCapUnits:10000,dailyCapUnits:10000,billingPeriodCapUnits:10000})
+    .reserve({researchJobId:'raise-job',endpoint:'domain-search',payload:{domain:'buyer.example'},units:1000}),
+  error=>error.code==='HUNTER_CREDIT_CAP');
+  assert.equal(cannotRaise.state.credit_limit_units,1000);
+});
+
 test('identical replay is skipped and does not make a second provider request', async () => {
   let calls = 0;
+  const businessRows=new Map();
+  const referenceId='11111111-1111-4111-8111-111111111171';
   const provider = new HunterProvider({
     apiKey:'synthetic-key',
     fetchImpl:async()=>{ calls += 1; return new Response(JSON.stringify({data:{email:'avery@buyer.example',verification:{status:'valid'}}}),{status:200}); }
   });
-  const params = { researchJobId:'synthetic-replay-job',companyId:'synthetic-company',domain:'buyer.example',firstName:'Avery',lastName:'Buyer' };
+  const params = { researchJobId:'synthetic-replay-job',companyId:'synthetic-company',domain:'buyer.example',firstName:'Avery',lastName:'Buyer',
+    persistResults:async results=>{businessRows.set(referenceId,results[0]);return{referenceIds:[referenceId]};},
+    loadPersistedResults:async({referenceIds})=>referenceIds.map(id=>businessRows.get(id)).filter(Boolean) };
   const first = await provider.findEmail(params);
   const replay = await provider.findEmail(params);
   assert.equal(first.status, 'COMPLETED');
   assert.equal(replay.status, 'SKIPPED');
   assert.equal(replay.error_code, 'IDEMPOTENT_REPLAY');
+  assert.equal(replay.credits.used,0);
   assert.equal(calls, 1);
+});
+
+test('RESERVED Hunter work returns a retryable in-progress error instead of an empty replay',async()=>{
+  const budget=new HunterCreditBudget({runCapUnits:2000,dailyCapUnits:2000,billingPeriodCapUnits:2000});
+  await budget.reserve({researchJobId:'reserved-job',companyId:'reserved-company',endpoint:'email-verifier',
+    payload:{email:'buyer@buyer.example'},units:500});
+  let calls=0;const provider=new HunterProvider({apiKey:'synthetic-key',budget,
+    fetchImpl:async()=>{calls+=1;return new Response('{}');}});
+  await assert.rejects(()=>provider.verifyEmail({researchJobId:'reserved-job',companyId:'reserved-company',
+    email:'buyer@buyer.example'}),error=>error.code==='HUNTER_REQUEST_IN_PROGRESS'&&error.retryable===true);
+  assert.equal(calls,0);
+});
+
+test('settled Hunter result survives provider restart through a PII-free business-row reference',async()=>{
+  const budget=new HunterCreditBudget({runCapUnits:2000,dailyCapUnits:2000,billingPeriodCapUnits:2000});
+  const businessRows=new Map();let calls=0;
+  const referenceId='11111111-1111-4111-8111-111111111172';
+  const first=new HunterProvider({apiKey:'synthetic-key',budget,fetchImpl:async()=>new Response(JSON.stringify({
+    data:{status:'valid',score:98},meta:{request_id:'hunter-request-1'}}),{status:200})});
+  const input={researchJobId:'lookup-job',companyId:'lookup-company',email:'buyer@buyer.example'};
+  const completed=await first.verifyEmail({...input,persistResults:async results=>{
+    businessRows.set(referenceId,results[0]);return{referenceIds:[referenceId]};
+  }});
+  assert.equal(completed.status,'COMPLETED');
+  const payloadText=JSON.stringify(completed.usage_event.result_payload);
+  assert.deepEqual(completed.usage_event.result_payload.business_reference_ids,[referenceId]);
+  assert.equal(payloadText.includes('buyer@buyer.example'),false);
+  assert.equal(payloadText.includes('person_name'),false);
+  assert.equal(payloadText.includes('raw_title'),false);
+  assert.equal(payloadText.includes('sources'),false);
+  const afterRestart=new HunterProvider({apiKey:'synthetic-key',budget,fetchImpl:async()=>{calls+=1;throw new Error('no call');}});
+  const replay=await afterRestart.verifyEmail({...input,loadPersistedResults:async({referenceIds})=>
+    referenceIds.map(id=>businessRows.get(id)).filter(Boolean)});
+  assert.equal(replay.status,'SKIPPED');
+  assert.equal(replay.error_code,'IDEMPOTENT_REPLAY');
+  assert.equal(replay.results[0].email,'buyer@buyer.example');
+  assert.equal(replay.results[0].verification_status,'VALID');
+  assert.equal(replay.credits.used,0);
+  assert.equal(calls,0);
+});
+
+test('TEMPORARY_ERROR Hunter attempts retry and then raise an explicit exhaustion state',async()=>{
+  let calls=0;const provider=new HunterProvider({apiKey:'synthetic-key',
+    budget:new HunterCreditBudget({runCapUnits:5000,dailyCapUnits:5000,billingPeriodCapUnits:5000,maxTemporaryRetries:0}),
+    fetchImpl:async()=>{calls+=1;return new Response('{}',{status:503});}});
+  const input={researchJobId:'temp-job',companyId:'temp-company',email:'buyer@buyer.example'};
+  assert.equal((await provider.verifyEmail(input)).status,'TEMPORARY_ERROR');
+  await assert.rejects(()=>provider.verifyEmail(input),error=>error.code==='HUNTER_TEMPORARY_RETRIES_EXHAUSTED');
+  assert.equal(calls,1);
 });

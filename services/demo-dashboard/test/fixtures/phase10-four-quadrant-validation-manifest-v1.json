@@ -1,0 +1,331 @@
+{
+  "schema_version": "phase10-four-quadrant-validation-manifest-v1",
+  "manifest_version": 1,
+  "frozen_at": "2026-09-01T00:00:00.000Z",
+  "plan_reference": "DPV_PHASE10_AUTOMATED_EVIDENCE_AND_CATEGORY_OPPORTUNITY_CODEX_EXECUTION_PLAN_V1_1.md#12.6",
+  "release_blocking": true,
+  "selection_policy": "ALL_SCENARIOS_MANDATORY",
+  "conditional_skips_allowed": 0,
+  "warning_downgrade_allowed": false,
+  "required_quadrants": [
+    "FORWARD_BASIC",
+    "FORWARD_HARD",
+    "REVERSE_BASIC",
+    "REVERSE_HARD"
+  ],
+  "required_hard_scenario_numbers": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "quadrants": {
+    "FORWARD_BASIC": [
+      {
+        "id": "FB-01",
+        "title": "Approved category scope passes with no internal SKU",
+        "expected": "CATEGORY_PROCUREMENT_MATCH is category-only; product_master is not read for prospect matching, candidate_count stays zero and no catalog task is created",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "approved Womenswear scope passes with zero internal SKU while missing customer evidence stays unresolved"
+          }
+        ]
+      },
+      {
+        "id": "FB-02",
+        "title": "Named relevant buyer and fresh VALID mailbox become Recommended",
+        "expected": "Business fit and contact readiness pass independently",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "Hunter UNKNOWN, history and suppression remain hard recommendation gates; Supplier Access UNKNOWN is not"
+          }
+        ]
+      },
+      {
+        "id": "FB-03",
+        "title": "Management category approval is append-only",
+        "expected": "A new APPROVED revision is appended and the DRAFT remains unchanged",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "CategoryScopeService approval appends a new approved revision and leaves the draft untouched"
+          }
+        ]
+      },
+      {
+        "id": "FB-04",
+        "title": "Exact draft approval and complete send gates are required",
+        "expected": "Only an exact approved version with every independent gate passes",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-draft-approval.test.js",
+            "title": "approval binds recipient, content, sender, channel and evidence snapshot exactly"
+          },
+          {
+            "file": "test/phase7-outreach-eligibility.test.js",
+            "title": "complete exact-version send gate is eligible only when every independent condition passes"
+          }
+        ]
+      },
+      {
+        "id": "FB-05",
+        "title": "Delivery and reply create deterministic follow-up state",
+        "expected": "Delivery precedence is stable and an actionable reply creates one human-reviewed sales task",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-provider-inbound.test.js",
+            "title": "provider events are idempotent and out-of-order delivery state follows business precedence"
+          },
+          {
+            "file": "test/phase7-outreach-provider-inbound.test.js",
+            "title": "sales task helper creates human-review work only for allowed reply intents"
+          }
+        ]
+      }
+    ],
+    "FORWARD_HARD": [
+      {
+        "id": "FH-01",
+        "hard_scenario": 1,
+        "title": "Similar approved category passes without an internal SKU",
+        "expected": "Similarity passes the approved-category gate with candidate_count zero, no exact SKU requirement and no catalog task",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 1: similar approved category passes category-only without an internal SKU or catalog task"
+          }
+        ]
+      },
+      {
+        "id": "FH-02",
+        "hard_scenario": 2,
+        "title": "Two profiles remain auditable without duplicate contact activity",
+        "expected": "Per-profile decisions differ while the exact approved outbound activity keeps one idempotency key",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 2: two product profiles remain separately auditable while identical contact activity deduplicates"
+          }
+        ]
+      },
+      {
+        "id": "FH-03",
+        "title": "Multiple sources normalize without losing evidence lineage",
+        "expected": "Duplicate observed categories collapse while every distinct evidence id remains traceable",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "multiple verified sources normalize to one category match without losing evidence lineage"
+          }
+        ]
+      },
+      {
+        "id": "FH-04",
+        "hard_scenario": 5,
+        "title": "ACCEPT_ALL or UNKNOWN advances to an alternate named buyer",
+        "expected": "The next relevant named buyer is verified before opening a human exception",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 5: ACCEPT_ALL or UNKNOWN buyer email advances to an alternate named buyer before human exception"
+          }
+        ]
+      },
+      {
+        "id": "FH-05",
+        "hard_scenario": 4,
+        "title": "Temporary Hunter failure recovers without duplicate cost or decision revision",
+        "expected": "Only actual calls consume credit and deterministic decision input remains one revision key",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 4: Hunter temporary failure then success records real calls only and keeps decision replay idempotent"
+          }
+        ]
+      },
+      {
+        "id": "FH-06",
+        "hard_scenario": 10,
+        "title": "Worker interruption resumes from settled checkpoint",
+        "expected": "A delayed/replayed job does not repeat provider work or external side effects",
+        "test_evidence": [
+          {
+            "file": "test/phase10-auto-evidence.test.js",
+            "title": "a delayed message from an older attempt never repeats provider work"
+          },
+          {
+            "file": "test/phase6-hunter-provider.test.js",
+            "title": "identical replay is skipped and does not make a second provider request"
+          }
+        ]
+      }
+    ],
+    "REVERSE_BASIC": [
+      {
+        "id": "RB-01",
+        "title": "Out-of-scope product category is blocked",
+        "expected": "Verified unrelated assortment is PRODUCT_MISMATCH",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "irrelevant verified category is PRODUCT_MISMATCH and no approved scope is never guessed"
+          }
+        ]
+      },
+      {
+        "id": "RB-02",
+        "title": "Historical customer is blocked",
+        "expected": "Historical relationship never becomes Recommended or send-eligible",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "Hunter UNKNOWN, history and suppression remain hard recommendation gates; Supplier Access UNKNOWN is not"
+          },
+          {
+            "file": "test/phase7-outreach-eligibility.test.js",
+            "title": "existing relationships and both suppression levels remain independent blockers"
+          }
+        ]
+      },
+      {
+        "id": "RB-03",
+        "title": "Suppression is a non-compensable blocker",
+        "expected": "Contact and company suppressions independently block send",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-eligibility.test.js",
+            "title": "existing relationships and both suppression levels remain independent blockers"
+          }
+        ]
+      },
+      {
+        "id": "RB-04",
+        "title": "INVALID mailbox is blocked",
+        "expected": "Mailbox verification cannot be compensated by other positive facts",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-eligibility.test.js",
+            "title": "active route requires a mailbox email route and VALID freshness, not phone, whatsapp or public observation"
+          }
+        ]
+      },
+      {
+        "id": "RB-05",
+        "title": "Unapproved or changed draft is blocked",
+        "expected": "Missing exact-version approval or digest mismatch blocks before provider",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-eligibility.test.js",
+            "title": "exact approval, provider-purpose and rate-cap checks are non-compensable"
+          },
+          {
+            "file": "test/phase7-outreach-draft-approval.test.js",
+            "title": "valid evidence-bound draft defaults to PENDING_REVIEW and never self-approves"
+          }
+        ]
+      }
+    ],
+    "REVERSE_HARD": [
+      {
+        "id": "RH-01",
+        "hard_scenario": 3,
+        "title": "Conflicting buyer evidence cannot auto-pass",
+        "expected": "The opportunity remains EVIDENCE_REQUIRED and the automated stage opens human review",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 3: conflicting buyer evidence never reaches a recommended opportunity"
+          },
+          {
+            "file": "test/phase10-auto-evidence.test.js",
+            "title": "budget exhaustion and evidence conflicts are separated from automatic retry"
+          }
+        ]
+      },
+      {
+        "id": "RH-02",
+        "title": "ACCEPT_ALL and UNKNOWN remain blocked",
+        "expected": "Neither mailbox state is treated as VALID contact readiness",
+        "test_evidence": [
+          {
+            "file": "test/phase10-category-scope-and-rules.test.js",
+            "title": "Hunter UNKNOWN, history and suppression remain hard recommendation gates; Supplier Access UNKNOWN is not"
+          },
+          {
+            "file": "test/phase6-hunter-provider.test.js",
+            "title": "Email Verifier performs local syntax validation and keeps ACCEPT_ALL distinct"
+          }
+        ]
+      },
+      {
+        "id": "RH-03",
+        "hard_scenario": 8,
+        "title": "Stale approval or withdrawn category scope blocks send",
+        "expected": "Historical facts remain but current scope/approval gates fail",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 8: stale approval and withdrawn category scope block send without changing historical facts"
+          }
+        ]
+      },
+      {
+        "id": "RH-04",
+        "hard_scenario": 6,
+        "title": "Concurrent schedulers converge on one singleton task delivery",
+        "expected": "Database deduplication and queue singleton identity prevent duplicate effective work",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 6: concurrent schedulers converge on one singleton delivery"
+          }
+        ]
+      },
+      {
+        "id": "RH-05",
+        "hard_scenario": 7,
+        "title": "Late history or suppression invalidates queued contact",
+        "expected": "Send-time re-evaluation immediately blocks the previously eligible activity",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 7: history or suppression arriving after queueing invalidates contact eligibility immediately"
+          }
+        ]
+      },
+      {
+        "id": "RH-06",
+        "hard_scenario": 9,
+        "title": "Duplicate delayed and out-of-order webhooks converge",
+        "expected": "Final delivery state follows precedence and each provider event id is applied once",
+        "test_evidence": [
+          {
+            "file": "test/phase7-outreach-provider-inbound.test.js",
+            "title": "provider events are idempotent and out-of-order delivery state follows business precedence"
+          }
+        ]
+      },
+      {
+        "id": "RH-07",
+        "hard_scenario": 11,
+        "title": "Budget pause resumes from the preserved checkpoint",
+        "expected": "No provider work occurs while paused; after allowance returns, the same task resumes at email verification",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 11: budget pause resumes from the preserved email verification checkpoint after allowance returns"
+          }
+        ]
+      },
+      {
+        "id": "RH-08",
+        "hard_scenario": 12,
+        "title": "Reply opt-out hard bounce and complaint create exact downstream actions",
+        "expected": "Reply creates CRM follow-up stop; opt-out and bounce suppress contact; complaint suppresses contact and company",
+        "test_evidence": [
+          {
+            "file": "test/phase10-four-quadrant-validation.test.js",
+            "title": "hard 12: reply opt-out hard bounce and complaint derive exact CRM and suppression actions"
+          }
+        ]
+      }
+    ]
+  }
+}

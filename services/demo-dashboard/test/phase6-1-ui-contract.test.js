@@ -17,7 +17,7 @@ test('desktop Opportunities exposes the seven Phase 8 decision columns and prese
   for(const className of [
     'op-col-company','op-col-market-product','op-col-status','op-col-buyer-model','op-col-product-match','op-col-contact','op-col-supplier-action'
   ]) assert.match(html,new RegExp(`class=["'][^"']*${className}`));
-  for(const label of ['Buyer Model / Role','Product Match','Buyer / VALID Contact','Supplier Access / Action']) assert.match(html,new RegExp(label,'i'));
+  for(const label of ['Buyer Model / Role','Product Category Score','Buyer / VALID Contact','Supplier Access / Action']) assert.match(html,new RegExp(label,'i'));
   for(const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
   assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']7["']/);
 });
@@ -33,13 +33,16 @@ test('Opportunities renderer consumes V3 fields without collapsing independent s
   const source=`${opportunities}\n${app}\n${productMatch}`;
   for(const field of [
     'buyer_business_model','buyer_subtype','category_procurement_match_score','category_procurement_match_band',
-    'category_procurement_match_status','category_procurement_coverage','observed_categories','top_product_opportunity',
-    'product_opportunity_count','product_opportunity_status','supplier_access_band','product_access_matrix','readiness'
+    'category_procurement_match_status','category_procurement_coverage','observed_categories','matched_scopes',
+    'match_basis','observed_customer_categories','supplier_access_band','product_access_matrix','readiness'
   ]) assert.match(source,new RegExp(`\\b${field}\\b`));
+  for(const removed of ['top_product_opportunity','product_opportunity_count','product_opportunity_status']){
+    assert.doesNotMatch(source,new RegExp(`\\b${removed}\\b`));
+  }
   for(const legacy of ['dpv_score','customer_match','historical_customer_match','cooperation_matrix']) assert.match(source,new RegExp(`\\b${legacy}\\b`));
 });
 
-test('mobile keeps Company, profile, Buyer Model, Product Match, Supplier Access and Readiness visible',()=>{
+test('mobile keeps Company, profile, Buyer Model, Product Category Score, Supplier Access and Readiness visible',()=>{
   const mobileStart=css.indexOf('@media (max-width:560px)');
   const mobileEnd=css.indexOf('@media',mobileStart+1);
   const mediaBlocks=css.slice(mobileStart,mobileEnd>mobileStart?mobileEnd:undefined);
@@ -54,9 +57,9 @@ test('mobile keeps Company, profile, Buyer Model, Product Match, Supplier Access
   assert.match(css,/@media \(max-width:420px\)[\s\S]*\.crm-opportunity-table \.data-state-badge\s*\{[^}]*max-width:\s*100%[^}]*white-space:\s*normal/);
 });
 
-test('Company Detail retains Product Match tab and renders both independent product profiles',()=>{
+test('Company Detail retains the category-score tab and renders both independent product profiles',()=>{
   const detailSource=`${productMatch}\n${app}`;
-  assert.match(detailSource,/\['product-match','产品匹配','Product Match'\]/);
+  assert.match(detailSource,/\['product-match','商品类目评分','Product Category Score'\]/);
   assert.match(detailSource,/id="detail-tab-\$\{key\}"/);
   for(const id of ['detail-panel-product-match','product-match-panel']) assert.match(detailSource,new RegExp(`id=["']${id}["']`));
   assert.match(detailSource,/crm-product-profile-card/);

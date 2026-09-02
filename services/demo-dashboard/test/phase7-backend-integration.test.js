@@ -141,6 +141,23 @@ test('shared IMPORT_DISCOVER validates and queues the complete read-only manifes
   assert.doesNotMatch(JSON.stringify(result),/SERVER|staging|orders\.xlsx/i);
 });
 
+test('committed import schedules auto-evidence only for its exact affected company ids',async()=>{
+  const secondCompany='88888888-8888-4888-8888-888888888888';const queued=[];
+  const service=new Phase7Service({pool:{query:async()=>({rows:[],rowCount:0})},
+    queue:{enqueue:async(name,data,options)=>{queued.push({name,data,options});return`job-${queued.length}`;}}});
+  service.repository={
+    commitImport:async()=>({import:{id:U.draft},affected_company_ids:[U.company],mutations:1}),
+    pendingImportEffects:async()=>[{id:'effect-1',effect_type:'RECALCULATE_CUSTOMER_MATCH',effect_version:'v1',
+      payload:{company_ids:[U.company,secondCompany]}}],
+    markImportEffectDispatched:async()=>{},markImportEffectRetryable:async()=>{}
+  };
+  const result=await service.commitImportWork({import_id:U.draft,actor:'data.owner'});
+  const auto=queued.find(item=>item.name==='schedule-auto-evidence');
+  assert.ok(auto);assert.equal(auto.data.import_id,U.draft);
+  assert.deepEqual(auto.data.company_ids,[U.company,secondCompany]);
+  assert.equal(result.auto_evidence_schedule_status,'QUEUED');
+});
+
 test('release RBAC keeps legacy writes and exports behind server-bound management authorization', async () => {
   const [server,router,ui]=await Promise.all([
     textFile('services/demo-dashboard/src/server.js'),textFile('services/demo-dashboard/src/phase7/router.js'),

@@ -93,7 +93,7 @@ test('company detail includes five-state opportunity decision UI, management act
   assert.match(app,/data-phase7-detail-tab/);
   assert.match(app,/attachPhase7CompanyDetail/);
   assert.match(app,/display_opportunity_status/);
-  assert.match(app,/Opportunity decision/);
+  assert.match(app,/Opportunity status/);
   assert.match(ui,/\/api\/contact-queue\?\$\{query\}/);
   assert.match(ui,/\/api\/opportunities\/\$\{encodeURIComponent\(reference\)\}\/decision-history/);
   for (const endpoint of ['management-approve','hold','request-evidence','reopen']) {
@@ -104,9 +104,10 @@ test('company detail includes five-state opportunity decision UI, management act
   assert.match(ui,/\/api\/outreach\/inbox\?company_id=/);
   assert.match(ui,/\/api\/contacts\/\$\{encodeURIComponent\(id\)\}\/verification-history/);
   for (const phrase of ['Loading business records','No drafts yet','No message records','No replies','No outreach data history']) assert.match(ui,new RegExp(phrase));
-  for (const phrase of ['Confirm Contact','Hold','Request Evidence','Reopen','Decision History','Contact Queue Entry','messages_approved','provider_calls']) {
+  for (const phrase of ['Confirm Contact','Hold','Request Evidence','Reopen','Status History','Contact Queue']) {
     assert.match(ui,new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   }
+  assert.doesNotMatch(ui,/Opportunity Decision|System recommendation|Decision History|messages_approved|provider_calls/);
   assert.match(ui,/data-phase7-detail-tab/);
 });
 

@@ -9,6 +9,9 @@ export const PHASE7_HARDENING_MIGRATION_KEY = '026_phase7_data_exchange_crm_hard
 export const PHASE7_ROLE_HARDENING_MIGRATION_KEY = '027_phase7_management_role_hardening.sql';
 export const PHASE8_CONTACT_READY_MIGRATION_KEY = '028_phase8_contact_ready_recommendation.sql';
 export const PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY = '029_phase9_real_opportunity_research_audit.sql';
+export const PHASE10_CATEGORY_SCOPE_MIGRATION_KEY = '030_phase10_category_scope_and_auto_evidence.sql';
+export const PHASE10_AUDIT_HARDENING_MIGRATION_KEY = '031_phase10_controlled_evidence_audit_hardening.sql';
+export const PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY = '032_phase10_category_level_product_opportunity.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -16,6 +19,9 @@ const hardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_HA
 const roleHardeningPath = path.resolve(projectRoot, 'database/migrations', PHASE7_ROLE_HARDENING_MIGRATION_KEY);
 const contactReadyPath = path.resolve(projectRoot, 'database/migrations', PHASE8_CONTACT_READY_MIGRATION_KEY);
 const realOpportunityPath = path.resolve(projectRoot, 'database/migrations', PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY);
+const categoryScopePath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_SCOPE_MIGRATION_KEY);
+const phase10AuditPath = path.resolve(projectRoot, 'database/migrations', PHASE10_AUDIT_HARDENING_MIGRATION_KEY);
+const phase10CategoryOpportunityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -152,6 +158,107 @@ export async function verifyPhase9RealOpportunityMigration(client) {
     phase9_audit_and_reference_triggers_verified:5,idempotency_index_verified:true};
 }
 
+export async function verifyPhase10CategoryScopeMigration(client) {
+  const result=await client.query(`SELECT
+    (SELECT count(*)::integer FROM information_schema.tables
+      WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+        'dpv_product_category_scope_revisions','dpv_product_category_scopes',
+        'dpv_product_category_scope_aliases','category_procurement_match_scope_links',
+        'auto_evidence_tasks','auto_evidence_task_attempts','auto_evidence_schedule_events',
+        'human_evidence_exceptions'])) phase10_tables,
+    (SELECT count(*)::integer FROM information_schema.views
+      WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+        'dpv_product_category_scope_current','dpv_product_category_scope_candidates',
+        'human_evidence_exceptions_current'])) phase10_views,
+    (SELECT count(*)::integer FROM information_schema.columns
+      WHERE table_schema='leadgen' AND table_name='category_procurement_match_results'
+        AND column_name=ANY(ARRAY['scope_revision_id','match_basis','matched_scope_ids',
+          'observed_customer_category_ids','similarity_rule','catalog_completeness_non_blocking'])) category_columns,
+    (SELECT count(*)::integer FROM information_schema.columns
+      WHERE table_schema='leadgen' AND table_name='product_opportunity_results'
+        AND column_name=ANY(ARRAY['sku_readiness_status','catalog_enrichment_required',
+          'category_scope_match_result_id'])) product_columns,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='cooperation_feasibility_results' AND column_name='supplier_route_status') supplier_route_column,
+    (SELECT count(*)::integer FROM pg_trigger WHERE NOT tgisinternal
+      AND tgname=ANY(ARRAY[
+        'trg_dpv_product_category_scope_revisions_immutable',
+        'trg_dpv_product_category_scopes_immutable',
+        'trg_dpv_product_category_scope_aliases_immutable',
+        'trg_category_procurement_match_scope_links_immutable',
+        'trg_auto_evidence_task_attempts_immutable',
+        'trg_auto_evidence_schedule_events_immutable',
+        'trg_human_evidence_exceptions_immutable',
+        'trg_auto_evidence_tasks_identity_guard','trg_auto_evidence_tasks_job_lineage',
+        'trg_category_procurement_match_phase10_scope_gate'])) phase10_triggers,
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.category_procurement_match_results'::regclass
+        AND conname='category_procurement_match_results_phase10_v2_contract_check') category_v2_contract,
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.product_opportunity_results'::regclass
+        AND conname='product_opportunity_results_phase10_v2_contract_check') product_v2_contract,
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.business_opportunity_decision_snapshots'::regclass
+        AND conname='business_opportunity_decision_snapshots_v3_contact_ready_check') decision_v3_contract`);
+  const row=result.rows[0]||{};
+  if(Number(row.phase10_tables)!==8||Number(row.phase10_views)!==3
+    ||Number(row.category_columns)!==6||Number(row.product_columns)!==3
+    ||!row.supplier_route_column||Number(row.phase10_triggers)!==10
+    ||!row.category_v2_contract||!row.product_v2_contract||!row.decision_v3_contract){
+    throw new Error('Phase 10 category-scope and auto-evidence migration verification failed');
+  }
+  return {phase10_tables_verified:8,phase10_views_verified:3,
+    phase10_category_columns_verified:6,phase10_product_columns_verified:3,
+    phase10_triggers_verified:10,phase10_rule_contracts_verified:3};
+}
+
+export async function verifyPhase10AuditHardeningMigration(client) {
+  const result=await client.query(`SELECT
+    (SELECT count(*)::integer FROM information_schema.columns
+      WHERE table_schema='leadgen' AND table_name='auto_evidence_schedule_events'
+        AND column_name=ANY(ARRAY['operator_identity','operator_role','approval_reference'])) audit_columns,
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.auto_evidence_schedule_events'::regclass
+        AND conname='auto_evidence_schedule_events_controlled_audit_check') audit_constraint,
+    EXISTS(SELECT 1 FROM pg_trigger
+      WHERE tgrelid='leadgen.category_procurement_match_results'::regclass
+        AND tgname='trg_category_procurement_match_phase10_append_only' AND NOT tgisinternal) category_append_only`);
+  const view=await client.query(`SELECT pg_get_viewdef('leadgen.dpv_product_category_scope_current'::regclass,true) definition,
+    pg_get_functiondef('leadgen.enforce_phase10_approved_category_scope()'::regprocedure) gate_definition`);
+  const definition=String(view.rows[0]?.definition||'').toLowerCase();
+  const gateDefinition=String(view.rows[0]?.gate_definition||'').toLowerCase();
+  const verification={audit_columns:Number(result.rows[0]?.audit_columns),
+    audit_constraint:result.rows[0]?.audit_constraint===true,
+    category_append_only:result.rows[0]?.category_append_only===true,
+    profile_current_view:/distinct\s+on\s*\([^)]*product_profile\)/.test(definition),
+    profile_observation_gate:/o\.normalized_profile\s*=\s*new\.product_profile/.test(gateDefinition)};
+  if(verification.audit_columns!==3||!verification.audit_constraint
+    ||!verification.category_append_only||!verification.profile_current_view
+    ||!verification.profile_observation_gate){
+    throw new Error(`Phase 10 controlled evidence audit hardening verification failed: ${JSON.stringify(verification)}`);
+  }
+  return {phase10_controlled_audit_columns_verified:3,phase10_controlled_audit_constraint_verified:true,
+    phase10_scope_profile_boundary_verified:true,phase10_category_results_append_only_verified:true};
+}
+
+export async function verifyPhase10CategoryOpportunityMigration(client) {
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.product_opportunity_results'::regclass
+        AND conname='product_opportunity_results_recommendation_status_check'
+        AND pg_get_constraintdef(oid) LIKE '%CATEGORY_SCOPE_QUALIFIED%') recommendation_status_supported,
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid='leadgen.product_opportunity_results'::regclass
+        AND conname='product_opportunity_results_phase10_category_only_check'
+        AND pg_get_constraintdef(oid) LIKE '%candidate_count = 0%') category_only_contract`);
+  const verification={recommendation_status_supported:result.rows[0]?.recommendation_status_supported===true,
+    category_only_contract:result.rows[0]?.category_only_contract===true};
+  if(!verification.recommendation_status_supported||!verification.category_only_contract){
+    throw new Error(`Phase 10 category-level opportunity migration verification failed: ${JSON.stringify(verification)}`);
+  }
+  return {phase10_category_opportunity_status_verified:true,phase10_category_only_contract_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -162,8 +269,16 @@ export async function applyPhase7Migrations(options = {}) {
     appliedBy:options.appliedBy||'dpv-phase8-explicit-migration-runner'});
   const realOpportunity=await applyPhase7Migration({...options,migrationPath:options.phase9MigrationPath||realOpportunityPath,
     appliedBy:options.appliedBy||'dpv-phase9-explicit-migration-runner'});
-  return {base,hardening,roleHardening,contactReady,realOpportunity,
-    status:realOpportunity.status,database:realOpportunity.database};
+  const categoryScope=await applyPhase7Migration({...options,migrationPath:options.phase10MigrationPath||categoryScopePath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10Audit=await applyPhase7Migration({...options,migrationPath:options.phase10AuditMigrationPath||phase10AuditPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10CategoryOpportunity=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CategoryOpportunityMigrationPath||phase10CategoryOpportunityPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  return {base,hardening,roleHardening,contactReady,
+    realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
+    status:phase10CategoryOpportunity.status,database:phase10CategoryOpportunity.database};
 }
 
 export async function applyPhase7Migration({
@@ -213,7 +328,13 @@ export async function applyPhase7Migration({
           :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
             ?await verifyPhase8ContactReadyMigration(client)
             :migrationKey===PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY
-              ?await verifyPhase9RealOpportunityMigration(client):await verifyPhase7Migration(client);
+              ?await verifyPhase9RealOpportunityMigration(client)
+              :migrationKey===PHASE10_CATEGORY_SCOPE_MIGRATION_KEY
+                ?await verifyPhase10CategoryScopeMigration(client)
+                :migrationKey===PHASE10_AUDIT_HARDENING_MIGRATION_KEY
+                  ?await verifyPhase10AuditHardeningMigration(client)
+                  :migrationKey===PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY
+                    ?await verifyPhase10CategoryOpportunityMigration(client):await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
         migration_key: migrationKey,
@@ -236,7 +357,13 @@ export async function applyPhase7Migration({
         :migrationKey===PHASE8_CONTACT_READY_MIGRATION_KEY
           ?await verifyPhase8ContactReadyMigration(client)
           :migrationKey===PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY
-            ?await verifyPhase9RealOpportunityMigration(client):await verifyPhase7Migration(client);
+            ?await verifyPhase9RealOpportunityMigration(client)
+            :migrationKey===PHASE10_CATEGORY_SCOPE_MIGRATION_KEY
+              ?await verifyPhase10CategoryScopeMigration(client)
+              :migrationKey===PHASE10_AUDIT_HARDENING_MIGRATION_KEY
+                ?await verifyPhase10AuditHardeningMigration(client)
+                :migrationKey===PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY
+                  ?await verifyPhase10CategoryOpportunityMigration(client):await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

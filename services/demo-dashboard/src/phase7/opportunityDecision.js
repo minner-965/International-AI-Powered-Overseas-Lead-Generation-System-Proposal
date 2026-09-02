@@ -73,7 +73,10 @@ export function deriveOpportunityDecision(input = {}) {
     || input.recipient_suppressed === true
     || input.market_policy_hold === true
     || input.channel_policy_hold === true
-    || rawRelationship === 'SUPPRESSED';
+    || rawRelationship === 'SUPPRESSED'
+    || input.supplier_route_closed === true
+    || upper(cooperation.supplier_route_status) === 'CLOSED'
+    || upper(cooperation.opportunity_readiness) === 'HOLD';
   const reasons = [];
   const exclusionReasons = [];
   const evidenceReasons = [];
@@ -83,6 +86,11 @@ export function deriveOpportunityDecision(input = {}) {
   const buyerModel = upper(buyer.buyer_model);
   const buyerEligibility = upper(buyer.eligibility_status);
   const matchStatus = upper(category.match_status);
+  const categoryRuleVersion=String(category.calculation_version||'');
+  const categoryScopeBasis=upper(category.match_basis);
+  const categoryScopeApproved=categoryRuleVersion==='category-procurement-match-v2'
+    &&Boolean(category.scope_revision_id)
+    &&['EXACT_CATEGORY','SIMILAR_CATEGORY','PROFILE_SCOPE'].includes(categoryScopeBasis);
   const websiteStatus = upper(input.website_status || company.website_status || 'UNKNOWN');
 
   if (EXCLUDED_LIFECYCLES.has(lifecycle) || company.replaced_by_company_id) exclusionReasons.push('COMPANY_DUPLICATE_OR_INACTIVE');
@@ -98,6 +106,7 @@ export function deriveOpportunityDecision(input = {}) {
   if (!ELIGIBLE_BUYERS.has(buyerModel) || buyerEligibility !== 'ELIGIBLE') evidenceReasons.push('BUYER_MODEL_EVIDENCE_REQUIRED');
   if (buyerModel === 'DISTRIBUTION_BUYER' && input.procurement_resale_evidence !== true) evidenceReasons.push('DISTRIBUTION_PROCUREMENT_RESALE_EVIDENCE_REQUIRED');
   if (matchStatus !== 'CATEGORY_PROCUREMENT_MATCH') evidenceReasons.push('CATEGORY_PROCUREMENT_EVIDENCE_REQUIRED');
+  else if(!categoryScopeApproved)evidenceReasons.push('DPV_APPROVED_CATEGORY_SCOPE_REQUIRED');
   if (input.identity_conflict === true) evidenceReasons.push('COMPANY_IDENTITY_CONFLICT');
   if (input.evidence_conflict === true) evidenceReasons.push('BUSINESS_EVIDENCE_CONFLICT');
 
@@ -137,7 +146,7 @@ export function deriveOpportunityDecision(input = {}) {
     policy_contact_status: policyHold ? 'HOLD' : 'OPEN',
     relationship_status: normalizedRelationship,
     reason_codes: reasonCodes,
-    rule_version: 'business-opportunity-decision-v2'
+    rule_version: 'business-opportunity-decision-v3'
   };
   return {
     ...decision,
@@ -163,5 +172,27 @@ export function deriveOpportunityDecision(input = {}) {
       evidence_conflict: input.evidence_conflict === true,
       website_status: websiteStatus
     }))).digest('hex')
+  };
+}
+
+export function buildPhase10RuleDryRun({
+  company_id=null,product_profile=null,old_category_result={},new_category_result={},
+  old_decision={},new_decision={}
+}={}){
+  const oldStatus=old_category_result.match_status||null;
+  const newStatus=new_category_result.match_status||null;
+  const remaining=[...(new_decision.reason_codes||[])];
+  return {
+    company_id,product_profile,
+    old_category_status:oldStatus,
+    new_category_status:newStatus,
+    old_business_fit:old_decision.business_fit_status||null,
+    new_business_fit:new_decision.business_fit_status||null,
+    match_basis:new_category_result.match_basis||null,
+    matched_scope:[...(new_category_result.matched_scope_ids||[])],
+    remaining_evidence_blockers:[...new Set(remaining)],
+    contact_readiness:new_decision.contact_readiness||'EVIDENCE_REQUIRED',
+    changed:oldStatus!==newStatus
+      ||(old_decision.business_fit_status||null)!==(new_decision.business_fit_status||null)
   };
 }

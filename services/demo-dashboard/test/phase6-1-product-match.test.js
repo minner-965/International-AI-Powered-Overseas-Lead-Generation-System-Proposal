@@ -26,6 +26,9 @@ function calculate(overrides={}){
       id:'00000000-0000-4000-8000-000000000012',buyer_model:'DIRECT_END_BUYER',
       buyer_subtype:'CHAIN_RETAILER',eligibility_status:'ELIGIBLE'
     },
+    scope_revision:{id:'00000000-0000-4000-8000-000000000020',approval_status:'APPROVED',effective_from:'2025-01-01T00:00:00.000Z'},
+    approved_category_scopes:[{id:'00000000-0000-4000-8000-000000000021',scope_revision_id:'00000000-0000-4000-8000-000000000020',product_profile:'WOMENSWEAR',normalized_category:'DRESSES',scope_status:'ACTIVE'}],
+    observed_customer_categories:[{id:'00000000-0000-4000-8000-000000000022',normalized_profile:'WOMENSWEAR',normalized_category:'DRESSES',verification_status:'VERIFIED',source_authority:'OFFICIAL'}],
     dimensions:dimensions({
       target_category_procurement_evidence:observed(45,45,['synthetic-category-evidence']),
       buyer_business_model_fit:observed(25,25,['synthetic-buyer-evidence'])
@@ -139,13 +142,21 @@ test('unclear and excluded intermediaries never publish an eligible Product Matc
   assert.notEqual(excluded.match_status,'CATEGORY_PROCUREMENT_MATCH');
 });
 
-test('missing confirmed/supported DPV profile snapshot blocks publication independently of prospect evidence',()=>{
+test('internal SKU count and catalog snapshot completeness do not block an approved category scope match',()=>{
   for(const snapshot of [null,{eligible_product_count:0,classified_product_count:0,unknown_product_count:9}]){
     const result=calculate({catalog_snapshot:snapshot});
-    assert.equal(result.score,null);
-    assert.equal(result.band,'UNKNOWN');
-    assert.equal(result.match_status,'NEEDS_INTERNAL_CATALOG_EVIDENCE');
+    assert.equal(result.score,70);
+    assert.equal(result.band,'HIGH');
+    assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+    assert.equal(result.catalog_completeness_non_blocking,true);
   }
+});
+
+test('no approved DPV scope remains an explicit approval boundary rather than guessed scope',()=>{
+  const result=calculate({scope_revision:null,approved_category_scopes:[]});
+  assert.equal(result.match_status,'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL');
+  assert.equal(result.scope_revision_id,null);
+  assert.deepEqual(result.matched_scope_ids,[]);
 });
 
 test('requested product categories, Management Match and DPV Score cannot create category facts',()=>{

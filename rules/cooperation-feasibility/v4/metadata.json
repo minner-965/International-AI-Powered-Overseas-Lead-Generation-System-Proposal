@@ -1,0 +1,32 @@
+{
+  "rule_version": "cooperation-feasibility-v4",
+  "effective_date": "2026-09-01",
+  "opportunity_gate": "APPROVED_CATEGORY_SCOPE_ONLY",
+  "exact_sku_required": false,
+  "catalog_maintenance_task_allowed": false,
+  "shared_product_data_purpose": [
+    "APPROVED_CATEGORY_PROFILE_BASELINE",
+    "HISTORICAL_ICP",
+    "TARGET_CUSTOMER_SCORING"
+  ],
+  "shared_product_data_sync": "INDEPENDENT_SHARED_FOLDER_IMPORT",
+  "historical_catalog_fields": "READ_ONLY_COMPATIBILITY",
+  "readiness_precedence": [
+    "SUPPRESSED",
+    "EXISTING_CUSTOMER",
+    "INELIGIBLE_BUYER_MODEL",
+    "HISTORICAL_REVIEW",
+    "HOLD",
+    "NEEDS_DPV_CATEGORY_SCOPE_APPROVAL",
+    "NEEDS_PRODUCT_EVIDENCE",
+    "CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE",
+    "PRODUCT_MISMATCH",
+    "WEAK_CATEGORY_MATCH",
+    "NEEDS_DECISION_MAKER",
+    "NEEDS_CONTACT_ROUTE",
+    "NEEDS_VERIFICATION",
+    "STRATEGIC_LONG_SHOT",
+    "REVIEW",
+    "SALES_READY"
+  ]
+}

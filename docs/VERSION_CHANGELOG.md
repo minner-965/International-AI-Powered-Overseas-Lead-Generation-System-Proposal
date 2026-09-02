@@ -1,5 +1,59 @@
 # Version Changelog
 
+## phase10 — 2026-09-01 — implementation complete, final acceptance incomplete
+
+### Added and changed
+
+- Added approved, versioned DPV company-category scope independent of concrete SKU completeness, with exact/similar/profile match bases and append-only dry-run/apply decisions.
+- Released one real WOMENSWEAR opportunity from the legacy internal-catalog blocker while retaining 11 customer-evidence-limited decisions and both ineligible buyer-model decisions.
+- Added automatic evidence task, attempt, scheduling, exception and provider-credit ledgers; stage leases, singleton deduplication, cooldown, retry, TTL reuse and recovery preserve idempotency.
+- Added persistent Tavily per-run/day/billing budgets and sanitized usage audit; eight real Tavily calls consumed eight units. Hunter remained at zero because no verified named profile Buyer passed its gate.
+- Added inactive-first n8n reconciliation, management-authenticated controlled scheduling and Workbench projections while keeping automatic production switches disabled by default.
+- Refreshed the unified workspace responsive shell, mobile Company Directory/detail access, stacked mobile actions and export UX without changing the 14-record business truth.
+- Unified new-customer opportunity surfaces around Product Category Score: customer procurement/operated categories are compared with approved DPV supply categories at same, similar or approved-profile level; no precise item-to-item match is required.
+- Replaced the legacy catalog-maintenance branch with an approved-category-only opportunity rule: shared-folder product and customer-deal imports support category/profile baselines, historical ICP and scoring, while exact customer-SKU matching is not required.
+- Stopped new Product Opportunity, Cooperation and Decision flows from creating `INTERNAL_CATALOG_UPLOAD_REQUIRED` or catalog-maintenance tasks; historical database fields and rows remain read-only for audit.
+- Removed catalog-maintenance panels, actions, counters and export gates. Company Detail and ordinary exports now present category-level score, scope and match basis only; they do not expose concrete product candidates.
+- Added migration 032 and a database contract for `CATEGORY_SCOPE_QUALIFIED`: every new category-level opportunity has zero candidates, no catalog task and `NO_EXACT_SKU`. Historical product-opportunity and candidate rows remain read-only.
+- Kept product/customer-deal imports as independent inputs to approved category/profile, historical ICP and target-customer scoring; they are not read by the new-prospect opportunity calculator.
+
+### Verification and real-result boundary
+
+- Applied migrations 030, 031 and 032; the current full suite is 580 tests with 574 pass, 0 fail and 6 environment-only skips. Migration 032 was also applied and replayed directly on the live PostgreSQL database.
+- Executed the fixed four-quadrant manifest: 13/13 manifest contracts and 93/93 referenced tests passed with no skip, todo or warning downgrade.
+- Verified desktop/mobile browser layouts, theme/density, dialog focus, zero horizontal overflow, zero console errors and a real 14-row/36-column XLSX export containing Product Category Score and its category evidence context.
+- Current business truth remains 12 Evidence Required, 2 Not Suitable, 0 Recommended, 0 Management Approved and 0 live sends. All outreach, webhook, reply and CRM side-effect tables remain empty.
+- Phase 10 code/migration/UI/automated validation passes, but V1.1 final `Implementation PASS` remains `INCOMPLETE` and `Business-result PASS=NO`: Provider is `NONE`, and controlled live send/reply/CRM plus an approved opportunity pilot have not occurred.
+- Detailed result: `docs/PHASE10_RESULT.md`.
+
+## post-phase9-full-workspace-ui-refresh — 2026-09-01 — completed locally
+
+### Changed
+
+- Extended the visual refresh from Opportunities to all 11 application views: Overview, Opportunities, Contact Queue, Research, Jobs, Companies, Customer Match / ICP, Evidence, Data Import, Data Export and Settings.
+- Added one unified B2B workspace layer for page headers, navigation, cards, KPI panels, tables, forms, empty states, settings and responsive behavior.
+- Adopted the user-provided classic data-dashboard composition across all modules: compact title/action headers, white KPI cards with top status accents, calm data panels, formal evidence-task lists and neutral table headers.
+- Replaced the solid-purple evidence block with a white operational task panel, removed decorative page icons, simplified the Overview zero state and normalized Research/Jobs error states.
+- Converted medium-width Company and Opportunity tables into labelled record cards and rebuilt Company Detail around available-only metrics, a stable snapshot grid and fixed review actions.
+- Fixed the overlapping Opportunity status navigation: bilingual labels are stacked, the 1200 px layout uses three columns by two rows, mobile uses two or one column, and no status label overlaps another.
+- Reworked Overview into four full-width KPI cards, made the Company Directory table readable through bounded horizontal scrolling and changed six-step import/export progress to a responsive 3 × 2 layout.
+- Removed page-level explanatory copy, AI-style guidance, user-facing decision narration, product-match management summaries and generated “why / difficulty” prose. Formal business states, evidence, filters and actions remain.
+- Renamed user-facing decision terminology to formal workspace, opportunity status, eligibility status, status history and buying-contact language while preserving backend field names and API contracts.
+- Kept the released opportunity API, 20 query parameters, six status states, seven table columns, Hunter enrichment trigger and management gates unchanged.
+
+### Current data truth
+
+- The dashboard still reports 14 real opportunity records: 12 Evidence Required, 2 Not Suitable, 0 Recommended and 0 Management Approved.
+- The three priority rows are selected from the current Evidence Required records; the chart and every KPI value are rendered from `/api/opportunities`.
+- No company, opportunity, contact, outreach or provider data was changed by this presentation refresh.
+
+### Verification
+
+- Added three unified workspace UI contract tests in addition to the two Opportunity Workspace tests.
+- Full suite: 484 tests, 480 passed, 0 failed and 4 conditionally skipped.
+- Rebuilt the local dashboard container and visually checked all 11 page views; page-level and view-level horizontal overflow are both zero at the current 1208 px desktop viewport.
+- Detailed implementation report: `docs/POST_PHASE9_FULL_UI_REFRESH_RESULT.md`.
+
 ## phase9 — 2026-08-31 — released
 
 ### Added

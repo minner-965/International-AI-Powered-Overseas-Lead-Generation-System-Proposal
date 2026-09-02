@@ -43,6 +43,12 @@ function bool(value, fallback = false) {
 function upper(value) { return String(value || '').trim().toUpperCase(); }
 function text(value, maximum = 500) { return String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, maximum); }
 function arrays(value, maximum = 100) { return [...new Set((Array.isArray(value) ? value : []).map(item => text(item, 160)).filter(Boolean))].slice(0, maximum); }
+function exportBusinessList(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(item => {
+    if (item && typeof item === 'object') return text(item.canonical_name || item.category || item.normalized_category || item.scope_code || item.code, 160);
+    return text(item, 160);
+  }).filter(Boolean))].join('; ');
+}
 function digestBuffer(value) { return createHash('sha256').update(value).digest('hex'); }
 
 function mapProviderEventType(value) {
@@ -258,7 +264,30 @@ export class Phase7Service {
     if (!this.hunter?.capabilities?.enabled || !contact.research_job_id) {
       return { status:'BLOCKED',reason_code:'HUNTER_DISABLED_OR_RESEARCH_JOB_REQUIRED',network_calls:0 };
     }
-    const provider = await this.hunter.verifyEmail({ researchJobId:contact.research_job_id,companyId:contact.company_id,email });
+    const provider = await this.hunter.verifyEmail({ researchJobId:contact.research_job_id,companyId:contact.company_id,email,
+      persistResults:async(results,{capturedAt})=>{
+        const result=results?.[0];
+        if(!result)return{referenceIds:[]};
+        const updated=await this.repository.updateContactVerification(contact,{
+          verification_status:result.verification_status,verification_score:result.verification_score,
+          provider:'HUNTER',captured_at:capturedAt||new Date()
+        });
+        return{referenceIds:updated?.id?[updated.id]:[]};
+      },
+      loadPersistedResults:async({referenceIds})=>{
+        if(!referenceIds.includes(String(contact.id)))return[];
+        const restored=await this.repository.findContact(contact.id);
+        if(!restored)return[];
+        const verificationStatus=restored.contact_record_type==='DECISION_MAKER_CONTACT'
+          ? restored.verification_status
+          : restored.email_verification_status==='valid'?'VALID'
+            : restored.email_verification_status==='invalid'?'INVALID':'UNKNOWN';
+        return[{email,verification_status:verificationStatus,
+          verification_score:restored.verification_score===null?null:Number(restored.verification_score)}];
+      }
+    });
+    if(provider.status==='REPLAY_LOOKUP_REQUIRED')return{status:'RETRYABLE_ERROR',
+      reason_code:'HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED',network_calls:0,credits:provider.credits};
     const result = provider.results?.[0] || { verification_status:provider.status === 'TEMPORARY_ERROR' ? 'TEMPORARY_ERROR' : 'UNKNOWN',verification_score:null };
     const updated = await this.repository.updateContactVerification(contact, {
       verification_status:result.verification_status, verification_score:result.verification_score,
@@ -792,7 +821,22 @@ export class Phase7Service {
         dispatch.push({effect_id:effect.id,effect_type:effect.effect_type,status:'RETRYABLE_ERROR'});
       }
     }
-    return{...result,downstream_effects:dispatch};
+    let autoEvidenceJobId=null;
+    let autoEvidenceScheduleStatus='QUEUED';
+    const affectedCompanyIds=[...new Set([
+      ...(result.affected_company_ids||[]),
+      ...effects.flatMap(effect=>Array.isArray(effect.payload?.company_ids)?effect.payload.company_ids:[])
+    ].map(value=>String(value||'').trim()).filter(Boolean))];
+    try{
+      autoEvidenceJobId=await this.queue.enqueue('schedule-auto-evidence',{
+        schedule_source:'IMPORT',import_id,company_ids:affectedCompanyIds,actor:actor||'phase7-data-worker'
+      },{singletonKey:`phase10:auto-evidence:import:${import_id}`});
+    }catch(error){
+      autoEvidenceScheduleStatus='RETRYABLE_ERROR';
+      dispatch.push({effect_type:'AUTO_EVIDENCE_SCHEDULE',status:'RETRYABLE_ERROR',error_code:error?.code||'QUEUE_UNAVAILABLE'});
+    }
+    return{...result,downstream_effects:dispatch,auto_evidence_schedule_job_id:autoEvidenceJobId,
+      auto_evidence_schedule_status:autoEvidenceScheduleStatus};
   }
   async enqueueImportCommit(id,user){const record=await this.getImport(id);if(record.api_status!=='APPROVED'){const error=new Error('Approved import required');error.code='IMPORT_COMMIT_FORBIDDEN';error.status=409;throw error;}
     const queueJobId=await this.queue.enqueue('commit-reference-import',{import_id:id,actor:user.identity},{singletonKey:`phase7:commit-import:${id}:${record.dry_run_digest}`});return{status:'QUEUED',import_id:id,queue_job_id:queueJobId};}
@@ -812,14 +856,24 @@ export class Phase7Service {
   async queryExportRows(resolved){
     if(['LEAD_MASTER_INTERNAL','SALES_OPPORTUNITY'].includes(resolved.exportType)){
       if(!this.opportunityQuery)throw new Error('Opportunity query is not configured');const rows=await this.opportunityQuery(resolved.filters);
-      return rows.filter(row=>resolved.mode!=='SELECTED_ROWS'||resolved.selectedEntityIds.includes(row.company_id)).map(row=>({
-        ...row,market:row.country_code,buyer_business_model:row.buyer_business_model,category_procurement_match:row.category_procurement_match_status,
-        product_opportunity_status:row.product_opportunity_status,supplier_access:row.supplier_access_band,readiness_blockers:(row.readiness_blockers||[]).join?.('; ')||'',
+      return rows.filter(row=>resolved.mode!=='SELECTED_ROWS'||resolved.selectedEntityIds.includes(row.company_id)).map(row=>{
+        const {sku_readiness_status:_skuReadiness,catalog_enrichment_required:_catalogEnrichment,
+          product_opportunity_status:_productOpportunityStatus,product_opportunity_count:_productOpportunityCount,
+          top_product_opportunity:_topProductOpportunity,...businessRow}=row;
+        return {
+        ...businessRow,market:row.country_code,buyer_business_model:row.buyer_business_model,
+        product_profile:row.product_profile,product_category_score:row.category_procurement_match_score,
+        product_category_score_band:row.category_procurement_match_band,
+        category_procurement_match:row.category_procurement_match_status,
+        customer_procurement_categories:exportBusinessList(row.observed_customer_categories||row.observed_categories),
+        dpv_supply_categories:exportBusinessList(row.matched_scopes||row.dpv_category_scopes),
+        category_opportunity_basis:row.match_basis,
+        supplier_access:row.supplier_access_band,readiness_blockers:(row.readiness_blockers||[]).join?.('; ')||'',
         decision_maker:row.buyer_name,buying_department:row.buyer_department,business_contact:row.best_contact,
         contact_verification:row.contact_verification,management_baseline_match:row.customer_match,
         mexico_historical_reference_match:row.historical_customer_match,last_assessed_at:row.feasibility_calculated_at,
         source_reference_urls:row.contact_source_url||''
-      }));
+      };});
     }
     if(resolved.exportType==='PRODUCT_CATALOG_INTERNAL'){
       const rows=await this.pool.query(`SELECT pm.id,pm.product_name company_name,pm.product_profile market,

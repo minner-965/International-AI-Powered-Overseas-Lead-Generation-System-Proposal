@@ -9,7 +9,8 @@ import {
 const eligible = (overrides = {}) => ({
   company: { verification_status: 'VERIFIED', lifecycle_status: 'ACTIVE' },
   buyer: { buyer_model: 'DIRECT_END_BUYER', eligibility_status: 'ELIGIBLE' },
-  category: { match_status: 'CATEGORY_PROCUREMENT_MATCH' },
+  category: { match_status: 'CATEGORY_PROCUREMENT_MATCH',calculation_version:'category-procurement-match-v2',
+    scope_revision_id:'00000000-0000-4000-8000-000000000001',match_basis:'EXACT_CATEGORY' },
   cooperation: { opportunity_readiness: 'SALES_READY', verified_decision_maker_count: 1 },
   relationship_status: 'NEW_PROSPECT',
   verified_email_route_count: 1,
@@ -23,7 +24,7 @@ test('verified direct buyer and exact category match becomes recommended', () =>
   assert.equal(result.business_fit_status, 'FIT');
   assert.equal(result.contact_readiness, 'READY');
   assert.equal(result.display_opportunity_status, 'RECOMMENDED');
-  assert.equal(result.rule_version, 'business-opportunity-decision-v2');
+  assert.equal(result.rule_version, 'business-opportunity-decision-v3');
   assert.match(result.input_digest, /^[a-f0-9]{64}$/);
 });
 
@@ -94,6 +95,29 @@ test('contact readiness never compensates failed product or business gates', () 
   }));
   assert.equal(highAccessMismatch.system_recommendation_status, 'NOT_SUITABLE');
   assert.equal(highAccessMismatch.business_fit_status, 'NOT_SUITABLE');
+});
+
+test('exact SKU and legacy catalog state do not block fit, while closed supplier route is HOLD',()=>{
+  const noSku=deriveOpportunityDecision(eligible({product_opportunity:{sku_readiness_status:'NO_EXACT_SKU',candidate_count:0},
+    cooperation:{opportunity_readiness:'SALES_READY',supplier_access_band:'UNKNOWN',verified_decision_maker_count:1}}));
+  assert.equal(noSku.business_fit_status,'FIT');
+  assert.equal(noSku.system_recommendation_status,'RECOMMENDED');
+  const legacyCatalog=deriveOpportunityDecision(eligible({product_opportunity:{sku_readiness_status:'INTERNAL_CATALOG_UPLOAD_REQUIRED',candidate_count:0,catalog_enrichment_required:true},
+    cooperation:{opportunity_readiness:'SALES_READY',supplier_access_band:'UNKNOWN',verified_decision_maker_count:1}}));
+  assert.equal(legacyCatalog.business_fit_status,'FIT');
+  assert.equal(legacyCatalog.system_recommendation_status,'RECOMMENDED');
+  assert.ok(!legacyCatalog.reason_codes.includes('INTERNAL_CATALOG_UPLOAD_REQUIRED'));
+  const closed=deriveOpportunityDecision(eligible({cooperation:{opportunity_readiness:'HOLD',supplier_route_status:'CLOSED'}}));
+  assert.equal(closed.system_recommendation_status,'EVIDENCE_REQUIRED');
+  assert.equal(closed.policy_contact_status,'HOLD');
+  assert.equal(closed.display_opportunity_status,'HOLD');
+});
+
+test('a legacy category match without an approved scope revision is not recommended by V3',()=>{
+  const result=deriveOpportunityDecision(eligible({category:{match_status:'CATEGORY_PROCUREMENT_MATCH',calculation_version:'category-procurement-match-v1'}}));
+  assert.equal(result.business_fit_status,'EVIDENCE_REQUIRED');
+  assert.equal(result.system_recommendation_status,'EVIDENCE_REQUIRED');
+  assert.ok(result.reason_codes.includes('DPV_APPROVED_CATEGORY_SCOPE_REQUIRED'));
 });
 
 test('policy hold and exact current management event deterministically derive five display states', () => {

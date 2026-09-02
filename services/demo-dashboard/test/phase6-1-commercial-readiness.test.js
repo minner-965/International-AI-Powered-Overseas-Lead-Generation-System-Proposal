@@ -20,7 +20,7 @@ const readyInput=overrides=>({
   relationship_status:'NEW_PROSPECT',company_verification_status:'VERIFIED',company_lifecycle_status:'ACTIVE',
   eligible_target_organization:true,buyer_model:'DIRECT_END_BUYER',
   category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',category_procurement_match_score:70,
-  category_procurement_coverage:70,has_verified_decision_route:true,has_usable_contact_route:true,
+  category_procurement_coverage:70,has_verified_decision_route:true,has_current_valid_contact_route:true,
   has_traceable_evidence:true,company_verified_active:true,cooperation_feasibility_band:'MEDIUM',product_opportunity_status:'READY',
   product_opportunity_count:2,...overrides
 });
@@ -88,11 +88,11 @@ test('Readiness V3 follows the frozen precedence and retains every blocker',()=>
   const result=resolveReadinessV3(readyInput({
     relationship_status:'SUPPRESSED',buyer_model:'EXCLUDED_INTERMEDIARY',eligible_target_organization:false,
     category_procurement_match_status:'NEEDS_INTERNAL_CATALOG_EVIDENCE',category_procurement_match_score:null,
-    category_procurement_coverage:0,has_verified_decision_route:false,has_usable_contact_route:false,
+    category_procurement_coverage:0,has_verified_decision_route:false,has_current_valid_contact_route:false,
     has_traceable_evidence:false,cooperation_feasibility_band:'LOW'
   }));
   assert.equal(primary(result),'SUPPRESSED');
-  for(const blocker of ['SUPPRESSED','INELIGIBLE_BUYER_MODEL','NEEDS_INTERNAL_CATALOG_EVIDENCE','NEEDS_DECISION_MAKER','NEEDS_CONTACT_ROUTE','NEEDS_VERIFICATION']) {
+  for(const blocker of ['SUPPRESSED','INELIGIBLE_BUYER_MODEL','WEAK_CATEGORY_MATCH','NEEDS_DECISION_MAKER','NEEDS_CONTACT_ROUTE','NEEDS_VERIFICATION']) {
     assert.ok(result.readiness_blockers.includes(blocker),`missing blocker ${blocker}`);
   }
 });
@@ -102,13 +102,13 @@ test('Readiness V3 primary state follows all ordered gates',()=>{
     [{relationship_status:'INTERNAL_EXISTING_CUSTOMER'},'EXISTING_CUSTOMER'],
     [{buyer_model:'EXCLUDED_INTERMEDIARY',eligible_target_organization:false,category_procurement_match_status:'INELIGIBLE_BUYER_MODEL'},'INELIGIBLE_BUYER_MODEL'],
     [{relationship_status:'HISTORICAL_CONTACTED_LEAD'},'HISTORICAL_REVIEW'],
-    [{category_procurement_match_status:'NEEDS_INTERNAL_CATALOG_EVIDENCE',category_procurement_match_score:null},'NEEDS_INTERNAL_CATALOG_EVIDENCE'],
+    [{category_procurement_match_status:'NEEDS_INTERNAL_CATALOG_EVIDENCE',category_procurement_match_score:null},'WEAK_CATEGORY_MATCH'],
     [{category_procurement_match_status:'NEEDS_PRODUCT_EVIDENCE',category_procurement_match_score:null},'NEEDS_PRODUCT_EVIDENCE'],
     [{category_procurement_match_status:'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE',buyer_model:'UNCLEAR_INTERMEDIARY',category_procurement_match_score:null},'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'],
     [{category_procurement_match_status:'PRODUCT_MISMATCH',category_procurement_match_score:10},'PRODUCT_MISMATCH'],
     [{category_procurement_match_status:'WEAK_CATEGORY_MATCH',category_procurement_match_score:59},'WEAK_CATEGORY_MATCH'],
     [{has_verified_decision_route:false},'NEEDS_DECISION_MAKER'],
-    [{has_usable_contact_route:false},'NEEDS_CONTACT_ROUTE'],
+    [{has_current_valid_contact_route:false},'NEEDS_CONTACT_ROUTE'],
     [{has_traceable_evidence:false},'NEEDS_VERIFICATION']
   ];
   for(const [overrides,expected] of cases) assert.equal(primary(resolveReadinessV3(readyInput(overrides))),expected);
@@ -128,11 +128,18 @@ test('UNKNOWN/UNCLEAR/EXCLUDED buyer models never become SALES_READY even with h
   }
 });
 
-test('zero Product Opportunity candidates leaves Category Match intact and adds only recommendation guidance',()=>{
+test('zero Product Opportunity candidates leaves Category Match and sales readiness intact',()=>{
   const result=resolveReadinessV3(readyInput({product_opportunity_status:'NO_REAL_CANDIDATE',product_opportunity_count:0}));
   assert.equal(primary(result),'SALES_READY');
-  assert.ok(result.readiness_blockers.includes('NEEDS_PRODUCT_RECOMMENDATION'));
+  assert.ok(!result.readiness_blockers.includes('NEEDS_PRODUCT_RECOMMENDATION'));
   assert.ok(!result.readiness_blockers.includes('PRODUCT_MISMATCH'));
+});
+
+test('Supplier Access UNKNOWN ranks but does not block; an explicitly closed route is HOLD',()=>{
+  assert.equal(primary(resolveReadinessV3(readyInput({supplier_access_band:'UNKNOWN',supplier_route_status:'UNKNOWN'}))),'SALES_READY');
+  const closed=resolveReadinessV3(readyInput({supplier_route_status:'CLOSED'}));
+  assert.equal(primary(closed),'HOLD');
+  assert.ok(closed.readiness_blockers.includes('HOLD'));
 });
 
 test('score and 70 coverage mandatory gates are both required for SALES_READY',()=>{

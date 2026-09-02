@@ -42,8 +42,8 @@ test('Phase 8 assets have one documented load order instead of a monolithic over
 test('Opportunities is the default view and primary navigation is grouped with exactly one active item', async () => {
   const [html, shell] = await readMany(['index.html', 'crm-shell.js']);
   const aside = html.slice(position(html, '<aside id="app-sidebar"'), position(html, '<div class="page-wrapper'));
-  for (const group of ['决策', '执行', '资料', '数据']) assert.match(aside, new RegExp(group));
-  assert.ok(position(aside, '决策') < position(aside, '执行'));
+  for (const group of ['工作台', '执行', '资料', '数据']) assert.match(aside, new RegExp(group));
+  assert.ok(position(aside, '工作台') < position(aside, '执行'));
   assert.ok(position(aside, '执行') < position(aside, '资料'));
   assert.ok(position(aside, '资料') < position(aside, '数据'));
   const navTags = aside.match(/<button[^>]+data-app-nav="[^"]+"[^>]*>/g) || [];

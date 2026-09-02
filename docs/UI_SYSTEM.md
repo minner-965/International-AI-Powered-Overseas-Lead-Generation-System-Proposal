@@ -236,7 +236,7 @@ chip = selected filter/value/action
 - Tabs：Recommended、Evidence Required、Management Approved、Hold、Not Suitable、All。
 - 常显 Search、Status、Market、Product Profile、Sort；其他 15 个参数进入 advanced drawer。
 - Active filters 以 removable chips 显示，保留所有现有 query semantics。
-- 默认 7 列：Company；Market/Profile；Opportunity Status；Buyer Model/role；Product Match；Buyer/VALID contact；Supplier Access/action。
+- 默认 7 列：Company；Market/Profile；Opportunity Status；Buyer Model/role；Product Category Score；Buyer/VALID contact；Supplier Access/action。
 - Secondary score、matrix、full reasons、freshness 和 routes 进入 detail。
 - Recommended 为 0 时不渲染宽空 table，显示 compact empty state + View Evidence Required。
 - Confirm Contact 只在 Gate 0 当前全部通过时出现。
@@ -244,6 +244,15 @@ chip = selected filter/value/action
 ### Evidence Required
 
 按 Product/Category、Buyer model、Contact missing、Buyer role、Email、Identity、History 主阻断原因分组。每行只显示 Company/Profile、business fit、一个 blocker、owner、last checked、next safe action。Phase 8 不自动启动 Phase 9 批量补证。
+
+## New-customer product opportunity scoring
+
+- 公司商品资料和历史客户成交资料只用于形成 DPV 批准供货类目/画像、历史 ICP 与目标客户评分基准。
+- 新客户的商品机会按类目评分：核验目标客户公开的采购需求或经营商品类目，再与 DPV 批准供货类目比较。
+- 相同类目、相似类目或同一批准产品画像表示公司具备供货能力，因此存在类目级合作机会。
+- 新客户机会不要求匹配某个精确 SKU 或单款商品，不生成商品候选，也不创建“补充对应商品”的人工任务。
+- 客户侧采购需求或经营类目资料不足时保持 `NEEDS_PRODUCT_EVIDENCE`；已确认超出公司批准类目时使用 `PRODUCT_MISMATCH`。
+- 公司可见标签统一使用 `商品类目评分 / Product Category Score`，不得用容易被理解为精确商品匹配的标签。
 
 ### Contact Queue
 

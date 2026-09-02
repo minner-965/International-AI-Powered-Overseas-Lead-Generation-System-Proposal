@@ -103,10 +103,11 @@ function publicJob(row = {}) {
 }
 
 export class ResearchWorkbenchService {
-  constructor({pool,hunter=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[]}={}) {
+  constructor({pool,hunter=null,autoEvidence=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[]}={}) {
     if (!pool) throw new Error('ResearchWorkbenchService requires a PostgreSQL pool');
     this.pool=pool;
     this.hunter=hunter;
+    this.autoEvidence=autoEvidence;
     this.contactVerificationTtlDays=Math.max(1,Number(contactVerificationTtlDays)||30);
     this.runCapUnits=Math.max(0,Number(runCapUnits)||0);
     this.billingPeriodCapUnits=Math.max(0,Number(billingPeriodCapUnits)||0);
@@ -197,7 +198,26 @@ export class ResearchWorkbenchService {
     const jobId=String(query.job_id || '').trim();
     const limit=boundedInt(query.limit,{min:1,max:100,fallback:50});
     const offset=decodeCursor(query.cursor);
-    let tasks=(await this.taskRows()).map(projectResearchTask).sort(compareResearchTasks);
+    let tasks=(await this.taskRows()).map(projectResearchTask);
+    if(this.autoEvidence){
+      const autoRows=await this.autoEvidence.repository.listTasks({limit:100});
+      const blockerMap={CATEGORY_EVIDENCE:'PRODUCT',BUYER_MODEL_EVIDENCE:'BUYER_MODEL',NAMED_BUYER_EVIDENCE:'CONTACT',
+        VERIFIED_EMAIL_EVIDENCE:'EMAIL',DECISION_REFRESH:'EVIDENCE'};
+      tasks.push(...autoRows.map(row=>({
+        task_id:row.id,status:'WAITING_EVIDENCE',task_type:`AUTO_${upper(row.business_blocker)}`,
+        task_class:row.task_class,priority:row.task_status==='HUMAN_REVIEW_REQUIRED'?1:2,
+        company_id:row.company_id,company_name:row.company_name,market:upper(row.market),
+        product_profile:upper(row.product_profile),opportunity_id:null,
+        job_id:row.contact_research_job_id||row.category_research_job_id||null,
+        blocker:blockerMap[upper(row.business_blocker)]||'EVIDENCE',
+        business_blocker:upper(row.business_blocker),auto_evidence_status:upper(row.task_status),
+        auto_evidence_stage:upper(row.current_stage),human_review_required:row.human_review_required===true,
+        retry_at:row.retry_at||null,budget_state:upper(row.budget_state),latest_activity:row.updated_at||row.created_at,
+        updated_at:row.updated_at||row.created_at,attempt_count:Number(row.attempt_count||0),
+        max_attempts:Number(row.max_attempts||0),technical_blocker:row.technical_blocker||null
+      })));
+    }
+    tasks.sort(compareResearchTasks);
     if(status) tasks=tasks.filter(item=>item.status===status);
     if(taskType) tasks=tasks.filter(item=>item.task_type===taskType);
     if(market) tasks=tasks.filter(item=>item.market===market);
@@ -232,7 +252,7 @@ export class ResearchWorkbenchService {
   }
 
   async getSummary() {
-    const [counts,catalog,budget]=await Promise.all([
+    const [counts,catalog,budget,automation]=await Promise.all([
       this.pool.query(`SELECT
         (SELECT count(*)::int FROM leadgen.research_jobs WHERE status=ANY($1::text[])) active_jobs,
         (SELECT count(DISTINCT d.id)::int FROM leadgen.decision_makers d JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=d.id
@@ -245,15 +265,28 @@ export class ResearchWorkbenchService {
             AND d.verification_status='VERIFIED' AND d.lifecycle_status='ACTIVE' AND pr.relevance IN('HIGH','MEDIUM')
             AND d.normalized_role IN('BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING')) verified_email_routes,
         (SELECT count(*)::int FROM leadgen.business_opportunity_current WHERE contact_readiness='READY' AND business_fit_status='FIT') contact_ready_opportunities`,[ACTIVE_JOB_STATES,this.contactVerificationTtlDays]),
-      this.catalogProfiles(),this.budgetState()
+      this.catalogProfiles(),this.budgetState(),this.autoEvidence?this.autoEvidence.repository.summary():Promise.resolve(null)
     ]);
     const tasks=await this.listTasks({limit:3});
     const row=counts.rows[0];
+    const automationStatus=this.autoEvidence?.status()||null;
+    const taskStatuses=Object.fromEntries((automation?.task_statuses||[]).map(item=>[upper(item.task_status),Number(item.count||0)]));
+    const autoEvidence=automationStatus?{
+      enabled:automationStatus.enabled===true,
+      status:taskStatuses.BUDGET_PAUSED>0?'BUDGET_PAUSED':automationStatus.enabled?'ENABLED':'DISABLED',
+      running:Number(taskStatuses.RUNNING||0),retry_scheduled:Number(taskStatuses.RETRY_SCHEDULED||0),
+      budget_paused:Number(taskStatuses.BUDGET_PAUSED||0),human_review_required:Number(taskStatuses.HUMAN_REVIEW_REQUIRED||0),
+      last_reconciled_at:automation?.latest_schedule?.occurred_at||null,
+      source_service_health:automationStatus.tavilyEnabled?'READY':'DISABLED',
+      email_verification_health:upper(this.hunter?.capabilities?.mode)==='DISABLED'?'DISABLED':budget.state==='BUDGET_HOLD'?'DEGRADED':'READY',
+      budget_remaining:budget.billing_period_remaining_units,budget_unit:'CREDITS'
+    }:null;
     return {as_of:new Date().toISOString(),active_jobs:Number(row.active_jobs),evidence_tasks:tasks.total,
       verified_profile_buyers:Number(row.verified_profile_buyers),verified_email_routes:Number(row.verified_email_routes),
       contact_ready_opportunities:Number(row.contact_ready_opportunities),hunter_mode:budget.mode,hunter_budget_state:budget.state,
       verification_service:{state:budget.state,mode:budget.mode,per_run_cap_units:budget.per_run_cap_units,
-        billing_period_remaining_units:budget.billing_period_remaining_units},catalog_profiles:catalog,priority_tasks:tasks.items};
+        billing_period_remaining_units:budget.billing_period_remaining_units},catalog_profiles:catalog,priority_tasks:tasks.items,
+      auto_evidence:autoEvidence};
   }
 
   async listJobs(query={}) {

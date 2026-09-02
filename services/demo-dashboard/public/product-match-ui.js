@@ -7,7 +7,7 @@ const bandLabels = Object.freeze({
   MEDIUM: pair('中', 'Medium'),
   LOW: pair('低', 'Low'),
   VERY_LOW: pair('很低', 'Very low'),
-  UNKNOWN: pair('待补充产品资料', 'Product evidence required')
+  UNKNOWN: pair('类目资料待核验', 'Category evidence required')
 });
 
 const categoryProcurementStatusLabels = Object.freeze({
@@ -16,7 +16,7 @@ const categoryProcurementStatusLabels = Object.freeze({
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
   PRODUCT_MISMATCH: pair('已确认品类不匹配', 'Confirmed category mismatch'),
   NEEDS_PRODUCT_EVIDENCE: pair('需补充客户品类资料', 'Customer category evidence required'),
-  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('需补充公司商品资料', 'Internal catalog evidence required'),
+  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('历史状态（现按批准类目）', 'Legacy state (approved category now applies)'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
   UNKNOWN: pair('品类采购关系待确认', 'Category procurement relationship to confirm')
 });
@@ -47,11 +47,18 @@ const buyerSubtypeLabels = Object.freeze({
 });
 
 const productOpportunityStatusLabels = Object.freeze({
-  READY: pair('已有可推荐产品', 'Product recommendations available'),
-  PARTIAL_INTERNAL_CATALOG: pair('可推荐产品资料不完整', 'Product recommendations partially supported'),
-  NO_REAL_CANDIDATE: pair('暂无真实产品候选', 'No real product candidate'),
+  READY: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  SKU_READY: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  PARTIAL_INTERNAL_CATALOG: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  SKU_PARTIAL: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  NO_REAL_CANDIDATE: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  NO_EXACT_SKU: pair('按商品类目评估', 'Category-level assessment'),
+  INTERNAL_CATALOG_UPLOAD_REQUIRED: pair('历史状态（无需商品补充任务）', 'Legacy state (no catalog task)'),
+  NOT_REQUIRED: pair('按商品类目评估', 'Category-level assessment'),
+  CATEGORY_SCOPE_QUALIFIED: pair('已符合批准类目', 'Approved category qualified'),
+  OUT_OF_SCOPE: pair('不在公司类目范围', 'Out of scope'),
   NOT_RUN_GATE_FAILED: pair('品类采购门槛未通过', 'Category procurement gate not passed'),
-  UNKNOWN: pair('产品机会待评估', 'Product opportunity to assess')
+  UNKNOWN: pair('商品类目机会待评估', 'Product category opportunity to assess')
 });
 
 const supplierAccessBandLabels = Object.freeze({
@@ -153,19 +160,19 @@ const sourceClassificationLabels = Object.freeze({
 });
 
 const productAccessMatrixLabels = Object.freeze({
-  DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS: pair('终端买家 · 高产品匹配 · 高准入', 'Direct buyer · high product match · high access'),
-  DIRECT_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS: pair('终端买家 · 高产品匹配 · 中等准入', 'Direct buyer · high product match · medium access'),
-  DIRECT_BUYER_HIGH_PRODUCT_LOW_ACCESS: pair('终端买家 · 高产品匹配 · 低准入', 'Direct buyer · high product match · low access'),
-  DISTRIBUTION_BUYER_HIGH_PRODUCT_HIGH_ACCESS: pair('渠道买家 · 高产品匹配 · 高准入', 'Distribution buyer · high product match · high access'),
-  DISTRIBUTION_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS: pair('渠道买家 · 高产品匹配 · 中等准入', 'Distribution buyer · high product match · medium access'),
-  DISTRIBUTION_BUYER_HIGH_PRODUCT_LOW_ACCESS: pair('渠道买家 · 高产品匹配 · 低准入', 'Distribution buyer · high product match · low access'),
-  HIGH_PRODUCT_HIGH_ACCESS: pair('产品高匹配且易进入', 'High product match, high access'),
-  HIGH_PRODUCT_MEDIUM_ACCESS: pair('产品高匹配且进入条件一般', 'High product match, medium access'),
-  HIGH_PRODUCT_LOW_ACCESS: pair('产品高匹配但较难进入', 'High product match, low access'),
-  MEDIUM_PRODUCT_HIGH_ACCESS: pair('产品中等匹配且易进入', 'Medium product match, high access'),
-  MEDIUM_PRODUCT_MEDIUM_ACCESS: pair('产品中等匹配且进入条件一般', 'Medium product match, medium access'),
-  LOW_PRODUCT: pair('产品匹配较低', 'Low product match'),
-  UNKNOWN_PRODUCT: pair('产品资料待补充', 'Product evidence required'),
+  DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS: pair('终端买家 · 高类目评分 · 高准入', 'Direct buyer · high category score · high access'),
+  DIRECT_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS: pair('终端买家 · 高类目评分 · 中等准入', 'Direct buyer · high category score · medium access'),
+  DIRECT_BUYER_HIGH_PRODUCT_LOW_ACCESS: pair('终端买家 · 高类目评分 · 低准入', 'Direct buyer · high category score · low access'),
+  DISTRIBUTION_BUYER_HIGH_PRODUCT_HIGH_ACCESS: pair('渠道买家 · 高类目评分 · 高准入', 'Distribution buyer · high category score · high access'),
+  DISTRIBUTION_BUYER_HIGH_PRODUCT_MEDIUM_ACCESS: pair('渠道买家 · 高类目评分 · 中等准入', 'Distribution buyer · high category score · medium access'),
+  DISTRIBUTION_BUYER_HIGH_PRODUCT_LOW_ACCESS: pair('渠道买家 · 高类目评分 · 低准入', 'Distribution buyer · high category score · low access'),
+  HIGH_PRODUCT_HIGH_ACCESS: pair('类目评分高且易进入', 'High category score, high access'),
+  HIGH_PRODUCT_MEDIUM_ACCESS: pair('类目评分高且进入条件一般', 'High category score, medium access'),
+  HIGH_PRODUCT_LOW_ACCESS: pair('类目评分高但较难进入', 'High category score, low access'),
+  MEDIUM_PRODUCT_HIGH_ACCESS: pair('类目评分中等且易进入', 'Medium category score, high access'),
+  MEDIUM_PRODUCT_MEDIUM_ACCESS: pair('类目评分中等且进入条件一般', 'Medium category score, medium access'),
+  LOW_PRODUCT: pair('类目评分较低', 'Low category score'),
+  UNKNOWN_PRODUCT: pair('类目资料待核验', 'Category evidence required'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model')
 });
 
@@ -208,8 +215,10 @@ export const buyerBusinessModelTone = value => ({
 }[normalized(value)] || 'unknown');
 
 export const productOpportunityStatusTone = value => ({
-  READY:'active', PARTIAL_INTERNAL_CATALOG:'review', NO_REAL_CANDIDATE:'aging',
-  NOT_RUN_GATE_FAILED:'unknown', UNKNOWN:'unknown'
+  READY:'active', SKU_READY:'active', PARTIAL_INTERNAL_CATALOG:'review', SKU_PARTIAL:'review',
+  NO_REAL_CANDIDATE:'active', NO_EXACT_SKU:'active', INTERNAL_CATALOG_UPLOAD_REQUIRED:'active',
+  NOT_REQUIRED:'active',CATEGORY_SCOPE_QUALIFIED:'active',
+  OUT_OF_SCOPE:'rejected', NOT_RUN_GATE_FAILED:'unknown', UNKNOWN:'unknown'
 }[normalized(value)] || 'unknown');
 
 export const supplierAccessBandTone = value => ({

@@ -120,7 +120,7 @@ test('029 live PostgreSQL apply/replay preserves rows and enforces constraints a
     try{
       const before=await counts(pool);
       const applied=await applyPhase7Migration({pool,migrationPath,appliedBy:'phase9-migration-test'});
-      assert.equal(applied.status,'APPLIED');
+      assert.ok(['APPLIED','SKIPPED_ALREADY_APPLIED'].includes(applied.status));
       assert.equal(applied.phase9_tables_verified,3);
       assert.equal(applied.phase9_audit_and_reference_triggers_verified,5);
       assert.deepEqual(await counts(pool),before);

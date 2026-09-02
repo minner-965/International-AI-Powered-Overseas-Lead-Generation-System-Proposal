@@ -32,13 +32,13 @@ const STATE_LABELS = Object.freeze({
 });
 
 const REASON_LABELS = Object.freeze({
-  OPPORTUNITY_MANAGEMENT_APPROVAL_REQUIRED:['机会尚未确认联系','Contact decision required'],
+  OPPORTUNITY_MANAGEMENT_APPROVAL_REQUIRED:['机会尚未确认联系','Contact approval required'],
   EXACT_VERSION_APPROVAL_REQUIRED:['当前消息版本尚未批准','Exact message approval required'],
   ACTIVE_BUSINESS_EMAIL_REQUIRED:['需补充有效商务邮箱','Active business email required'],
   CONTACT_VERIFICATION_REQUIRED:['需完成联系核验','Contact verification required'],
   MAILBOX_LEVEL_VERIFICATION_REQUIRED:['需完成邮箱级核验','Mailbox verification required'],
   BUYER_MODEL_REQUIRED:['需确认采购模式','Buyer Model required'],
-  CATEGORY_PROCUREMENT_MATCH_REQUIRED:['需补充产品匹配依据','Product Match evidence required'],
+  CATEGORY_PROCUREMENT_MATCH_REQUIRED:['需补充客户类目依据','Customer category evidence required'],
   PRODUCT_PROFILE_REQUIRED:['需确认产品画像','Product profile required'],
   COMPANY_SUPPRESSED:['企业当前暂停联系','Company contact is paused'],
   CONTACT_SUPPRESSED:['该联系方式当前暂停使用','Contact route is paused'],
@@ -70,8 +70,12 @@ const REASON_LABELS = Object.freeze({
 const FIELD_LABELS = Object.freeze({
   company_name:['公司','Company'], market:['市场','Market'], country_code:['国家代码','Country code'], website_url:['企业网站','Official website'],
   verification_status:['核验状态','Verification'], lifecycle_status:['数据状态','Data status'], buyer_business_model:['客户采购模式','Buyer Model'],
-  category_procurement_match:['产品匹配','Product Match'], product_opportunity_status:['产品机会','Product Opportunity'], supplier_access:['供应商准入','Supplier Access'],
-  product_access_matrix:['产品与准入矩阵','Product Access Matrix'], readiness:['跟进准备状态','Readiness'], readiness_blockers:['阻碍项','Blockers'],
+  product_profile:['产品画像','Product Profile'], product_category_score:['商品类目评分','Product Category Score'],
+  product_category_score_band:['类目评分等级','Category Score Band'],
+  category_procurement_match:['类目采购匹配','Category Procurement Match'], supplier_access:['供应商准入','Supplier Access'],
+  customer_procurement_categories:['客户采购/经营类目','Customer Procurement / Categories'],
+  dpv_supply_categories:['DPV 可供货类目','DPV Supply Categories'], category_opportunity_basis:['类目机会依据','Category Opportunity Basis'],
+  product_access_matrix:['类目与准入矩阵','Category Access Matrix'], readiness:['跟进准备状态','Readiness'], readiness_blockers:['阻碍项','Blockers'],
   decision_maker:['采购人员','Buying contact'], buying_department:['采购部门','Buying department'], business_contact:['商务联系方式','Business contact'],
   contact_verification:['联系核验','Contact verification'], draft_status:['开发信状态','Draft status'], approval_status:['消息审批','Message approval'],
   send_status:['联系状态','Outreach status'], reply_summary:['回复摘要','Reply summary'], owner:['负责人','Owner'], next_action:['下一步','Next action'],
@@ -128,7 +132,7 @@ function ensureAccessDialog() {
   dialog.id = 'phase7-management-access';
   dialog.className = 'crm-management-dialog';
   dialog.setAttribute('aria-labelledby','phase7-management-title');
-  dialog.innerHTML = `<header class="crm-detail-toolbar"><button class="btn btn-ghost-secondary" type="button" data-management-close><i class="ti ti-arrow-left" aria-hidden="true"></i>${bi('返回','Back')}</button><strong id="phase7-management-title">${bi('管理验证','Management Access')}</strong><button class="btn btn-icon btn-ghost-secondary" type="button" data-management-close aria-label="关闭管理验证 Close management access"><i class="ti ti-x" aria-hidden="true"></i></button></header><form id="phase7-management-form" class="crm-management-form"><p>${bi('操作人和角色由管理令牌对应的服务端权限决定。','Actor and role are assigned to the management token by the server.')}</p><label for="phase7-management-token">${bi('管理访问令牌','Management access token')}<input id="phase7-management-token" class="form-control" name="token" type="password" autocomplete="current-password" required></label><div id="phase7-management-status" class="crm-operation-status" role="status" aria-live="polite"></div><div class="crm-management-actions"><button class="btn btn-outline-secondary" type="button" data-management-close>${bi('取消','Cancel')}</button><button class="btn btn-primary" type="submit">${bi('验证并继续','Verify and continue')}</button></div></form>`;
+  dialog.innerHTML = `<header class="crm-detail-toolbar"><button class="btn btn-ghost-secondary" type="button" data-management-close><i class="ti ti-arrow-left" aria-hidden="true"></i>${bi('返回','Back')}</button><strong id="phase7-management-title">${bi('管理验证','Management Access')}</strong><button class="btn btn-icon btn-ghost-secondary" type="button" data-management-close aria-label="关闭管理验证 Close management access"><i class="ti ti-x" aria-hidden="true"></i></button></header><form id="phase7-management-form" class="crm-management-form"><label for="phase7-management-token">${bi('管理访问令牌','Management access token')}<input id="phase7-management-token" class="form-control" name="token" type="password" autocomplete="current-password" required></label><div id="phase7-management-status" class="crm-operation-status" role="status" aria-live="polite"></div><div class="crm-management-actions"><button class="btn btn-outline-secondary" type="button" data-management-close>${bi('取消','Cancel')}</button><button class="btn btn-primary" type="submit">${bi('验证并继续','Verify and continue')}</button></div></form>`;
   document.body.append(dialog);
   dialog.querySelectorAll('[data-management-close]').forEach(button => button.addEventListener('click',()=>dialog.close('cancel')));
   dialog.addEventListener('cancel',event => { event.preventDefault(); dialog.close('cancel'); });
@@ -511,7 +515,7 @@ export function initPhase7Ui() {
 const detailStates = new WeakMap();
 
 function detailEmpty(icon, zh, en, bodyZh, bodyEn) {
-  return `<div class="crm-empty-state crm-phase7-detail-state"><i class="ti ${esc(icon)}" aria-hidden="true"></i><h4>${bi(zh,en)}</h4><p>${bi(bodyZh,bodyEn)}</p></div>`;
+  return `<div class="crm-empty-state crm-phase7-detail-state"><i class="ti ${esc(icon)}" aria-hidden="true"></i><h4>${bi(zh,en)}</h4></div>`;
 }
 
 function detailError(panel, loader, error) {
@@ -596,7 +600,7 @@ function managementFlash(state) {
 function managementActionPanel(state, record, queue) {
   const actions = readinessActions(record);
   if (!actions) return '';
-  return `<section class="crm-phase7-summary-card crm-phase7-management-panel"><header><div><h4>${bi('管理操作','Management Actions')}</h4><small>${bi('沿用当前 management bearer 与 CSRF。','Uses the current management bearer and CSRF session.')}</small></div>${queue ? statusBadge(firstValue(queue,['queue_status','status']) || 'ACTIVE') : ''}</header>${managementFlash(state)}<label class="crm-phase7-input-label" for="phase7-owner-identity">${bi('待联系负责人（可选）','Contact queue owner (optional)')}<input id="phase7-owner-identity" class="form-control" name="owner_identity" maxlength="160" value="${esc(accessValues().actor || '')}"></label><label class="crm-phase7-input-label" for="phase7-management-reason">${bi('管理备注（可选）','Management note (optional)')}<textarea id="phase7-management-reason" class="form-control" name="reason" rows="3" maxlength="1000" placeholder="${esc('补充原因 / Add a short reason')}"></textarea></label><div class="crm-phase7-action-grid">${actions}</div><div class="crm-operation-status" data-phase7-management-status role="status" aria-live="polite"></div></section>`;
+  return `<section class="crm-phase7-summary-card crm-phase7-management-panel"><header><div><h4>${bi('管理操作','Management Actions')}</h4></div>${queue ? statusBadge(firstValue(queue,['queue_status','status']) || 'ACTIVE') : ''}</header>${managementFlash(state)}<label class="crm-phase7-input-label" for="phase7-owner-identity">${bi('待联系负责人（可选）','Contact queue owner (optional)')}<input id="phase7-owner-identity" class="form-control" name="owner_identity" maxlength="160" value="${esc(accessValues().actor || '')}"></label><label class="crm-phase7-input-label" for="phase7-management-reason">${bi('管理备注（可选）','Management note (optional)')}<textarea id="phase7-management-reason" class="form-control" name="reason" rows="3" maxlength="1000" placeholder="${esc('补充原因 / Add a short reason')}"></textarea></label><div class="crm-phase7-action-grid">${actions}</div><div class="crm-operation-status" data-phase7-management-status role="status" aria-live="polite"></div></section>`;
 }
 
 function queueSummary(queue) {
@@ -606,36 +610,26 @@ function queueSummary(queue) {
     ['待联系负责人','Owner',esc(firstValue(queue,['owner_identity','ownerIdentity']) || '-')],
     ['确认人','Confirmed by',esc(firstValue(queue,['approved_by','approvedBy','actor_identity','actorIdentity']) || '-')],
     ['确认时间','Confirmed at',dateValue(queue,['approved_at','approvedAt','queue_created_at','queueCreatedAt','created_at','createdAt'])],
-  ])}${(firstValue(queue,['reason_codes','reasonCodes']) || []).length ? `<section class="crm-detail-section"><h4>${bi('入队说明','Queue reasons')}</h4>${blockerList(queue)}</section>` : ''}</div>`;
+  ])}${(firstValue(queue,['reason_codes','reasonCodes']) || []).length ? `<section class="crm-detail-section"><h4>${bi('入队原因','Queue reasons')}</h4>${blockerList(queue)}</section>` : ''}</div>`;
 }
 
 function readinessNote(record) {
-  const display = text(opportunityStatus(record)).toUpperCase();
-  if (display === 'MANAGEMENT_APPROVED') {
-    return `<p class="crm-helper crm-phase7-status-note">${bi('已确认进入待联系，不等于消息批准。当前管理操作响应 provider_calls 0、messages_approved 0。','Queued for contact; this is not message approval. The management action response keeps provider_calls at 0 and messages_approved at 0.')}</p>`;
-  }
-  if (display === 'EVIDENCE_REQUIRED') {
-    return `<p class="crm-helper crm-phase7-status-note">${bi('当前机会需要补充资料后再决定是否进入待联系。','This opportunity needs more evidence before it can move into the Contact Queue.')}</p>`;
-  }
-  if (display === 'HOLD') {
-    return `<p class="crm-helper crm-phase7-status-note">${bi('当前机会已暂停联系，可在复核后重新打开。','This opportunity is on hold and can be reopened after review.')}</p>`;
-  }
-  return `<p class="crm-helper crm-phase7-status-note">${bi('机会判断与具体消息审批分开管理。','Opportunity decisions stay separate from exact-message approval.')}</p>`;
+  return '';
 }
 
 function readinessEntryLinks() {
-  return `<div class="crm-phase7-inline-actions"><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看 Decision History','Open Decision History')}</button><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看 Contact Queue','Open Contact Queue')}</button></div>`;
+  return `<div class="crm-phase7-inline-actions"><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看状态历史','Open Status History')}</button><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看待联系队列','Open Contact Queue')}</button></div>`;
 }
 
 function renderReadiness(state, decision, queue) {
   const record = currentOpportunity(decision);
-  if (!record) return detailEmpty('ti-lock-check','尚无机会决策','No opportunity decision yet','当前产品画像还没有可展示的 Phase 7 机会决策。','No Phase 7 opportunity decision is available for this product profile yet.');
+  if (!record) return detailEmpty('ti-lock-check','尚无机会状态','No opportunity status yet','','');
   const display = opportunityStatus(record);
   const system = firstValue(record,['system_recommendation_status','systemRecommendationStatus']) || display;
   const contact = firstValue(record,['contact_readiness','contactReadiness','verification_status']) || 'UNKNOWN';
   const policy = firstValue(record,['policy_contact_status','policyContactStatus']) || 'OPEN';
-  return `<div class="crm-phase7-detail-grid"><section class="crm-phase7-summary-card"><header><div><h4>${bi('机会判断','Opportunity Decision')}</h4><small>${bi('五态展示与管理动作在此统一处理。','Five-state display and management actions stay together here.')}</small></div>${statusBadge(display)}</header>${readinessNote(record)}${factList([
-    ['系统建议','System recommendation',statusBadge(system)],
+  return `<div class="crm-phase7-detail-grid"><section class="crm-phase7-summary-card"><header><div><h4>${bi('机会状态','Opportunity Status')}</h4></div>${statusBadge(display)}</header>${readinessNote(record)}${factList([
+    ['资格状态','Eligibility status',statusBadge(system)],
     ['联系准备','Contact readiness',statusBadge(contact)],
     ['联系策略','Contact policy',policyStatus(policy)],
     ['产品画像','Product profile',esc(firstValue(record,['product_profile','productProfile']) || '-')],
@@ -675,8 +669,8 @@ function historyRows(records, { emptyZh = '尚无联系数据历史', emptyEn = 
 }
 
 function decisionSnapshotTable(records) {
-  if (!records.length) return `<div class="crm-empty-inline">${bi('尚无历史快照。','No decision snapshots are available yet.')}</div>`;
-  return `<div class="table-responsive" id="phase7-decision-history" role="region" aria-label="机会决策历史 Opportunity decision history" tabindex="0"><table class="table table-vcenter crm-table crm-phase7-history"><thead><tr><th>${bi('时间','Date')}</th><th>${bi('展示状态','Display status')}</th><th>${bi('系统建议','System recommendation')}</th><th>${bi('联系准备','Contact readiness')}</th></tr></thead><tbody>${records.map(record => `<tr><td>${dateValue(record,['last_assessed_at','lastAssessedAt','assessed_at','assessedAt','created_at','createdAt'])}</td><td>${statusBadge(opportunityStatus(record))}</td><td>${statusBadge(firstValue(record,['system_recommendation_status','systemRecommendationStatus']) || 'UNKNOWN')}</td><td>${statusBadge(firstValue(record,['contact_readiness','contactReadiness']) || 'UNKNOWN')}</td></tr>`).join('')}</tbody></table></div>`;
+  if (!records.length) return `<div class="crm-empty-inline">${bi('尚无状态历史。','No status history yet.')}</div>`;
+  return `<div class="table-responsive" id="phase7-decision-history" role="region" aria-label="机会状态历史 Opportunity status history" tabindex="0"><table class="table table-vcenter crm-table crm-phase7-history"><thead><tr><th>${bi('时间','Date')}</th><th>${bi('展示状态','Display status')}</th><th>${bi('资格状态','Eligibility status')}</th><th>${bi('联系准备','Contact readiness')}</th></tr></thead><tbody>${records.map(record => `<tr><td>${dateValue(record,['last_assessed_at','lastAssessedAt','assessed_at','assessedAt','created_at','createdAt'])}</td><td>${statusBadge(opportunityStatus(record))}</td><td>${statusBadge(firstValue(record,['system_recommendation_status','systemRecommendationStatus']) || 'UNKNOWN')}</td><td>${statusBadge(firstValue(record,['contact_readiness','contactReadiness']) || 'UNKNOWN')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function managementEventTable(records) {
@@ -686,7 +680,7 @@ function managementEventTable(records) {
 
 function contactQueueTable(records) {
   if (!records.length) return `<div class="crm-empty-inline">${bi('尚无 Contact Queue 历史。','No Contact Queue history is available yet.')}</div>`;
-  return `<div class="table-responsive" role="region" aria-label="待联系队列历史 Contact Queue history" tabindex="0"><table class="table table-vcenter crm-table crm-phase7-history"><thead><tr><th>${bi('入队时间','Queued at')}</th><th>${bi('队列状态','Queue status')}</th><th>${bi('负责人','Owner')}</th><th>${bi('说明','Reason')}</th></tr></thead><tbody>${records.map(record => `<tr><td>${dateValue(record,['created_at','createdAt','updated_at','updatedAt'])}</td><td>${statusBadge(firstValue(record,['queue_status','status']) || 'UNKNOWN')}</td><td>${esc(firstValue(record,['owner_identity','ownerIdentity']) || '-')}</td><td>${Array.isArray(firstValue(record,['reason_codes','reasonCodes'])) && firstValue(record,['reason_codes','reasonCodes']).length ? firstValue(record,['reason_codes','reasonCodes']).map(code => bi(...phase7ReasonLabel(code))).join('') : esc(firstValue(record,['reason']) || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-responsive" role="region" aria-label="待联系队列历史 Contact Queue history" tabindex="0"><table class="table table-vcenter crm-table crm-phase7-history"><thead><tr><th>${bi('入队时间','Queued at')}</th><th>${bi('队列状态','Queue status')}</th><th>${bi('负责人','Owner')}</th><th>${bi('原因','Reason')}</th></tr></thead><tbody>${records.map(record => `<tr><td>${dateValue(record,['created_at','createdAt','updated_at','updatedAt'])}</td><td>${statusBadge(firstValue(record,['queue_status','status']) || 'UNKNOWN')}</td><td>${esc(firstValue(record,['owner_identity','ownerIdentity']) || '-')}</td><td>${Array.isArray(firstValue(record,['reason_codes','reasonCodes'])) && firstValue(record,['reason_codes','reasonCodes']).length ? firstValue(record,['reason_codes','reasonCodes']).map(code => bi(...phase7ReasonLabel(code))).join('') : esc(firstValue(record,['reason']) || '-')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function renderDecisionHistory(data) {
@@ -695,14 +689,14 @@ function renderDecisionHistory(data) {
   const events = items(data.decision?.management_events || data.decision?.managementEvents);
   const queueHistory = items(data.decision?.contact_queue_history || data.decision?.contactQueueHistory);
   if (!current && !snapshots.length && !events.length && !queueHistory.length && !data.history.length) {
-    return detailEmpty('ti-history','尚无 Phase 7 历史','No Phase 7 history yet','当前没有机会决策、管理操作或联系历史。','There is no opportunity decision, management action, or outreach history yet.');
+    return detailEmpty('ti-history','尚无业务历史','No business history yet','','');
   }
-  return `<div class="crm-phase7-card-list"><section class="crm-phase7-summary-card"><header><div><h4>${bi('当前机会状态','Current Opportunity State')}</h4><small>${bi('Decision History 与 Contact Queue 入口集中展示。','Decision History and Contact Queue entry stay together here.')}</small></div>${current ? statusBadge(opportunityStatus(current)) : ''}</header>${current ? factList([
-    ['系统建议','System recommendation',statusBadge(firstValue(current,['system_recommendation_status','systemRecommendationStatus']) || 'UNKNOWN')],
+  return `<div class="crm-phase7-card-list"><section class="crm-phase7-summary-card"><header><div><h4>${bi('当前机会状态','Current Opportunity State')}</h4></div>${current ? statusBadge(opportunityStatus(current)) : ''}</header>${current ? factList([
+    ['资格状态','Eligibility status',statusBadge(firstValue(current,['system_recommendation_status','systemRecommendationStatus']) || 'UNKNOWN')],
     ['联系准备','Contact readiness',statusBadge(firstValue(current,['contact_readiness','contactReadiness']) || 'UNKNOWN')],
     ['联系策略','Contact policy',policyStatus(firstValue(current,['policy_contact_status','policyContactStatus']) || 'OPEN')],
     ['最近评估','Last assessed',dateValue(current,['last_assessed_at','lastAssessedAt','assessed_at','assessedAt','created_at','createdAt'])],
-  ]) : `<div class="crm-empty-inline">${bi('当前没有可显示的机会状态。','There is no current opportunity state to display.')}</div>`}</section><section class="crm-detail-section"><h4>${bi('Decision History','Decision History')}</h4>${decisionSnapshotTable(snapshots)}</section><section class="crm-detail-section"><h4>${bi('管理操作历史','Management Action History')}</h4>${managementEventTable(events)}</section><section class="crm-detail-section"><h4>${bi('Contact Queue','Contact Queue')}</h4>${contactQueueTable(queueHistory)}</section><section class="crm-detail-section"><h4>${bi('联系数据历史','Outreach Data History')}</h4>${historyRows(data.history,{ emptyZh:'尚无联系数据历史', emptyEn:'No outreach data history' })}</section></div>`;
+  ]) : `<div class="crm-empty-inline">${bi('尚无当前机会状态。','No current opportunity status.')}</div>`}</section><section class="crm-detail-section"><h4>${bi('状态历史','Status History')}</h4>${decisionSnapshotTable(snapshots)}</section><section class="crm-detail-section"><h4>${bi('管理操作历史','Management Action History')}</h4>${managementEventTable(events)}</section><section class="crm-detail-section"><h4>${bi('待联系队列','Contact Queue')}</h4>${contactQueueTable(queueHistory)}</section><section class="crm-detail-section"><h4>${bi('联系数据历史','Outreach Data History')}</h4>${historyRows(data.history,{ emptyZh:'尚无联系数据历史', emptyEn:'No outreach data history' })}</section></div>`;
 }
 
 async function optionalRequest(url) {
@@ -800,7 +794,7 @@ async function performOpportunityAction(detail, panel, action, button) {
   setBusy(button,true,labels);
   if (status) status.innerHTML = bi('正在保存管理操作。','Saving the management action.');
   try {
-    const payload = await request(`/api/opportunities/${encodeURIComponent(reference)}/${endpoint}`,{
+    await request(`/api/opportunities/${encodeURIComponent(reference)}/${endpoint}`,{
       method:'POST',
       headers:{ 'content-type':'application/json' },
       body:JSON.stringify({
@@ -811,7 +805,7 @@ async function performOpportunityAction(detail, panel, action, button) {
     });
     state.flash = {
       html: action === 'MANAGEMENT_APPROVED'
-        ? bi(`已确认进入待联系，不等于消息批准。provider_calls ${Number(payload?.provider_calls ?? 0)}，messages_approved ${Number(payload?.messages_approved ?? 0)}。`,`Queued for contact; this is not message approval. provider_calls ${Number(payload?.provider_calls ?? 0)}, messages_approved ${Number(payload?.messages_approved ?? 0)}.`)
+        ? bi('已加入待联系。','Added to Contact Queue.')
         : bi('管理操作已保存。','The management action has been saved.')
     };
     state.cache = null;

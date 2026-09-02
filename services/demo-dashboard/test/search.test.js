@@ -193,8 +193,8 @@ async function withResearchJob(callback) {
     password: process.env.POSTGRES_PASSWORD
   });
   const created = await pool.query(`
-    INSERT INTO leadgen.research_jobs (country,city,product_category,buyer_types,max_results,status,started_at)
-    VALUES ('United Arab Emirates','Dubai','Beauty & Personal Care',ARRAY['Importer','Wholesaler','Distributor'],5,'DISCOVERING',now())
+    INSERT INTO leadgen.research_jobs (country,country_code,country_name,market_profile,city,product_category,buyer_types,max_results,status,started_at)
+    VALUES ('United Arab Emirates','AE','United Arab Emirates','AE','Dubai','Beauty & Personal Care',ARRAY['Importer','Wholesaler','Distributor'],5,'DISCOVERING',now())
     RETURNING id`);
   try { await callback(pool, created.rows[0].id); }
   finally {

@@ -11,7 +11,7 @@ const rows = payload => Array.isArray(payload) ? payload : payload?.items || [];
 const date = value => value ? new Date(value).toLocaleString() : '-';
 
 function emptyState() {
-  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系记录', 'No approved contacts are queued')}</h3><p>${bi('业务机会通过联系就绪门槛并由管理人员确认后，才会进入这里。', 'An opportunity appears here only after contact readiness and management approval.')}</p><button class="btn btn-outline-primary" type="button" data-open-view="opportunities">${bi('查看业务机会', 'Open Opportunities')}</button></div>`;
+  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系记录', 'No approved contacts are queued')}</h3><button class="btn btn-outline-primary" type="button" data-open-view="opportunities">${bi('查看业务机会', 'Open Opportunities')}</button></div>`;
 }
 
 function render(items) {
