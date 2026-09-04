@@ -5,26 +5,37 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T14:02:00+08:00",
+  "generated_updated_at": "2026-09-04T17:28:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "5956dfe4ce2fa1d6eb233b6f352c7bbabf684550",
+  "commit": "ea75a69533ee4b640180d3d9af2396e4d8373254",
   "dirty_at_snapshot": false,
-  "latest_released_phase": "Phase 9",
+  "latest_released_phase": "Phase 10 (Pre-email)",
   "current_active_phase": "Phase 10",
   "phase_state": [
     "Phase 1–9 complete",
     "Phase 10 code/migration/UI/automation verified",
-    "Phase 10 final acceptance incomplete",
+    "Phase 10 pre-email final acceptance passed",
     "WP-U00–U14 complete",
-    "Work Package 15 implementation verified; controlled-address E2E pending",
-    "Work Package 16 read-only inspection blocked by missing SPF, unknown DKIM selector and rejected Google sign-in",
+    "WP-A04 category-driven automation convergence passed",
+    "WP-A05 category-driven pre-email acceptance Runner passed",
+    "WP-A06 real one-action approved-category canary passed",
+    "WP-A07 event scheduling, dedupe and periodic reconciliation passed",
+    "WP-A08 repeated Create, execution and Provider deduplication passed",
+    "WP-A09 worker restart, stale lease and S05 checkpoint recovery passed",
+    "WP-A10 Provider-account-only capacity and distinct-strategy exhaustion passed",
+    "WP-A11 category evidence, route readiness and Opportunity decision passed",
+    "WP-A12 management UI positive and reverse browser paths passed",
+    "WP-A13 acceptance XLSX generated and verified",
+    "WP-A14 zero-send and reverse safety passed",
+    "WP-A15 stuck-task monitoring and automatic convergence passed",
+    "WP-A16 final release validation passed",
     "WP-A04.2 provider-only research and continuation recovery passed",
     "WP-U13 real browser positive and reverse canaries passed",
     "WP-U14 implementation snapshot, documentation and release handoff complete"
   ],
-  "final_acceptance_state": "INCOMPLETE",
-  "business_result_state": "NO",
+  "final_acceptance_state": "PASS",
+  "business_result_state": "YES",
   "applied_migrations": [
     {"migration_key":"024_phase6_1_category_procurement_match.sql","sha256":"f468b82796e4941a65d81dc37f4a2cc9ca10ca0ccc938abf4ec4ad5a83b4930d"},
     {"migration_key":"025_phase7_outreach_and_data_exchange.sql","sha256":"e0bc7c3b8f618415953e5d6a2434c18fc1ec12a1a98b34c533ac13b2c580c9b3"},
@@ -49,17 +60,18 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"044_phase10_tavily_provider_account_only.sql","sha256":"ea05a88571852f63e96be9e8ea60b1e9366f4d283e0ebc743cfe665fee463a34"},
     {"migration_key":"045_phase10_provider_account_state.sql","sha256":"ec0d626b2b5599a9af4076dae2ecb19a0da0b0a8a5d3bb84a44e2a2e511bde80"},
     {"migration_key":"046_phase10_empty_research_job_purge_audit.sql","sha256":"d2c4ade50d1e76fbfb7a95608263660f078dbc9d1178e61aef26da7bfe6bb87c"},
-    {"migration_key":"047_phase10_retire_internal_tavily_enforcement.sql","sha256":"63ec5e44937d068c83d73f57cd0aa7434a6ec653dfbce12acb0f523285bcd92c"}
+    {"migration_key":"047_phase10_retire_internal_tavily_enforcement.sql","sha256":"63ec5e44937d068c83d73f57cd0aa7434a6ec653dfbce12acb0f523285bcd92c"},
+    {"migration_key":"048_phase10_category_driven_context.sql","sha256":"d205d84825e1a7a3fb76e0c556773504c007961ee70555b30b7623736af3b891"}
   ],
   "current_real_data_counts": {
-    "companies": 110,
-    "sources": 231,
-    "contacts": 62,
+    "companies": 115,
+    "sources": 270,
+    "contacts": 73,
     "lead_reviews": 93,
     "collection_runs": 13,
-    "research_jobs": 144,
-    "current_opportunities": 17,
-    "evidence_required": 13,
+    "research_jobs": 239,
+    "current_opportunities": 20,
+    "evidence_required": 16,
     "not_suitable": 3,
     "recommended": 1,
     "management_approved": 0,
@@ -67,9 +79,9 @@ This file is the single source of truth for current execution state. Historical 
     "decision_maker_contacts": 83,
     "valid_contact_routes": 0,
     "company_contact_routes": 83,
-    "auto_evidence_tasks": 31,
-    "provider_usage_events": 204,
-    "commercial_fit_results": 61,
+    "auto_evidence_tasks": 60,
+    "provider_usage_events": 321,
+    "commercial_fit_results": 107,
     "official_route_manual_task_revisions": 50,
     "official_route_manual_tasks_active": 50,
     "outreach_drafts": 0,
@@ -104,7 +116,7 @@ This file is the single source of truth for current execution state. Historical 
   ],
   "last_reconciliation_heartbeat": {
     "status": "ACTIVE",
-    "observed_at": "2026-09-04T14:00:18.356+08:00"
+    "observed_at": "2026-09-04T16:00:16.290+08:00"
   },
   "provider_configuration": {
     "search_provider": "tavily",
@@ -116,16 +128,9 @@ This file is the single source of truth for current execution state. Historical 
     "inbound_email_provider": "NONE",
     "gmail_configured": false
   },
-  "current_blockers": [
-    "No SPF record is published for dpvinternational.com on either 1.1.1.1 or 8.8.8.8",
-    "DKIM selector and activation state have not been obtained from Google Admin",
-    "Google sign-in is currently on a rejected page and Gmail manual send/receive/header verification has not run",
-    "Gmail OAuth client and user refresh authorization are not configured",
-    "Controlled recipient is configured, but receipt/reply verification has not run",
-    "No Management Approved opportunity; real prospect sending remains independently gated"
-  ],
-  "next_allowed_work_package": "Gmail controlled acceptance",
-  "explicit_stop_boundary": "STOP after WP-U14; Gmail controlled-address E2E waits for OAuth, SPF and DKIM readiness"
+  "current_blockers": [],
+  "next_allowed_work_package": "POST_PHASE10_EMAIL_CONFIGURATION",
+  "explicit_stop_boundary": "STOP after WP-A16; Phase 10 pre-email category-driven automation is accepted"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
@@ -133,12 +138,11 @@ This file is the single source of truth for current execution state. Historical 
 ## Status interpretation
 
 - Phase 1–9 are complete.
-- Phase 10 code, migrations, UI and automation contracts are verified.
-- Phase 10 final acceptance remains incomplete and the business-result state remains NO.
-- WP-U00–U14 are complete. The provider-only research policy, canonical continuation, historical compatibility, live browser canary and release handoff have passed. WP15 implementation, migration, local tests and deployed disabled-state verification are complete; its real controlled-address send/reply/CRM E2E remains pending mailbox configuration.
+- Phase 10 pre-email category-driven automation is accepted with a real business result.
+- WP-U00–U14 and WP-A05–A16 are complete. Provider-only research, canonical continuation, category-driven Opportunity decisions, management UI, XLSX export, zero-send safety, stuck-task convergence and final release verification passed.
 - WP06 provides trustworthy workflow health and QUEUED recovery. WP07 adds the transactional ResearchJob outbox and direct pg-boss execution path while retaining n8n compatibility. WP08 makes `provider_usage_events` the canonical ResearchJob provider-usage source. WP09 separates business strategy attempts, Provider retries and worker recoveries. WP10's historical fair scheduling remains, while WP-A04.2 removes every application-enforced Tavily quantity budget and relies on confirmed Provider account credit state. WP11 expands and validates the verified-company pool. WP12 adds append-only Commercial Product Fit as a non-blocking ranking layer with an independent evidence coverage value. WP13 adds an append-only manual queue for verified official supplier, vendor, procurement and contact routes without granting send or approval permission. WP14 adds an executable GoRules native dependency health check. WP15 adds a gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, historyId polling, structured DSN handling and existing Phase 7 inbound/CRM reuse.
 - Contact qualification now prefers a verified named Buyer but accepts an official company email, business phone or public WhatsApp as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
 
 ## Execution boundary
 
-The next permitted action is the remaining Gmail controlled-address acceptance. SPF and DKIM must pass and Google sign-in/OAuth must complete before any controlled send. Prospect sending remains off.
+STOP after WP-A16. Gmail controlled-address configuration and any future outbound activation are separate post-Phase10 work; prospect sending remains off in this accepted release.
