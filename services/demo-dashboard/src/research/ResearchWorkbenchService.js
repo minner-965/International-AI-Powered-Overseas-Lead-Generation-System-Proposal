@@ -57,11 +57,13 @@ function publicJob(row = {}) {
     ? row.requested_company_ids.length : Number(row.companies_attempted || row.candidates_found || 0);
   const companiesAttempted=Number(row.companies_attempted || 0);
   const rawStatus=upper(row.status);
+  const hasFrozenCohort=Array.isArray(row.requested_company_ids)&&row.requested_company_ids.length>0;
   const completedUnits=Math.max(companiesAttempted,Number(row.candidate_verifications_completed || 0));
   const stageFloor=rawStatus==='DISCOVERING'?8:rawStatus==='CRAWLING'?30:rawStatus==='QUALIFYING'?76:rawStatus==='SCORING'?90:0;
   const stageCeiling=rawStatus==='DISCOVERING'?25:rawStatus==='CRAWLING'?68:rawStatus==='QUALIFYING'?84:rawStatus==='SCORING'?98:99;
   const progressPercent=publicStatus === 'COMPLETED' ? 100
     : publicStatus === 'QUEUED' ? 0
+      : hasFrozenCohort ? Math.min(99,Math.round((companiesAttempted/companiesSelected)*100))
       : companiesSelected > 0 ? Math.max(stageFloor,Math.min(stageCeiling,
         stageFloor+Math.round((completedUnits/companiesSelected)*Math.max(0,stageCeiling-stageFloor)))) : stageFloor;
   return Object.freeze({
