@@ -522,7 +522,7 @@ function renderResearchJob(job) {
   $('#research-job').innerHTML = `<div class="research-job-head"><div><p class="kicker">${bi('研究任务','Research job')}</p><h4>${esc(job.job_id || job.id || '-')}</h4></div><span class="job-status status-${esc(String(job.status || '').toLowerCase())}" role="status" aria-live="polite" aria-atomic="true">${bi(status[0],status[1])}</span></div>
     <details class="job-disclosure"${compactCompleted ? '' : ' open'}>
       <summary>${bi('查看任务详情与结果','View job details and results')}</summary>
-      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? job.search_api_requests ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
+      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
       ${job.status === 'FAILED' ? `<p class="job-error">${bi('研究任务未完成。','Research job failed.')}</p>` : ''}
       <div id="research-query-summary"></div><div id="research-candidate-results"></div><div id="research-verification-results"></div>
     </details>`;
@@ -1560,7 +1560,8 @@ function categoryScopeRelationshipView(result, observed, matched) {
     VALIDATING_EVIDENCE:['正在核验资料','Validating evidence'], FINDING_BUYER:['正在查找采购负责人','Finding buyer'],
     VERIFYING_EMAIL:['正在核验商务邮箱','Verifying email'], REFRESHING_DECISION:['正在刷新机会状态','Refreshing status'],
     RETRY_SCHEDULED:['等待重试','Retry scheduled'], HUMAN_REVIEW_REQUIRED:['需人工复核','Human review required'],
-    BUDGET_PAUSED:['预算暂停','Budget paused'], COMPLETED:['已完成','Completed']
+    BUDGET_PAUSED:['历史预算暂停','Historical budget pause'],
+    PROVIDER_CAPACITY_WAIT:['等待搜索服务额度恢复','Waiting for search capacity'], COMPLETED:['已完成','Completed']
   })[automation] || ['状态待同步','Status pending'];
   return `<div class="p10-category-relationship">
     <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">客户采购类目</span><span lang="en">Customer Procurement Categories</span></h5>${productMatchTags(observed,'客户采购类目待补充。','Customer procurement categories required.',{taxonomy:true})}</section>

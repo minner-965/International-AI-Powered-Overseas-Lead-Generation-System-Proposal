@@ -31,15 +31,14 @@ import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/rou
 import { createManagementAuth } from './phase7/managementAuth.js';
 import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
 import { createResearchRouter } from './research/router.js';
-import { OrchestratorHealthService,classifyDispatchFailure } from './orchestration/OrchestratorHealthService.js';
-import { ResearchDirectDispatchService,ResearchJobDirectExecutor,researchDirectQueueConfig } from './research/ResearchDirectDispatchService.js';
+import { OrchestratorHealthService } from './orchestration/OrchestratorHealthService.js';
+import { ResearchDirectDispatchService,ResearchJobDirectExecutor } from './research/ResearchDirectDispatchService.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const httpListenEnabled = !/^(0|false|no|off)$/i.test(process.env.HTTP_LISTEN_ENABLED || 'true');
-const n8nResearchWebhookUrl = process.env.N8N_RESEARCH_WEBHOOK_URL || '';
 const n8nEnrichmentWebhookUrl = process.env.N8N_ENRICHMENT_WEBHOOK_URL || '';
 const n8nCategoryProcurementWebhookUrl = process.env.N8N_CATEGORY_PROCUREMENT_WEBHOOK_URL || '';
 const n8nWebhookTimeoutMs = Math.max(1000, Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 5000));
@@ -60,7 +59,6 @@ const telemetry = createTelemetryService({
   serviceName: 'dpv-leadgen-dashboard'
 });
 const effectivePhase10Config = autoEvidenceConfig(process.env);
-const effectiveResearchDirectQueueConfig=researchDirectQueueConfig(process.env);
 
 function canonicalDigest(value) {
   const canonical = Object.fromEntries(Object.entries(value || {}).sort(([left],[right])=>left.localeCompare(right)));
@@ -93,20 +91,8 @@ const searchConfig = Object.freeze({
     timeoutMs: Math.max(1000, Number(process.env.COMPANY_VERIFY_TIMEOUT_MS || 10000)),
     delayMs: Math.max(0, Number(process.env.COMPANY_VERIFY_DELAY_MS || 350)),
     maxResponseBytes: Math.max(10000, Number(process.env.COMPANY_VERIFY_MAX_RESPONSE_BYTES || 2000000)),
-    userAgent: String(process.env.CONTACT_USER_AGENT || 'DPVLeadResearchDemo/1.0'),
-    socialMaxSearches: Math.max(0, Math.min(3, Number(process.env.SOCIAL_ENRICHMENT_MAX_SEARCHES_PER_JOB || 3)))
+    userAgent: String(process.env.CONTACT_USER_AGENT || 'DPVLeadResearchDemo/1.0')
   })
-});
-const tavilyUsageConfigBase = Object.freeze({
-  internalLimitsEnabled:effectivePhase10Config.tavilyInternalLimitsEnabled,
-  runCapUnits: effectivePhase10Config.tavilyRunCapUnits,
-  dailyCapUnits: effectivePhase10Config.tavilyDailyCapUnits,
-  discoveryDailyCapUnits:effectivePhase10Config.tavilyDiscoveryDailyUnits,
-  evidenceDailyCapUnits:effectivePhase10Config.tavilyEvidenceDailyUnits,
-  companyProfileCycleCapUnits:effectivePhase10Config.tavilyCompanyProfileCycleUnits,
-  billingPeriodCapUnits: effectivePhase10Config.tavilyInternalLimitsEnabled
-    ?Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS || 1000)):null,
-  reservationUnits: Math.max(1,Number(process.env.TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS || 1))
 });
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'postgres',
@@ -118,9 +104,9 @@ const pool = new Pool({
 instrumentPgPool(pool, telemetry);
 const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:searchConfig.tavilyApiKey,
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
-  refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||600000),
+  refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
   timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
-const tavilyUsageConfig=Object.freeze({...tavilyUsageConfigBase,providerAccountState:tavilyProviderAccountState});
+const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -361,8 +347,14 @@ async function calculateProductOpportunitiesWork(data){const payload=categoryPro
 async function recalculateCooperationV3Work(data){const payload=categoryProcurementQueuePayload(data);try{
   const result=await categoryProcurementService.calculateCooperationAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id,productOpportunityResultId:payload.product_opportunity_result_id});
   const updatedJob=await refreshCategoryProcurementJobProgress(payload.job_id);
-  if(['COMPLETED','PARTIAL'].includes(updatedJob?.status))await enqueueAutoEvidenceEvent(
-    `category-procurement-completed:${payload.job_id}`,{research_job_id:payload.job_id});
+  if(['COMPLETED','PARTIAL'].includes(updatedJob?.status)){
+    await phase7Service.repository.refreshOpportunityDecisions({
+      ttlDays:Number(process.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)
+    });
+    await enqueueAutoEvidenceEvent(`category-procurement-completed:${payload.job_id}`,{
+      research_job_id:payload.job_id
+    });
+  }
   return{cooperation_result_id:result.id,readiness:result.opportunity_readiness,product_access_matrix:result.product_access_matrix};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
 
@@ -387,6 +379,7 @@ const autoEvidenceExecutors=createAutoEvidenceExecutors({
 const autoEvidenceService = new AutoEvidenceOrchestrator({
   pool,
   queue:phase7QueueProxy,
+  providerAccountState:tavilyProviderAccountState,
   env:process.env,
   audit,
   executors:autoEvidenceExecutors
@@ -395,8 +388,7 @@ const orchestratorHealth = new OrchestratorHealthService({
   pool,
   intervalMinutes:Number(process.env.AUTO_EVIDENCE_RECONCILE_MINUTES || 30),
   queuedThresholdMinutes:Number(process.env.ORCHESTRATOR_QUEUED_THRESHOLD_MINUTES || 10),
-  retryDelayMinutes:Number(process.env.ORCHESTRATOR_RETRY_DELAY_MINUTES || 5),
-  researchWorkflowActive:/^(1|true|yes|on)$/i.test(process.env.N8N_RESEARCH_WORKFLOW_ACTIVE || 'true')
+  retryDelayMinutes:Number(process.env.ORCHESTRATOR_RETRY_DELAY_MINUTES || 5)
 });
 const autoEvidenceQueueHandlers=createAutoEvidenceQueueHandlers({service:autoEvidenceService});
 
@@ -467,10 +459,13 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   },
   discover:jobId=>discoverResearchCandidates(pool,jobId,searchConfig,{tavilyUsageConfig}),
   checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
-  verify:jobId=>verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,promote:true,allowSocialSearch:true}),
+  verify:jobId=>verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true}),
   score:async(jobId,executionKey)=>{
+    const jobResult=await pool.query('SELECT product_profile FROM leadgen.research_jobs WHERE id=$1',[jobId]);
+    if(!jobResult.rowCount)throw Object.assign(new Error('Research job not found'),{code:'RESEARCH_JOB_NOT_FOUND'});
+    const productScope=jobResult.rows[0].product_profile;
     await scoreCompanySet({research_job_id:jobId},{id:`${executionKey}:score`});
-    await matchCompanySet({research_job_id:jobId},{id:`${executionKey}:match`});
+    await matchCompanySet({research_job_id:jobId,product_scope:productScope},{id:`${executionKey}:match`});
   },
   completed:async jobId=>{
     const downstream=await schedulePostDiscoveryAutomation(jobId);
@@ -478,8 +473,7 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
     return downstream;
   }
 }});
-researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,
-  enabled:effectiveResearchDirectQueueConfig.enabled,audit});
+researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,audit});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -599,7 +593,10 @@ app.post('/api/internal/research/direct-dispatch/reconcile',requireInternalToken
   try{res.status(202).json(await researchDirectDispatchService.reconcile({limit:req.body?.limit}));}catch(error){next(error);}
 });
 app.get('/api/orchestrator/status',...categoryScopeRead,async(_req,res,next)=>{
-  try{res.json(await orchestratorHealth.status('dpvPhase1TwoWeekDemo'));}catch(error){next(error);}
+  try{
+    const reconciliation=await orchestratorHealth.status('dpvPhase10AutoEvidenceReconciliation');
+    res.json({research_dispatch:{state:'DIRECT_PG_BOSS'},reconciliation});
+  }catch(error){next(error);}
 });
 app.post('/api/auto-evidence/controlled-batch',managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN'),async(req,res,next)=>{
@@ -1106,40 +1103,10 @@ app.get('/api/metrics', async (_req, res, next) => {
 
 function researchJobResponse(row) {
   const { id, ...fields } = row;
-  if (Object.hasOwn(row,'provider_call_count')) {
-    fields.search_api_requests=Number(row.provider_call_count||0);
-    fields.search_credits_used=Number(row.used_units||0);
-  }
   return { job_id: id, ...fields };
 }
 
-async function triggerResearchWorkflow(job) {
-  if (!n8nResearchWebhookUrl) throw Object.assign(new Error('Research workflow webhook is not configured'),{code:'WORKFLOW_INACTIVE'});
-  const response = await fetch(n8nResearchWebhookUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      job_id: job.id,
-      country: job.country_name || job.country,
-      country_code: job.country_code,
-      country_name: job.country_name || job.country,
-      city: job.city,
-      region: job.region,
-      preferred_language: job.preferred_language,
-      market_profile: job.market_profile,
-      product_category: job.product_category,
-      product_profile: job.product_profile,
-      buyer_types: job.buyer_types,
-      max_results: job.max_results
-    }),
-    signal: AbortSignal.timeout(n8nWebhookTimeoutMs)
-  });
-  if (!response.ok) throw Object.assign(new Error(`Research workflow returned HTTP ${response.status}`),{status:response.status});
-  return { accepted: true, status_code: response.status };
-}
-
 async function dispatchResearchJob(job){
-  if(!effectiveResearchDirectQueueConfig.enabled)return triggerResearchWorkflow(job);
   const result=await researchDirectDispatchService.dispatch(job.id);
   if(result.state!=='DISPATCHED'&&result.state!=='COMPLETED')throw Object.assign(new Error('Direct research queue is unavailable'),{code:'QUEUE_UNAVAILABLE'});
   return {accepted:true,status_code:202,mode:'DIRECT_QUEUE',queue_job_id:result.queue_job_id||null};
@@ -1198,7 +1165,7 @@ async function createCategoryProcurementResearchJob({companyIds=[],maxResults=10
     throw Object.assign(new Error('One or more companies are not verified active Category Procurement targets'),{code:'CATEGORY_PROCUREMENT_COMPANY_INELIGIBLE'});
   }
   if(!selected.rowCount)throw Object.assign(new Error('No verified active companies are available for Category Procurement'),{code:'CATEGORY_PROCUREMENT_SCOPE_EMPTY'});
-  await tavilyProviderAccountState.assertCanCreate();
+  await tavilyProviderAccountState.ensureCanCreate();
   const requestedCompanyIds=selected.rows.map(row=>row.id);
   const marketCodes=[...new Set(selected.rows.map(row=>row.country_code).filter(Boolean))];
   const created=await pool.query(`INSERT INTO leadgen.research_jobs
@@ -1291,7 +1258,7 @@ app.post('/api/research/jobs', managementAuth.authenticate,
     if (explicitProductProfile && mappedProductProfile && explicitProductProfile !== mappedProductProfile) {
       return res.status(400).json({ error: 'Invalid research job', detail: 'product_profile does not match product_category' });
     }
-    await tavilyProviderAccountState.assertCanCreate();
+    await tavilyProviderAccountState.ensureCanCreate();
     const requestPayload = {
       country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
       preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
@@ -1318,25 +1285,9 @@ app.post('/api/research/jobs', managementAuth.authenticate,
       return res.status(200).json({ id:job.id,job_id:job.id,status:job.status,idempotent_replay:true });
     }
     audit('RESEARCH_JOB_CREATED', { job_id: job.id });
-    if(effectiveResearchDirectQueueConfig.enabled){
-      const state=created.dispatch?.state||'RETRY_PENDING';
-      audit('RESEARCH_DIRECT_QUEUE_REQUESTED',{job_id:job.id,dispatch_state:state});
-      return res.status(202).json({id:job.id,job_id:job.id,status:'QUEUED',dispatch:'direct_queue',dispatch_state:state});
-    }
-    audit('N8N_DISPATCH_REQUESTED', { job_id: job.id });
-    try {
-      await orchestratorHealth.recordDispatch(job.id,'PENDING');
-      const dispatch = await triggerResearchWorkflow(job);
-      await orchestratorHealth.recordDispatch(job.id,'DISPATCHED');
-      audit('N8N_DISPATCH_SUCCEEDED', { job_id: job.id, status_code: dispatch.status_code });
-      res.status(202).json({ id: job.id, job_id: job.id, status: 'QUEUED', dispatch: 'accepted',dispatch_state:'DISPATCHED' });
-    } catch (dispatchError) {
-      const dispatchState=classifyDispatchFailure(dispatchError,{workflowActive:orchestratorHealth.researchWorkflowActive});
-      const reason=`DISPATCH_${dispatchState}`;
-      await orchestratorHealth.recordDispatch(job.id,dispatchState,{reason});
-      audit('N8N_DISPATCH_DEFERRED', { job_id: job.id, dispatch_state:dispatchState });
-      res.status(202).json({job_id:job.id,id:job.id,status:'QUEUED',dispatch:'deferred',dispatch_state:dispatchState,blocked_reason:reason});
-    }
+    const state=created.dispatch?.state||'RETRY_PENDING';
+    audit('RESEARCH_DIRECT_QUEUE_REQUESTED',{job_id:job.id,dispatch_state:state});
+    return res.status(202).json({id:job.id,job_id:job.id,status:'QUEUED',dispatch:'direct_queue',dispatch_state:state});
   } catch (error) { next(error); }
 });
 
@@ -1366,7 +1317,7 @@ app.get('/api/research/jobs/:id', async (req, res, next) => {
 app.post('/api/enrichment/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
-    await tavilyProviderAccountState.assertCanCreate();
+    await tavilyProviderAccountState.ensureCanCreate();
     const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
     let productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
@@ -1739,7 +1690,7 @@ app.post('/api/internal/research/jobs/:id/discover', requireInternalToken, async
     }, async span => {
       const discovered = await discoverResearchCandidates(pool, req.params.id, searchConfig,{tavilyUsageConfig});
       span.setAttribute('result_count', discovered.candidates_found || 0);
-      span.setAttribute('credits', discovered.search_credits_used || discovered.successful_requests || 0);
+      span.setAttribute('credits', discovered.credits_used || 0);
       return discovered;
     });
     audit('SEARCH_DISCOVERY_COMPLETED', {
@@ -2496,7 +2447,7 @@ async function start() {
   }
   await phase5Queue.start();
   let researchOutboxTimer=null;
-  if(httpListenEnabled&&effectiveResearchDirectQueueConfig.enabled){
+  if(httpListenEnabled){
     await researchDirectDispatchService.reconcile({limit:25});
     researchOutboxTimer=setInterval(()=>researchDirectDispatchService.reconcile({limit:25})
       .catch(error=>audit('RESEARCH_DIRECT_OUTBOX_RECONCILE_FAILED',{code:error?.code||'QUEUE_UNAVAILABLE'})),30000);

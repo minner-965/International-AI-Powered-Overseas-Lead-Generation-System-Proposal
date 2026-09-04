@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {ResearchDirectDispatchService,ResearchJobDirectExecutor,researchDirectQueueConfig} from '../src/research/ResearchDirectDispatchService.js';
+import {ResearchDirectDispatchService,ResearchJobDirectExecutor} from '../src/research/ResearchDirectDispatchService.js';
 
-function harness({enabled=true}={}){
+function harness(){
   const state={job:{id:'JOB-1',status:'QUEUED',dispatch_execution_key:'research-job:JOB-1'},outbox:null,queries:[],queueCalls:[],tx:[]};
   const client={query:async(sql,params=[])=>{
     if(['BEGIN','COMMIT','ROLLBACK'].includes(sql)){state.tx.push(sql);return{rows:[]};}
@@ -11,13 +11,14 @@ function harness({enabled=true}={}){
   },release(){}};
   const pool={connect:async()=>client,query:async(sql,params=[])=>{
     if(sql.includes('SELECT o.*,j.status job_status'))return{rowCount:state.outbox?1:0,rows:state.outbox?[{...state.outbox,job_status:state.job.status}]:[]};
+    if(sql.includes('INSERT INTO leadgen.research_job_dispatch_outbox')){state.outbox={research_job_id:params[0],execution_key:state.job.dispatch_execution_key,dispatch_state:'PENDING',checkpoint:'CREATED'};return{rows:[],rowCount:1};}
     if(sql.includes("dispatch_state='DISPATCHED'")){state.outbox.dispatch_state='DISPATCHED';state.outbox.queue_job_id=params[1];return{rows:[]};}
     if(sql.includes('UPDATE leadgen.research_jobs SET dispatch_state'))return{rows:[]};
     if(sql.includes("dispatch_state='RETRY_PENDING'")){state.outbox.dispatch_state='RETRY_PENDING';return{rows:[]};}
     throw new Error(`Unexpected pool SQL: ${sql}`);
   }};
   const queue={enqueue:async(name,data,options)=>{state.queueCalls.push({name,data,options});return 'QUEUE-1';}};
-  return{state,pool,queue,service:new ResearchDirectDispatchService({pool,queue,enabled})};
+  return{state,pool,queue,service:new ResearchDirectDispatchService({pool,queue})};
 }
 
 test('n8n can be absent while enabled direct mode commits one outbox and queues the canary',async()=>{
@@ -38,6 +39,11 @@ test('duplicate POST result returns the original job without a second outbox or 
   const h=harness();
   const result=await h.service.createAtomic(async()=>({...h.state.job,inserted:false}));
   assert.equal(result.job.id,'JOB-1');assert.equal(result.dispatch,null);assert.equal(h.state.outbox,null);assert.equal(h.state.queueCalls.length,0);
+});
+
+test('watchdog repair creates a missing outbox before direct dispatch',async()=>{
+  const h=harness();const result=await h.service.dispatch('JOB-1');
+  assert.equal(result.state,'DISPATCHED');assert.ok(h.state.outbox);assert.equal(h.state.queueCalls.length,1);
 });
 
 test('n8n retrigger uses the same singleton execution key',async()=>{
@@ -68,8 +74,7 @@ test('worker restart resumes from checkpoint and provider ledger prevents anothe
   assert.equal(result.status,'COMPLETED');assert.equal(generateCalls,1);assert.equal(discoverInvocations,2);assert.equal(providerNetworkCalls,1);
 });
 
-test('feature flag defaults false and preserves the legacy path',async()=>{
-  assert.equal(researchDirectQueueConfig({}).enabled,false);
-  const h=harness({enabled:false});const result=await h.service.createAtomic(async()=>({...h.state.job,inserted:true}));
-  assert.equal(result.dispatch,null);assert.equal(h.state.outbox,null);assert.equal(h.state.queueCalls.length,0);
+test('direct outbox dispatch is mandatory and has no legacy feature flag',async()=>{
+  const h=harness();const result=await h.service.createAtomic(async()=>({...h.state.job,inserted:true}));
+  assert.equal(result.dispatch.state,'DISPATCHED');assert.ok(h.state.outbox);assert.equal(h.state.queueCalls.length,1);
 });

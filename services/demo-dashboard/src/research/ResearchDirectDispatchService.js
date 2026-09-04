@@ -1,13 +1,12 @@
 import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
 
-const trueValue=value=>/^(1|true|yes|on)$/i.test(String(value||''));
 const safeCode=error=>String(error?.code||'QUEUE_UNAVAILABLE').toUpperCase().replace(/[^A-Z0-9_]+/g,'_').slice(0,80);
 
 export class ResearchDirectDispatchService {
-  constructor({pool,queue,executor=null,enabled=false,audit=()=>{}}={}) {
+  constructor({pool,queue,executor=null,audit=()=>{}}={}) {
     if(!pool)throw new Error('ResearchDirectDispatchService requires a PostgreSQL pool');
     if(!queue)throw new Error('ResearchDirectDispatchService requires a queue');
-    this.pool=pool;this.queue=queue;this.executor=executor;this.enabled=enabled===true;this.audit=audit;
+    this.pool=pool;this.queue=queue;this.executor=executor;this.audit=audit;
   }
 
   async createAtomic(createJob) {
@@ -15,19 +14,26 @@ export class ResearchDirectDispatchService {
     try{
       await client.query('BEGIN');
       job=await createJob(client);
-      if(job?.inserted&&this.enabled){
+      if(job?.inserted){
         await client.query(`INSERT INTO leadgen.research_job_dispatch_outbox(research_job_id,execution_key)
           VALUES($1,$2) ON CONFLICT(research_job_id) DO NOTHING`,[job.id,job.dispatch_execution_key]);
       }
       await client.query('COMMIT');
     }catch(error){try{await client.query('ROLLBACK');}catch{}throw error;}finally{client.release();}
-    if(job?.inserted&&this.enabled)return {job,dispatch:await this.dispatch(job.id)};
+    if(job?.inserted)return {job,dispatch:await this.dispatch(job.id)};
     return {job,dispatch:null};
   }
 
   async dispatch(researchJobId) {
-    const result=await this.pool.query(`SELECT o.*,j.status job_status FROM leadgen.research_job_dispatch_outbox o
+    let result=await this.pool.query(`SELECT o.*,j.status job_status FROM leadgen.research_job_dispatch_outbox o
       JOIN leadgen.research_jobs j ON j.id=o.research_job_id WHERE o.research_job_id=$1`,[researchJobId]);
+    if(!result.rowCount){
+      await this.pool.query(`INSERT INTO leadgen.research_job_dispatch_outbox(research_job_id,execution_key)
+        SELECT id,dispatch_execution_key FROM leadgen.research_jobs WHERE id=$1 AND status='QUEUED'
+        ON CONFLICT(research_job_id) DO NOTHING`,[researchJobId]);
+      result=await this.pool.query(`SELECT o.*,j.status job_status FROM leadgen.research_job_dispatch_outbox o
+        JOIN leadgen.research_jobs j ON j.id=o.research_job_id WHERE o.research_job_id=$1`,[researchJobId]);
+    }
     if(!result.rowCount)return {state:'MISSING'};
     const row=result.rows[0];
     if(row.dispatch_state==='COMPLETED'||['COMPLETED','COMPLETE'].includes(row.job_status))return {state:'COMPLETED',queue_job_id:row.queue_job_id};
@@ -54,7 +60,6 @@ export class ResearchDirectDispatchService {
   }
 
   async reconcile({limit=25}={}) {
-    if(!this.enabled)return {enabled:false,selected:0,outcomes:[]};
     const claimed=await this.pool.query(`WITH selected AS (
       SELECT id FROM leadgen.research_job_dispatch_outbox WHERE dispatch_state IN('PENDING','RETRY_PENDING')
         AND (next_attempt_at IS NULL OR next_attempt_at<=now()) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1
@@ -62,7 +67,7 @@ export class ResearchDirectDispatchService {
       FROM selected s WHERE o.id=s.id RETURNING o.research_job_id`,[Math.max(1,Math.min(100,Number(limit)||25))]);
     const outcomes=[];
     for(const row of claimed.rows)outcomes.push({research_job_id:row.research_job_id,...await this.dispatch(row.research_job_id)});
-    return {enabled:true,selected:claimed.rowCount,outcomes};
+    return {dispatch_mode:'DIRECT_PG_BOSS',selected:claimed.rowCount,outcomes};
   }
 
   async execute(payload) {
@@ -114,5 +119,3 @@ export class ResearchJobDirectExecutor {
     }
   }
 }
-
-export function researchDirectQueueConfig(env=process.env){return Object.freeze({enabled:trueValue(env.RESEARCH_DIRECT_QUEUE_DISPATCH)});}

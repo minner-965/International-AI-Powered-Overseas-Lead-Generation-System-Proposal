@@ -62,7 +62,8 @@ function workstreamStatus(item, stream) {
     EXTRACTING:['整理资料','Extracting'], NORMALIZING_CATEGORY:['归一类目','Normalizing category'],
     VALIDATING_EVIDENCE:['核验资料','Validating evidence'], FINDING_BUYER:['查找采购负责人','Finding buyer'],
     VERIFYING_EMAIL:['核验商务邮箱','Verifying email'], REFRESHING_DECISION:['刷新机会状态','Refreshing status'],
-    RETRY_SCHEDULED:['等待重试','Retry scheduled'], BUDGET_PAUSED:['预算暂停','Budget paused'],
+    RETRY_SCHEDULED:['等待重试','Retry scheduled'], BUDGET_PAUSED:['历史预算暂停','Historical budget pause'],
+    PROVIDER_CAPACITY_WAIT:['等待搜索服务额度恢复','Waiting for search capacity'],
     HUMAN_REVIEW_REQUIRED:['等待复核','Review required'], COMPLETED:['已完成','Completed']
   };
   return labels[value] || (stream === 'human' ? ['等待复核','Review required'] : ['等待自动处理','Awaiting automation']);

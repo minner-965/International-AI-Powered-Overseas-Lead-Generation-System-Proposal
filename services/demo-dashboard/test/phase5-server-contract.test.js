@@ -55,11 +55,21 @@ test('management metrics distinguish quality and lifecycle populations', () => {
   ]) assert.match(server, new RegExp(`AS ${field}`));
 });
 
-test('n8n remains the research orchestrator and Phase 5 jobs remain application queues', () => {
-  assert.match(server, /N8N_RESEARCH_WEBHOOK_URL/);
+test('transactional outbox and direct pg-boss are the only ResearchJob dispatch path', () => {
+  assert.doesNotMatch(server, /N8N_RESEARCH_WEBHOOK_URL|triggerResearchWorkflow|RESEARCH_DIRECT_QUEUE_DISPATCH/);
+  assert.match(server, /researchDirectDispatchService\.createAtomic/);
   assert.match(server, /phase5Queue\.enqueueFlow/);
   assert.match(server, /QUALIFYING: new Set\(\['SCORING',\s*'COMPLETED',\s*'FAILED'\]\)/);
   assert.match(server, /SCORING: new Set\(\['COMPLETED',\s*'FAILED'\]\)/);
+});
+
+test('direct research scoring carries the selected product profile into Customer Match', () => {
+  assert.match(server, /SELECT product_profile FROM leadgen\.research_jobs WHERE id=\$1/);
+  assert.match(server, /matchCompanySet\(\{research_job_id:jobId,product_scope:productScope\}/);
+});
+
+test('completed category procurement refreshes decisions before scheduling auto evidence', () => {
+  assert.match(server, /refreshOpportunityDecisions[\s\S]+category-procurement-completed:/);
 });
 
 test('container build includes pinned application dependencies and externalized rules', () => {

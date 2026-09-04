@@ -61,7 +61,8 @@ const STATUS_LABELS = Object.freeze({
   FAILED_FINAL:['已结束','Failed, final'], CANCELLED:['已取消','Cancelled'],
   RETRY_SCHEDULED:['等待重试','Retry scheduled'], EVIDENCE_EXHAUSTED:['资料已核查','Evidence reviewed'],
   TEMPORARY_PROVIDER_ERROR:['服务暂时错误','Temporary service error'], HUMAN_REVIEW_REQUIRED:['需人工复核','Human review required'],
-  BUDGET_PAUSED:['预算暂停','Budget paused'],
+  BUDGET_PAUSED:['历史预算暂停','Historical budget pause'],
+  PROVIDER_CAPACITY_WAIT:['等待搜索服务额度恢复','Waiting for search capacity'],
 });
 
 const TYPE_LABELS = Object.freeze({
@@ -168,9 +169,10 @@ function providerState(summary) {
 const AUTOMATION_STATUS_LABELS = Object.freeze({
   ENABLED:['已启用','Enabled'], READY:['已启用','Enabled'], DISABLED:['未启用','Disabled'],
   UNAVAILABLE:['状态暂不可用','Unavailable'], DEGRADED:['部分服务待恢复','Degraded'],
-  BUDGET_PAUSED:['等待搜索服务额度','Waiting for search credits'], BUDGET_HOLD:['等待邮箱核验额度','Waiting for email verification credits'],
+  BUDGET_PAUSED:['历史预算暂停（已退役）','Historical budget pause (retired)'], BUDGET_HOLD:['等待邮箱核验额度','Waiting for email verification credits'],
   RATE_LIMITED:['搜索服务速率等待','Search rate limited'], CREDIT_EXHAUSTED:['搜索服务额度已用完','Search credits exhausted'],
-  AUTH_ERROR:['搜索服务配置不可用','Search configuration unavailable'], UNKNOWN:['搜索服务状态未知','Search status unknown'],
+  AUTH_ERROR:['搜索服务配置不可用','Search configuration unavailable'], AUTH_INVALID:['搜索服务配置不可用','Search configuration unavailable'],
+  AVAILABLE:['搜索服务可用','Search service available'], UNKNOWN:['搜索服务状态未知','Search status unknown'],
 });
 
 function automationProjection(summary = {}) {
@@ -183,28 +185,24 @@ function automationProjection(summary = {}) {
     status,
     running:finiteNumber(first(source,['running','running_count','auto_evidence_running'],null)),
     retry:finiteNumber(first(source,['retry_scheduled','retry_scheduled_count','auto_evidence_retry_scheduled'],null)),
-    paused:finiteNumber(first(source,['budget_paused','budget_paused_count','auto_evidence_budget_paused'],null)),
+    paused:finiteNumber(first(source,['provider_capacity_wait'],null)),
     human:finiteNumber(first(source,['human_review_required','human_review_count','auto_evidence_human_review'],null)),
     last:first(source,['last_reconciled_at','last_reconciliation_at','auto_evidence_last_reconciled_at'],null),
     sourceHealth:text(first(source,['source_service_health','source_health'],'' )).toUpperCase(),
     emailHealth:text(first(source,['email_verification_health','email_service_health'],'' )).toUpperCase(),
-    remaining:finiteNumber(first(source,['budget_remaining','remaining_budget','remaining_credits'],null)),
-    budgetUnit:text(first(source,['budget_unit','remaining_budget_unit'],'' )).toUpperCase(),
+    search:first(source,['search_service'],{})||{},
     tavily:first(source,['tavily_usage'],{})||{},
   };
 }
 
 function automationTone(status) {
   if (['ENABLED','READY'].includes(status)) return 'is-ready';
-  if (['BUDGET_PAUSED','BUDGET_HOLD','DEGRADED'].includes(status)) return 'is-paused';
+  if (['PROVIDER_CAPACITY_WAIT','BUDGET_PAUSED','BUDGET_HOLD','DEGRADED'].includes(status)) return 'is-paused';
   if (['UNAVAILABLE','ERROR'].includes(status)) return 'is-unavailable';
   return '';
 }
 
 const countText = value => value === null ? '-' : String(Math.max(0,Math.round(value)));
-const budgetUnitPair = value => ({
-  REQUESTS:['次','requests'], CREDITS:['额度','credits'], ITEMS:['项','items']
-})[value] || ['', ''];
 const serviceHealthPair = value => ({
   READY:['就绪','Ready'], ENABLED:['就绪','Ready'], DEGRADED:['部分可用','Degraded'],
   UNAVAILABLE:['暂不可用','Unavailable'], DISABLED:['未启用','Disabled']
@@ -215,19 +213,18 @@ function renderAutomationMonitors(summary) {
   const statusLabel = AUTOMATION_STATUS_LABELS[value.status] || ['待同步','Pending'];
   const sourceHealth=serviceHealthPair(value.sourceHealth);
   const emailHealth=serviceHealthPair(value.emailHealth);
-  const unit=budgetUnitPair(value.budgetUnit);
-  const budget = value.remaining === null
-    ? ['-','-']
-    : [`${Math.max(0,value.remaining)}${unit[0] ? ` ${unit[0]}` : ''}`,`${Math.max(0,value.remaining)}${unit[1] ? ` ${unit[1]}` : ''}`];
+  const searchStatus=text(value.search?.status).toUpperCase()||'UNKNOWN';
+  const searchLabel=AUTOMATION_STATUS_LABELS[searchStatus]||AUTOMATION_STATUS_LABELS.UNKNOWN;
   const tavily=value.tavily||{};
   const markup = [
     ['自动补证总开关','Auto enrichment switch',statusLabel,automationTone(value.status)],
     ['当前运行','Running',countText(value.running),''],
     ['等待重试','Retry scheduled',countText(value.retry),''],
-    ['预算暂停','Budget paused',countText(value.paused),''],
+    ['等待搜索服务容量','Waiting for search capacity',countText(value.paused),''],
     ['需人工复核','Human review',countText(value.human),''],
     ['资料服务 / 邮箱核验','Source / Email verification',[`资料 ${sourceHealth[0]} · 邮箱 ${emailHealth[0]}`,`Source ${sourceHealth[1]} · Email ${emailHealth[1]}`],''],
-    ['剩余额度 / 最近对账','Budget / Last reconciliation',[`${budget[0]} · ${value.last ? dateTime(value.last) : '-'}`,`${budget[1]} · ${value.last ? dateTime(value.last) : '-'}`],''],
+    ['搜索服务状态','Search service status',searchLabel,automationTone(searchStatus)],
+    ['最近检查 / 最近对账','Last check / reconciliation',[`${value.search?.checked_at ? dateTime(value.search.checked_at) : '-'} · ${value.last ? dateTime(value.last) : '-'}`,`${value.search?.checked_at ? dateTime(value.search.checked_at) : '-'} · ${value.last ? dateTime(value.last) : '-'}`],''],
     ['今日 Tavily 用量单位','Tavily units used today',countText(finiteNumber(tavily.units_used_today)),''],
     ['今日已尝试企业','Companies attempted today',countText(finiteNumber(tavily.companies_attempted_today)),''],
     ['今日已尝试策略','Strategies attempted today',countText(finiteNumber(tavily.strategies_attempted_today)),''],
@@ -776,7 +773,7 @@ function renderScopeReview() {
     ['产品画像','Product profile',category.selectedOptions[0]?.textContent || category.value],
     ['目标客户类型','Buyer types',buyerTypes.join(', ') || '-'],
     ['最大结果数','Maximum results',$('#research-limit')?.value || '-'],
-    ['网络调用范围','Network call scope','受任务上限限制 / Bounded by the job limit'],
+    ['网络调用范围','Network call scope','按所选结果范围 / Selected result scope'],
     ['邮箱核验','Email verification',`${provider[1]} / ${provider[2]}`],
     ['外发消息','Live sends','0'],
     ['重复防护','Duplicate safeguard','服务端任务标识 / Server job identity'],
@@ -944,6 +941,24 @@ function initialize() {
     button.disabled=true;
     button.setAttribute('aria-busy','true');
     Promise.resolve(loadSummary()).finally(()=>{button.disabled=false;button.removeAttribute('aria-busy');});
+  });
+  $('#phase10-provider-refresh')?.addEventListener('click',async event=>{
+    const button=event.currentTarget;
+    if(button.disabled)return;
+    button.disabled=true;
+    button.setAttribute('aria-busy','true');
+    const live=$('#phase10-automation-live');
+    if(live)live.textContent='正在重新检查搜索服务。 Rechecking search service.';
+    try{
+      await managementRequest('/api/research/provider-status/refresh',{method:'POST'});
+      await loadSummary();
+      if(live)live.textContent='搜索服务状态已更新。 Search service status updated.';
+    }catch{
+      if(live)live.textContent='搜索服务状态检查未完成，请稍后重试。 Search service check did not complete; retry later.';
+    }finally{
+      button.disabled=false;
+      button.removeAttribute('aria-busy');
+    }
   });
   window.addEventListener('popstate',()=>{
     restoreJobsStateFromUrl();

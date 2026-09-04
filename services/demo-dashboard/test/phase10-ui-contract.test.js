@@ -37,9 +37,14 @@ test('Phase 10 automation monitor uses compatible fields and one contextual live
   assert.equal((html.match(/id="phase10-automation-live"/g)||[]).length,1);
   assert.match(html,/id="phase10-automation-live"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
   for(const field of [
-    'auto_evidence_enabled','auto_evidence_running','auto_evidence_retry_scheduled','auto_evidence_budget_paused',
-    'auto_evidence_human_review','last_reconciled_at','source_service_health','email_verification_health','budget_remaining'
+    'auto_evidence_enabled','auto_evidence_running','auto_evidence_retry_scheduled','provider_capacity_wait',
+    'auto_evidence_human_review','last_reconciled_at','source_service_health','email_verification_health',
+    'search_service','tavily_usage'
   ]) assert.ok(research.includes(field),`missing compatibility field ${field}`);
+  assert.ok(!research.includes('auto_evidence_budget_paused'),'retired internal-budget field remains in the current UI projection');
+  assert.match(html,/id="phase10-provider-refresh"[^>]*aria-describedby="phase10-automation-live"/);
+  assert.match(research,/\/api\/research\/provider-status\/refresh/);
+  assert.match(research,/aria-busy/);
   assert.match(research,/countText = value => value === null \? '-'/);
   assert.match(research,/renderAutomationMonitors\(\{ auto_evidence:\{ status:'UNAVAILABLE' \} \}\)/);
   assert.doesNotMatch(html,/API Key|raw payload|internal queue|Hunter/i);
