@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
-const root = new URL('../../../', import.meta.url);
+const root = process.env.DPV_PROJECT_ROOT
+  ? pathToFileURL(`${path.resolve(process.env.DPV_PROJECT_ROOT)}${path.sep}`)
+  : new URL('../../../', import.meta.url);
 const workflow = JSON.parse(await readFile(new URL('workflows/03-phase10-auto-evidence-reconciliation.json', root), 'utf8'));
 const compose = await readFile(new URL('compose.yaml', root), 'utf8');
 const envExample = await readFile(new URL('.env.example', root), 'utf8');
@@ -36,11 +40,9 @@ test('deployment defaults use provider-account-only Tavily usage and remain cred
   for (const expected of [
     'AUTO_EVIDENCE_ENABLED=false',
     'AUTO_EVIDENCE_RECONCILE_MINUTES=30',
-    'TAVILY_USAGE_POLICY=PROVIDER_ACCOUNT_ONLY',
-    'TAVILY_INTERNAL_LIMITS_ENABLED=false',
-    'MAX_TAVILY_CREDITS_PER_DAY_UNITS=25',
-    'MAX_TAVILY_CREDITS_PER_RUN_UNITS=5'
+    'TAVILY_USAGE_POLICY=PROVIDER_ACCOUNT_ONLY'
   ]) assert.match(envExample, new RegExp(expected));
+  assert.doesNotMatch(envExample,/TAVILY_INTERNAL_LIMITS|MAX_TAVILY_CREDITS|AUTO_EVIDENCE_MAX_ATTEMPTS|AUTO_EVIDENCE_COMPANY_COOLDOWN/);
   assert.match(compose, /TAVILY_USAGE_POLICY:-PROVIDER_ACCOUNT_ONLY/);
   assert.doesNotMatch(compose, /MAX_TAVILY_CREDITS_PER_RUN_UNITS/);
   assert.doesNotMatch(compose, /AUTO_EVIDENCE_MAX_ATTEMPTS/);

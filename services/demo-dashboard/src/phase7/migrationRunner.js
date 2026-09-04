@@ -25,6 +25,8 @@ export const PHASE10_GMAIL_API_PROVIDER_MIGRATION_KEY = '042_phase10_gmail_api_p
 export const PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY = '043_phase10_budget_resume_continuation.sql';
 export const PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY = '044_phase10_tavily_provider_account_only.sql';
 export const PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY = '045_phase10_provider_account_state.sql';
+export const PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY = '046_phase10_empty_research_job_purge_audit.sql';
+export const PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY = '047_phase10_retire_internal_tavily_enforcement.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -48,6 +50,8 @@ const phase10GmailApiProviderPath = path.resolve(projectRoot, 'database/migratio
 const phase10BudgetResumeContinuationPath = path.resolve(projectRoot, 'database/migrations', PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY);
 const phase10TavilyProviderAccountOnlyPath = path.resolve(projectRoot, 'database/migrations', PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY);
 const phase10ProviderAccountStatePath = path.resolve(projectRoot, 'database/migrations', PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY);
+const phase10EmptyResearchPurgeAuditPath = path.resolve(projectRoot, 'database/migrations', PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY);
+const phase10RetireInternalTavilyEnforcementPath = path.resolve(projectRoot, 'database/migrations', PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -489,6 +493,30 @@ export async function verifyPhase10ProviderAccountStateMigration(client){
   return{phase10_provider_account_state_verified:true};
 }
 
+export async function verifyPhase10EmptyResearchPurgeAuditMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.research_job_purge_runs') runs,
+    to_regclass('leadgen.research_job_purge_items') items`);
+  if(!result.rows[0]?.runs||!result.rows[0]?.items)throw new Error('Phase 10 purge audit migration verification failed');
+  return{phase10_empty_research_purge_audit_verified:true};
+}
+
+export async function verifyPhase10RetireInternalTavilyEnforcementMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.auto_evidence_tasks'::regclass
+      AND conname='auto_evidence_tasks_task_status_check'
+      AND pg_get_constraintdef(oid) LIKE '%PROVIDER_CAPACITY_WAIT%') provider_wait_status,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.auto_evidence_tasks'::regclass
+      AND conname='auto_evidence_tasks_strategy_attempt_count_check'
+      AND pg_get_constraintdef(oid) NOT LIKE '%max_attempts%') no_fixed_strategy_cap,
+    NOT EXISTS(SELECT 1 FROM leadgen.provider_credit_ledger
+      WHERE provider='TAVILY' AND credit_limit_units IS NOT NULL) no_tavily_internal_ceiling`);
+  const row=result.rows[0]||{};
+  if(!row.provider_wait_status||!row.no_fixed_strategy_cap||!row.no_tavily_internal_ceiling)
+    throw new Error('Phase 10 internal Tavily enforcement retirement verification failed');
+  return{phase10_internal_tavily_enforcement_retired:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -545,12 +573,19 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10ProviderAccountState=await applyPhase7Migration({...options,
     migrationPath:options.phase10ProviderAccountStateMigrationPath||phase10ProviderAccountStatePath,
     appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10EmptyResearchPurgeAudit=await applyPhase7Migration({...options,
+    migrationPath:options.phase10EmptyResearchPurgeAuditMigrationPath||phase10EmptyResearchPurgeAuditPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10RetireInternalTavilyEnforcement=await applyPhase7Migration({...options,
+    migrationPath:options.phase10RetireInternalTavilyEnforcementMigrationPath||phase10RetireInternalTavilyEnforcementPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
-    phase10ProviderAccountState,status:phase10ProviderAccountState.status,database:phase10ProviderAccountState.database};
+    phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,
+    status:phase10RetireInternalTavilyEnforcement.status,database:phase10RetireInternalTavilyEnforcement.database};
 }
 
 export async function applyPhase7Migration({
@@ -687,7 +722,12 @@ export async function applyPhase7Migration({
                                         :migrationKey===PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY
                                           ?await verifyPhase10TavilyProviderAccountOnlyMigration(client)
                                           :migrationKey===PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY
-                                            ?await verifyPhase10ProviderAccountStateMigration(client):await verifyPhase7Migration(client);
+                                            ?await verifyPhase10ProviderAccountStateMigration(client)
+                                            :migrationKey===PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY
+                                              ?await verifyPhase10EmptyResearchPurgeAuditMigration(client)
+                                              :migrationKey===PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY
+                                                ?await verifyPhase10RetireInternalTavilyEnforcementMigration(client)
+                                                :await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

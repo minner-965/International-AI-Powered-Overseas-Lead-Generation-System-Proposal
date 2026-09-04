@@ -17,16 +17,6 @@ export function heartbeatState(observedAt,{now=new Date(),intervalMinutes=30}={}
   return {state:now.getTime()-observed.getTime()<=ttlMs?'ACTIVE':'STALE',observed_at:observed.toISOString()};
 }
 
-export function classifyDispatchFailure(error,{workflowActive=true}={}) {
-  if(!workflowActive||error?.code==='WORKFLOW_INACTIVE')return 'WORKFLOW_INACTIVE';
-  const status=Number(error?.status||error?.statusCode||0);
-  const code=upper(error?.code);
-  const message=upper(error?.message);
-  if(status===401||status===403||/AUTH|UNAUTHORIZED|FORBIDDEN/.test(`${code} ${message}`))return 'WEBHOOK_AUTH_FAILED';
-  if(/QUEUE|PG_BOSS|ECONNREFUSED.*POSTGRES/.test(`${code} ${message}`))return 'QUEUE_UNAVAILABLE';
-  return 'ORCHESTRATOR_UNAVAILABLE';
-}
-
 function safeMetadata(value={}) {
   const allowed=['event','result','job_count','duration_ms'];
   return Object.fromEntries(allowed.filter(key=>value[key]!==undefined)
@@ -34,14 +24,12 @@ function safeMetadata(value={}) {
 }
 
 export class OrchestratorHealthService {
-  constructor({pool,intervalMinutes=30,queuedThresholdMinutes=10,retryDelayMinutes=5,
-    researchWorkflowActive=true,now=()=>new Date()}={}) {
+  constructor({pool,intervalMinutes=30,queuedThresholdMinutes=10,retryDelayMinutes=5,now=()=>new Date()}={}) {
     if(!pool)throw new Error('OrchestratorHealthService requires a PostgreSQL pool');
     this.pool=pool;
     this.intervalMinutes=boundedInt(intervalMinutes,30,1,1440);
     this.queuedThresholdMinutes=boundedInt(queuedThresholdMinutes,10,1,1440);
     this.retryDelayMinutes=boundedInt(retryDelayMinutes,5,1,1440);
-    this.researchWorkflowActive=researchWorkflowActive===true;
     this.now=now;
   }
 
@@ -83,28 +71,18 @@ export class OrchestratorHealthService {
 
   async watchdog({dispatch,limit=25}={}) {
     if(typeof dispatch!=='function')throw new Error('watchdog requires dispatch');
-    const health=await this.status('dpvPhase1TwoWeekDemo');
     const jobs=await this.claimQueued(Math.max(1,Math.min(100,Number(limit)||25)));
     const outcomes=[];
     for(const job of jobs){
-      if(!this.researchWorkflowActive){
-        await this.recordDispatch(job.id,'WORKFLOW_INACTIVE',{reason:'RESEARCH_WORKFLOW_INACTIVE'});
-        outcomes.push({job_id:job.id,dispatch_state:'WORKFLOW_INACTIVE'});continue;
-      }
-      if(health.state!=='ACTIVE'){
-        await this.recordDispatch(job.id,'ORCHESTRATOR_UNAVAILABLE',{reason:`ORCHESTRATOR_${health.state}`});
-        outcomes.push({job_id:job.id,dispatch_state:'ORCHESTRATOR_UNAVAILABLE'});continue;
-      }
       try{
         await dispatch(job);
         await this.recordDispatch(job.id,'DISPATCHED');
         outcomes.push({job_id:job.id,dispatch_state:'DISPATCHED'});
       }catch(error){
-        const state=classifyDispatchFailure(error,{workflowActive:this.researchWorkflowActive});
-        await this.recordDispatch(job.id,state,{reason:`DISPATCH_${state}`});
-        outcomes.push({job_id:job.id,dispatch_state:state});
+        await this.recordDispatch(job.id,'QUEUE_UNAVAILABLE',{reason:'DIRECT_QUEUE_RETRY_PENDING'});
+        outcomes.push({job_id:job.id,dispatch_state:'QUEUE_UNAVAILABLE'});
       }
     }
-    return {orchestrator:health,checked:jobs.length,outcomes};
+    return {dispatch:{state:'DIRECT_PG_BOSS'},checked:jobs.length,outcomes};
   }
 }

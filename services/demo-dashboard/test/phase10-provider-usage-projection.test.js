@@ -45,7 +45,8 @@ test('job and company projections do not mix events across exact identities',()=
 
 test('ResearchJob API and Excel export expose the same canonical projection fields',()=>{
   const projected=publicJob({id:'job-a',provider_call_count:4,used_units:4,released_units:1,status:'COMPLETE'});
-  assert.equal(projected.search_api_requests,4);assert.equal(projected.search_credits_used,4);
+  assert.equal(projected.provider_call_count,4);assert.equal(projected.used_units,4);
+  assert.equal(Object.hasOwn(projected,'search_api_requests'),false);
   const request=resolveExportRequest({exportType:'RESEARCH_JOB_PROVIDER_USAGE',format:'XLSX',mode:'CURRENT_FILTER',
     requesterRole:'MANAGEMENT',requesterIdentity:'manager@example.com'});
   for(const field of ['provider_call_count','used_units','released_units','projection_updated_at'])assert.ok(request.columns.includes(field));

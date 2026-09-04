@@ -1,6 +1,7 @@
 import { htmlService } from '../platform/HtmlService.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { createSearchProvider } from '../search/discoveryService.js';
+import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { searchCountryCode } from '../search/queryGenerator.js';
 import { extractRootDomain, normalizeUrl } from '../search/resultNormalizer.js';
 import { marketLocationText, marketProfileForJob, marketSearchLanguage } from '../market/marketProfiles.js';
@@ -425,11 +426,12 @@ async function verifyOne(pool, candidate, job, config, checker) {
 }
 
 async function socialFallback(pool, job, results, config) {
-  if (!config.allowSocialSearch || !config.socialMaxSearches || !config.searchConfig?.tavilyApiKey) return { requests: 0, credits: 0, accounts: 0 };
+  if (!config.allowSocialSearch || !config.searchConfig?.tavilyApiKey) return { requests: 0, credits: 0, accounts: 0 };
   const marketProfile = marketProfileForJob(job);
   const provider = createSearchProvider({ ...config.searchConfig, provider: 'tavily' });
-  const selected = results.filter(item => item.verification_status !== 'REJECTED' && item.social_accounts === 0)
-    .slice(0, config.socialMaxSearches);
+  const selected = results.filter(item => item.verification_status !== 'REJECTED' && item.social_accounts === 0);
+  const searchAudit=String(provider.name||'').toLowerCase()==='tavily'
+    ?new TavilyUsageAudit({provider,pool,...(config.tavilyUsageConfig||{})}):null;
   let requests = 0;
   let credits = 0;
   let accounts = 0;
@@ -440,14 +442,16 @@ async function socialFallback(pool, job, results, config) {
     requests += 1;
     let candidateAccounts = 0;
     try {
-      const response = await provider.search({
+      const request={
         query: `"${row.resolved_company_name}" ${marketLocationText(job, marketProfile)} ${marketProfile.preferredSocialPlatforms.join(' ')}`,
         count: 5,
         country: searchCountryCode(job.country_name || job.country, marketProfile.countryCode),
         locationName: marketLocationText(job, marketProfile),
         searchLang: marketSearchLanguage(job, marketProfile),
         tag: `dpv-phase4-social:${job.id}`
-      });
+      };
+      const response = searchAudit?await searchAudit.search({researchJobId:job.id,companyId:row.company_id,
+        productProfile:job.product_profile,purpose:'COMPANY_SOCIAL_EVIDENCE',budgetPool:'EVIDENCE',request}):await provider.search(request);
       credits += Number(response.credits || 0);
       for (const result of response.results) {
         const social = classifySocialUrl(result.url);
@@ -473,8 +477,6 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
   const jobResult = await pool.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [jobId]);
   if (!jobResult.rowCount) throw new Error('Research job not found');
   const job = jobResult.rows[0];
-  const priorSocialRequests = Number(job.social_search_api_requests || 0);
-  const priorSocialCredits = Number(job.social_search_credits_used || 0);
   const { rows: candidates } = await pool.query(`
     SELECT * FROM leadgen.research_candidates WHERE research_job_id=$1 ORDER BY rank,title LIMIT $2`, [
     jobId, Math.max(1, Math.min(20, Number(config.maxCandidates || job.max_results || 5)))]);
@@ -487,8 +489,8 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
     maxRedirects: 5,
     promote: config.promote !== false,
     allowSocialSearch: config.allowSocialSearch === true,
-    socialMaxSearches: Math.max(0, Math.min(3, Number(config.socialMaxSearches || 3)) - priorSocialRequests),
-    searchConfig: config.searchConfig
+    searchConfig: config.searchConfig,
+    tavilyUsageConfig:config.tavilyUsageConfig
   };
   const checker = overrides.checker || new WebsiteReachabilityChecker({
     timeoutMs: effective.timeoutMs, maxResponseBytes: effective.maxResponseBytes,
@@ -512,8 +514,6 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
     }
   }
   const fallback = await socialFallback(pool, job, results, effective);
-  const totalSocialRequests = priorSocialRequests + fallback.requests;
-  const totalSocialCredits = priorSocialCredits + fallback.credits;
   const counts = {
     verified: results.filter(item => item.verification_status === 'VERIFIED_BUSINESS').length,
     review: results.filter(item => item.verification_status === 'REVIEW').length,
@@ -529,12 +529,12 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
     UPDATE leadgen.research_jobs SET
       candidates_verified=$2,candidates_in_review=$3,candidates_rejected_phase4=$4,
       strategic_accounts_found=$5,sme_opportunities_found=$6,verification_pages_fetched=$7,
-      social_accounts_found=$8,social_search_api_requests=$9,social_search_credits_used=$10,
-      companies_promoted_new=$11,companies_enriched_existing=$12,
-      companies_crawled=$13,companies_qualified=$2,companies_review=$3,companies_rejected=$4
+      social_accounts_found=$8,
+      companies_promoted_new=$9,companies_enriched_existing=$10,
+      companies_crawled=$11,companies_qualified=$2,companies_review=$3,companies_rejected=$4
     WHERE id=$1`, [jobId, counts.verified, counts.review, counts.rejected, counts.strategic,
-    counts.sme, counts.pages, counts.social, totalSocialRequests, totalSocialCredits,
+    counts.sme, counts.pages, counts.social,
     counts.promotedNew, counts.enrichedExisting, candidates.length]);
   return { job_id: jobId, candidates_checked: candidates.length, ...counts,
-    social_search_requests: totalSocialRequests, social_search_credits: totalSocialCredits, results };
+    social_provider_calls: fallback.requests, social_provider_credits: fallback.credits, results };
 }

@@ -23,7 +23,8 @@ class StrategyRepository{
     const code=AUTO_EVIDENCE_STRATEGIES[this.nextNumber-1].code;this.task={...this.task,strategy_attempt_count:this.nextNumber,
       attempt_count:this.nextNumber,current_strategy_code:code,current_stage:'FINDING_BUYER',task_status:'RUNNING'};
     return{...this.task,strategy:AUTO_EVIDENCE_STRATEGIES[this.nextNumber-1]};}
-  async markExhausted(_id,cooldown){this.task={...this.task,task_status:'EVIDENCE_EXHAUSTED',strategy_state:'EXHAUSTED',cooldown_until:cooldown};return this.task;}
+  async markExhausted(){this.task={...this.task,task_status:'EVIDENCE_EXHAUSTED',strategy_state:'EXHAUSTED',
+    technical_blocker:'NO_REMAINING_DISTINCT_STRATEGY',cooldown_until:null};return this.task;}
   async completeTask(){this.task={...this.task,task_status:'COMPLETED',strategy_state:'RESOLVED'};return this.task;}
   async incrementProviderRetry(){this.providerRetries+=1;this.task={...this.task,provider_retry_count:this.providerRetries};return this.task;}
   async updateTaskOutcome(_id,input){this.task={...this.task,task_status:input.status,technical_blocker:input.technicalBlocker,
@@ -112,11 +113,11 @@ test('provider temporary error retries the same strategy without consuming a str
   assert.equal(jobs.calls[0].data.strategy_attempt_number,1);
 });
 
-test('budget pause preserves the current strategy and all counters',async()=>{
+test('provider credit exhaustion waits without consuming the current strategy',async()=>{
   const repository=new StrategyRepository();const service=new AutoEvidenceOrchestrator({repository,queue:queue(),
     env:{AUTO_EVIDENCE_ENABLED:'true'}});
-  const result=await service.advance(repository.task,'VERIFYING_EMAIL','BUDGET_PAUSED');
-  assert.equal(result.status,'BUDGET_PAUSED');assert.equal(result.task.strategy_attempt_count,1);
+  const result=await service.advance(repository.task,'VERIFYING_EMAIL','PROVIDER_CAPACITY_WAIT');
+  assert.equal(result.status,'PROVIDER_CAPACITY_WAIT');assert.equal(result.task.strategy_attempt_count,1);
   assert.equal(result.task.current_strategy_code,'S01_OFFICIAL_CATEGORY');assert.equal(result.task.provider_retry_count,0);
 });
 

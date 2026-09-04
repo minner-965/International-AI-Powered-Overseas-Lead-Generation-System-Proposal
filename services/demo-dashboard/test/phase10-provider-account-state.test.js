@@ -38,7 +38,7 @@ test('real 432 credit exhaustion blocks new provider-dependent tasks without ano
   const pool=statePool();
   const service=new TavilyProviderAccountState({pool,apiKey:'fixture'});
   await service.observeSearchError({code:'CREDIT_EXHAUSTED'});
-  await assert.rejects(()=>service.assertCanCreate(),error=>error.code==='SEARCH_PROVIDER_CREDITS_EXHAUSTED'
+  await assert.rejects(()=>service.assertCanCreate(),error=>error.code==='TAVILY_ACCOUNT_CREDITS_EXHAUSTED'
     &&error.created===false);
   const provider={name:'tavily',calls:0,async search(){this.calls+=1;return{credits:1,results:[]};}};
   const audit=new TavilyUsageAudit({provider,providerAccountState:service,internalLimitsEnabled:false});
@@ -55,14 +55,14 @@ test('401/403 map to AUTH_ERROR while timeout is DEGRADED and neither is credit 
   assert.equal((await service.assertCanCreate()).status,'DEGRADED');
 });
 
-test('usage refresh confirms exhaustion only when both plan and configured PAYGO limits are exhausted',async()=>{
+test('usage refresh respects API-key, plan and configured PAYGO capacity',async()=>{
   const exhaustedPayload={key:{usage:1000,limit:1000},account:{plan_usage:1000,plan_limit:1000,paygo_usage:100,paygo_limit:100}};
   const pool=statePool();
   const service=new TavilyProviderAccountState({pool,apiKey:'fixture',fetchImpl:async()=>new Response(JSON.stringify(exhaustedPayload),{status:200})});
   await service.refreshUsage({force:true});assert.equal(pool.state.status,'CREDIT_EXHAUSTED');
   const availablePool=statePool();
   const available=new TavilyProviderAccountState({pool:availablePool,apiKey:'fixture',fetchImpl:async()=>new Response(JSON.stringify({
-    key:{usage:1000,limit:1000},account:{plan_usage:1000,plan_limit:1000,paygo_usage:0,paygo_limit:100}}),{status:200})});
+    key:{usage:900,limit:1000},account:{plan_usage:1000,plan_limit:1000,paygo_usage:0,paygo_limit:100}}),{status:200})});
   await available.refreshUsage({force:true});assert.equal(availablePool.state.status,'AVAILABLE');
 });
 
@@ -81,4 +81,13 @@ test('a newly supplied credential bypasses a cached missing-key state',async()=>
   await service.refreshUsage();
   assert.equal(calls,1);
   assert.equal(pool.state.status,'AVAILABLE');
+});
+
+test('stale UNKNOWN creation checks share one controlled usage refresh',async()=>{
+  const pool=statePool({status:'UNKNOWN',credential_fingerprint:null,checked_at:null});let calls=0;
+  const service=new TavilyProviderAccountState({pool,apiKey:'fixture',fetchImpl:async()=>{
+    calls+=1;return new Response(JSON.stringify({key:{usage:1,limit:1000},account:{plan_usage:1,plan_limit:1000}}),{status:200});
+  }});
+  const [first,second]=await Promise.all([service.ensureCanCreate(),service.ensureCanCreate()]);
+  assert.equal(first.status,'AVAILABLE');assert.equal(second.status,'AVAILABLE');assert.equal(calls,1);
 });

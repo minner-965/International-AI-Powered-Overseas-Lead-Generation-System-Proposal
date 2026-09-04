@@ -47,7 +47,7 @@ class FakeRepository {
     this.schedules = [];
     this.resolvedEventCompanyIds = null;
     this.dueFairnessRetries = [];
-    this.dueBudgetResumes = [];
+    this.capacityWaits = [];
     this.researchKinds = [];
   }
 
@@ -58,17 +58,17 @@ class FakeRepository {
     return this.dueFairnessRetries.slice(0,options.limit);
   }
 
-  async selectDueBudgetResumes(options) {
-    this.lastDueBudgetOptions=options;
-    return this.dueBudgetResumes.slice(0,options.limit);
+  async selectProviderCapacityWaits(options) {
+    this.lastCapacityWaitOptions=options;
+    return this.capacityWaits.slice(0,options.limit);
   }
 
-  async autoResumeBudgetPaused(taskId, options) {
+  async resumeProviderCapacityWait(taskId, options) {
     assert.equal(taskId,this.task.id);
-    this.schedules.push({candidate:null,options:{...options,source:'RECONCILIATION'}});
+    this.schedules.push({candidate:null,options:{...options,source:options.scheduleSource||'RECONCILIATION'}});
     this.task={...this.task,task_status:'RETRY_SCHEDULED',budget_state:'AVAILABLE',
       technical_blocker:null,checkpoint_replay_count:(this.task.checkpoint_replay_count||0)+1};
-    return{task:this.task,resumed:true,schedule_event_id:'auto-resume-event-1'};
+    return{task:this.task,resumed:true,schedule_event_id:'resume-event-1'};
   }
 
   async resolveEventCompanyIds(input) {
@@ -87,14 +87,6 @@ class FakeRepository {
 
   async hasControlledOverride() {
     return this.schedules.some(item => item.options.source === 'MANUAL_RETRY');
-  }
-
-  async resumeBudgetPaused(taskId, options) {
-    assert.equal(taskId,this.task.id);
-    this.schedules.push({candidate:null,options:{...options,source:'MANUAL_RETRY'}});
-    this.task={...this.task,task_status:'RETRY_SCHEDULED',budget_state:'AVAILABLE',
-      technical_blocker:null,checkpoint_replay_count:(this.task.checkpoint_replay_count||0)+1};
-    return{task:this.task,resumed:true,schedule_event_id:'resume-event-1'};
   }
 
   async ensureResearchJob(_task, kind) {
@@ -138,8 +130,8 @@ class FakeRepository {
       provider_retry_count:task.provider_retry_count||0,worker_retry_count:task.worker_retry_count||0,outcome_status: 'COMPLETED' });
   }
 
-  async completeTask(_taskId, cooldownUntil) {
-    this.task = { ...this.task, task_status: 'COMPLETED', completed_at: new Date(), cooldown_until: cooldownUntil };
+  async completeTask() {
+    this.task = { ...this.task, task_status: 'COMPLETED', completed_at: new Date(), cooldown_until: null };
     return this.task;
   }
 
@@ -186,12 +178,9 @@ test('Phase 10 automatic evidence is inactive-first and defaults to provider-acc
   assert.equal(config.enabled, false);
   assert.equal(config.reconcileMinutes, 30);
   assert.equal(config.batchSize, 10);
-  assert.equal(config.cooldownHours, null);
-  assert.equal(config.maxAttempts, 10);
   assert.equal(config.sourceTtlDays, 90);
-  assert.equal(config.tavilyInternalLimitsEnabled, false);
-  assert.equal(config.tavilyRunCapUnits, null);
-  assert.equal(config.tavilyDailyCapUnits, null);
+  assert.equal('cooldownHours' in config,false);
+  assert.equal('maxAttempts' in config,false);
   assert.equal(AUTO_EVIDENCE_STAGES.length, 8);
 });
 
@@ -211,7 +200,7 @@ test('Phase 10 deployment configuration fails closed with key-only errors', () =
   }
   const ignored=autoEvidenceConfig({AUTO_EVIDENCE_MAX_ATTEMPTS:'1',AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS:'8760',
     MAX_TAVILY_CREDITS_PER_DAY_UNITS:'0'});
-  assert.equal(ignored.maxAttempts,10);assert.equal(ignored.cooldownHours,null);assert.equal(ignored.tavilyDailyCapUnits,null);
+  assert.equal('maxAttempts' in ignored,false);assert.equal('cooldownHours' in ignored,false);
 });
 
 test('Phase 10 settings status exposes effective values without provider credentials', () => {
@@ -220,18 +209,13 @@ test('Phase 10 settings status exposes effective values without provider credent
     queue: queueFixture(),
     env: {
       AUTO_EVIDENCE_ENABLED: 'false',
-      AUTO_EVIDENCE_MAX_ATTEMPTS: '10',
-      MAX_TAVILY_CREDITS_PER_DAY_UNITS: '25',
-      MAX_TAVILY_CREDITS_PER_RUN_UNITS: '5',
       TAVILY_API_KEY: 'must-not-be-projected'
     }
   });
   const status = service.status();
   assert.equal(status.enabled, false);
-  assert.equal(status.maxAttempts, 10);
   assert.equal(status.tavilyUsagePolicy,'PROVIDER_ACCOUNT_ONLY');
-  assert.equal(status.tavilyDailyCapUnits, null);
-  assert.equal(status.tavilyRunCapUnits, null);
+  assert.equal(Object.keys(status).some(key=>/tavily.*(?:cap|budget)|maxAttempts|cooldown/i.test(key)),false);
   assert.equal(JSON.stringify(status).includes('must-not-be-projected'), false);
   assert.equal(Object.keys(status).some(key => /api.?key|secret|token/i.test(key)), false);
 });
@@ -327,25 +311,25 @@ test('reconciliation resumes due legacy-ready and fairness rounds before selecti
   assert.match(queue.calls[0].options.singletonKey,/fairness:fairness-window/);
 });
 
-test('reconciliation automatically resumes prior-day budget pauses before other work', async () => {
+test('reconciliation resumes provider-capacity waits only after provider recovery', async () => {
   const repository=new FakeRepository({candidates:[{
     company_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',product_profile:'WOMENSWEAR',
     business_blocker:'CATEGORY_EVIDENCE',evidence_revision:1
   }]});
-  repository.task=taskFixture({task_status:'BUDGET_PAUSED',budget_state:'PAUSED',
+  repository.task=taskFixture({task_status:'PROVIDER_CAPACITY_WAIT',budget_state:'NOT_REQUIRED',
     current_stage:'VERIFYING_EMAIL',current_strategy_code:'S08'});
-  repository.dueBudgetResumes=[repository.task];
+  repository.capacityWaits=[repository.task];
   const queue=queueFixture();
-  const service=new AutoEvidenceOrchestrator({repository,queue,
+  const service=new AutoEvidenceOrchestrator({repository,queue,providerAccountState:{async refreshUsage(){return{status:'AVAILABLE'};}},
     env:{AUTO_EVIDENCE_ENABLED:'true',AUTO_EVIDENCE_BATCH_SIZE:'1'}});
-  const result=await service.reconcile({batch_size:1,reconcile_bucket:'new-budget-day'});
+  const result=await service.reconcile({batch_size:1,reconcile_bucket:'provider-recovered'});
   assert.equal(result.selected,1);
-  assert.equal(result.budget_auto_resumed,1);
+  assert.equal(result.provider_capacity_resumed,1);
   assert.equal(result.scheduled,0);
   assert.equal(queue.calls.length,1);
   assert.equal(queue.calls[0].data.stage,'VERIFYING_EMAIL');
   assert.equal(queue.calls[0].data.checkpoint_replay_number,1);
-  assert.match(repository.schedules[0].options.scheduleKey,/budget-auto-resume/);
+  assert.match(repository.schedules[0].options.scheduleKey,/provider-capacity-recovery/);
 });
 
 test('event reconciliation targets a singular company id instead of scanning the global queue', async () => {
@@ -636,14 +620,14 @@ test('budget exhaustion and evidence conflicts are separated from automatic retr
   const budgetRepository = new FakeRepository();
   const budgetService = new AutoEvidenceOrchestrator({
     repository: budgetRepository, queue: queueFixture(),
-    executors: { verify_profile_buyer_email: async () => ({ outcome_status: 'BUDGET_PAUSED' }) },
+    executors: { verify_profile_buyer_email: async () => ({ outcome_status: 'PROVIDER_CAPACITY_WAIT' }) },
     env: { AUTO_EVIDENCE_ENABLED: 'true' }
   });
   const budget = await budgetService.runStage('VERIFYING_EMAIL', {
     task_id: budgetRepository.task.id, execution_key: budgetRepository.task.execution_key
   });
-  assert.equal(budget.status, 'BUDGET_PAUSED');
-  assert.equal(budgetRepository.task.budget_state, 'PAUSED');
+  assert.equal(budget.status, 'PROVIDER_CAPACITY_WAIT');
+  assert.equal(budgetRepository.task.budget_state, 'NOT_REQUIRED');
 
   const reviewRepository = new FakeRepository();
   const reviewService = new AutoEvidenceOrchestrator({
@@ -656,6 +640,15 @@ test('budget exhaustion and evidence conflicts are separated from automatic retr
   });
   assert.equal(review.status, 'HUMAN_REVIEW_REQUIRED');
   assert.equal(reviewRepository.exceptions.length, 1);
+});
+
+test('confirmed Tavily exhaustion blocks auto-evidence ResearchJob creation before insert',async()=>{
+  const repository=new FakeRepository();
+  const service=new AutoEvidenceOrchestrator({repository,queue:queueFixture(),
+    providerAccountState:{async ensureCanCreate(){throw Object.assign(new Error('exhausted'),{
+      code:'TAVILY_ACCOUNT_CREDITS_EXHAUSTED'});}},env:{AUTO_EVIDENCE_ENABLED:'true'}});
+  const result=await service.runStage('FINDING_BUYER',{task_id:repository.task.id,execution_key:repository.task.execution_key});
+  assert.equal(result.status,'PROVIDER_CAPACITY_WAIT');assert.equal(repository.researchKinds.length,0);
 });
 
 test('queue handler registry exposes every bounded Phase 10 queue', () => {
@@ -755,16 +748,16 @@ test('controlled batch override is independent, internal-only and append-audited
   assert.equal(queue.calls.at(-1).name, PHASE5_QUEUES.NORMALIZE_OPPORTUNITY_CATEGORY);
 });
 
-test('budget resume appends an attributed MANUAL_RETRY event in the same transaction',async()=>{
-  const paused=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
-    max_attempts:3,budget_state:'PAUSED',contact_research_job_id:'44444444-4444-4444-8444-444444444444'});
+test('provider capacity recovery appends an attributed MANUAL_RETRY event in the same transaction',async()=>{
+  const paused=taskFixture({task_status:'PROVIDER_CAPACITY_WAIT',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
+    max_attempts:3,budget_state:'NOT_REQUIRED',technical_blocker:'PROVIDER_CREDIT_EXHAUSTED',contact_research_job_id:'44444444-4444-4444-8444-444444444444'});
   const resumed={...paused,task_status:'RETRY_SCHEDULED',attempt_count:2,budget_state:'AVAILABLE',technical_blocker:null};
   const linked={...resumed,contact_research_job_id:'55555555-5555-4555-8555-555555555555'};
   const queries=[];
   const client={async query(sql,params=[]){queries.push({sql:String(sql),params});
     if(String(sql).includes('FROM leadgen.auto_evidence_tasks WHERE id=$1 FOR UPDATE'))return{rows:[paused],rowCount:1};
     if(String(sql).includes('historical_customer_company_links'))return{rows:[{suppressed:false,historical_customer:false}],rowCount:1};
-    if(String(sql).includes('provider_credit_ledger'))return{rows:[],rowCount:0};
+    if(String(sql).includes('provider_account_states'))return{rows:[{status:'AVAILABLE'}],rowCount:1};
     if(String(sql).includes('FROM leadgen.research_jobs WHERE id=$1 FOR SHARE'))
       return{rows:[{id:paused.contact_research_job_id,stop_reason_code:'TAVILY_CREDIT_CAP'}],rowCount:1};
     if(String(sql).startsWith('SELECT stop_reason_code FROM leadgen.research_jobs'))
@@ -778,30 +771,30 @@ test('budget resume appends an attributed MANUAL_RETRY event in the same transac
     return{rows:[],rowCount:1};
   },release(){}};
   const repository=new AutoEvidenceRepository({pool:{connect:async()=>client}});
-  const result=await repository.resumeBudgetPaused(paused.id,{
-    scheduleKey:'auto-evidence:budget-resume:fixture',operatorIdentity:'owner.fixture',
-    operatorRole:'MANAGEMENT',approvalReference:'budget-restored-fixture'
+  const result=await repository.resumeProviderCapacityWait(paused.id,{
+    scheduleKey:'auto-evidence:provider-capacity-recovery:fixture',operatorIdentity:'owner.fixture',
+    operatorRole:'MANAGEMENT',approvalReference:'provider-restored-fixture',scheduleSource:'MANUAL_RETRY'
   });
   assert.equal(result.resumed,true);assert.equal(result.schedule_event_id,'resume-event');
   assert.ok(queries.some(item=>item.sql.startsWith('UPDATE leadgen.auto_evidence_tasks')&&/retry_at=now\(\)/.test(item.sql)));
   assert.ok(queries.some(item=>/checkpoint_replay_count=greatest\(checkpoint_replay_count\+1/.test(item.sql)));
   const auditInsert=queries.find(item=>item.sql.startsWith('INSERT INTO leadgen.auto_evidence_schedule_events'));
-  assert.ok(auditInsert);assert.match(auditInsert.sql,/VALUES \('MANUAL_RETRY'/);
-  assert.deepEqual(auditInsert.params.slice(-3),['owner.fixture','MANAGEMENT','budget-restored-fixture']);
+  assert.ok(auditInsert);assert.match(auditInsert.sql,/VALUES \(\$11/);
+  assert.deepEqual(auditInsert.params.slice(-4),['owner.fixture','MANAGEMENT','provider-restored-fixture','MANUAL_RETRY']);
   assert.ok(queries.some(item=>item.sql==='COMMIT'));
 });
 
-test('persisted controlled resume runs its checkpoint while global automation is disabled',async()=>{
+test('persisted controlled provider recovery runs its checkpoint while global automation is disabled',async()=>{
   const repository=new FakeRepository();
-  repository.task=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
-    max_attempts:3,budget_state:'PAUSED'});
+  repository.task=taskFixture({task_status:'PROVIDER_CAPACITY_WAIT',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
+    max_attempts:3,budget_state:'NOT_REQUIRED'});
   const queue=queueFixture();
   const service=new AutoEvidenceOrchestrator({repository,queue,
     env:{AUTO_EVIDENCE_ENABLED:'false',AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED:'true'}});
   const resumed=await service.runControlledBatch({resume_task_id:repository.task.id},{
     trusted_management:true,operator_identity:'owner.fixture',operator_role:'MANAGEMENT',approval_reference:'budget-restored-fixture'
   });
-  assert.equal(resumed.status,'BUDGET_RESUME_QUEUED');
+  assert.equal(resumed.status,'PROVIDER_CAPACITY_RECOVERY_QUEUED');
   assert.equal(resumed.schedule_event_id,'resume-event-1');
   const audit=repository.schedules.at(-1).options;
   assert.equal(audit.operatorIdentity,'owner.fixture');assert.equal(audit.operatorRole,'MANAGEMENT');

@@ -8,13 +8,15 @@ const cleanCode=(value,fallback='UNKNOWN')=>{
   return code||fallback;
 };
 const finite=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value):null;
+const refreshFlights=new WeakMap();
+const REFRESH_LOCK_KEY=74201945;
 
 export class TavilyProviderAccountState {
   constructor({pool,apiKey='',usageEndpoint='https://api.tavily.com/usage',fetchImpl=fetch,
-    refreshIntervalMs=600000,timeoutMs=10000,now=()=>new Date()}={}){
+    refreshIntervalMs=300000,timeoutMs=10000,now=()=>new Date()}={}){
     if(!pool)throw new TypeError('TavilyProviderAccountState requires a PostgreSQL pool');
     this.pool=pool;this.apiKey=apiKey;this.usageEndpoint=usageEndpoint;this.fetchImpl=fetchImpl;
-    this.refreshIntervalMs=Math.max(600000,Number(refreshIntervalMs)||600000);
+    this.refreshIntervalMs=Math.max(120000,Math.min(300000,Number(refreshIntervalMs)||300000));
     this.timeoutMs=Math.max(1000,Number(timeoutMs)||10000);this.now=now;
     this.credentialFingerprint=apiKey?createHash('sha256').update(apiKey).digest('hex'):null;
   }
@@ -27,12 +29,12 @@ export class TavilyProviderAccountState {
   }
 
   async transition(status,{source='SEARCH_RESPONSE',reasonCode=null,providerRequestId=null,retryAfterAt=null,
-    usage=null}={}){
+    usage=null,client:existingClient=null}={}){
     const next=STATUSES.has(status)?status:'UNKNOWN';
     const eventSource=SOURCES.has(source)?source:'SEARCH_RESPONSE';
-    const client=await this.pool.connect();
+    const client=existingClient||await this.pool.connect();
     try{
-      await client.query('BEGIN');
+      if(!existingClient)await client.query('BEGIN');
       const current=(await client.query(`SELECT * FROM leadgen.provider_account_states
         WHERE provider_code=$1 FOR UPDATE`,[PROVIDER])).rows[0]||null;
       const values=usage||{};
@@ -59,14 +61,26 @@ export class TavilyProviderAccountState {
           VALUES($1,$2,$3,$4,$5,$6,now())`,[PROVIDER,current?.status||null,next,eventSource,
           reasonCode?cleanCode(reasonCode):null,String(providerRequestId||'').slice(0,200)||null]);
       }
-      await client.query('COMMIT');return updated;
-    }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
+      if(!existingClient)await client.query('COMMIT');return updated;
+    }catch(error){if(!existingClient)await client.query('ROLLBACK').catch(()=>{});throw error;}
+    finally{if(!existingClient)client.release();}
   }
 
   async assertCanCreate(){
+    return this.assertStateCanCreate(await this.getState());
+  }
+
+  async ensureCanCreate(){
     const state=await this.getState();
-    if(state.status==='CREDIT_EXHAUSTED')throw Object.assign(new Error('搜索服务额度已用完，充值或额度恢复后可继续创建研究任务。'),{
-      code:'SEARCH_PROVIDER_CREDITS_EXHAUSTED',status:423,created:false});
+    const sameCredential=state.credential_fingerprint&&state.credential_fingerprint===this.credentialFingerprint;
+    const stale=!state.checked_at||this.now()-new Date(state.checked_at)>=this.refreshIntervalMs;
+    const resolved=state.status==='UNKNOWN'||!sameCredential||stale?await this.refreshUsage():state;
+    return this.assertStateCanCreate(resolved);
+  }
+
+  assertStateCanCreate(state){
+    if(state.status==='CREDIT_EXHAUSTED')throw Object.assign(new Error('Tavily 账户可用额度已耗尽，充值或额度重置后才能创建新的研究任务。'),{
+      code:'TAVILY_ACCOUNT_CREDITS_EXHAUSTED',status:409,created:false});
     if(state.status==='AUTH_ERROR')throw Object.assign(new Error('搜索服务配置不可用，请管理员检查。'),{
       code:'SEARCH_PROVIDER_CONFIGURATION_BLOCKED',status:503,created:false});
     return state;
@@ -103,30 +117,58 @@ export class TavilyProviderAccountState {
   }
 
   async refreshUsage({force=false,source='USAGE_ENDPOINT'}={}){
+    const active=refreshFlights.get(this.pool);
+    if(active&&!force)return active;
+    const flight=this.refreshUsageSingleflight({force,source});
+    refreshFlights.set(this.pool,flight);
+    try{return await flight;}finally{if(refreshFlights.get(this.pool)===flight)refreshFlights.delete(this.pool);}
+  }
+
+  async refreshUsageSingleflight({force=false,source='USAGE_ENDPOINT'}={}){
     const current=await this.getState();
     const sameCredential=current.credential_fingerprint&&current.credential_fingerprint===this.credentialFingerprint;
     if(!force&&sameCredential&&current.checked_at&&this.now()-new Date(current.checked_at)<this.refreshIntervalMs)
       return{...current,cached:true};
     if(!this.apiKey)return this.transition('AUTH_ERROR',{source,reasonCode:'MISSING_API_KEY'});
+    const client=await this.pool.connect();
+    let locked=false;
+    try{
+      const lock=await client.query('SELECT pg_try_advisory_lock($1) locked',[REFRESH_LOCK_KEY]);
+      locked=lock.rows[0]?.locked!==false;
+      if(!locked){
+        const shared=await this.getState();
+        return{...shared,cached:true,singleflight:true};
+      }
+      const refreshed=await client.query(`SELECT provider_code,credential_fingerprint,status,remaining_credits,checked_at,retry_after_at,
+        last_provider_error_code,updated_at FROM leadgen.provider_account_states WHERE provider_code=$1`,[PROVIDER]);
+      const latest=refreshed.rows[0]||current;
+      const latestCredential=latest.credential_fingerprint&&latest.credential_fingerprint===this.credentialFingerprint;
+      if(!force&&latestCredential&&latest.checked_at&&this.now()-new Date(latest.checked_at)<this.refreshIntervalMs)
+        return{...latest,cached:true};
     let response;
     try{response=await this.fetchImpl(this.usageEndpoint,{headers:{accept:'application/json',authorization:`Bearer ${this.apiKey}`},
       signal:AbortSignal.timeout(this.timeoutMs)});}catch(error){
-      return this.transition('DEGRADED',{source,reasonCode:error?.name==='TimeoutError'?'TIMEOUT':'NETWORK_ERROR'});
+      return this.transition('DEGRADED',{source,reasonCode:error?.name==='TimeoutError'?'TIMEOUT':'NETWORK_ERROR',client});
     }
     if(response.status===429){
       const seconds=Math.max(1,Math.min(86400,Number(response.headers?.get?.('retry-after'))||60));
-      return this.transition('RATE_LIMITED',{source,reasonCode:'HTTP_429',retryAfterAt:new Date(this.now().getTime()+seconds*1000)});
+      return this.transition('RATE_LIMITED',{source,reasonCode:'HTTP_429',retryAfterAt:new Date(this.now().getTime()+seconds*1000),client});
     }
-    if(response.status===401||response.status===403)return this.transition('AUTH_ERROR',{source,reasonCode:`HTTP_${response.status}`});
-    if(!response.ok)return this.transition('DEGRADED',{source,reasonCode:`HTTP_${response.status}`});
-    let payload;try{payload=await response.json();}catch{return this.transition('DEGRADED',{source,reasonCode:'INVALID_RESPONSE'});}
+    if(response.status===401||response.status===403)return this.transition('AUTH_ERROR',{source,reasonCode:`HTTP_${response.status}`,client});
+    if(!response.ok)return this.transition('DEGRADED',{source,reasonCode:`HTTP_${response.status}`,client});
+    let payload;try{payload=await response.json();}catch{return this.transition('DEGRADED',{source,reasonCode:'INVALID_RESPONSE',client});}
     const usage={key_usage:payload?.key?.usage,key_limit:payload?.key?.limit,plan_usage:payload?.account?.plan_usage,
       plan_limit:payload?.account?.plan_limit,paygo_usage:payload?.account?.paygo_usage,paygo_limit:payload?.account?.paygo_limit};
+    const keyExhausted=finite(usage.key_limit)!==null&&finite(usage.key_usage)>=finite(usage.key_limit);
     const planExhausted=finite(usage.plan_limit)!==null&&finite(usage.plan_usage)>=finite(usage.plan_limit);
     const paygoConfigured=finite(usage.paygo_limit)!==null&&finite(usage.paygo_limit)>0;
     const paygoExhausted=paygoConfigured&&finite(usage.paygo_usage)>=finite(usage.paygo_limit);
-    const confirmedExhausted=planExhausted&&paygoConfigured&&paygoExhausted;
+    const confirmedExhausted=keyExhausted||(planExhausted&&(!paygoConfigured||paygoExhausted));
     usage.remaining_credits=confirmedExhausted?0:null;
-    return this.transition(confirmedExhausted?'CREDIT_EXHAUSTED':'AVAILABLE',{source,reasonCode:'USAGE_REFRESHED',usage});
+    return this.transition(confirmedExhausted?'CREDIT_EXHAUSTED':'AVAILABLE',{source,reasonCode:'USAGE_REFRESHED',usage,client});
+    }finally{
+      if(locked)await client.query('SELECT pg_advisory_unlock($1)',[REFRESH_LOCK_KEY]).catch(()=>{});
+      client.release();
+    }
   }
 }

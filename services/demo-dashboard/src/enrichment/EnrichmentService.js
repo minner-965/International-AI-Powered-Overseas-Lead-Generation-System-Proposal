@@ -779,24 +779,17 @@ export class EnrichmentService {
         (SELECT coalesce(sum(e.contact_routes_found),0)::integer FROM leadgen.enrichment_job_companies e WHERE e.research_job_id=$1) contacts,
         (SELECT coalesce(sum(e.sources_found),0)::integer FROM leadgen.enrichment_job_companies e WHERE e.research_job_id=$1) sources,
         (SELECT coalesce(sum(e.timeout_count),0)::integer FROM leadgen.enrichment_job_companies e WHERE e.research_job_id=$1) timeouts,
-        (SELECT count(*)::integer FROM leadgen.research_search_queries q WHERE q.research_job_id=$1) queries,
-        (SELECT count(*) FILTER (WHERE q.status='COMPLETED')::integer FROM leadgen.research_search_queries q WHERE q.research_job_id=$1) query_successes,
-        (SELECT count(*) FILTER (WHERE q.status='FAILED')::integer FROM leadgen.research_search_queries q WHERE q.research_job_id=$1) query_failures,
         (SELECT count(*) FROM leadgen.cooperation_feasibility_results f WHERE f.research_job_id=$1 AND f.opportunity_readiness='SALES_READY')::integer sales_ready,
-        (SELECT count(*) FROM leadgen.cooperation_feasibility_results f WHERE f.research_job_id=$1 AND f.opportunity_readiness='STRATEGIC_LONG_SHOT')::integer long_shot,
-        (SELECT count(*) FROM leadgen.provider_usage_events p WHERE p.research_job_id=$1 AND p.provider='HUNTER' AND p.status<>'SKIPPED')::integer hunter_calls,
-        (SELECT coalesce(sum(p.used_units),0)::integer FROM leadgen.provider_usage_events p WHERE p.research_job_id=$1 AND p.provider='HUNTER') hunter_units`,[job.id]);
+        (SELECT count(*) FROM leadgen.cooperation_feasibility_results f WHERE f.research_job_id=$1 AND f.opportunity_readiness='STRATEGIC_LONG_SHOT')::integer long_shot`,[job.id]);
       const count = counters.rows[0];
       const attempted = results.length;
       const status = attempted > 0 && failed === attempted ? 'FAILED' : failed || partial || stopReason ? 'PARTIAL' : 'COMPLETE';
       await this.pool.query(`UPDATE leadgen.research_jobs SET status=$2,completed_at=now(),companies_attempted=$3,
         decision_makers_found=$4,verified_departments=$5,contact_routes_found=$6,enrichment_sources_found=$7,
-        sales_ready_count=$8,strategic_long_shot_count=$9,hunter_calls=$10,hunter_credits_used_units=$11,
-        enrichment_timeouts=$12,search_api_requests=$13,search_successful_requests=$14,search_failed_requests=$15,
-        error_count=$16,last_error=$17,stop_reason_code=$18 WHERE id=$1`,[
+        sales_ready_count=$8,strategic_long_shot_count=$9,
+        enrichment_timeouts=$10,error_count=$11,last_error=$12,stop_reason_code=$13 WHERE id=$1`,[
         job.id,status,attempted,count.decision_makers,count.departments,count.contacts,count.sources,count.sales_ready,count.long_shot,
-        count.hunter_calls,count.hunter_units,count.timeouts,count.queries,count.query_successes,count.query_failures,
-        failed,stopReason || (failed?`${failed} company enrichment attempts failed`:null),stopReason
+        count.timeouts,failed,stopReason || (failed?`${failed} company enrichment attempts failed`:null),stopReason
       ]);
       this.audit('PHASE6_ENRICHMENT_COMPLETED',{ job_id:job.id,status,companies_attempted:attempted,failed,partial,stop_reason:stopReason });
       return { job_id:job.id,status,companies_attempted:attempted,failed,partial,stop_reason:stopReason,

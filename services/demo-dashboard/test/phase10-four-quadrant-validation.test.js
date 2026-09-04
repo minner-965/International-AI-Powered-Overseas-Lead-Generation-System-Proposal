@@ -425,17 +425,17 @@ test('hard 11: confirmed provider-credit pause resumes from the preserved checkp
     id: '00000000-0000-4000-8000-000000005001',
     company_id: '00000000-0000-4000-8000-000000005002',
     product_profile: 'WOMENSWEAR', business_blocker: 'VERIFIED_EMAIL_EVIDENCE', evidence_revision: 7,
-    execution_key: 'auto-evidence:v1:budget-resume', task_status: 'BUDGET_PAUSED',
+    execution_key: 'auto-evidence:v1:provider-capacity', task_status: 'PROVIDER_CAPACITY_WAIT',
     current_stage: 'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,max_attempts:10,
     current_strategy_code:'S04_OFFICIAL_LEADERSHIP',provider_retry_count:0,worker_retry_count:0,
-    checkpoint_replay_count:0,budget_state:'PAUSED'
+    checkpoint_replay_count:0,budget_state:'NOT_REQUIRED'
   };
   const repository = {
-    async resumeBudgetPaused(taskId) {
+    async resumeProviderCapacityWait(taskId) {
       assert.equal(taskId, paused.id);
       return {
         resumed: true,
-        task: { ...paused,task_status:'RETRY_SCHEDULED',checkpoint_replay_count:1,budget_state:'AVAILABLE' }
+        task: { ...paused,task_status:'RETRY_SCHEDULED',checkpoint_replay_count:1,budget_state:'NOT_REQUIRED' }
       };
     }
   };
@@ -449,7 +449,7 @@ test('hard 11: confirmed provider-credit pause resumes from the preserved checkp
     trusted_management: true,
     operator_identity: 'management.fixture', operator_role: 'MANAGEMENT', approval_reference: 'provider-restored-1'
   });
-  assert.equal(result.status, 'BUDGET_RESUME_QUEUED');
+  assert.equal(result.status, 'PROVIDER_CAPACITY_RECOVERY_QUEUED');
   assert.equal(result.stage, 'VERIFYING_EMAIL');
   assert.equal(result.attempt_number,1);
   assert.equal(calls.length, 1);

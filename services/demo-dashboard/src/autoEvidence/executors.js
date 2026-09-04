@@ -142,7 +142,7 @@ export function createAutoEvidenceExecutors({
       } catch (error) {
         if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED'].includes(error?.code)) {
           await setCategoryJobStatus(pool,research_job_id,'PARTIAL',{error:error.code});
-          return {outcome_status:'BUDGET_PAUSED',research_job_id,technical_blocker:error.code};
+          return {outcome_status:'PROVIDER_CAPACITY_WAIT',research_job_id,technical_blocker:error.code};
         }
         await setCategoryJobStatus(pool, research_job_id, 'FAILED', { complete: true, error: error?.code || error?.message });
         throw error;
@@ -200,7 +200,7 @@ export function createAutoEvidenceExecutors({
       if(strategy)await markContactJobRetryable(pool,research_job_id,`STRATEGY_${strategy.code}`);
       const result = await enrichmentService.runJob(research_job_id,{tavilyEnabled,hunterEnabled,...(strategy?{strategy}:{})});
       if (['HUNTER_BUDGET_CAP','TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED'].includes(result.stop_reason)) {
-        return { outcome_status: 'BUDGET_PAUSED', research_job_id, technical_blocker: result.stop_reason };
+        return { outcome_status: 'PROVIDER_CAPACITY_WAIT', research_job_id, technical_blocker: result.stop_reason };
       }
       if (['PROVIDER_TEMPORARY_ERROR_THRESHOLD','HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'].includes(result.stop_reason) || result.status === 'FAILED') {
         if (['PROVIDER_TEMPORARY_ERROR_THRESHOLD','HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'].includes(result.stop_reason)) {

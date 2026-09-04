@@ -130,13 +130,9 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
       await client.query(`
         UPDATE leadgen.research_jobs SET
           error_count=$2,
-          search_api_requests=$3,
-          search_successful_requests=0,
-          search_failed_requests=$2,
           search_raw_results=0,
-          search_credits_used=$5,
-          search_runtime_ms=$4
-        WHERE id=$1`, [jobId, failed, requests, Date.now() - started, creditsUsed]);
+          search_runtime_ms=$3
+        WHERE id=$1`, [jobId, failed, Date.now() - started]);
       const error = new Error('All search queries failed');
       error.code = 'ALL_SEARCH_QUERIES_FAILED';
       throw error;
@@ -164,16 +160,12 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
       UPDATE leadgen.research_jobs SET
         candidates_found=$2,
         error_count=$3,
-        search_api_requests=$4,
-        search_successful_requests=$5,
-        search_failed_requests=$6,
-        search_raw_results=$7,
-        search_noise_rejected=$8,
-        search_duplicates_removed=$9,
-        search_runtime_ms=$10,
-        search_credits_used=$11
-      WHERE id=$1`, [jobId, merged.candidates.length, failed, requests, successful, failed,
-      rawResults, merged.rejected, merged.duplicates, runtimeMs, creditsUsed]);
+        search_raw_results=$4,
+        search_noise_rejected=$5,
+        search_duplicates_removed=$6,
+        search_runtime_ms=$7
+      WHERE id=$1`, [jobId, merged.candidates.length, failed,
+      rawResults, merged.rejected, merged.duplicates, runtimeMs]);
     await client.query('COMMIT');
     return {
       job_id: jobId,
