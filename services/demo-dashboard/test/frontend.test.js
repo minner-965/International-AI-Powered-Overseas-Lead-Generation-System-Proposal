@@ -366,6 +366,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.deepEqual(productCatalogStatusLabel('HISTORICAL_ORDER_SUPPORTED'), ['历史订单资料支持','Supported by historical order records']);
   assert.deepEqual(productSourceClassificationLabel('PRODUCT_MASTER'), ['公司商品库','Company product catalog']);
   assert.deepEqual(buyerBusinessModelLabel('DIRECT_END_BUYER'), ['终端零售买家','Direct end buyer']);
+  assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_CONFIRMED'), ['类目已确认','Category confirmed']);
   assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['类目已确认','Category confirmed']);
   assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['历史状态（现按商品类目评估）','Legacy state (category-level assessment now applies)']);
   assert.deepEqual(productOpportunityStatusLabel('NOT_REQUIRED'), ['按商品类目评估','Category-level assessment']);

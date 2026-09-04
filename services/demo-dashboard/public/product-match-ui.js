@@ -11,6 +11,7 @@ const bandLabels = Object.freeze({
 });
 
 const categoryProcurementStatusLabels = Object.freeze({
+  CATEGORY_MATCH_CONFIRMED: pair('类目已确认', 'Category confirmed'),
   CATEGORY_PROCUREMENT_MATCH: pair('目标类目匹配', 'Target Category Match'),
   CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('类目已确认', 'Category confirmed'),
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
