@@ -1,3 +1,9 @@
+STATUS: SUPERSEDED FOR CURRENT PHASE STATUS
+Use docs/CURRENT_PROJECT_STATUS.md for current execution state.
+Historical business/context sections remain reference-only.
+
+Current Phase 10 execution note (2026-09-04): WP-A04.2 supersedes WP10's local Tavily ceilings. Migration 039 remains immutable history, while active runtime policy is `PROVIDER_ACCOUNT_ONLY`: no application daily, job, company/profile, purpose or global Tavily quota blocks task creation. Confirmed provider credit exhaustion is the only credit-based creation gate; fairness, exact dedupe, query fingerprints and bounded worker concurrency remain active.
+
 # Project Context and Decision Record
 
 Last consolidated: 2026-08-23
@@ -124,4 +130,3 @@ Create a controlled n8n proof of concept for one country and one product categor
 6. Enrich and verify a small set of decision-maker contacts.
 7. Generate an approval-ready Tier A review table.
 8. Keep outbound sending disabled until management approves the data quality.
-

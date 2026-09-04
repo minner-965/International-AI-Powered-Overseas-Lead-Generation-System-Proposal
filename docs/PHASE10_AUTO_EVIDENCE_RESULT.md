@@ -1,6 +1,10 @@
 # Phase 10 自动补证结果
 
-执行日期：2026-09-01
+执行日期：2026-09-01；现行政策更新：2026-09-04
+
+## WP-A04.2 现行 Provider-only 政策
+
+本文件后文保留 2026-09-01 的历史运行事实。自 WP-A04.2 起，旧的每日、单次、单任务、公司/画像、purpose-pool、全局及账期 Tavily 数值预算不再参与创建或调度；company cooldown 和 numeric max-attempt 也不再构成阻断。任务仅在 Tavily 明确返回真实账户额度耗尽时暂停，429 按 `Retry-After` 延迟，精确去重、query fingerprint、有限并发、策略清单耗尽和 Provider usage 审计继续保留。
 
 ## 实现范围
 
@@ -10,7 +14,7 @@ Phase 10 在现有 pg-boss、ResearchJob、Tavily、Hunter、Phase 7 append-only
 - `company + product_profile + blocker + evidence_revision` 稳定 execution key；
 - 阶段 claim、row lock、lease、worker 重启恢复与 singleton 去重；
 - Tavily 单任务/UTC 单日/账期预算、持久 reservation、超时回收和 replay；
-- 来源 TTL 复用、7 天 company/profile cooldown 与 Provider 临时错误退避；
+- 来源 TTL 复用、Provider 临时错误退避，以及当时的 7 天 company/profile cooldown（现已由 WP-A04.2 取消阻断作用）；
 - 管理权限 + CSRF 的受控批次端点；
 - 自动任务与人工例外的明确分流；
 - inactive-first n8n 对账工作流 `workflows/03-phase10-auto-evidence-reconciliation.json`。

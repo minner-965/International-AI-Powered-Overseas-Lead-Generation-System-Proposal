@@ -28,7 +28,7 @@ Manifest contract 13/13 通过；manifest 引用的完整测试集合 93/93 通�
 | 8 | 批准后证据过期/范围撤销 | approval stale，发送阻断 | PASS | 当前无批准 |
 | 9 | webhook 重复、延迟、乱序 | 最终一致、一次副作用 | PASS | 未产生真实 webhook |
 | 10 | worker 关键阶段重启 | 不重复 Provider/发送、不丢审计 | PASS | worker 稳定；真实发送未发生 |
-| 11 | 达到 Provider 预算后恢复 | `BUDGET_PAUSED` 后 checkpoint 恢复 | PASS | 持久预算实现；本次未耗尽 |
+| 11 | Tavily 账户真实额度耗尽后恢复 | `BUDGET_PAUSED` 保留 checkpoint；Provider 恢复后 exactly-once continuation | PASS | WP-A04.2 已真实恢复 4 条旧暂停任务；未修改旧 stop reason |
 | 12 | reply/退订/硬退信/投诉 | 正确 CRM/suppression | PASS | 未产生真实事件 |
 
 ## 基础正向与基础反向

@@ -4,6 +4,39 @@
 
 ### Added and changed
 
+- Completed WP-A04.2 and removed application-enforced Tavily daily, per-run, per-job, purpose-pool, company/profile, global and billing-window credit caps from the active runtime path.
+- Research task creation is no longer limited by local numeric quotas. Confirmed Tavily account credit exhaustion is the only credit-based creation blocker; 429 rate limiting follows `Retry-After` and remains queueable.
+- Preserved Provider usage auditing, request/query fingerprint idempotency, singleton dispatch, bounded worker concurrency, immutable historical stop reasons, checkpoint continuation and all email gates.
+- Added migration 045 for sanitized Provider account state and append-only state transitions. Migration 044/045 preserve usage history while the current Tavily ledger has no local credit ceiling.
+- Repaired continuation ownership during real reconciliation: canonical queued continuations are reused, a fresh checkpoint replay identity prevents historical pause replay, and existing outbox lineage remains exactly-once.
+- Real validation recovered all four old `BUDGET_PAUSED` tasks, completed Research canary `bfb18f20-d726-4c15-9405-c5f7efaf7a7f`, observed a healthy n8n schedule, restarted the worker with zero duplicate request fingerprints, and kept every email business table at zero.
+- Current full local verification is 681 tests: 666 passed, 0 failed and 15 environment-scoped skips. Isolated PostgreSQL continuation tests passed 7/7 and migration apply/replay tests passed 22/22.
+- Executed the WP16 read-only DNS inspection. The live MX record is the supported Google Workspace target `smtp.google.com` at priority 1, and DMARC is present with `p=quarantine`, relaxed SPF/DKIM alignment and aggregate reporting.
+- Confirmed through both Cloudflare `1.1.1.1` and Google `8.8.8.8` that the root domain publishes zero SPF records. DKIM remains unverified because the selector must come from Google Admin and was not guessed. No DNS record was modified.
+- The Google sign-in surface currently ends on a rejected-login page, so the Gmail manual send/receive/reply and message-header checks were not represented as passed. WP16 remains blocked pending SPF, the real DKIM selector/activation state and a successful Workspace sign-in.
+- Re-ran the complete 661-test suite, native dependency smoke, status validator, dependency audit, migration replay, deployed Gmail tests, disabled inbound queue, eight live business APIs and five browser assets. Automated checks passed with zero failures; the initially mistyped Workbench/Companies probe URLs were corrected to the actual frontend routes and returned 200.
+- Implemented WP15 as a gated Gmail API Provider using OAuth 2.0 user authorization, with all Gmail and outbound feature flags closed by default and no OAuth credential exposed to the UI or logs.
+- Added migration 042 for Gmail provider identity, stable RFC Message-ID/send execution lineage, mailbox history checkpoints and append-only ambiguous-send reconciliation audit. The migration applied and replayed successfully on the live PostgreSQL database.
+- Reused the Phase 7 approval, suppression, outbound-attempt, inbound classification, CRM outbox and pg-boss paths. Gmail API acceptance maps only to `PROVIDER_ACCEPTED / ACCEPTED_BY_GMAIL`; it never fabricates delivery.
+- Added Sent-mailbox reconciliation before any ambiguous retry, Gmail `historyId` polling, header-driven automatic-reply classification and structured DSN validation requiring recipient plus enhanced status code. Hard DSNs reuse append-only suppression; delivery-looking text alone is ignored.
+- Full local verification now covers 661 tests: 653 passed, 0 failed and 8 environment-scoped skips. The rebuilt deployed image passed all 10 Gmail provider tests and all application/worker containers are healthy. Disabled live API checks made zero Gmail calls.
+- Real controlled-address send/reply/CRM E2E remains pending because sender/Reply-To, OAuth client authorization and the controlled recipient have not yet been supplied. Prospect sending remains off.
+- Completed WP14 with a real `@gorules/zen-engine` import/create/evaluate/dispose smoke command, clean `npm ci` verification, npm-cache-only CI configuration and Docker image packaging for the smoke script.
+- Re-ran the three historical native-failure suites independently (42/42 passed), then the complete suite (650 tests: 642 passed, 0 failed, 8 environment-scoped skips). Both deployed application containers passed the native smoke; an isolated missing-module run returned the required exit code 1 without affecting the live installation.
+- Removed the temporary management-token experience end to end: no token dialog, session storage, bearer header, management session endpoint or CSRF challenge remains in the browser/API flow. The server now attaches the configured workspace audit identity directly, while existing business-role checks and append-only audit attribution remain in place.
+- Changed the dashboard port publication from loopback-only to `3000:3000` for the upcoming hosted deployment. Legacy management secret variables are explicitly blanked in the running dashboard container; public hosting still requires the planned company account/SSO layer rather than a shared token prompt.
+- Completed WP13 with an append-only `MANUAL_OFFICIAL_ROUTE_READY` queue for verified official supplier portals, vendor registration pages, contact forms and procurement-department routes.
+- Added migration 041, official-domain/source/freshness/suppression/history qualification, current queue projection, role-controlled read/action APIs and the bilingual Contact Queue section.
+- Kept the user-approved company-contact opportunity rule: a qualifying company route may support `RECOMMENDED`, while the manual route queue remains independent and cannot create a named Buyer, management approval, draft, send or form submission.
+- Reconciliation is idempotent and now runs after opportunity-decision refresh. The live acceptance created 44 current CONTACT_FORM tasks, replay created 0 duplicates, and one route completed a reversible READY → IN_PROGRESS → READY API exercise with two append-only audit revisions and zero outbound/approval side effects.
+- WP13 verification completed with 648 tests: 640 passed, 0 failed and 8 environment-scoped tests skipped; dependency audit reported 0 vulnerabilities.
+- Completed WP12 with an append-only Commercial Product Fit layer covering assortment relevance (25), commercial positioning/price band (20), attribute/specification fit (15), MOQ/order format (15), import/sourcing model (15) and recent product/buying signals (10).
+- Clarified the management workflow: available public company facts may inform Commercial Product Fit, while absent price, specification and MOQ/order-format facts are skipped without enrichment and discussed by management only after prospect interest. DPV positioning is recorded as low-price to mass-market mid-range context, not a pre-contact gate.
+- Revised business-opportunity contact qualification to v4: a verified named Buyer remains preferred, while an official company work email, business phone or public WhatsApp can independently make an otherwise fit company `RECOMMENDED`. This does not relax management approval, recipient verification, suppression or Gmail send gates.
+- Kept Product Category Score as the opportunity hard gate and primary table score. Commercial Product Fit is shown only in Business Fit detail and never changes identity, Buyer/contact validity, management approval or send permission.
+- Added migration 040, versioned score/coverage/dimension/evidence records and a current projection. Unknown dimensions remain `UNKNOWN`; the aggregate score is normalized only across evidence-backed dimensions and is always shown with coverage.
+- Ran the first persisted result against Rizqé WOMENSWEAR public evidence: 72/100, MEDIUM, 50% coverage, with three supported and three unknown dimensions. A same-key replay returned the same result ID and added no row.
+
 - Added approved, versioned DPV company-category scope independent of concrete SKU completeness, with exact/similar/profile match bases and append-only dry-run/apply decisions.
 - Released one real WOMENSWEAR opportunity from the legacy internal-catalog blocker while retaining 11 customer-evidence-limited decisions and both ineligible buyer-model decisions.
 - Added automatic evidence task, attempt, scheduling, exception and provider-credit ledgers; stage leases, singleton deduplication, cooldown, retry, TTL reuse and recovery preserve idempotency.
@@ -16,13 +49,31 @@
 - Removed catalog-maintenance panels, actions, counters and export gates. Company Detail and ordinary exports now present category-level score, scope and match basis only; they do not expose concrete product candidates.
 - Added migration 032 and a database contract for `CATEGORY_SCOPE_QUALIFIED`: every new category-level opportunity has zero candidates, no catalog task and `NO_EXACT_SKU`. Historical product-opportunity and candidate rows remain read-only.
 - Kept product/customer-deal imports as independent inputs to approved category/profile, historical ICP and target-customer scoring; they are not read by the new-prospect opportunity calculator.
+- Made `provider_usage_events` the canonical source for ResearchJob provider calls and credits. API, Workbench, job detail and the new provider-usage Excel dataset now read the same live projection.
+- Added separate reserved, used and released-unit accounting, exact job/company aggregation, replay deduplication semantics and an idempotent projection-reconciliation record without rewriting historical provider events.
+- Applied migrations 035 and 036 for the canonical provider-usage views, reconciliation audit and export-type database contract.
+- Completed WP09 with ten versioned, blocker-applicable evidence strategies (`S01`–`S10`), deterministic sanitized query fingerprints and the required Mexico purchasing-role vocabulary.
+- Separated `strategy_attempt_number`, Provider retry and worker/lease recovery counters. Budget resume and Provider/worker recovery preserve the same strategy number; only selection of a new unused strategy consumes the 10-attempt business limit.
+- Added a non-attempt checkpoint replay sequence in migration 038 so a resumed budget checkpoint can execute the same strategy without replaying the prior `BUDGET_PAUSED` settlement or mislabelling it as a Provider/worker retry.
+- Extended the existing append-only attempt ledger through migration 037 with strategy identity, locale/source class, evidence-yield counters, retry counters and terminal timestamps/reasons. The 80 historical mixed-pipeline rows remain unchanged and are not relabelled as new strategies.
+- Repaired the five premature `EVIDENCE_EXHAUSTED` tasks to `RETRY_SCHEDULED / READY / 0 of 10`, removed their premature cooldown and added one reconciliation schedule event per task without starting Provider work.
+- Added explicit resolved-blocker, suppression, historical-customer and Buyer-responsibility-conflict stops; all applicable strategies must be exhausted before the seven-day cooldown begins.
+- Exposed strategy progress, Provider retry and worker recovery as separate API/UI fields with one compact bilingual status line.
+- Historical WP10 record: it introduced a 25-unit global Tavily ceiling, 5 units per ResearchJob, daily purpose pools and a company/profile cap. WP-A04.2 now supersedes every one of those numeric enforcement paths with `PROVIDER_ACCOUNT_ONLY`.
+- Added priority-first round-robin scheduling: each company/profile runs at most one strategy per reconciliation round, then yields; peers at the same priority are ordered by the oldest strategy start time.
+- Added `budget_pool` and `product_profile` usage lineage plus fair-round and duplicate-prevention counters in migration 039 without rewriting the eight historical Provider events.
+- Added the seven efficiency measures required by WP10 and four separate Workbench facts for Tavily units, companies, strategies and newly usable evidence.
+- Historical WP10 record: discovery moved onto the canonical reservation ledger. WP-A04.2 retains this ledger for usage/idempotency audit but no longer uses it as a local credit ceiling.
 
 ### Verification and real-result boundary
 
-- Applied migrations 030, 031 and 032; the current full suite is 580 tests with 574 pass, 0 fail and 6 environment-only skips. Migration 032 was also applied and replayed directly on the live PostgreSQL database.
+- Applied migrations 030 through 039; the current full suite is 625 tests with 618 pass, 0 fail and 7 environment-only skips. Migration 039 was applied and replay-verified on the live PostgreSQL database.
 - Executed the fixed four-quadrant manifest: 13/13 manifest contracts and 93/93 referenced tests passed with no skip, todo or warning downgrade.
 - Verified desktop/mobile browser layouts, theme/density, dialog focus, zero horizontal overflow, zero console errors and a real 14-row/36-column XLSX export containing Product Category Score and its category evidence context.
 - Current business truth remains 12 Evidence Required, 2 Not Suitable, 0 Recommended, 0 Management Approved and 0 live sends. All outreach, webhook, reply and CRM side-effect tables remain empty.
+- Both representative historical category jobs now project 4 ledger calls and 4 used units despite their obsolete cached counters being 0. A deployed 45-row provider-usage XLSX export completed with a valid workbook signature, and the dependency audit reports 0 vulnerabilities.
+- Real PostgreSQL rollback probes verified strategy selection and the extended attempt insert contract. Migration 037 preserved 80 historical attempt rows, created 0 new strategy rows and caused 0 Provider events; dependency audit remains at 0 vulnerabilities.
+- A real PostgreSQL rollback probe verified WP10 Tavily reservation and settlement with `EVIDENCE` pool and exact product-profile lineage. Migration 039 caused 0 Provider events, and the dependency audit remains at 0 vulnerabilities.
 - Phase 10 code/migration/UI/automated validation passes, but V1.1 final `Implementation PASS` remains `INCOMPLETE` and `Business-result PASS=NO`: Provider is `NONE`, and controlled live send/reply/CRM plus an approved opportunity pilot have not occurred.
 - Detailed result: `docs/PHASE10_RESULT.md`.
 
