@@ -128,6 +128,8 @@ test('research form exposes country selector and optional city and region fields
   assert.match(html, /data-country-code="BD"[^>]*hidden[^>]*disabled/);
   assert.match(html, /<input(?=[^>]*id="research-city")(?=[^>]*name="city")[^>]*>/);
   assert.match(html, /<input(?=[^>]*id="research-region")(?=[^>]*name="region")[^>]*>/);
+  assert.doesNotMatch(html, /<input(?=[^>]*id="research-city")[^>]*\bvalue=/);
+  assert.doesNotMatch(html, /<input(?=[^>]*id="research-region")[^>]*\bvalue=/);
   assert.match(app, /\$\('#research-city'\)\.value = '';/);
   assert.match(app, /\$\('#research-region'\)\.value = '';/);
 });
