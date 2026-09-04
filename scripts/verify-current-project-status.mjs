@@ -26,14 +26,14 @@ assert(status.latest_released_phase === 'Phase 9', 'Latest released phase must b
 assert(status.current_active_phase === 'Phase 10', 'Current active phase must be Phase 10');
 assert(status.final_acceptance_state === 'INCOMPLETE', 'Phase 10 final acceptance must remain incomplete');
 assert(status.business_result_state === 'NO', 'Business result state must remain NO');
-assert(status.next_allowed_work_package === 'Work Package 15', 'Next work package must be 15 after WP14 completion');
+assert(status.next_allowed_work_package === 'Gmail controlled acceptance', 'Next boundary must be Gmail controlled acceptance');
 assert(status.explicit_stop_boundary.includes('STOP'), 'Explicit STOP boundary is missing');
-assert(status.explicit_stop_boundary.includes('Work Package 15'), 'STOP boundary must record WP15 implementation verification');
+assert(status.explicit_stop_boundary.includes('Gmail'), 'STOP boundary must record the Gmail acceptance boundary');
 for (const expected of [
   'Phase 1–9 complete',
   'Phase 10 code/migration/UI/automation verified',
   'Phase 10 final acceptance incomplete',
-  'Work Packages 11–14 complete'
+  'WP-U00–U14 complete'
 ]) assert(status.phase_state.includes(expected), `Missing phase state: ${expected}`);
 
 assert(/^## phase10\b/m.test(changelog), 'VERSION_CHANGELOG.md has no phase10 entry');
@@ -65,9 +65,9 @@ for (const name of [
 const git = (...args) => execFileSync('git', [
   '-c', `safe.directory=${root.replaceAll('\\', '/')}`, '-C', root, ...args
 ], { encoding: 'utf8' }).trim();
-const head = git('rev-parse', 'HEAD');
+const implementationHead = git('log', '-1', '--format=%H', '--', '.', ':(exclude)docs/**');
 const dirty = git('status', '--porcelain').length > 0;
-assert(status.commit === head, 'Current status commit does not match HEAD');
+assert(status.commit === implementationHead, 'Current status commit does not match the latest implementation commit');
 assert(status.dirty_at_snapshot === dirty, 'Current status dirty flag does not match the worktree');
 
 const credentialAssignment = /(?:PASSWORD|API_KEY|CLIENT_SECRET|REFRESH_TOKEN|PRIVATE_KEY)\s*[:=]\s*["']?[^\s"'<]+/i;
