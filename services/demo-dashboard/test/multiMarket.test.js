@@ -39,17 +39,18 @@ test('AE, MX, BD and unknown-country GENERIC profiles resolve without core rewri
   assert.deepEqual(listConfiguredMarkets().map(item => item.country_code), ['AE', 'MX', 'BD']);
 });
 
-test('query generation keeps the balanced five-query budget in every market', () => {
+test('query generation exposes the full distinct strategy set in every market', () => {
   for (const job of [
     researchJob('AE', 'United Arab Emirates', 'Dubai'),
     researchJob('BD', 'Bangladesh', 'Dhaka'),
     researchJob('MX', 'Mexico', 'Mexico City')
   ]) {
     const queries = generateResearchQueries(job);
-    assert.equal(queries.length, 5);
-    assert.deepEqual(queries.map(item => item.query_type), [
-      'sme_regional', 'sme_regional', 'buyer_category', 'general_trading', 'strategic_account'
-    ]);
+    assert.ok(queries.length > 5);
+    for(const type of ['sme_regional','buyer_category','general_trading','strategic_account']) {
+      assert.ok(queries.some(item=>item.query_type===type));
+    }
+    assert.equal(new Set(queries.map(item=>item.query_text.toLowerCase())).size,queries.length);
     assert.ok(queries.every(item => item.country_code === job.country_code));
   }
 });

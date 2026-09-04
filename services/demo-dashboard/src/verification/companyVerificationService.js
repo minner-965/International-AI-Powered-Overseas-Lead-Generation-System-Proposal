@@ -478,8 +478,7 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
   if (!jobResult.rowCount) throw new Error('Research job not found');
   const job = jobResult.rows[0];
   const { rows: candidates } = await pool.query(`
-    SELECT * FROM leadgen.research_candidates WHERE research_job_id=$1 ORDER BY rank,title LIMIT $2`, [
-    jobId, Math.max(1, Math.min(20, Number(config.maxCandidates || job.max_results || 5)))]);
+    SELECT * FROM leadgen.research_candidates WHERE research_job_id=$1 ORDER BY rank,title`, [jobId]);
   const effective = {
     maxPages: Math.max(1, Math.min(8, Number(config.maxPages || 8))),
     timeoutMs: Math.max(1000, Number(config.timeoutMs || 10000)),

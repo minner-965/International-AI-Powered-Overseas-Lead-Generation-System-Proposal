@@ -33,7 +33,7 @@ export function createSearchProvider(config = {}, overrides = {}) {
 }
 
 export async function persistGeneratedQueries(client, job, config) {
-  const generated = generateResearchQueries(job, { maxQueries: config.maxQueries });
+  const generated = generateResearchQueries(job);
   const rows = [];
   for (const query of generated) {
     const result = await client.query(`
@@ -66,13 +66,10 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
     const jobResult = await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [jobId]);
     if (!jobResult.rowCount) throw new Error('Research job not found');
     const job = jobResult.rows[0];
-    let queryResult = await client.query('SELECT * FROM leadgen.research_search_queries WHERE research_job_id=$1 ORDER BY created_at,id', [jobId]);
-    if (!queryResult.rowCount) {
-      await client.query('BEGIN');
-      await persistGeneratedQueries(client, job, config);
-      await client.query('COMMIT');
-      queryResult = await client.query('SELECT * FROM leadgen.research_search_queries WHERE research_job_id=$1 ORDER BY created_at,id', [jobId]);
-    }
+    await client.query('BEGIN');
+    await persistGeneratedQueries(client, job, config);
+    await client.query('COMMIT');
+    const queryResult = await client.query('SELECT * FROM leadgen.research_search_queries WHERE research_job_id=$1 ORDER BY created_at,id', [jobId]);
 
     const discoveries = [];
     let requests = 0;
@@ -84,10 +81,10 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
     const marketProfile = marketProfileForJob(job);
     const productProfile = getProductCategoryProfile(job.product_category);
     const locationName = marketProviderLocationName(job, marketProfile);
-    const resultDepth = String(config.provider).toLowerCase() === 'tavily'
-      ? config.resultsPerQuery
-      : Math.max(config.resultsPerQuery, Math.min(20, job.max_results));
-    for (const query of queryResult.rows.slice(0, config.maxQueries)) {
+    const targetResults = Math.max(1, Number(job.max_results) || 1);
+    const resultDepth = Math.min(20, targetResults);
+    let targetReached = false;
+    for (const query of queryResult.rows) {
       requests += 1;
       await client.query("UPDATE leadgen.research_search_queries SET status='RUNNING',error_message=NULL WHERE id=$1", [query.id]);
       try {
@@ -120,6 +117,8 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
           });
           if (normalized) discoveries.push(normalized);
         }
+        targetReached = mergeSearchCandidates(discoveries, targetResults, { marketProfile, productProfile }).candidates.length >= targetResults;
+        if (targetReached) break;
       } catch (error) {
         failed += 1;
         const safeError = String(error.message || 'Search request failed').replace(/\s+/g, ' ').slice(0, 500);
@@ -131,15 +130,19 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
         UPDATE leadgen.research_jobs SET
           error_count=$2,
           search_raw_results=0,
-          search_runtime_ms=$3
+          search_runtime_ms=$3,
+          search_api_requests=$2,
+          search_successful_requests=0,
+          search_failed_requests=$2
         WHERE id=$1`, [jobId, failed, Date.now() - started]);
       const error = new Error('All search queries failed');
       error.code = 'ALL_SEARCH_QUERIES_FAILED';
       throw error;
     }
 
-    const merged = mergeSearchCandidates(discoveries, job.max_results, { marketProfile, productProfile });
+    const merged = mergeSearchCandidates(discoveries, targetResults, { marketProfile, productProfile });
     await client.query('BEGIN');
+    await client.query("DELETE FROM leadgen.research_search_queries WHERE research_job_id=$1 AND status='PENDING'", [jobId]);
     await client.query('DELETE FROM leadgen.research_candidates WHERE research_job_id=$1', [jobId]);
     for (const candidate of merged.candidates) {
       const inserted = await client.query(`
@@ -163,14 +166,18 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
         search_raw_results=$4,
         search_noise_rejected=$5,
         search_duplicates_removed=$6,
-        search_runtime_ms=$7
+        search_runtime_ms=$7,
+        search_api_requests=$8,
+        search_successful_requests=$9,
+        search_failed_requests=$10
       WHERE id=$1`, [jobId, merged.candidates.length, failed,
-      rawResults, merged.rejected, merged.duplicates, runtimeMs]);
+      rawResults, merged.rejected, merged.duplicates, runtimeMs, requests, successful, failed]);
     await client.query('COMMIT');
     return {
       job_id: jobId,
       provider: provider.name,
       query_count: queryResult.rows.length,
+      strategies_executed: requests,
       api_requests: requests,
       successful_requests: successful,
       failed_requests: failed,
@@ -178,6 +185,8 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
       noise_rejected: merged.rejected,
       duplicates_removed: merged.duplicates,
       candidates_found: merged.candidates.length,
+      target_results: targetResults,
+      completion_reason: targetReached ? 'TARGET_REACHED' : 'SEARCH_STRATEGIES_EXHAUSTED',
       credits_used: creditsUsed,
       runtime_ms: Date.now() - started
     };

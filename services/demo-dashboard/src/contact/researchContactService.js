@@ -192,8 +192,7 @@ export async function checkResearchCandidateContacts(pool, jobId, config = {}, o
     SELECT * FROM leadgen.research_candidates
     WHERE research_job_id=$1 AND candidate_type = ANY($2::text[])
     ORDER BY rank,title`, [jobId, [...crawlableTypes, ...profileTypes]]);
-  const selected = candidateResult.rows.sort((a, b) => candidatePriority(a) - candidatePriority(b))
-    .slice(0, Math.max(1, Number(config.maxCandidates || 5)));
+  const selected = candidateResult.rows.sort((a, b) => candidatePriority(a) - candidatePriority(b));
 
   for (const candidate of selected) {
     let inspection;

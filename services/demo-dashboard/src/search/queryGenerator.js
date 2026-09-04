@@ -34,8 +34,7 @@ function normalizeQueryKey(query) {
   return query.toLowerCase().replace(/["']/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export function generateResearchQueries(job, { maxQueries = 5 } = {}) {
-  const max = Math.max(1, Math.min(12, Number(maxQueries) || 5));
+export function generateResearchQueries(job) {
   const profile = marketProfileForJob(job);
   const country = String(job.country_name || job.country || profile.countryName).trim();
   const city = String(job.city || '').trim();
@@ -87,11 +86,35 @@ export function generateResearchQueries(job, { maxQueries = 5 } = {}) {
 
   buyers.forEach((buyer, buyerIndex) => {
     const terms = termsForBuyer(buyer);
-    candidates.push({
-      query_text: `"${synonyms[buyerIndex % synonyms.length]}" ${terms[0]} ${market}`.trim(),
-      query_type: 'buyer_category', buyer_type: buyer
-    });
+    for (const synonym of synonyms) {
+      for (const term of terms) {
+        candidates.push({
+          query_text: `"${synonym}" ${term} ${market}`.trim(),
+          query_type: 'buyer_category', buyer_type: buyer
+        });
+      }
+    }
   });
+
+  const marketStrategies = [
+    ...profile.importerTerms.map(term => [term, 'buyer_category', 'Importer']),
+    ...profile.wholesalerTerms.map(term => [term, 'buyer_category', 'Wholesaler']),
+    ...profile.distributorTerms.map(term => [term, 'buyer_category', 'Distributor']),
+    ...profile.tradingTerms.map(term => [term, 'general_trading', null]),
+    ...profile.retailTerms.map(term => [term, 'strategic_account', 'Retailer']),
+    ...profile.departmentStoreTerms.map(term => [term, 'strategic_account', 'Department Store']),
+    ...profile.supermarketTerms.map(term => [term, 'strategic_account', 'Supermarket']),
+    ...profile.strategicTerms.map(term => [term, 'strategic_account', null])
+  ];
+  for (const synonym of synonyms) {
+    for (const [term, queryType, buyerType] of marketStrategies) {
+      candidates.push({
+        query_text: `"${synonym}" ${term} ${market}`.trim(),
+        query_type: queryType,
+        buyer_type: buyerType
+      });
+    }
+  }
 
   const seen = new Set();
   return candidates.filter(item => {
@@ -99,7 +122,7 @@ export function generateResearchQueries(job, { maxQueries = 5 } = {}) {
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, max).map(item => ({
+  }).map(item => ({
     ...item,
     country,
     country_code: profile.countryCode,

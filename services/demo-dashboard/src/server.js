@@ -74,12 +74,9 @@ const searchConfig = Object.freeze({
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
   tavilyEndpoint: process.env.TAVILY_SEARCH_ENDPOINT || 'https://api.tavily.com/search',
   tavilySearchDepth: String(process.env.TAVILY_SEARCH_DEPTH || 'basic').toLowerCase(),
-  resultsPerQuery: Math.max(1, Math.min(20, Number(process.env.SEARCH_RESULTS_PER_QUERY || 5))),
-  maxQueries: Math.max(1, Math.min(5, Number(process.env.SEARCH_MAX_QUERIES_PER_JOB || 5))),
   timeoutMs: Math.max(1000, Number(process.env.SEARCH_REQUEST_TIMEOUT_MS || 15000)),
   storageRightsConfirmed: /^(1|true|yes)$/i.test(process.env.SEARCH_STORAGE_RIGHTS_CONFIRMED || ''),
   contactConfig: Object.freeze({
-    maxCandidates: Math.max(1, Math.min(20, Number(process.env.CONTACT_CHECK_MAX_CANDIDATES || 5))),
     maxPagesPerCandidate: Math.max(1, Math.min(4, Number(process.env.CONTACT_CHECK_MAX_PAGES_PER_CANDIDATE || 4))),
     timeoutMs: Math.max(1000, Number(process.env.CONTACT_FETCH_TIMEOUT_MS || 10000)),
     delayMs: Math.max(0, Number(process.env.CONTACT_FETCH_DELAY_MS || 500)),
@@ -88,7 +85,6 @@ const searchConfig = Object.freeze({
     maxRedirects: 5
   }),
   companyVerifyConfig: Object.freeze({
-    maxCandidates: Math.max(1, Math.min(20, Number(process.env.COMPANY_VERIFY_MAX_CANDIDATES || 5))),
     maxPages: Math.max(1, Math.min(8, Number(process.env.COMPANY_VERIFY_MAX_PAGES || 8))),
     timeoutMs: Math.max(1000, Number(process.env.COMPANY_VERIFY_TIMEOUT_MS || 10000)),
     delayMs: Math.max(0, Number(process.env.COMPANY_VERIFY_DELAY_MS || 350)),

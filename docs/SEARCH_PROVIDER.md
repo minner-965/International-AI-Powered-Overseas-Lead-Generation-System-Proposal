@@ -28,11 +28,8 @@ SEARCH_PROVIDER=tavily
 TAVILY_API_KEY=...
 TAVILY_SEARCH_ENDPOINT=https://api.tavily.com/search
 TAVILY_SEARCH_DEPTH=basic
-SEARCH_MAX_QUERIES_PER_JOB=5
-SEARCH_RESULTS_PER_QUERY=5
 SEARCH_REQUEST_TIMEOUT_MS=15000
 
-CONTACT_CHECK_MAX_CANDIDATES=5
 CONTACT_CHECK_MAX_PAGES_PER_CANDIDATE=4
 CONTACT_FETCH_TIMEOUT_MS=10000
 CONTACT_FETCH_DELAY_MS=500
@@ -51,7 +48,7 @@ Every request explicitly uses the low-cost settings:
   "query": "<generated ResearchJob query>",
   "search_depth": "basic",
   "topic": "general",
-  "max_results": 5,
+  "max_results": "min(20, remaining job target)",
   "include_answer": false,
   "include_raw_content": false,
   "include_images": false,
@@ -62,7 +59,7 @@ Every request explicitly uses the low-cost settings:
 
 `auto_parameters` is disabled and `search_depth` is fixed to `basic`. Phase 3 does not call Tavily Extract, Crawl, Map or Research endpoints.
 
-Tavily documents Basic Search as one API credit per request. The normal job uses at most five Basic searches, approximately five credits. Provider-reported `usage.credits` is summed into `research_jobs.search_credits_used`.
+The job target is `research_jobs.max_results`. Discovery executes distinct market/category strategies until that many unique candidates are collected or the generated strategy set is exhausted. The provider's per-request maximum is respected, but there is no internal five-query or five-result research cap. Provider-reported `usage.credits` is summed into `research_jobs.search_credits_used`.
 
 ## Result mapping
 

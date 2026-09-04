@@ -520,6 +520,13 @@ function renderResearchJob(job) {
   const taskErrors = Math.max(Number(job.search_failed_requests || 0), Number(job.error_count || 0));
   const progress = researchProgress(job);
   const compactCompleted = window.matchMedia('(max-width: 560px)').matches && job.status === 'COMPLETED';
+  const targetResults = Number(job.max_results || 0);
+  const candidateResults = Number(job.candidates_found || 0);
+  const searchOutcome = job.status === 'COMPLETED'
+    ? job.search_completion_reason === 'TARGET_REACHED'
+      ? bi(`已达到目标：找到 ${candidateResults}/${targetResults} 家候选公司。`,`Target reached: ${candidateResults}/${targetResults} candidate companies found.`)
+      : bi(`搜索策略已全部执行：找到 ${candidateResults}/${targetResults} 家候选公司；结果不足是因为其余页面无关或重复。`,`All search strategies completed: ${candidateResults}/${targetResults} candidate companies found; the remainder were irrelevant or duplicates.`)
+    : '';
   $('#research-job').hidden = false;
   const terminalStatuses = ['COMPLETED','FAILED','FAILED_RETRYABLE','FAILED_FINAL','WAITING_EVIDENCE','CANCELLED'];
   $('#research-job').setAttribute('aria-busy', String(!terminalStatuses.includes(String(job.status || '').toUpperCase())));
@@ -530,7 +537,8 @@ function renderResearchJob(job) {
         <div class="research-progress-copy"><strong>${bi(`当前阶段：${stage[0]}`,`Current stage: ${stage[1]}`)}</strong><b>${esc(progress)}%</b></div>
         <progress value="${esc(progress)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${progress}%`)}">${esc(progress)}%</progress>
       </section>
-      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
+      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('目标公司数','Company target')}<b>${esc(targetResults)}</b></div><div>${bi('实际候选公司','Candidates found')}<b>${esc(candidateResults)}</b></div><div>${bi('搜索策略已执行','Strategies executed')}<b id="research-query-count">${esc(job.search_strategies_executed ?? job.provider_call_count ?? 0)}</b></div><div>${bi('原始搜索结果','Raw search results')}<b>${esc(job.search_raw_results ?? 0)}</b></div><div>${bi('无关结果','Irrelevant results')}<b>${esc(job.search_noise_rejected ?? 0)}</b></div><div>${bi('重复结果','Duplicates removed')}<b>${esc(job.search_duplicates_removed ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
+      ${searchOutcome ? `<p class="job-outcome" role="status">${searchOutcome}</p>` : ''}
       ${job.status === 'FAILED' ? `<p class="job-error">${bi('研究任务未完成。','Research job failed.')}</p>` : ''}
       <div id="research-query-summary"></div><div id="research-candidate-results"></div><div id="research-verification-results"></div>
     </details>`;

@@ -465,11 +465,14 @@ function jobObjective(job) {
 
 function jobResultFacts(job) {
   const definitions = [
+    ['max_results','目标公司数','Target'],
     ['companies_selected','入选企业','Selected'],
     ['category_matches','品类匹配','Category'],
     ['verified_buyers','核验采购人员','Buyers'],
     ['verified_email_routes','有效邮箱','VALID'],
+    ['search_strategies_executed','已执行搜索策略','Search strategies'],
     ['provider_call_count','供应商调用','Provider calls'],
+    ['search_raw_results','原始结果','Raw results'],
     ['used_units','已用额度','Used units'],
   ];
   return definitions.map(([key,zh,en])=>{

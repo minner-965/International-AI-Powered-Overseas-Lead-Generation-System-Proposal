@@ -100,6 +100,13 @@ function publicJob(row = {}) {
     projection_updated_at:row.projection_updated_at || null,
     search_successful_requests:Number(row.search_successful_requests || 0),
     search_failed_requests:Number(row.search_failed_requests || 0),
+    search_strategies_executed:Number(row.search_api_requests || 0),
+    search_raw_results:Number(row.search_raw_results || 0),
+    search_noise_rejected:Number(row.search_noise_rejected || 0),
+    search_duplicates_removed:Number(row.search_duplicates_removed || 0),
+    search_completion_reason:publicStatus === 'COMPLETED'
+      ? Number(row.candidates_found || 0) >= Number(row.max_results || 0) ? 'TARGET_REACHED' : 'SEARCH_STRATEGIES_EXHAUSTED'
+      : null,
     candidates_checked:Number(row.candidates_checked || 0),
     companies_inserted:Number(row.companies_inserted || row.companies_promoted_new || 0),
     companies_updated:Number(row.companies_updated || row.companies_enriched_existing || 0),
