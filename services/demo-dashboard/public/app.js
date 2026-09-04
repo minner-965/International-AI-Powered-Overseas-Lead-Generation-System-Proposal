@@ -2299,34 +2299,50 @@ $('#research-form').addEventListener('submit', async event => {
   event.preventDefault();
   const button = $('#start-research');
   const buyerTypes = [...document.querySelectorAll('input[name="buyer_type"]:checked')].map(input => input.value);
+  const selectedCategories = [...document.querySelectorAll('input[name="product_category"]:checked')].map(input => ({
+    product_category:input.value,
+    product_profile:input.dataset.productProfile || null
+  }));
   const market = marketSelection($('#research-country').value);
-  const request = {
+  const sharedRequest = {
     country: market.country_name,
     country_code: market.country_code,
     country_name: market.country_name,
     city: $('#research-city').value.trim(),
     region: $('#research-region').value.trim(),
-    product_category: $('#research-category').value,
-    product_profile: $('#research-product-profile')?.value || null,
     buyer_types: buyerTypes,
     max_results: Number($('#research-limit').value)
   };
+  const singleProfileOverride=selectedCategories.length===1 ? $('#research-product-profile')?.value || null : null;
+  const requests=selectedCategories.map(category=>({
+    ...sharedRequest,
+    ...category,
+    product_profile:singleProfileOverride || category.product_profile
+  }));
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
-  button.innerHTML = bi('正在创建任务…','Creating job…');
+  button.innerHTML = bi(`正在创建 ${requests.length} 个任务…`,`Creating ${requests.length} jobs…`);
   try {
-    const created = await json('/api/research/jobs', {
+    const results=await Promise.allSettled(requests.map(request=>json('/api/research/jobs', {
       method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(request)
-    });
-    const createdJobId = created.job_id || created.id;
+    })));
+    const createdJobs=results.flatMap((result,index)=>result.status==='fulfilled'
+      ? [{...requests[index],...result.value,job_id:result.value.job_id || result.value.id}]
+      : []);
+    if(!createdJobs.length)throw results.find(result=>result.status==='rejected')?.reason || new Error('Research jobs were not created');
+    const selectedJob=createdJobs[0];
+    const createdJobId=selectedJob.job_id;
     const jobUrl = new URL(location.href);
     jobUrl.searchParams.set('job',createdJobId);
     jobUrl.searchParams.set('jobs_tab','research');
     jobUrl.hash = 'jobs';
     history.pushState(null,'',jobUrl);
     activateView('jobs',{ updateHash:false });
-    renderResearchJob({ ...request, ...created, candidates_found:0, websites_found:0, companies_qualified:0 });
-    document.dispatchEvent(new CustomEvent('phase9:research-job-created',{ detail:{ jobId:createdJobId,job:{ ...request,...created } } }));
+    renderResearchJob({ ...selectedJob, candidates_found:0, websites_found:0, companies_qualified:0 });
+    document.dispatchEvent(new CustomEvent('phase9:research-job-created',{ detail:{
+      jobId:createdJobId,job:selectedJob,jobIds:createdJobs.map(job=>job.job_id),
+      createdCount:createdJobs.length,failedCount:results.length-createdJobs.length
+    } }));
     pollResearchJob(createdJobId);
   } catch (error) {
     const failedJobId = error.payload?.job_id;

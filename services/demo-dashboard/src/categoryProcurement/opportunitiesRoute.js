@@ -19,6 +19,7 @@ export async function queryCategoryProcurementOpportunities({
     "c.verification_status='VERIFIED'","c.lifecycle_status='ACTIVE'",'c.explicit_exclusion_reason IS NULL',
     excludesConfirmedExistingCustomerSql('c'),'bod.id IS NOT NULL',
     confirmedCategoryStatusSql('cpm.match_status'),
+    "coalesce(routes.route_types,'{}'::text[])&&ARRAY['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM']::text[]",
     "bod.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED','HOLD')"];
   const add=(value,clause)=>{params.push(value);clauses.push(clause(params.length));};
   if(query.country)add(upper(query.country),index=>`c.country_code=$${index}`);

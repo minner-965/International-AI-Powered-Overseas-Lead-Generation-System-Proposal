@@ -302,20 +302,52 @@ function catalogRecordForProfile(profile) {
   return snapshots?.[profile] || first(summary,[profile === 'WOMENSWEAR' ? 'womenswear_catalog' : 'general_merchandise_catalog'],null);
 }
 
+const categoryLabels = new Map([
+  ["Women's Apparel",['全品类女装',"Full-category Women's Apparel"]],
+  ['General Merchandise',['日用百货','General Merchandise & Daily-use Goods']]
+]);
+
+function selectedResearchCategories() {
+  return $$('input[name="product_category"]:checked').map(input=>({
+    value:input.value,
+    profile:text(input.dataset.productProfile).toUpperCase(),
+    labels:categoryLabels.get(input.value) || [input.value,input.value]
+  }));
+}
+
+function syncCategoryPicker({ selectAll = false } = {}) {
+  const categoryInputs=$$('input[name="product_category"]');
+  const all=$('#research-category-all');
+  if(selectAll && all)categoryInputs.forEach(input=>{input.checked=all.checked;});
+  const selected=categoryInputs.filter(input=>input.checked);
+  if(all){
+    all.checked=selected.length===categoryInputs.length;
+    all.indeterminate=selected.length>0&&selected.length<categoryInputs.length;
+  }
+  const productProfile=$('#research-product-profile');
+  if(productProfile){
+    productProfile.disabled=selected.length!==1;
+    if(selected.length!==1)productProfile.value='';
+  }
+  renderCatalogSummary();
+  if(state.dialogStep===4)renderScopeReview();
+}
+
 function renderCatalogSummary() {
   const host = $('#research-catalog-summary');
-  const select = $('#research-category');
-  if (!host || !select) return;
-  const profile = text(select.selectedOptions[0]?.dataset.productProfile || 'WOMENSWEAR').toUpperCase();
-  const record = catalogRecordForProfile(profile);
-  if (!record) {
-    host.innerHTML = `${bi('当前接口未返回该商品画像的目录摘要。','The current response does not include a catalog summary for this profile.')}`;
+  if (!host) return;
+  const selected=selectedResearchCategories();
+  if(!selected.length){
+    host.innerHTML=bi('请至少选择一个目标商品类目。','Select at least one target category.');
     return;
   }
-  const rows = finiteNumber(first(record,['real_catalog_rows','catalog_rows','row_count','product_count','rows']));
-  const coverage = first(record,['coverage','coverage_percent','snapshot_coverage'],'-');
-  const captured = first(record,['captured_at','snapshot_captured_at','as_of']);
-  host.innerHTML = `<div class="p9-catalog-facts"><div><small>${bi('产品画像','Product profile')}</small><strong>${esc(profile)}</strong></div><div><small>${bi('商品目录行','Catalog rows')}</small><strong>${esc(rows ?? '-')}</strong></div><div><small>${bi('目录覆盖','Catalog coverage')}</small><strong>${esc(coverage)}</strong></div><div><small>${bi('快照时间','Snapshot captured')}</small><strong>${esc(dateTime(captured))}</strong></div></div>`;
+  host.innerHTML=selected.map(({profile,labels})=>{
+    const record=catalogRecordForProfile(profile);
+    const rows=finiteNumber(first(record || {},['real_catalog_rows','catalog_rows','row_count','product_count','rows']));
+    const coverage=first(record || {},['coverage','coverage_percent','snapshot_coverage'],'-');
+    const captured=first(record || {},['captured_at','snapshot_captured_at','as_of']);
+    return `<div class="p9-catalog-facts"><div><small>${bi('目标类目','Target category')}</small><strong>${bi(labels[0],labels[1])}</strong></div><div><small>${bi('商品目录行','Catalog rows')}</small><strong>${esc(rows ?? '-')}</strong></div><div><small>${bi('目录覆盖','Catalog coverage')}</small><strong>${esc(coverage)}</strong></div><div><small>${bi('快照时间','Snapshot captured')}</small><strong>${esc(dateTime(captured))}</strong></div></div>`;
+  }).join('');
 }
 
 async function loadSummary() {
@@ -772,17 +804,21 @@ async function openJobDetail(jobId,{ replaceState = false, trigger = null } = {}
 function renderScopeReview() {
   const host = $('#research-scope-review');
   const country = $('#research-country');
-  const category = $('#research-category');
+  const categories=selectedResearchCategories();
   const productProfile=$('#research-product-profile');
   const buyerTypes = $$('input[name="buyer_type"]:checked').map(input=>input.value);
-  if (!host || !country || !category) return;
+  if (!host || !country) return;
   const provider = providerState(state.summary || {});
+  const categoryLabel=categories.map(item=>`${item.labels[0]} / ${item.labels[1]}`).join('；') || '-';
+  const profileLabel=categories.length===1
+    ? productProfile?.selectedOptions[0]?.textContent || categories[0].profile
+    : `按 ${categories.length} 个目标类目分别确定 / Resolve per ${categories.length} selected categories`;
   const values = [
     ['市场','Market',country.selectedOptions[0]?.textContent || country.value],
-    ['目标商品类目','Target category',category.selectedOptions[0]?.textContent || category.value],
-    ['产品画像','Product profile',productProfile?.selectedOptions[0]?.textContent || '按目标类目确定 / Resolve from target category'],
+    ['目标商品类目','Target categories',categoryLabel],
+    ['产品画像','Product profile',profileLabel],
     ['目标客户类型','Buyer types',buyerTypes.join(', ') || '-'],
-    ['最大结果数','Maximum results',$('#research-limit')?.value || '-'],
+    ['每个类目最大结果数','Maximum results per category',$('#research-limit')?.value || '-'],
     ['网络调用范围','Network call scope','按所选结果范围 / Selected result scope'],
     ['邮箱核验','Email verification',`${provider[1]} / ${provider[2]}`],
     ['外发消息','Live sends','0'],
@@ -831,12 +867,17 @@ function validateDialogStep() {
   const status = $('#research-create-status');
   if (status) status.textContent = '';
   if (state.dialogStep === 1) {
-    for (const control of [$('#research-country'),$('#research-category')]) {
+    for (const control of [$('#research-country')]) {
       if (control && !control.checkValidity()) {
         control.reportValidity();
         control.focus();
         return false;
       }
+    }
+    if(!selectedResearchCategories().length){
+      if(status)status.innerHTML=bi('至少选择一个目标商品类目。','Select at least one target category.');
+      $('input[name="product_category"]')?.focus();
+      return false;
     }
   }
   if (state.dialogStep === 2 && !$$('input[name="buyer_type"]:checked').length) {
@@ -869,7 +910,8 @@ function initializeDialog() {
   });
   $('#research-step-next')?.addEventListener('click',()=>{ if (validateDialogStep()) setDialogStep(state.dialogStep + 1); });
   $('#research-step-back')?.addEventListener('click',()=>setDialogStep(state.dialogStep - 1));
-  $('#research-category')?.addEventListener('change',()=>{ renderCatalogSummary(); if (state.dialogStep === 4) renderScopeReview(); });
+  $('#research-category-all')?.addEventListener('change',()=>syncCategoryPicker({selectAll:true}));
+  $$('input[name="product_category"]').forEach(input=>input.addEventListener('change',()=>syncCategoryPicker()));
   $('#research-product-profile')?.addEventListener('change',()=>{ if (state.dialogStep === 4) renderScopeReview(); });
   form.addEventListener('change',()=>{ if (state.dialogStep === 4) renderScopeReview(); });
   form.addEventListener('submit',()=>{
@@ -890,6 +932,7 @@ function initializeDialog() {
     const jobId = text(event.detail?.jobId);
     if (jobId) void openJobDetail(jobId,{ replaceState:true });
   });
+  syncCategoryPicker();
 }
 
 function initializeJobs() {

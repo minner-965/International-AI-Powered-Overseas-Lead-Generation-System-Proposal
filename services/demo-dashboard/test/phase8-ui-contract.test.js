@@ -95,6 +95,10 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
   for (const endpoint of ['/api/research/jobs', '/api/data-imports/dry-run', '/api/data-exports']) {
     assert.ok(`${app}\n${phase7}`.includes(endpoint), `Missing preserved endpoint ${endpoint}`);
   }
+  assert.match(html,/id="research-category-all"[^>]*type="checkbox"[^>]*checked/);
+  assert.equal((html.match(/name="product_category"/g)||[]).length,2);
+  assert.match(app,/querySelectorAll\('input\[name="product_category"\]:checked'\)/);
+  assert.match(app,/Promise\.allSettled\(requests\.map/);
 });
 
 test('all 20 opportunity query parameters retain their names and deterministic values', async () => {

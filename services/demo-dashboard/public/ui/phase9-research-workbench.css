@@ -430,6 +430,16 @@ button.p9-metric:hover {
   margin: var(--p8-space-2) 0 0;
 }
 
+.p9-research-form .p9-category-picker {
+  align-content: start;
+}
+
+.p9-research-form .p9-category-picker .p9-category-all {
+  grid-column: 1 / -1;
+  padding-bottom: var(--p8-space-2);
+  border-bottom: 1px solid var(--p8-border);
+}
+
 .p9-catalog-summary,
 .p9-scope-notice {
   padding: var(--p8-space-3) var(--p8-space-4);
@@ -444,6 +454,12 @@ button.p9-metric:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--p8-space-3);
+}
+
+.p9-catalog-facts + .p9-catalog-facts {
+  margin-top: var(--p8-space-3);
+  padding-top: var(--p8-space-3);
+  border-top: 1px solid var(--p8-border);
 }
 
 .p9-catalog-facts > div,
