@@ -1,5 +1,22 @@
 # Version Changelog
 
+## phase10.2 — 2026-09-04 — strict category admission and visible progress
+
+### Changed
+
+- Formal Companies and company export now admit only verified companies with a current confirmed target-category result.
+- Opportunities now show only category-confirmed, contact-ready business records; category-unconfirmed records remain internal candidates.
+- Blank City and Region now mean country-wide research; the former Dubai form default was removed.
+- Research Jobs now display bilingual current-stage text, percentage and accessible progress bars in both list and detail views.
+
+### Fixed and verified
+
+- Added migration 051 so current category-first readiness values coexist with all historical readiness values.
+- UI-created country-wide canary `ff71c8db-7db9-4d8a-86a6-144fbb8bcd7f` found 5 candidates, verified 4 companies and admitted only the 1 confirmed-category company.
+- Repair canary `996291ef-ceb0-4bc7-9381-6350c672586c` completed with 0 errors; Women's Apparel reached `SALES_READY`, while unrelated General Merchandise stayed internally unconfirmed.
+- Formal APIs expose 3 Companies and 1 Opportunity (`Rizqé`). Outbound messages, outbound attempts and CRM outbox remain 0.
+- Full suite: 782 tests, 730 passed, 52 conditionally skipped and 0 failed.
+
 ## phase10.1 — 2026-09-04 — category/contact flow accepted
 
 ### Changed
