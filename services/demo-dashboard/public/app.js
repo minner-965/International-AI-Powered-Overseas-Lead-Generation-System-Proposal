@@ -10,6 +10,7 @@ import {
   reasonCodeLabel,
   relevanceLabel,
   researchProgress,
+  researchStageLabel,
   researchStatusLabel,
   sizeLabel,
   socialEnrichmentLabel,
@@ -514,6 +515,7 @@ function renderResearchJob(job) {
     return false;
   }
   const status = researchStatusLabel(job.status);
+  const stage = researchStageLabel(job);
   const market = [job.country_name || job.country, job.region, job.city].map(displayValue).filter(Boolean).join(' / ');
   const taskErrors = Math.max(Number(job.search_failed_requests || 0), Number(job.error_count || 0));
   const progress = researchProgress(job);
@@ -525,7 +527,7 @@ function renderResearchJob(job) {
     <details class="job-disclosure"${compactCompleted ? '' : ' open'}>
       <summary>${bi('查看任务详情与结果','View job details and results')}</summary>
       <section class="research-progress" role="status" aria-live="polite" aria-atomic="true">
-        <div class="research-progress-copy"><strong>${bi(`当前阶段：${status[0]}`,`Current stage: ${status[1]}`)}</strong><b>${esc(progress)}%</b></div>
+        <div class="research-progress-copy"><strong>${bi(`当前阶段：${stage[0]}`,`Current stage: ${stage[1]}`)}</strong><b>${esc(progress)}%</b></div>
         <progress value="${esc(progress)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${progress}%`)}">${esc(progress)}%</progress>
       </section>
       <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>

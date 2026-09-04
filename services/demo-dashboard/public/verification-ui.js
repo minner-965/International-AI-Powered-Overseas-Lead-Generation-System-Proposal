@@ -14,12 +14,95 @@ export function marketSelection(value) {
 export function researchStatusLabel(value) {
   return ({
     QUEUED: pair('排队中', 'Queued'),
+    RUNNING: pair('执行中', 'Running'),
     DISCOVERING: pair('正在发现企业', 'Discovering companies'),
     CRAWLING: pair('正在核验企业页面', 'Verifying company pages'),
     QUALIFYING: pair('正在评估企业', 'Assessing companies'),
     COMPLETED: pair('已完成', 'Completed'),
     FAILED: pair('未完成', 'Failed')
   })[value] || pair(value || '待确认', value || 'To confirm');
+}
+
+const commonResearchStageLabels = Object.freeze({
+  QUEUED: pair('等待开始', 'Waiting to start'),
+  DISCOVERING: pair('搜索候选公司', 'Searching candidate companies'),
+  CRAWLING: pair('验证公司真实性', 'Verifying company identity'),
+  QUALIFYING: pair('确认公司经营类目', 'Confirming company category'),
+  SCORING: pair('评估类目匹配结果', 'Assessing category match'),
+  RESOLVING: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
+  VERIFYING: pair('验证联系方式', 'Verifying contact details'),
+  PERSISTING: pair('保存结果并生成业务机会', 'Saving results and creating opportunities'),
+  DISCOVERING_SOURCES: pair('查找资料来源', 'Finding source pages'),
+  EXTRACTING: pair('整理来源信息', 'Extracting source information'),
+  NORMALIZING_CATEGORY: pair('统一经营类目', 'Normalizing company category'),
+  VALIDATING_EVIDENCE: pair('核验资料依据', 'Validating source evidence'),
+  FINDING_BUYER: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
+  VERIFYING_EMAIL: pair('验证商务邮箱', 'Verifying business email'),
+  REFRESHING_DECISION: pair('更新业务机会结果', 'Updating opportunity result'),
+  IDENTITY: pair('验证公司真实性', 'Verifying company identity'),
+  BUYER_MODEL: pair('确认客户经营模式', 'Confirming company business model'),
+  CATEGORY_PROCUREMENT: pair('核验公司经营类目', 'Verifying company category'),
+  PRODUCT: pair('确认公司经营类目', 'Confirming company category'),
+  BUYER_ROLE: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
+  BUYER: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
+  EMAIL_VERIFICATION: pair('验证商务邮箱', 'Verifying business email'),
+  EMAIL: pair('验证商务邮箱', 'Verifying business email'),
+  DECISION_REFRESH: pair('生成业务机会', 'Creating opportunity'),
+  DECISION: pair('生成业务机会', 'Creating opportunity'),
+  COMPLETED: pair('全部阶段已完成', 'All stages completed'),
+  COMPLETE: pair('全部阶段已完成', 'All stages completed'),
+  WAITING_EVIDENCE: pair('本轮自动处理已结束', 'This automated run has finished'),
+  PARTIAL: pair('本轮自动处理已结束', 'This automated run has finished'),
+  FAILED: pair('任务已停止', 'Task stopped'),
+  FAILED_RETRYABLE: pair('等待自动重试', 'Waiting for automatic retry'),
+  FAILED_FINAL: pair('任务已停止', 'Task stopped'),
+  CANCELLED: pair('任务已取消', 'Task cancelled')
+});
+
+const categoryResearchStageLabels = Object.freeze({
+  DISCOVERING: pair('准备类目核验', 'Preparing category verification'),
+  CRAWLING: pair('核验公司经营类目', 'Verifying company category'),
+  QUALIFYING: pair('确认公司经营类目', 'Confirming company category'),
+  SCORING: pair('判定类目是否匹配', 'Deciding category match'),
+  PERSISTING: pair('保存类目结果', 'Saving category results')
+});
+
+const contactResearchStageLabels = Object.freeze({
+  DISCOVERING: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
+  RESOLVING: pair('整理负责人和公司联系方式', 'Resolving decision-makers and company contacts'),
+  CRAWLING: pair('读取联系方式来源页面', 'Checking contact source pages'),
+  QUALIFYING: pair('筛选可用联系方式', 'Selecting usable contact details'),
+  VERIFYING: pair('验证邮箱、电话和 WhatsApp', 'Verifying email, phone and WhatsApp'),
+  SCORING: pair('确认业务机会条件', 'Checking opportunity readiness'),
+  PERSISTING: pair('保存联系方式并生成业务机会', 'Saving contacts and creating opportunities')
+});
+
+export function researchStageLabel(jobOrStage = {}) {
+  const job = jobOrStage && typeof jobOrStage === 'object' ? jobOrStage : {};
+  let stage = String(typeof jobOrStage === 'string'
+    ? jobOrStage
+    : job.progress_stage || job.current_stage || job.stage || job.status || '').trim().toUpperCase();
+  const type = String(job.job_type || '').trim().toUpperCase();
+  if (stage === 'RUNNING') {
+    if (type === 'CATEGORY_PROCUREMENT_ENRICHMENT') {
+      const attempted = Number(job.companies_attempted || 0);
+      const matches = Number(job.category_matches || job.category_matches_passed || 0);
+      stage = matches > 0 ? 'PERSISTING' : attempted > 0 ? 'SCORING' : 'CRAWLING';
+    } else if (['DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH','AUTO_EVIDENCE'].includes(type)) {
+      const contacts = Number(job.contacts_found || job.verified_email_routes || 0);
+      const attempted = Number(job.companies_attempted || 0);
+      stage = contacts > 0 ? 'PERSISTING' : attempted > 0 ? 'VERIFYING' : 'DISCOVERING';
+    } else {
+      const found = Number(job.candidates_found || job.companies_selected || 0);
+      const checked = Number(job.candidate_verifications_completed || job.candidates_checked || job.companies_attempted || 0);
+      stage = found > 0 && checked < found ? 'CRAWLING' : found > 0 ? 'QUALIFYING' : 'DISCOVERING';
+    }
+  }
+  if (type === 'CATEGORY_PROCUREMENT_ENRICHMENT') return categoryResearchStageLabels[stage] || commonResearchStageLabels[stage] || pair('阶段待确认', 'Stage to confirm');
+  if (['DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH','AUTO_EVIDENCE'].includes(type)) {
+    return contactResearchStageLabels[stage] || commonResearchStageLabels[stage] || pair('阶段待确认', 'Stage to confirm');
+  }
+  return commonResearchStageLabels[stage] || pair('阶段待确认', 'Stage to confirm');
 }
 
 export function researchProgress(job = {}) {

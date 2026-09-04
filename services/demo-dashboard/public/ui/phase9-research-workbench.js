@@ -1,5 +1,6 @@
 import { activateView } from '../crm-shell.js';
 import { managementRequest } from '../phase7-ui.js';
+import { researchStageLabel } from '../verification-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -460,7 +461,7 @@ function jobProgress(job) {
 
 function jobProgressMarkup(job,{ compact=false }={}) {
   const percent=jobProgressValue(job);
-  const stage=stagePair(first(job,['progress_stage','stage','current_stage'],first(job,['status'],'QUEUED')));
+  const stage=researchStageLabel(job);
   return `<div class="p9-progress-block${compact?' is-compact':''}">
     <div class="p9-progress-copy"><strong>${bi(`当前阶段：${stage[0]}`,`Current stage: ${stage[1]}`)}</strong><b>${esc(percent)}%</b></div>
     <progress value="${esc(percent)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${percent}%`)}">${esc(percent)}%</progress>
@@ -487,22 +488,6 @@ function dispatchLabel(job){
   if(blocker==='CONTACT')return ['联系方式待补充','Contact route required'];
   return DISPATCH_LABELS[state]||null;
 }
-
-const STAGE_LABELS = Object.freeze({
-  QUEUED:['等待开始','Queued'], DISCOVERING_SOURCES:['查找资料','Finding sources'], CRAWLING:['读取资料','Reading sources'],
-  EXTRACTING:['整理资料','Extracting'], NORMALIZING_CATEGORY:['归一类目','Normalizing category'],
-  VALIDATING_EVIDENCE:['核验资料','Validating evidence'], FINDING_BUYER:['查找采购负责人','Finding buyer'],
-  VERIFYING_EMAIL:['核验商务邮箱','Verifying email'], REFRESHING_DECISION:['刷新机会状态','Refreshing status'],
-  IDENTITY:['企业身份','Identity'], BUYER_MODEL:['采购模式','Buyer model'], CATEGORY_PROCUREMENT:['公司类目','Company category'],
-  PRODUCT:['公司经营类目','Company category'],
-  BUYER_ROLE:['采购人员与职责','Buyer / role'], BUYER:['采购人员与职责','Buyer / role'],
-  EMAIL_VERIFICATION:['邮箱核验','Email verification'], EMAIL:['邮箱核验','Email verification'],
-  DECISION_REFRESH:['机会状态刷新','Status refresh'], DECISION:['机会状态刷新','Status refresh'],
-  DISCOVERING:['搜索候选企业','Searching candidate companies'], QUALIFYING:['核验公司真实性','Verifying company identity'],
-  SCORING:['计算匹配结果','Calculating match results'], RUNNING:['自动处理中','Processing automatically'],
-  COMPLETED:['全部阶段已完成','All stages completed'], WAITING_EVIDENCE:['自动核验已结束','Automated verification finished'],
-});
-const stagePair = value => STAGE_LABELS[text(value).toUpperCase()] || ['阶段待确认','Stage to confirm'];
 
 function renderRecentJobs(jobItems) {
   const host = $('#research-recent-jobs');
@@ -613,7 +598,7 @@ function renderJobs(jobItems,{ append = false } = {}) {
     const type = typePair(first(job,['job_type','type'],'RESEARCH'));
     const status = first(job,['status'],'QUEUED');
     const stage = first(job,['progress_stage','stage','current_stage'],'-');
-    const stageLabel=stagePair(stage);
+    const stageLabel=researchStageLabel({...job,progress_stage:stage});
     const workstream=jobWorkstreamPair(job);
     const blocker = jobBlocker(job);
     const blockerLabel = blocker ? blockerPair(blocker) : null;

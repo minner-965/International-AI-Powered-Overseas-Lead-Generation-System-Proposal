@@ -10,6 +10,7 @@ import {
   partitionVerifications,
   presetFilters,
   researchProgress,
+  researchStageLabel,
   researchStatusLabel,
   sizeLabel,
   verificationStatusLabel
@@ -81,6 +82,29 @@ test('research progress reports stable stage floors and live verification progre
   assert.equal(researchProgress({ status:'QUALIFYING' }),76);
   assert.equal(researchProgress({ status:'SCORING' }),90);
   assert.equal(researchProgress({ status:'COMPLETED' }),100);
+});
+
+test('research stage labels describe the actual business step instead of generic running state', () => {
+  assert.deepEqual(researchStageLabel({ job_type:'COMPANY_DISCOVERY',progress_stage:'CRAWLING',status:'RUNNING' }),
+    ['验证公司真实性','Verifying company identity']);
+  assert.deepEqual(researchStageLabel({ job_type:'CATEGORY_PROCUREMENT_ENRICHMENT',progress_stage:'CRAWLING',status:'RUNNING' }),
+    ['核验公司经营类目','Verifying company category']);
+  assert.deepEqual(researchStageLabel({ job_type:'DECISION_MAKER_ENRICHMENT',progress_stage:'VERIFYING',status:'RUNNING' }),
+    ['验证邮箱、电话和 WhatsApp','Verifying email, phone and WhatsApp']);
+  assert.deepEqual(researchStageLabel({ job_type:'REAL_OPPORTUNITY_RESEARCH',progress_stage:'PERSISTING',status:'RUNNING' }),
+    ['保存联系方式并生成业务机会','Saving contacts and creating opportunities']);
+  assert.deepEqual(researchStageLabel({ job_type:'COMPANY_DISCOVERY',status:'RUNNING',candidates_found:10,candidates_checked:2 }),
+    ['验证公司真实性','Verifying company identity']);
+  assert.deepEqual(researchStageLabel({ progress_stage:'COMPLETED',status:'COMPLETED' }),
+    ['全部阶段已完成','All stages completed']);
+});
+
+test('both research job surfaces use the shared business-stage mapper', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  const workbench = await readFile(new URL('../public/ui/phase9-research-workbench.js', import.meta.url), 'utf8');
+  assert.match(app, /const stage = researchStageLabel\(job\)/);
+  assert.match(workbench, /const stageLabel=researchStageLabel\(\{\.\.\.job,progress_stage:stage\}\)/);
+  assert.equal(workbench.includes('stagePair('), false);
 });
 
 test('company size and verification labels include enterprise without Tier semantics', () => {
