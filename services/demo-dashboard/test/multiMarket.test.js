@@ -79,6 +79,22 @@ test('city is optional and provider location/language follow the active market',
   assert.equal(searchCountryCode('Example Market', 'XX'), 'ALL');
 });
 
+test('blank optional geography searches the country while supplied region and city narrow the market',()=>{
+  const countryJob=researchJob('MX','Mexico',null,{region:null});
+  assert.ok(generateResearchQueries(countryJob).every(item=>/Mexico/.test(item.query_text)
+    &&!/Jalisco|Guadalajara/.test(item.query_text)));
+  assert.equal(marketProviderLocationName(countryJob,marketProfileForJob(countryJob)),'Mexico');
+
+  const regionJob=researchJob('MX','Mexico',null,{region:'Jalisco'});
+  assert.ok(generateResearchQueries(regionJob).every(item=>/Jalisco/.test(item.query_text)&&/Mexico/.test(item.query_text)));
+  assert.equal(marketProviderLocationName(regionJob,marketProfileForJob(regionJob)),'Jalisco,Mexico');
+
+  const cityJob=researchJob('MX','Mexico','Guadalajara',{region:'Jalisco'});
+  assert.ok(generateResearchQueries(cityJob).every(item=>/Guadalajara/.test(item.query_text)
+    &&/Jalisco/.test(item.query_text)&&/Mexico/.test(item.query_text)));
+  assert.equal(marketProviderLocationName(cityJob,marketProfileForJob(cityJob)),'Guadalajara,Jalisco,Mexico');
+});
+
 test('balanced candidate selection reserves two SME, one direct, one local-business and one strategic slot', () => {
   const queryTypes = ['strategic_account', 'sme_regional', 'buyer_category', 'general_trading', 'sme_regional'];
   const discoveries = queryTypes.map((queryType, index) => ({
