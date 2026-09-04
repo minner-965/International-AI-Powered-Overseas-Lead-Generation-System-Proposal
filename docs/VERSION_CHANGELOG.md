@@ -1,5 +1,21 @@
 # Version Changelog
 
+## phase10.3 — 2026-09-04 — concrete research stages and LAN trial readiness
+
+### Changed
+
+- Replaced the generic current-stage `RUNNING` label with task-aware bilingual business steps across the live research card, Jobs list and Jobs detail.
+- Company discovery now names candidate search, company-identity verification and category confirmation; category jobs name category verification and match decision; contact jobs name decision-maker/company-contact search, contact verification and Opportunity creation.
+- Both visible job surfaces use one shared deterministic stage mapper, with an evidence-backed counter fallback only when an older response supplies `RUNNING` without a raw stage.
+
+### Real acceptance
+
+- Browser-created country-wide canary `a38da892-ac7e-45d9-88c2-3590a2743857` completed with 5 candidates checked, 3 verified companies, 6 public contact routes and 0 errors.
+- Its automatic category child `6fd75422-d7a0-4476-aa8f-019e4abe2226` completed 3 companies, confirmed 2 category matches and recorded 0 errors.
+- During the live run, both the Jobs list and detail displayed `判定类目是否匹配 / Deciding category match` at 33% instead of repeating `RUNNING`.
+- The service is healthy on all interfaces at port 3000 and responds through the current LAN address. The workspace identity adapter is suitable for a trusted internal-network trial; public hosting still requires normal company account login and HTTPS.
+- Outbound messages, outbound attempts and CRM outbox remain 0.
+
 ## phase10.2 — 2026-09-04 — strict category admission and visible progress
 
 ### Changed
