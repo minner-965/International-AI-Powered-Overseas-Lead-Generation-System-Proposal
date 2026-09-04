@@ -5,10 +5,10 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T21:37:00+08:00",
+  "generated_updated_at": "2026-09-04T22:02:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "bcd8500dd3432943482ee6250e47e3b2aca1901e",
+  "commit": "ce5696e2586cd5e47c8284a6192af992d33ed835",
   "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 10 (Pre-email)",
   "current_active_phase": "Phase 10",
@@ -46,7 +46,9 @@ This file is the single source of truth for current execution state. Historical 
     "Opportunities require a confirmed category and at least one current public contact route",
     "Confirmed Opportunity categories display the matching confirmed label",
     "Migration 051 category-readiness compatibility applied and replayed",
-    "Phase 10.2 repair canary completed with zero processing errors"
+    "Phase 10.2 repair canary completed with zero processing errors",
+    "Phase 10.5 removed fixed discovery, contact-check and company-verification candidate caps",
+    "Maximum results per category now drives the complete research pipeline"
   ],
   "final_acceptance_state": "PASS",
   "business_result_state": "YES",
@@ -225,6 +227,26 @@ This file is the single source of truth for current execution state. Historical 
     "tests_skipped": 52,
     "tests_failed": 0
   },
+  "phase10_5_acceptance": {
+    "target_50_discovery_job_id": "0316dbf4-6e70-4509-aa48-7dd412e4607a",
+    "target_50_candidates_found": 50,
+    "target_50_search_strategies_executed": 11,
+    "target_50_raw_search_results": 79,
+    "full_pipeline_job_id": "0497f7ca-6e05-412f-9260-5ac518e89bec",
+    "full_pipeline_target": 10,
+    "full_pipeline_candidates_found": 10,
+    "full_pipeline_crawlable_candidates_checked": 8,
+    "full_pipeline_candidate_decisions": 10,
+    "full_pipeline_verified_companies": 5,
+    "full_pipeline_review_companies": 5,
+    "full_pipeline_public_contacts_found": 25,
+    "processing_errors": 0,
+    "completion_reason": "TARGET_REACHED",
+    "tests_total": 785,
+    "tests_passed": 733,
+    "tests_skipped": 52,
+    "tests_failed": 0
+  },
   "current_blockers": [],
   "next_allowed_work_package": "POST_PHASE10_EMAIL_CONFIGURATION",
   "explicit_stop_boundary": "STOP after WP-A16 and WP-B11; Phase 10.1 category-contact automation is accepted"
@@ -241,6 +263,7 @@ This file is the single source of truth for current execution state. Historical 
 - Contact qualification prefers a verified named Buyer but accepts an official company email, business phone, public WhatsApp, or ordinary company contact page as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
 - Companies now contains every verified, active, non-excluded company even when category evidence is not yet confirmed. Opportunities remains narrower: a current confirmed category result and at least one current public contact route are both mandatory.
 - The Research dialog supports one or multiple target categories plus Select all. One action creates one independently traceable ResearchJob per selected category, and the maximum-result field applies per category.
+- The maximum-result value is now a real per-category candidate target: discovery continues across distinct search strategies until the target is reached or strategies are exhausted, and all resulting crawlable candidates plus all company candidates continue through contact checking and company verification without the legacy five-candidate cap.
 
 ## Execution boundary
 
