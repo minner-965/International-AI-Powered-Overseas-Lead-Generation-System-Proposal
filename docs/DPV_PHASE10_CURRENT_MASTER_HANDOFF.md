@@ -25,7 +25,7 @@ It excludes Git internals, installed dependencies, runtime data, exports, stagin
 |---|---|
 | Source root | `D:\codex\International-AI-Powered-Overseas-Lead-Generation-System-Proposal` |
 | Branch | `phase10-remove-internal-limits-20260904-112916` |
-| Implementation snapshot | `96fd8a508cb773326b087656b38f01691c723fe2` |
+| Validated implementation-and-operations snapshot | `5956dfe3ca4b32fa6508cc7e937e0ef2b46cbe67` |
 | Latest released phase | Phase 9 |
 | Active phase | Phase 10 |
 | Latest migration | `047_phase10_retire_internal_tavily_enforcement.sql` |
