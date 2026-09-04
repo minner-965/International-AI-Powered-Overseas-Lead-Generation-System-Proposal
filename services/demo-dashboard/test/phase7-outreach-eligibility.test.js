@@ -108,7 +108,7 @@ test('supplier access cannot compensate for Product Match or SALES_READY', () =>
     supplier_access_score: 100
   }), { now: NOW });
   assert.equal(result.eligible, false);
-  assert.ok(result.reason_codes.includes('CATEGORY_PROCUREMENT_MATCH_REQUIRED'));
+  assert.ok(result.reason_codes.includes('CATEGORY_MATCH_CONFIRMATION_REQUIRED'));
   assert.ok(result.reason_codes.includes('READINESS_NOT_SALES_READY'));
 });
 

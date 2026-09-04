@@ -2,7 +2,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DpvZenRulesAdapter } from '../scoring/zenRulesAdapter.js';
 
-export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-procurement-match-v2';
+export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-company-match-v3';
+export const CATEGORY_CONFIRMATION_STATUS=Object.freeze({
+  MATCH_CONFIRMED:'MATCH_CONFIRMED',
+  MATCH_NOT_CONFIRMED:'MATCH_NOT_CONFIRMED',
+  MISMATCH_CONFIRMED:'MISMATCH_CONFIRMED'
+});
+export const CATEGORY_CONFIRMATION_REASON=Object.freeze({
+  TARGET_CATEGORY_MATCH:'TARGET_CATEGORY_MATCH',
+  COMPANY_CATEGORY_EVIDENCE:'COMPANY_CATEGORY_EVIDENCE',
+  CATEGORY_CONFIRMATION_REQUIRED:'CATEGORY_CONFIRMATION_REQUIRED',
+  CATEGORY_MISMATCH:'CATEGORY_MISMATCH'
+});
 const upper=value=>String(value||'').trim().toUpperCase();
 const unique=values=>[...new Set((values||[]).filter(Boolean))];
 const projectRoot=process.env.DPV_PROJECT_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../..');
@@ -26,10 +37,12 @@ function effectiveRevision(input={}){
 
 export function resolveApprovedCategoryScopeMatch(input={}){
   const profile=upper(input.product_profile);
+  const requestedCategory=normalizedCategory(input.target_category_code||input.target_category||'');
   const revision=effectiveRevision(input);
   const scopes=(input.approved_category_scopes||input.category_scopes||[]).filter(scope=>
     revision&&String(scope.scope_revision_id)===String(revision.id)
-      &&upper(scope.product_profile)===profile&&upper(scope.scope_status||'ACTIVE')==='ACTIVE');
+      &&(profile?upper(scope.product_profile)===profile:!requestedCategory||normalizedCategory(scope.normalized_category)===requestedCategory)
+      &&upper(scope.scope_status||'ACTIVE')==='ACTIVE');
   if(!revision||!scopes.length)return {scope_revision_id:null,match_basis:null,matched_scope_ids:[],
     observed_customer_category_ids:[],similarity_rule:null,scope_status:'APPROVAL_REQUIRED'};
   const aliases=(input.category_scope_aliases||input.scope_aliases||[]).filter(alias=>
@@ -37,7 +50,7 @@ export function resolveApprovedCategoryScopeMatch(input={}){
   const observations=(input.observed_customer_categories||input.observations||[]).filter(item=>
     item?.id&&upper(item.verification_status||'VERIFIED')==='VERIFIED'
       &&upper(item.source_authority||'OFFICIAL')!=='SEARCH_DISCOVERY'
-      &&[profile,'UNKNOWN'].includes(upper(item.normalized_profile||profile))
+      &&(!profile||[profile,'UNKNOWN'].includes(upper(item.normalized_profile||profile)))
       &&normalizedCategory(item.normalized_category||item.raw_category));
   if(!observations.length)return {scope_revision_id:revision.id,match_basis:null,matched_scope_ids:[],
     observed_customer_category_ids:[],similarity_rule:null,scope_status:'CUSTOMER_EVIDENCE_REQUIRED'};
@@ -61,7 +74,7 @@ export function resolveApprovedCategoryScopeMatch(input={}){
     if(scope)return result('SIMILAR_CATEGORY',scope,observation,
       ['PARENT','CHILD'].includes(upper(alias.alias_type))?'APPROVED_ALIAS_PARENT_CHILD':'APPROVED_ALIAS_SYNONYM');
   }
-  const profileObservation=observations.find(item=>upper(item.normalized_profile)===profile);
+  const profileObservation=profile&&observations.find(item=>upper(item.normalized_profile)===profile);
   if(profileObservation){
     const profileScope=scopes.find(scope=>normalizedCategory(scope.normalized_category)===profile)||scopes[0];
     return result('PROFILE_SCOPE',profileScope,profileObservation,'APPROVED_PRODUCT_PROFILE_SCOPE');
@@ -71,23 +84,25 @@ export function resolveApprovedCategoryScopeMatch(input={}){
 }
 
 function relevantEvidence(observations,profile){
-  return (observations||[]).filter(item=>upper(item.verification_status)==='VERIFIED'&&upper(item.source_authority)!=='SEARCH_DISCOVERY'
-    &&(upper(item.normalized_profile)===profile||upper(item.normalized_profile)==='UNKNOWN'));
+  const acceptedAuthorities=new Set(['OFFICIAL','OFFICIAL_DOCUMENT','OFFICIAL_CATALOG','OFFICIAL_STOREFRONT','CREDIBLE_PUBLIC_DIRECTORY']);
+  return (observations||[]).filter(item=>upper(item.verification_status)==='VERIFIED'&&acceptedAuthorities.has(upper(item.source_authority))
+    &&(upper(item.source_authority)!=='CREDIBLE_PUBLIC_DIRECTORY'||item.official_identity_linked===true)
+    &&(!profile||upper(item.normalized_profile)===profile||upper(item.normalized_profile)==='UNKNOWN'));
 }
 
 export function buildCategoryProcurementDimensions({observations=[],product_profile,buyer_business_model={}}={}){
   const profile=upper(product_profile);
   const evidence=relevantEvidence(observations,profile);
   const byType=(...types)=>evidence.filter(item=>types.includes(upper(item.observation_type)));
-  const category=byType('PRODUCT_CATEGORY','PRODUCT_ITEM');
+  const category=byType('PRODUCT_CATEGORY','PRODUCT_ITEM','COMPANY_CATEGORY','COMPANY_DESCRIPTION');
   const official=category.filter(item=>['OFFICIAL','OFFICIAL_DOCUMENT','OFFICIAL_CATALOG','OFFICIAL_STOREFRONT'].includes(upper(item.source_authority)));
   const productNames=unique(category.map(item=>item.raw_product_name));
   const categories=unique(category.map(item=>item.normalized_category));
   const brands=unique(category.map(item=>item.raw_brand_or_department));
-  let categoryDimension=unknown(45,'TARGET_CATEGORY_PROCUREMENT_EVIDENCE_UNKNOWN');
+  let categoryDimension=unknown(45,'CATEGORY_CONFIRMATION_REQUIRED');
   if(category.length){
     const points=official.length&&productNames.length+brands.length>=3?45:official.some(item=>upper(item.observation_type)==='PRODUCT_CATEGORY')?40:official.length>=2?35:official.length===1?20:10;
-    categoryDimension=observed(points,45,category.map(item=>item.id),['TARGET_CATEGORY_PROCUREMENT_EVIDENCE_OBSERVED']);
+    categoryDimension=observed(points,45,category.map(item=>item.id),['COMPANY_CATEGORY_EVIDENCE']);
   }
   const model=upper(buyer_business_model.buyer_model);
   let buyerDimension=unknown(25,'BUYER_BUSINESS_MODEL_UNKNOWN');
@@ -117,11 +132,27 @@ export function buildCategoryProcurementDimensions({observations=[],product_prof
     const withinOneYear=current.some(item=>item.published_at&&Date.now()-new Date(item.published_at).getTime()<=365*86400000);
     recentDimension=observed(withinOneYear||current.some(item=>!item.published_at)?5:3,5,current.map(item=>item.id),['RECENT_CATEGORY_ACTIVITY_OBSERVED']);
   }
-  return {dimensions:{target_category_procurement_evidence:categoryDimension,buyer_business_model_fit:buyerDimension,assortment_depth:depthDimension,external_sourcing_import:sourcingDimension,recent_category_activity:recentDimension},observed_categories:categories,confirmed_unrelated_assortment:Boolean(category.length&&category.every(item=>upper(item.normalized_profile)!==profile&&upper(item.normalized_profile)!=='UNKNOWN'))};
+  return {dimensions:{target_category_procurement_evidence:categoryDimension,buyer_business_model_fit:buyerDimension,assortment_depth:depthDimension,external_sourcing_import:sourcingDimension,recent_category_activity:recentDimension},observed_categories:categories,confirmed_unrelated_assortment:Boolean(profile&&category.length&&category.every(item=>upper(item.normalized_profile)!==profile&&upper(item.normalized_profile)!=='UNKNOWN'))};
+}
+
+export function resolveCompanyCategoryConfirmation({scopeMatch={},categoryDimension={},confirmed_category_mismatch=false,confirmed_unrelated_assortment=false}={}){
+  const categoryObserved=upper(categoryDimension.state)==='OBSERVED'&&Array.isArray(categoryDimension.evidence_ids)
+    &&categoryDimension.evidence_ids.length>0;
+  const explicitMismatch=confirmed_category_mismatch===true||confirmed_unrelated_assortment===true
+    ||(categoryObserved&&scopeMatch.match_basis==='OUT_OF_SCOPE'&&Number(categoryDimension.points)===0);
+  if(explicitMismatch)return Object.freeze({category_confirmation_status:CATEGORY_CONFIRMATION_STATUS.MISMATCH_CONFIRMED,
+    category_confirmation_reason:CATEGORY_CONFIRMATION_REASON.CATEGORY_MISMATCH,
+    category_confirmation_message:'已确认该公司不经营目标类目'});
+  if(categoryObserved&&scopeMatch.scope_status==='MATCHED')return Object.freeze({category_confirmation_status:CATEGORY_CONFIRMATION_STATUS.MATCH_CONFIRMED,
+    category_confirmation_reason:CATEGORY_CONFIRMATION_REASON.TARGET_CATEGORY_MATCH,
+    category_confirmation_message:'已确认该公司经营目标类目'});
+  return Object.freeze({category_confirmation_status:CATEGORY_CONFIRMATION_STATUS.MATCH_NOT_CONFIRMED,
+    category_confirmation_reason:CATEGORY_CONFIRMATION_REASON.CATEGORY_CONFIRMATION_REQUIRED,
+    category_confirmation_message:'尚未确认该公司经营目标类目'});
 }
 
 export function calculateCategoryProcurementMatch(input={}){
-  const supplied=input.dimensions?{...input.dimensions,target_category_procurement_evidence:input.dimensions.target_category_procurement_evidence||input.dimensions.target_category_procurement}:null;
+  const supplied=input.dimensions?{...input.dimensions,target_category_procurement_evidence:input.dimensions.company_category_evidence||input.dimensions.target_category_procurement_evidence||input.dimensions.target_category_procurement}:null;
   const built=supplied?{dimensions:supplied,observed_categories:input.observed_categories||[],confirmed_unrelated_assortment:Boolean(input.confirmed_unrelated_assortment)}:buildCategoryProcurementDimensions(input);
   const maxima={target_category_procurement_evidence:45,buyer_business_model_fit:25,assortment_depth:15,external_sourcing_import:10,recent_category_activity:5};
   const dimensions={},missing_evidence=[],reason_codes=[];let coverage=0,raw=0;
@@ -135,18 +166,18 @@ export function calculateCategoryProcurementMatch(input={}){
   }
   const buyer=input.buyer_business_model_result||input.buyer_business_model||{};const model=upper(input.buyer_model||buyer.buyer_model);
   const scopeMatch=resolveApprovedCategoryScopeMatch(input);
+  const confirmation=resolveCompanyCategoryConfirmation({scopeMatch,categoryDimension:dimensions.target_category_procurement_evidence,
+    confirmed_category_mismatch:input.confirmed_category_mismatch,
+    confirmed_unrelated_assortment:built.confirmed_unrelated_assortment});
   const categoryObserved=dimensions.target_category_procurement_evidence.state==='OBSERVED';
-  const buyerObserved=dimensions.buyer_business_model_fit.state==='OBSERVED'&&['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(model);
-  let score=null,band='UNKNOWN',match_status='NEEDS_PRODUCT_EVIDENCE';
+  let score=null,band='UNKNOWN',match_status='CATEGORY_CONFIRMATION_REQUIRED';
   if(scopeMatch.scope_status==='APPROVAL_REQUIRED')match_status='NEEDS_DPV_CATEGORY_SCOPE_APPROVAL';
-  else if(model==='EXCLUDED_INTERMEDIARY')match_status='INELIGIBLE_BUYER_MODEL';
-  else if(categoryObserved&&(scopeMatch.match_basis==='OUT_OF_SCOPE'||built.confirmed_unrelated_assortment||dimensions.target_category_procurement_evidence.points===0)&&buyerObserved&&coverage>=70){score=raw;match_status='PRODUCT_MISMATCH';}
-  else if(categoryObserved&&!buyerObserved&&['UNCLEAR_INTERMEDIARY','UNKNOWN'].includes(model))match_status='CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE';
-  else if(categoryObserved&&buyerObserved&&scopeMatch.scope_status==='MATCHED'&&coverage>=70){score=raw;match_status=score>=60?'CATEGORY_PROCUREMENT_MATCH':'WEAK_CATEGORY_MATCH';}
+  else if(confirmation.category_confirmation_status==='MISMATCH_CONFIRMED'){score=raw;match_status='CATEGORY_MISMATCH';}
+  else if(confirmation.category_confirmation_status==='MATCH_CONFIRMED'){score=raw;match_status='CATEGORY_MATCH_CONFIRMED';}
   band=resolveCategoryProcurementMatchBand(score);
   reason_codes.push(match_status);
   return {score,band,match_status,coverage_percent:coverage,dimensions,observed_categories:built.observed_categories,
-    ...scopeMatch,catalog_completeness_non_blocking:true,reason_codes:unique(reason_codes),
+    ...scopeMatch,...confirmation,catalog_completeness_non_blocking:true,product_profile_optional:true,reason_codes:unique([...reason_codes,confirmation.category_confirmation_reason]),
     missing_evidence:unique(missing_evidence),calculation_version:CATEGORY_PROCUREMENT_MATCH_VERSION};
 }
 

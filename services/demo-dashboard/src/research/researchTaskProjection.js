@@ -4,9 +4,6 @@ const list = value => Array.isArray(value) ? value.map(upper).filter(Boolean) : 
 export const RESEARCH_TASK_TYPES = Object.freeze([
   'VERIFY_COMPANY_IDENTITY',
   'COLLECT_CATEGORY_EVIDENCE',
-  'VERIFY_BUYER_MODEL',
-  'CONFIRM_DISTRIBUTION_RESALE',
-  'CONFIRM_SUPPLIER_ACCESS',
   'FIND_PROFILE_BUYER',
   'VERIFY_BUYER_ROLE',
   'FIND_BUSINESS_EMAIL',
@@ -19,11 +16,8 @@ export const RESEARCH_TASK_TYPES = Object.freeze([
 const TASK_META = Object.freeze({
   VERIFY_COMPANY_IDENTITY:{ blocker:'IDENTITY',owner_role:'DATA_ADMIN',next_action:'OPEN_COMPANY_REVIEW' },
   COLLECT_CATEGORY_EVIDENCE:{ blocker:'PRODUCT',owner_role:'DATA_ADMIN',next_action:'COLLECT_CATEGORY_EVIDENCE' },
-  VERIFY_BUYER_MODEL:{ blocker:'BUYER_MODEL',owner_role:'DATA_ADMIN',next_action:'VERIFY_BUYER_MODEL' },
-  CONFIRM_DISTRIBUTION_RESALE:{ blocker:'BUYER_MODEL',owner_role:'DATA_ADMIN',next_action:'CONFIRM_DISTRIBUTION_RESALE' },
-  CONFIRM_SUPPLIER_ACCESS:{ blocker:'SUPPLIER_ACCESS',owner_role:'DATA_ADMIN',next_action:'REVIEW_SUPPLIER_ACCESS' },
   FIND_PROFILE_BUYER:{ blocker:'CONTACT',owner_role:'SALES',next_action:'FIND_PROFILE_BUYER' },
-  VERIFY_BUYER_ROLE:{ blocker:'BUYER_ROLE',owner_role:'DATA_ADMIN',next_action:'VERIFY_PROCUREMENT_RESPONSIBILITY' },
+  VERIFY_BUYER_ROLE:{ blocker:'BUYER_ROLE',owner_role:'DATA_ADMIN',next_action:'VERIFY_CONTACT_RESPONSIBILITY' },
   FIND_BUSINESS_EMAIL:{ blocker:'EMAIL',owner_role:'SALES',next_action:'FIND_BUSINESS_EMAIL' },
   VERIFY_EMAIL:{ blocker:'EMAIL',owner_role:'DATA_ADMIN',next_action:'VERIFY_BUSINESS_EMAIL' },
   REVIEW_HISTORY_CONFLICT:{ blocker:'HISTORY',owner_role:'MANAGEMENT',next_action:'OPEN_COMPANY_REVIEW' },
@@ -57,17 +51,14 @@ export function deriveResearchTaskType(row = {}) {
   if (emailStatuses.includes('TEMPORARY_ERROR') || reasons.includes('TEMPORARY_PROVIDER_ERROR')) {
     return 'RETRY_TEMPORARY_PROVIDER_ERROR';
   }
-  if (hasAny(reasons,['DISTRIBUTION_PROCUREMENT_RESALE_EVIDENCE_REQUIRED'])) return 'CONFIRM_DISTRIBUTION_RESALE';
-  if (hasAny(readiness,['NEEDS_SUPPLIER_ACCESS','SUPPLIER_ACCESS_REQUIRED','SUPPLIER_ACCESS_UNKNOWN'])) return 'CONFIRM_SUPPLIER_ACCESS';
-  if (hasAny(reasons,['CATEGORY_PROCUREMENT_EVIDENCE_REQUIRED'])) return 'COLLECT_CATEGORY_EVIDENCE';
-  if (hasAny(reasons,['BUYER_MODEL_EVIDENCE_REQUIRED'])) return 'VERIFY_BUYER_MODEL';
+  if (hasAny(reasons,['CATEGORY_CONFIRMATION_REQUIRED','CATEGORY_PROCUREMENT_EVIDENCE_REQUIRED'])) return 'COLLECT_CATEGORY_EVIDENCE';
   if (profileBuyers <= 0 && (reasons.includes('EVIDENCE_REQUIRED_CONTACT') || reasons.includes('EVIDENCE_REQUIRED_BUYER_ROLE'))) {
     return 'FIND_PROFILE_BUYER';
   }
   if (profileBuyers > 0 && verifiedRoles <= 0) return 'VERIFY_BUYER_ROLE';
   if (freshValid <= 0 && emailRoutes > 0 && verifiedRoles > 0) return 'VERIFY_EMAIL';
   if (freshValid <= 0 && profileBuyers > 0 && verifiedRoles > 0) return 'FIND_BUSINESS_EMAIL';
-  if (hasAny(reasons,['EVIDENCE_REQUIRED_EMAIL','EVIDENCE_REQUIRED_CONTACT_ROUTE'])) return emailRoutes > 0 ? 'VERIFY_EMAIL' : 'FIND_BUSINESS_EMAIL';
+  if (hasAny(reasons,['EVIDENCE_REQUIRED_EMAIL','EVIDENCE_REQUIRED_CONTACT_ROUTE','CONTACT_ROUTE_REQUIRED'])) return emailRoutes > 0 ? 'VERIFY_EMAIL' : 'FIND_BUSINESS_EMAIL';
   return 'COLLECT_CATEGORY_EVIDENCE';
 }
 
@@ -75,11 +66,12 @@ export function researchTaskPriority(row = {}, taskType = deriveResearchTaskType
   const profileBuyers = Number(row.profile_relevant_buyer_count || 0);
   const verifiedRoles = Number(row.verified_buyer_role_count || 0);
   const emailRoutes = Number(row.business_email_route_count || 0);
-  const categoryReady = upper(row.category_match_status) === 'CATEGORY_PROCUREMENT_MATCH';
+  const categoryReady = ['CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE']
+    .includes(upper(row.category_match_status));
   if (['VERIFY_EMAIL','FIND_BUSINESS_EMAIL'].includes(taskType) && profileBuyers > 0 && verifiedRoles > 0) return 1;
   if (taskType === 'VERIFY_BUYER_ROLE' && emailRoutes > 0) return 2;
   if (taskType === 'FIND_PROFILE_BUYER' && categoryReady) return 3;
-  if (['CONFIRM_DISTRIBUTION_RESALE','VERIFY_BUYER_MODEL','COLLECT_CATEGORY_EVIDENCE','CONFIRM_SUPPLIER_ACCESS'].includes(taskType)) return 4;
+  if (taskType === 'COLLECT_CATEGORY_EVIDENCE') return 4;
   return 5;
 }
 

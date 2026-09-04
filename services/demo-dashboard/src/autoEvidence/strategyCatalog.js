@@ -15,16 +15,16 @@ export const AUTO_EVIDENCE_STRATEGIES=Object.freeze([
     blockers:['CATEGORY_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S02_OFFICIAL_ASSORTMENT',version:'phase10-wp09-v1',source_class:'OFFICIAL_SITE',target:'CATEGORY',
     blockers:['CATEGORY_EVIDENCE','EVIDENCE_REQUIRED']},
-  {code:'S03_OFFICIAL_SUPPLIER_ROUTE',version:'phase10-wp09-v1',source_class:'OFFICIAL_SITE',target:'ADAPTIVE',
-    blockers:['BUYER_MODEL_EVIDENCE','NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','DECISION_REFRESH','EVIDENCE_REQUIRED']},
+  {code:'S03_OFFICIAL_SUPPLIER_ROUTE',version:'phase10-1-wp-b02',source_class:'OFFICIAL_SITE',target:'CONTACT',
+    blockers:['NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','DECISION_REFRESH','EVIDENCE_REQUIRED']},
   {code:'S04_OFFICIAL_LEADERSHIP',version:'phase10-wp09-v1',source_class:'OFFICIAL_SITE',target:'CONTACT',
     blockers:['NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S05_OFFICIAL_PRESS_PDF',version:'phase10-wp09-v1',source_class:'OFFICIAL_DOCUMENT',target:'ADAPTIVE',
-    blockers:['CATEGORY_EVIDENCE','BUYER_MODEL_EVIDENCE','NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','EVIDENCE_REQUIRED']},
+    blockers:['CATEGORY_EVIDENCE','NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S06_LOCAL_LANGUAGE_ROLES',version:'phase10-wp09-v1',source_class:'PUBLIC_WEB',target:'CONTACT',
     blockers:['NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S07_INDUSTRY_DIRECTORY',version:'phase10-wp09-v1',source_class:'PUBLIC_DIRECTORY',target:'ADAPTIVE',
-    blockers:['BUYER_MODEL_EVIDENCE','NAMED_BUYER_EVIDENCE','EVIDENCE_REQUIRED']},
+    blockers:['NAMED_BUYER_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S08_PUBLIC_PRO_REFERENCE',version:'phase10-wp09-v1',source_class:'PUBLIC_PRO_REFERENCE',target:'CONTACT',
     blockers:['NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE','EVIDENCE_REQUIRED']},
   {code:'S09_PERSON_CORROBORATION',version:'phase10-wp09-v1',source_class:'PUBLIC_CORROBORATION',target:'CONTACT',requires_candidate:true,
@@ -74,14 +74,14 @@ export function buildStrategyQuery(strategyCode,task={}){
   const queryByCode={
     S01_OFFICIAL_CATEGORY:`${subject} (${quote(category)} OR category OR products OR marcas)`,
     S02_OFFICIAL_ASSORTMENT:`${subject} (collection OR assortment OR department OR catalog OR catálogo) ${quote(category)}`,
-    S03_OFFICIAL_SUPPLIER_ROUTE:`${subject} (supplier OR vendor OR procurement OR tender OR registration OR proveedores OR compras)`,
+    S03_OFFICIAL_SUPPLIER_ROUTE:`${subject} (contact OR email OR phone OR WhatsApp OR contacto OR teléfono)`,
     S04_OFFICIAL_LEADERSHIP:`${subject} (team OR leadership OR management OR equipo OR dirección) (${roles})`,
-    S05_OFFICIAL_PRESS_PDF:`${subject} (press OR news OR annual report OR informe OR filetype:pdf) (${quote('procurement')} OR ${quote('compras')} OR ${quote(category)})`,
+    S05_OFFICIAL_PRESS_PDF:`${subject} (catalog OR brochure OR annual report OR informe OR filetype:pdf) ${quote(category)}`,
     S06_LOCAL_LANGUAGE_ROLES:`${quote(name)} (${roles})`,
     S07_INDUSTRY_DIRECTORY:`${quote(name)} (${quote('industry directory')} OR association OR exhibitor OR exposición OR directorio) ${quote(category)}`,
     S08_PUBLIC_PRO_REFERENCE:`site:linkedin.com/in ${quote(name)} (${roles})`,
     S09_PERSON_CORROBORATION:`${quote(candidate)} ${quote(name)} (${roles})`,
-    S10_ALTERNATIVE_OFFICIAL_ROUTE:`${subject} (${quote('buying department')} OR ${quote('department email')} OR contact OR supplier portal OR teléfono OR formulario)`
+    S10_ALTERNATIVE_OFFICIAL_ROUTE:`${subject} (${quote('company email')} OR ${quote('business phone')} OR contact OR WhatsApp OR teléfono OR formulario)`
   };
   const queryText=clean(queryByCode[strategy.code]);
   if(!category||!queryText||queryText.includes('""')||(strategy.requires_candidate&&!candidate))return null;

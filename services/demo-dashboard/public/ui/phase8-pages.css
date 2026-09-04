@@ -71,9 +71,19 @@
 .crm-opportunity-table .op-col-buyer-model { width: 16%; }
 .crm-opportunity-table .op-col-product-match { width: 14%; }
 .crm-opportunity-table .op-col-contact { width: 15%; }
+.crm-opportunity-table .op-col-buyer { width: 12%; }
 .crm-opportunity-table .op-col-supplier-action { width: 14%; }
 .crm-opportunity-table td { overflow-wrap: anywhere; }
 .crm-opportunity-table td > :where(span, div) { max-width: 100%; }
+.crm-opportunity-table .op-col-company { width: 14%; }
+.crm-opportunity-table .op-col-market { width: 7%; }
+.crm-opportunity-table .op-col-product-match { width: 13%; }
+.crm-opportunity-table .op-col-verification { width: 10%; }
+.crm-opportunity-table .op-col-buyer-model { width: 12%; }
+.crm-opportunity-table .op-col-buyer { width: 11%; }
+.crm-opportunity-table .op-col-contact { width: 13%; }
+.crm-opportunity-table .op-col-status { width: 10%; }
+.crm-opportunity-table .op-col-action { width: 10%; }
 .crm-opportunity-company-state { margin-top: .4rem; }
 .crm-row-secondary { display: block; margin-top: .28rem; color: var(--p8-muted); font-size: .78rem; }
 .crm-row-action { display: grid; gap: .5rem; }
@@ -85,11 +95,16 @@
 .crm-evidence-row:last-child { border-bottom: 0; }
 
 .crm-contact-queue-list { min-height: 9rem; }
-.crm-contact-queue-row { display: grid; grid-template-columns: minmax(12rem, 1.2fr) repeat(3, minmax(10rem, 1fr)) minmax(10rem, .8fr); gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--p8-border); }
+.crm-contact-queue-row { display: grid; grid-template-columns: minmax(11rem, 1.15fr) minmax(11rem, 1fr) minmax(10rem, .9fr) minmax(14rem, 1.35fr) minmax(9rem, .75fr) auto; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--p8-border); align-items: start; }
 .crm-contact-queue-row:last-child { border-bottom: 0; }
 .crm-contact-queue-row dl { display: contents; }
 .crm-contact-queue-row dt { color: var(--p8-muted); font-size: .75rem; }
 .crm-contact-queue-row dd { margin: .2rem 0 0; color: var(--p8-ink-soft); }
+.crm-contact-queue-row > div { min-width: 0; display: grid; gap: .3rem; }
+.crm-contact-queue-row > div > small { color: var(--p8-muted); font-size: .72rem; font-weight: 700; }
+.p10-contact-route-list { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; }
+.p10-contact-route-list li { display: grid; gap: .1rem; min-width: 0; }
+.p10-contact-route-list a,.p10-contact-route-list span { overflow-wrap: anywhere; }
 .p10-manual-route-panel { margin-top: 1.5rem; }
 .p10-manual-route-row > div { min-width: 0; display: grid; align-content: start; gap: .3rem; }
 .p10-manual-route-value a,.p10-manual-route-value span { overflow-wrap: anywhere; }

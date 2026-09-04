@@ -13,21 +13,25 @@ const sha=value=>crypto.createHash('sha256').update(String(value)).digest('hex')
 const upper=value=>String(value||'').trim().toUpperCase();
 const unique=(items,key)=>{const seen=new Set();return(items||[]).filter(item=>{const value=key(item);if(!value||seen.has(value))return false;seen.add(value);return true;});};
 
-function fallbackTerms(market,profile){return {category:market.productDiscoveryTerms?.[profile]||[],directBuyer:[...(market.retailTerms||[]),...(market.departmentStoreTerms||[]),...(market.supermarketTerms||[])],distribution:[...(market.importerTerms||[]),...(market.wholesalerTerms||[]),...(market.distributorTerms||[])],exclusion:['sourcing agent','broker','OEM-only manufacturer']};}
-function queryType(group,term){const value=String(term).toLowerCase();if(group==='category')return'category_assortment';if(group==='directBuyer')return/store|tienda|retail|minorista/.test(value)?'store_network':'retail_channel';if(group==='exclusion')return'intermediary_exclusion';if(/warehouse|almac[eé]n|inventory/.test(value))return'inventory_warehouse';if(/import/.test(value))return'import_activity';if(/wholesale|mayor/.test(value))return'wholesale_activity';return'distribution_network';}
+function categoryOperationTerms(market){return unique([...(market.retailTerms||[]),...(market.departmentStoreTerms||[]),
+  ...(market.supermarketTerms||[]),...(market.importerTerms||[]),...(market.wholesalerTerms||[]),...(market.distributorTerms||[])],String)
+  .filter(term=>!/(?:procurement|purchasing|supplier onboarding|vendor registration|tender|\brfp\b|\brfq\b|supplier portal|buying department)/i.test(term));}
+function queryType(term){const value=String(term).toLowerCase();if(/import/.test(value))return'import_activity';if(/wholesale|mayor/.test(value))return'wholesale_activity';if(/distribut/.test(value))return'distribution_network';if(/store|tienda|retail|minorista|supermarket|department/.test(value))return'retail_operation';return'category_assortment';}
 
 export function buildCategoryBuyerDiscoveryQueries({company={},product_profile,market_profile=null,max_queries=4}={}){
-  const profile=upper(product_profile);const market=market_profile||getMarketProfile(company.country_code,company.country_name);const configured=market.categoryBuyerDiscoveryTerms?.[profile];
-  const terms=configured&&typeof configured==='object'?configured:fallbackTerms(market,profile);const domain=String(company.official_root_domain||company.normalized_domain||'').trim();const name=clean(company.company_name||company.name,240);
-  const rows=[];for(const group of ['category','directBuyer','distribution','exclusion'])for(const term of terms[group]||[]){const query=domain?`site:${domain} ${term}`:`"${name}" ${term}`;rows.push({query,query_text:query,query_type:queryType(group,term),product_profile:profile,term_group:group});}
-  const selected=[];for(const group of ['category','directBuyer','distribution','exclusion']){const item=rows.find(row=>row.term_group===group);if(item)selected.push(item);}
-  for(const row of rows)if(selected.length<Math.max(1,Math.min(8,Number(max_queries)||4))&&!selected.some(item=>item.query===row.query))selected.push(row);
-  return selected.slice(0,Math.max(1,Math.min(8,Number(max_queries)||4)));
+  const profile=upper(product_profile);const market=market_profile||getMarketProfile(company.country_code,company.country_name);
+  const categoryTerms=unique(market.productDiscoveryTerms?.[profile]||[],String);const operationTerms=categoryOperationTerms(market);
+  const domain=String(company.official_root_domain||company.normalized_domain||company.official_domain||'').trim();const name=clean(company.company_name||company.name,240);
+  const subject=domain?`site:${domain}`:`"${name}"`;const rows=[];
+  for(const term of categoryTerms)rows.push({query:`${subject} ${term}`,query_text:`${subject} ${term}`,query_type:'category_assortment',product_profile:profile,term_group:'category'});
+  const primaryCategory=categoryTerms[0]||profile.replaceAll('_',' ').toLowerCase();
+  for(const term of operationTerms)rows.push({query:`${subject} ${primaryCategory} ${term}`,query_text:`${subject} ${primaryCategory} ${term}`,query_type:queryType(term),product_profile:profile,term_group:'company_operation'});
+  return rows.slice(0,Math.max(1,Math.min(8,Number(max_queries)||4)));
 }
 
-function discoverLinks(html,baseUrl){const $=cheerio.load(String(html||''));const pattern=/product|categor|collection|brand|store|location|wholesale|distribut|import|warehouse|supplier|tienda|marca|mayor|almac[eé]n/i;
+function discoverLinks(html,baseUrl){const $=cheerio.load(String(html||''));const pattern=/product|categor|collection|brand|store|location|wholesale|distribut|import|warehouse|about|company|tienda|marca|mayor|almac[eé]n/i;
   return unique($('a[href]').map((_i,node)=>{try{const url=new URL($(node).attr('href'),baseUrl);return pattern.test(`${$(node).text()} ${url.pathname}`)?url.href:null;}catch{return null;}}).get().filter(Boolean),String).slice(0,30);}
-function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if(/\.pdf$|report|supplier/.test(pathname))return'OFFICIAL_DOCUMENT';if(/catalog/.test(pathname))return'OFFICIAL_CATALOG';if(/shop|store|tienda|product|categor|collection|brand/.test(pathname))return'OFFICIAL_STOREFRONT';return'OFFICIAL';}
+function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if(/\.pdf$|report/.test(pathname))return'OFFICIAL_DOCUMENT';if(/catalog/.test(pathname))return'OFFICIAL_CATALOG';if(/shop|store|tienda|product|categor|collection|brand/.test(pathname))return'OFFICIAL_STOREFRONT';return'OFFICIAL';}
 
 export class CategoryEvidenceService{
   constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2}={}){

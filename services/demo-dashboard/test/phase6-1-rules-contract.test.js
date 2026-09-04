@@ -34,16 +34,14 @@ test('Buyer Business Model V3 rules include direct, distribution, unclear and ex
   for(const evidence of ['IMPORT_ACTIVITY','WAREHOUSE_INVENTORY','DISTRIBUTION_NETWORK','INTERMEDIARY_EXCLUSION']) assert.match(serialized,new RegExp(evidence));
 });
 
-test('Category Procurement Match V3 rules freeze five weights and 70/60 publication gates',()=>{
+test('Company Category Match V3 rules use category evidence only and preserve three explicit outcomes',()=>{
   const decision=readJson('rules/category-procurement-match/v1/decision.json');
   const metadata=readJson('rules/category-procurement-match/v1/metadata.json');
   const serialized=JSON.stringify({decision,metadata});
-  for(const weight of [45,25,15,10,5]) assert.match(serialized,new RegExp(`[:\\[]${weight}(?:[,}\\]])`));
-  assert.match(serialized,/coverage/i);
-  assert.match(serialized,/70/);
-  assert.match(serialized,/score/i);
-  assert.match(serialized,/60/);
-  for(const status of ['CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_INTERNAL_CATALOG_EVIDENCE','INELIGIBLE_BUYER_MODEL']) assert.match(serialized,new RegExp(status));
+  for(const concept of ['COMPANY_OPERATES_TARGET_CATEGORY','TARGET_CATEGORY_MATCH','COMPANY_CATEGORY_EVIDENCE','CATEGORY_CONFIRMATION_REQUIRED','CATEGORY_MISMATCH']) assert.match(serialized,new RegExp(concept));
+  for(const status of ['MATCH_CONFIRMED','MATCH_NOT_CONFIRMED','MISMATCH_CONFIRMED']) assert.match(serialized,new RegExp(status));
+  assert.equal(metadata.product_profile_optional,true);
+  assert.doesNotMatch(JSON.stringify(decision),/supplier onboarding|vendor registration|tender|\\bRFP\\b|\\bRFQ\\b|supplier portal/i);
 });
 
 test('legacy Cooperation V3 rule remains preserved for historical audit',()=>{
@@ -66,8 +64,9 @@ test('current Cooperation V4 rule is approved-category-only and creates no catal
   assert.equal(metadata.opportunity_gate,'APPROVED_CATEGORY_SCOPE_ONLY');
   assert.equal(metadata.exact_sku_required,false);
   assert.equal(metadata.catalog_maintenance_task_allowed,false);
-  assert.match(implementation,/rawStatus==='NEEDS_INTERNAL_CATALOG_EVIDENCE'\?'CATEGORY_PROCUREMENT_MATCH'/);
+  assert.match(implementation,/projectCategoryMatchStatus\(rawStatus\)/);
+  assert.match(implementation,/isCategoryMatchConfirmed\(rawStatus\)/);
   assert.doesNotMatch(implementation,/blockers\.push\('NEEDS_PRODUCT_RECOMMENDATION'\)/);
   const currentOrder=implementation.slice(implementation.lastIndexOf("const order="));
-  assert.doesNotMatch(currentOrder,/NEEDS_INTERNAL_CATALOG_EVIDENCE|NEEDS_PRODUCT_RECOMMENDATION/);
+  assert.doesNotMatch(currentOrder,/NEEDS_INTERNAL_CATALOG_EVIDENCE|CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE|NEEDS_PRODUCT_RECOMMENDATION/);
 });

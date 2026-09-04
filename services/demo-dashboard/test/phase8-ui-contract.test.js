@@ -145,19 +145,19 @@ test('Overview is Recommended-only and Evidence Required routes contact, buyer-r
   assert.deepEqual(phase8BlockerGroup('EVIDENCE_REQUIRED_EMAIL'), ['邮箱核验', 'Email verification']);
 });
 
-test('Opportunities renders eight category-driven decision columns and a useful true zero state', async () => {
+test('Opportunities renders nine category-driven business columns and a useful true zero state', async () => {
   const [html, app] = await readMany(['index.html', 'app.js']);
   const tableStart = position(html, 'id="opportunity-table"');
   const table = html.slice(Math.max(0, html.lastIndexOf('<table', tableStart)), html.indexOf('</table>', tableStart) + 8);
   const columnClasses = [
     'op-col-company', 'op-col-market', 'op-col-product-match', 'op-col-verification',
-    'op-col-buyer-model', 'op-col-contact', 'op-col-status', 'op-col-action'
+    'op-col-buyer-model', 'op-col-buyer', 'op-col-contact', 'op-col-status', 'op-col-action'
   ];
-  assert.equal((table.match(/<th\b/g) || []).length, 8);
-  for (const label of ['Target Category Match','Company Verification','Named Buyer / Official Route','Next Action']) assert.match(table,new RegExp(label));
+  assert.equal((table.match(/<th\b/g) || []).length, 9);
+  for (const label of ['Matched Category','Company Verification','Buyer Type','Named Buyer','Official Contact Channels','Next Action']) assert.match(table,new RegExp(label));
   for (const name of columnClasses) assert.match(table, new RegExp(`class="[^"]*${name}`));
   const renderer = app.slice(position(app, 'function renderOpportunityTable'), position(app, 'async function loadOpportunities'));
-  assert.equal((renderer.match(/<td\b/g) || []).length, 8);
+  assert.equal((renderer.match(/<td\b/g) || []).length, 9);
   for (const name of columnClasses) assert.match(renderer, new RegExp(`<td class="[^"]*${name}`));
   assert.equal((renderer.match(/phase7OpportunityBadge\(/g) || []).length, 1);
   assert.match(`${html}\n${app}`, /尚无联系就绪机会/);

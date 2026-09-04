@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DpvZenRulesAdapter } from '../scoring/zenRulesAdapter.js';
+import {isCategoryMatchConfirmed,projectCategoryMatchStatus} from './categoryMatchStatus.js';
 
 export const COOPERATION_V4_VERSION='cooperation-feasibility-v4';
 export const COOPERATION_V3_VERSION=COOPERATION_V4_VERSION;
@@ -45,25 +46,24 @@ export function resolveReadinessV3(input={}){
   if(input.existing_customer===true||relationship==='INTERNAL_EXISTING_CUSTOMER')blockers.push('EXISTING_CUSTOMER');
   if(model==='EXCLUDED_INTERMEDIARY')blockers.push('INELIGIBLE_BUYER_MODEL');else if(!['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(model))blockers.push('REVIEW');
   if(['HISTORICAL_CRM_LEAD','HISTORICAL_CONTACTED_LEAD'].includes(relationship))blockers.push('HISTORICAL_REVIEW');
-  if(input.supplier_route_closed===true||upper(input.supplier_route_status)==='CLOSED')blockers.push('HOLD');
-  const rawStatus=upper(input.category_procurement_match_status||'NEEDS_PRODUCT_EVIDENCE');
-  const status=rawStatus==='NEEDS_INTERNAL_CATALOG_EVIDENCE'?'CATEGORY_PROCUREMENT_MATCH':rawStatus;
-  if(status!=='CATEGORY_PROCUREMENT_MATCH')blockers.push(status);else if(input.category_procurement_match_score==null||Number(input.category_procurement_match_score)<60)blockers.push('WEAK_CATEGORY_MATCH');else if(Number(input.category_procurement_coverage||0)<70)blockers.push('NEEDS_PRODUCT_EVIDENCE');
+  const rawStatus=upper(input.category_procurement_match_status||'CATEGORY_CONFIRMATION_REQUIRED');
+  const status=projectCategoryMatchStatus(rawStatus);
+  if(!isCategoryMatchConfirmed(rawStatus))blockers.push(status);else if(input.category_procurement_match_score==null||Number(input.category_procurement_match_score)<60)blockers.push('WEAK_CATEGORY_MATCH');else if(Number(input.category_procurement_coverage||0)<70)blockers.push('CATEGORY_CONFIRMATION_REQUIRED');
   if(input.has_verified_decision_route!==true&&input.has_current_valid_company_route!==true)blockers.push('NEEDS_DECISION_MAKER');
   if(input.has_current_valid_contact_route!==true&&input.has_current_valid_company_route!==true)blockers.push('NEEDS_CONTACT_ROUTE');
   const verifiedActive=input.company_verified_active===true||(upper(input.company_verification_status)==='VERIFIED'&&upper(input.company_lifecycle_status)==='ACTIVE');
   if(input.has_traceable_evidence!==true||!verifiedActive||input.eligible_target_organization!==true)blockers.push('NEEDS_VERIFICATION');
-  if(upper(input.cooperation_feasibility_band)==='LOW'||upper(input.supplier_access_band)==='LOW')blockers.push('STRATEGIC_LONG_SHOT');
+  if(upper(input.cooperation_feasibility_band)==='LOW')blockers.push('STRATEGIC_LONG_SHOT');
   const order=['SUPPRESSED','EXISTING_CUSTOMER','INELIGIBLE_BUYER_MODEL','HISTORICAL_REVIEW','HOLD',
-    'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL','NEEDS_PRODUCT_EVIDENCE',
-    'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','PRODUCT_MISMATCH','WEAK_CATEGORY_MATCH','NEEDS_DECISION_MAKER',
+    'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL','CATEGORY_CONFIRMATION_REQUIRED',
+    'CATEGORY_MISMATCH','WEAK_CATEGORY_MATCH','NEEDS_DECISION_MAKER',
     'NEEDS_CONTACT_ROUTE','NEEDS_VERIFICATION','STRATEGIC_LONG_SHOT','REVIEW'];
   const readiness=order.find(value=>blockers.includes(value))||'SALES_READY';return {readiness,opportunity_readiness:readiness,readiness_blockers:unique(blockers)};
 }
 
 export function mapCategoryProcurementToFeasibilityDimension({category_procurement_match_result={}}={}){
   const score=category_procurement_match_result.score==null?null:Number(category_procurement_match_result.score);
-  const known=score!==null&&Number(category_procurement_match_result.coverage_percent||0)>=70&&upper(category_procurement_match_result.match_status)==='CATEGORY_PROCUREMENT_MATCH';
+  const known=score!==null&&Number(category_procurement_match_result.coverage_percent||0)>=70&&isCategoryMatchConfirmed(category_procurement_match_result.match_status);
   return {state:known?upper(category_procurement_match_result.band):'UNKNOWN',points:known?(score>=80?15:score>=65?12:score>=60?9:score>=30?4:0):null,maximum:15,
     category_procurement_match_result_id:category_procurement_match_result.id||category_procurement_match_result.category_procurement_match_result_id||null,
     calculation_version:category_procurement_match_result.calculation_version||null,evidence_ids:[],unknown_fields:known?[]:['category_procurement_match']};

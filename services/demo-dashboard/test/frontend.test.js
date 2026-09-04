@@ -264,7 +264,7 @@ test('opportunity table uses the combined endpoint and never substitutes Company
 test('V3 opportunity labels and filter query remain deterministic and bilingual', () => {
   assert.deepEqual(opportunityReadinessLabel('SALES_READY'), ['可安排销售跟进','Sales ready']);
   assert.deepEqual(opportunityReadinessLabel('STRATEGIC_LONG_SHOT'), ['战略长期机会','Strategic long shot']);
-  assert.deepEqual(opportunityReadinessLabel('NEEDS_PRODUCT_EVIDENCE'), ['需补充客户类目资料','Customer category evidence required']);
+  assert.deepEqual(opportunityReadinessLabel('NEEDS_PRODUCT_EVIDENCE'), ['需补充公司类目资料','Company category evidence required']);
   assert.deepEqual(feasibilityBandLabel('LOW_MEDIUM'), ['中低可行性','Low-medium feasibility']);
   assert.deepEqual(cooperationMatrixLabel('HIGH_FIT_LOW_ACCESS'), ['高匹配但较难进入','High fit, low access']);
   assert.deepEqual(normalizedRoleLabel('PROCUREMENT_DEPARTMENT'), ['采购部门','Procurement Department']);
@@ -294,7 +294,7 @@ test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps 
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
   for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-product-access-matrix','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
-  for (const column of ['op-col-company','op-col-market','op-col-product-match','op-col-verification','op-col-buyer-model','op-col-contact','op-col-status','op-col-action']) assert.match(html,new RegExp(column));
+  for (const column of ['op-col-company','op-col-market','op-col-product-match','op-col-verification','op-col-buyer-model','op-col-buyer','op-col-contact','op-col-status','op-col-action']) assert.match(html,new RegExp(column));
   for (const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
   assert.match(html,/id="start-enrichment"/);
   assert.match(html,/id="enrichment-job-status"[^>]*role="status"[^>]*aria-live="polite"/);
@@ -330,7 +330,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.deepEqual(productCatalogStatusLabel('HISTORICAL_ORDER_SUPPORTED'), ['历史订单资料支持','Supported by historical order records']);
   assert.deepEqual(productSourceClassificationLabel('PRODUCT_MASTER'), ['公司商品库','Company product catalog']);
   assert.deepEqual(buyerBusinessModelLabel('DIRECT_END_BUYER'), ['终端零售买家','Direct end buyer']);
-  assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['品类匹配，采购模式待确认','Category match; buying evidence required']);
+  assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['类目已确认','Category confirmed']);
   assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['历史状态（现按商品类目评估）','Legacy state (category-level assessment now applies)']);
   assert.deepEqual(productOpportunityStatusLabel('NOT_REQUIRED'), ['按商品类目评估','Category-level assessment']);
   assert.deepEqual(supplierAccessBandLabel('LOW_MEDIUM'), ['供应商准入中低','Low-medium supplier access']);
@@ -344,7 +344,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&product_access_matrix=DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS&sort=category_procurement_desc&limit=100');
 });
 
-test('Phase 6.1 V3 capabilities remain available behind the eight-column category-driven decision surface', async () => {
+test('Phase 6.1 V3 capabilities remain available behind the nine-column category-driven decision surface', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const phase7Ui = await readFile(new URL('../public/phase7-ui.js', import.meta.url), 'utf8');
@@ -353,11 +353,11 @@ test('Phase 6.1 V3 capabilities remain available behind the eight-column categor
   const productEnd = app.indexOf('const crmBusinessText',productStart);
   assert.ok(productStart >= 0 && productEnd > productStart);
   const productSegment = app.slice(productStart,productEnd);
-  for (const label of ['Target Category Match','Company Verification','Buyer Model','Named Buyer / Official Route','Opportunity Status','Next Action']) assert.match(html,new RegExp(label));
+  for (const label of ['Matched Category','Company Verification','Buyer Type','Named Buyer','Official Contact Channels','Status','Next Action']) assert.match(html,new RegExp(label));
   const productCapabilitySurface = `${html}\n${app}\n${phase7Ui}`;
   for (const preserved of ['Category opportunity basis','Category Access Matrix','opportunitySecondaryScores','Readiness']) assert.match(productCapabilitySurface,new RegExp(preserved));
   for(const removed of ['Top Product Opportunity','Product candidates','Shared Product Data \(Reference\)'])assert.doesNotMatch(productCapabilitySurface,new RegExp(removed));
-  assert.match(html,/id="opportunity-table"[\s\S]*colspan="8"/);
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="9"/);
   assert.match(app,/const PRODUCT_MATCH_PROFILES = Object\.freeze\(\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\)/);
   assert.match(app,/id="detail-section-nav"/);
   assert.match(app,/\['product-match','商品类目评分','Product Category Score'\]/);
@@ -367,7 +367,7 @@ test('Phase 6.1 V3 capabilities remain available behind the eight-column categor
   for(const stateName of ['unknown','weak','mismatch','excluded','ready']) assert.match(productSegment,new RegExp(`'${stateName}'`));
   assert.match(productSegment,/data-product-match-retry/);
   assert.match(productSegment,/score == null \|\| !band \|\| band === 'UNKNOWN'/);
-  assert.match(productSegment,/Category Procurement Match/);
+  assert.match(productSegment,/Target Category Match/);
   assert.match(productSegment,/Buyer Business Model/);
   assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table td::before\s*\{[^}]*content:\s*attr\(data-label\)/);
   assert.match(css,/\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);

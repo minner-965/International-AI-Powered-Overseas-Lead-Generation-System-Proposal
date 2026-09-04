@@ -144,10 +144,14 @@ test('12 a verified official company email supports a business opportunity',()=>
   assert.equal(result.system_recommendation_status,'RECOMMENDED');assert.equal(result.contact_route_readiness,'OFFICIAL_EMAIL_ROUTE_READY');
 });
 
-test('13 verified official phone, WhatsApp, form, and portal support manual-route opportunities',()=>{
-  for(const route of ['BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION']){
+test('13 verified official phone, WhatsApp, and ordinary contact form support company-route opportunities',()=>{
+  for(const route of ['BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM']){
     const result=deriveOpportunityDecision({...decisionBase,active_company_contact_route_count:1,company_contact_route_types:[route]});
     assert.equal(result.system_recommendation_status,'RECOMMENDED');assert.equal(result.contact_route_readiness,'OFFICIAL_MANUAL_ROUTE_READY');
+  }
+  for(const retiredRoute of ['SUPPLIER_PORTAL','VENDOR_REGISTRATION']){
+    const result=deriveOpportunityDecision({...decisionBase,active_company_contact_route_count:1,company_contact_route_types:[retiredRoute]});
+    assert.equal(result.system_recommendation_status,'EVIDENCE_REQUIRED');
   }
 });
 

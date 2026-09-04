@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import * as cheerio from 'cheerio';
 import { extractProductObservations } from '../productMatch/productObservationExtractor.js';
 
-export const CATEGORY_OBSERVATION_EXTRACTION_VERSION='category-buyer-observation-v1';
+export const CATEGORY_OBSERVATION_EXTRACTION_VERSION='company-category-observation-v2';
 const clean=(value,max=2000)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
 const sha=value=>crypto.createHash('sha256').update(String(value)).digest('hex');
 const upper=value=>String(value||'').trim().toUpperCase();
@@ -15,9 +15,7 @@ const signals=[
   ['WHOLESALE_ACTIVITY','WHOLESALE',/\b(?:wholesale catalog|wholesale ordering|venta al mayoreo|mayorista|wholesale customers?)\b/i],
   ['DISTRIBUTION_NETWORK','DISTRIBUTION',/\b(?:dealer network|distribution network|supply retailers|red de distribuidores|distribuimos a tiendas)\b/i],
   ['WAREHOUSE_INVENTORY','WAREHOUSE',/\b(?:our warehouse|warehousing|inventory operation|centro de distribución|nuestro almac[eé]n|inventario)\b/i],
-  ['THIRD_PARTY_BRAND_PORTFOLIO','DISTRIBUTION',/\b(?:brand portfolio|distributed brands|marcas que distribuimos|multi-brand portfolio)\b/i],
-  ['BUYING_DEPARTMENT','BUYING',/\b(?:buying department|procurement department|purchasing team|departamento de compras|equipo de compras)\b/i],
-  ['INTERMEDIARY_EXCLUSION','EXCLUSION',/\b(?:sourcing agent|brokerage services|broker|procurement agent|agente de compras|corredor|oem only|contract manufacturer only)\b/i]
+  ['THIRD_PARTY_BRAND_PORTFOLIO','DISTRIBUTION',/\b(?:brand portfolio|distributed brands|marcas que distribuimos|multi-brand portfolio)\b/i]
 ];
 
 function evidenceWindow(text,match){const start=Math.max(0,match.index-180);return clean(text.slice(start,start+600));}
@@ -34,7 +32,7 @@ export function extractCategoryBuyerObservations(input={}){
     row.evidence_hash=sha([sourceUrl,row.observation_type,row.raw_product_name,row.raw_category,row.evidence_text].join('|'));if(!seen.has(row.evidence_hash)){seen.add(row.evidence_hash);result.push(row);}}
   const $=cheerio.load(html);$('script,style,noscript,svg').remove();const text=clean($('body').text(),100000);
   for(const[type,role,pattern]of signals){const match=pattern.exec(text);if(!match)continue;const evidence=evidenceWindow(text,match);const row={observation_type:type,raw_category:null,raw_product_name:null,
-    raw_brand_or_department:type==='BUYING_DEPARTMENT'?match[0]:null,normalized_profile:upper(input.product_profile)||'UNKNOWN',normalized_category:null,
+    raw_brand_or_department:null,normalized_profile:upper(input.product_profile)||'UNKNOWN',normalized_category:null,
     normalized_subcategory:null,business_activity_role:role,evidence_text:evidence,source_authority:authority,
     verification_status:official.has(authority)?'VERIFIED':'REVIEW',captured_at:capturedAt,published_at:input.published_at||null,
     extraction_version:CATEGORY_OBSERVATION_EXTRACTION_VERSION,data_classification:'PUBLIC_WEB'};

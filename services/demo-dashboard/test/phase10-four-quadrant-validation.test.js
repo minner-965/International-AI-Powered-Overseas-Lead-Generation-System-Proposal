@@ -162,7 +162,7 @@ test('hard 1: similar approved category passes category-only without an internal
     approved_category_scopes: [dresses],
     observed_customer_categories: [observation]
   });
-  assert.equal(category.match_status, 'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(category.match_status, 'CATEGORY_MATCH_CONFIRMED');
   assert.equal(category.match_basis, 'SIMILAR_CATEGORY');
   assert.equal(category.similarity_rule, 'APPROVED_TAXONOMY_PARENT_CHILD');
 
@@ -180,7 +180,7 @@ test('hard 1: similar approved category passes category-only without an internal
   assert.equal('catalog_enrichment_required' in product, false);
   assert.ok(product.reason_codes.includes('EXACT_SKU_NOT_REQUIRED'));
   assert.ok(!product.reason_codes.includes('INTERNAL_CATALOG_UPLOAD_REQUIRED'));
-  assert.equal(product.category_procurement_match_status, 'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(product.category_procurement_match_status, 'CATEGORY_MATCH_CONFIRMED');
 });
 
 test('hard 2: two product profiles remain separately auditable while identical contact activity deduplicates', () => {
@@ -234,7 +234,7 @@ test('multiple verified sources normalize to one category match without losing e
     approved_category_scopes: [dresses],
     observed_customer_categories: observations
   });
-  assert.equal(result.match_status, 'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(result.match_status, 'CATEGORY_MATCH_CONFIRMED');
   assert.equal(result.match_basis, 'EXACT_CATEGORY');
   assert.deepEqual(result.dimensions.target_category_procurement_evidence.evidence_ids, observations.map(item => item.id));
 });

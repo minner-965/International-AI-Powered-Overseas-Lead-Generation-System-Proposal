@@ -70,12 +70,13 @@ test('WP11 blocker routing keeps category research separate from Buyer and email
   assert.equal(eligibleStrategies({...baseTask,business_blocker:'NOT_SUITABLE'}).length,0);
 });
 
-test('WP10 fairness yields after one strategy instead of letting one company consume the round',async()=>{
+test('WP-B07 immediately queues the next distinct strategy without reconciliation delay',async()=>{
   const repository=new StrategyRepository({nextNumber:2});const jobs=queue();
   const service=new AutoEvidenceOrchestrator({repository,queue:jobs,env:{AUTO_EVIDENCE_ENABLED:'true'}});
   const result=await service.advance(repository.task,'REFRESHING_DECISION','NO_NEW_EVIDENCE');
-  assert.equal(result.status,'FAIRNESS_YIELDED');assert.equal(result.task.strategy_attempt_count,1);
-  assert.equal(result.task.current_strategy_code,null);assert.equal(repository.prepared,0);assert.equal(jobs.calls.length,0);
+  assert.equal(result.status,'AUTOMATICALLY_QUEUED');assert.equal(result.task.strategy_attempt_count,2);
+  assert.equal(repository.prepared,1);assert.equal(jobs.calls.length,1);
+  assert.equal(jobs.calls[0].data.strategy_attempt_number,2);
 });
 
 test('worklist exhaustion closes the task without a cooldown gate',async()=>{
@@ -83,9 +84,7 @@ test('worklist exhaustion closes the task without a cooldown gate',async()=>{
   const jobs=queue();const now=new Date('2026-09-02T00:00:00.000Z');
   const service=new AutoEvidenceOrchestrator({repository,queue:jobs,env:{AUTO_EVIDENCE_ENABLED:'true',
     AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS:'168'},now:()=>now});
-  const yielded=await service.advance(repository.task,'REFRESHING_DECISION','NO_NEW_EVIDENCE');
-  assert.equal(yielded.status,'FAIRNESS_YIELDED');
-  const result=await service.runStage('FINDING_BUYER',{task_id:repository.task.id});
+  const result=await service.advance(repository.task,'REFRESHING_DECISION','NO_NEW_EVIDENCE');
   assert.equal(result.status,'EVIDENCE_EXHAUSTED');assert.equal(result.task.strategy_attempt_count,10);
   assert.equal(result.task.cooldown_until,null);assert.equal(jobs.calls.length,0);
 });

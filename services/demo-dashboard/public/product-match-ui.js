@@ -11,14 +11,14 @@ const bandLabels = Object.freeze({
 });
 
 const categoryProcurementStatusLabels = Object.freeze({
-  CATEGORY_PROCUREMENT_MATCH: pair('品类采购匹配', 'Category procurement match'),
-  CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('品类匹配，采购模式待确认', 'Category match; buying evidence required'),
+  CATEGORY_PROCUREMENT_MATCH: pair('目标类目匹配', 'Target Category Match'),
+  CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('类目已确认', 'Category confirmed'),
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
   PRODUCT_MISMATCH: pair('已确认品类不匹配', 'Confirmed category mismatch'),
   NEEDS_PRODUCT_EVIDENCE: pair('需补充客户品类资料', 'Customer category evidence required'),
   NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('历史状态（现按批准类目）', 'Legacy state (approved category now applies)'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
-  UNKNOWN: pair('品类采购关系待确认', 'Category procurement relationship to confirm')
+  UNKNOWN: pair('公司类目待确认', 'Company category to confirm')
 });
 
 const buyerBusinessModelLabels = Object.freeze({

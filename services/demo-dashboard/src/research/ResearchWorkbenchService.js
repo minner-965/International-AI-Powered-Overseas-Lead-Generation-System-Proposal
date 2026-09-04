@@ -46,12 +46,13 @@ function publicJobStatus(row = {}) {
 
 function jobObjective(type) {
   return ['DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH'].includes(type) ? 'BUYER_AND_CONTACT_EVIDENCE'
-    :type === 'CATEGORY_PROCUREMENT_ENRICHMENT' ? 'CATEGORY_PROCUREMENT_EVIDENCE'
+    :type === 'CATEGORY_PROCUREMENT_ENRICHMENT' ? 'COMPANY_CATEGORY_EVIDENCE'
       :'COMPANY_DISCOVERY';
 }
 
 function publicJob(row = {}) {
   const publicStatus=publicJobStatus(row);
+  const dispatchVisible=['QUEUED','RUNNING'].includes(publicStatus);
   const companiesSelected=Array.isArray(row.requested_company_ids)&&row.requested_company_ids.length
     ? row.requested_company_ids.length : Number(row.companies_attempted || row.candidates_found || 0);
   const companiesAttempted=Number(row.companies_attempted || 0);
@@ -108,7 +109,9 @@ function publicJob(row = {}) {
         :publicStatus === 'WAITING_EVIDENCE' ? 'EVIDENCE_REQUIRED'
           :publicStatus === 'QUEUED' && row.dispatch_state && row.dispatch_state!=='DISPATCHED' && row.dispatch_state!=='PENDING'
             ? upper(row.dispatch_state) : null,
-    dispatch_state:upper(row.dispatch_state || 'PENDING'),
+    dispatch_state:dispatchVisible ? upper(row.dispatch_state || '') : '',
+    queued_at:dispatchVisible&&row.dispatch_state ? row.created_at : null,
+    expected_worker_status:dispatchVisible&&['PENDING','DISPATCHED'].includes(upper(row.dispatch_state))?'QUEUED_OR_ACTIVE':null,
     blocked_reason:row.blocked_reason || null,
     last_dispatch_attempt_at:row.last_dispatch_attempt_at || null,
     next_dispatch_attempt_at:row.next_dispatch_attempt_at || null,
@@ -381,7 +384,7 @@ export class ResearchWorkbenchService {
     const sourceRows=await this.pool.query(`SELECT source_url,captured_at,source_authority FROM leadgen.decision_maker_sources
       WHERE research_job_id=$1 ORDER BY captured_at DESC,id DESC LIMIT 100`,[jobId]);
     const stageRows=await this.pool.query(`SELECT DISTINCT ON(stage) stage,outcome_code,reason_codes,source_count,retry_number,occurred_at
-      FROM leadgen.research_job_stage_events WHERE research_job_id=$1
+      FROM leadgen.research_job_stage_events WHERE research_job_id=$1 AND stage<>'SUPPLIER_ACCESS'
       ORDER BY stage,occurred_at DESC,id DESC`,[jobId]);
     const items=companies.rows.map(row=>({company_id:row.company_id,company_name:row.company_name,market:row.country_code,
       product_profiles:row.product_profiles,status:row.attempt_status,queries_executed:Number(row.queries_executed),sources_found:Number(row.sources_found),
@@ -395,7 +398,6 @@ export class ResearchWorkbenchService {
       {stage:'IDENTITY',status:totals.companies?'COMPLETED':'WAITING',count:totals.companies},
       {stage:'BUYER_MODEL',status:totals.sources?'COMPLETED':'WAITING_EVIDENCE',count:totals.sources},
       {stage:'CATEGORY_PROCUREMENT',status:job.category_matches?'COMPLETED':'WAITING_EVIDENCE',count:job.category_matches},
-      {stage:'SUPPLIER_ACCESS',status:'WAITING_EVIDENCE',count:0},
       {stage:'BUYER_ROLE',status:totals.buyers?'COMPLETED':'WAITING_EVIDENCE',count:totals.buyers},
       {stage:'EMAIL_VERIFICATION',status:job.verified_email_routes?'COMPLETED':'WAITING_EVIDENCE',count:job.verified_email_routes},
       {stage:'DECISION_REFRESH',status:job.status==='COMPLETED'?'COMPLETED':'WAITING',count:job.status==='COMPLETED'?1:0}

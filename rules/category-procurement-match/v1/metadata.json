@@ -1,13 +1,16 @@
 {
-  "rule_version": "category-procurement-match-v1",
-  "score_maximum": 100,
-  "publish_coverage_minimum": 70,
-  "pass_score_minimum": 60,
-  "dimensions": {
-    "target_category_procurement_evidence": 45,
-    "buyer_business_model_fit": 25,
-    "assortment_depth": 15,
-    "external_sourcing_import": 10,
-    "recent_category_activity": 5
-  }
+  "rule_version": "category-company-match-v3",
+  "compatibility_rule_version": "category-procurement-match-v2",
+  "gate": "COMPANY_OPERATES_TARGET_CATEGORY",
+  "concepts": ["TARGET_CATEGORY_MATCH", "COMPANY_CATEGORY_EVIDENCE", "CATEGORY_CONFIRMATION_REQUIRED", "CATEGORY_MISMATCH"],
+  "product_profile_optional": true,
+  "accepted_evidence": [
+    "OFFICIAL_CATEGORY_PAGE",
+    "OFFICIAL_PRODUCT_ASSORTMENT_PAGE",
+    "OFFICIAL_BRAND_DEPARTMENT_PAGE",
+    "OFFICIAL_CATALOG_PDF",
+    "OFFICIAL_COMPANY_DESCRIPTION",
+    "CREDIBLE_PUBLIC_DIRECTORY_LINKED_TO_OFFICIAL_IDENTITY"
+  ],
+  "result_model": ["MATCH_CONFIRMED", "MATCH_NOT_CONFIRMED", "MISMATCH_CONFIRMED"]
 }

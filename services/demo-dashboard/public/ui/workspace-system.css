@@ -459,13 +459,15 @@ body:has(.app-view:not([hidden])) .crm-topbar .crm-page-title { display: none; }
   min-width: 0;
   table-layout: fixed;
 }
-.opw-workspace .crm-opportunity-table .op-col-company { width: 13%; }
-.opw-workspace .crm-opportunity-table .op-col-market-product { width: 11%; }
-.opw-workspace .crm-opportunity-table .op-col-status { width: 12%; }
-.opw-workspace .crm-opportunity-table .op-col-buyer-model { width: 18%; }
-.opw-workspace .crm-opportunity-table .op-col-product-match { width: 18%; }
-.opw-workspace .crm-opportunity-table .op-col-contact { width: 14%; }
-.opw-workspace .crm-opportunity-table .op-col-supplier-action { width: 14%; }
+.opw-workspace .crm-opportunity-table .op-col-company { width: 14%; }
+.opw-workspace .crm-opportunity-table .op-col-market { width: 7%; }
+.opw-workspace .crm-opportunity-table .op-col-product-match { width: 13%; }
+.opw-workspace .crm-opportunity-table .op-col-verification { width: 10%; }
+.opw-workspace .crm-opportunity-table .op-col-buyer-model { width: 12%; }
+.opw-workspace .crm-opportunity-table .op-col-buyer { width: 11%; }
+.opw-workspace .crm-opportunity-table .op-col-contact { width: 13%; }
+.opw-workspace .crm-opportunity-table .op-col-status { width: 10%; }
+.opw-workspace .crm-opportunity-table .op-col-action { width: 10%; }
 .opw-workspace .crm-opportunity-table th {
   padding: .8rem .72rem;
   font-size: .7rem;

@@ -240,29 +240,19 @@ export class Phase7Service {
   async listContactQueue(query = {}) { return this.repository.listContactQueue({limit:query.limit}); }
   async listWorkspaceContactQueue(query = {}) {
     const rows=await this.repository.listContactQueue({limit:query.limit});
-    return rows.map(row=>({queue_id:row.queue_id,queue_status:row.queue_status,owner_identity:row.owner_identity,
-      company_name:row.company_name,country_code:row.country_code,product_profile:row.product_profile,
-      approved_by:row.approved_by,approved_at:row.approved_at,named_buyer_ready:row.named_buyer_ready,
+    return rows.map(row=>({opportunity_id:row.opportunity_id,company_id:row.company_id,queue_status:row.queue_status,
+      company_name:row.company_name,country_code:row.country_code,website_url:row.website_url,
+      matched_categories:row.matched_categories||[],opportunity_status:row.opportunity_status,
+      named_buyers:row.named_buyers||[],contact_routes:row.contact_routes||[],named_buyer_ready:row.named_buyer_ready,
       official_email_route:row.official_email_route,official_phone_route:row.official_phone_route,
-      official_whatsapp_route:row.official_whatsapp_route,official_form_route:row.official_form_route,
-      supplier_vendor_route:row.supplier_vendor_route}));
+      official_whatsapp_route:row.official_whatsapp_route,official_form_route:row.official_form_route}));
   }
   async listManualOfficialRoutes(query = {}) {
     return this.repository.listManualOfficialRoutes({status:query.status,limit:query.limit});
   }
-  async listWorkspaceManualOfficialRoutes(query = {}) {
-    const rows=await this.repository.listManualOfficialRoutes({status:query.status,limit:query.limit});
-    return rows.map(row=>({id:row.id,company_name:row.company_name,country_code:row.country_code,
-      product_profile:row.product_profile,route_type:row.route_type,official_url:row.official_url,
-      official_contact:row.official_contact,verified_at:row.verified_at,manual_action_status:row.manual_action_status}));
-  }
   async reconcileManualOfficialRoutes(user) {
-    const result=await this.repository.syncManualOfficialRoutes({
-      verificationTtlDays:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),
-      sourceTtlDays:Number(this.env.AUTO_EVIDENCE_SOURCE_TTL_DAYS||90),
-      createdBy:user.identity
-    });
-    return{status:'COMPLETED',created:result.created,provider_calls:0,automatic_submissions:0,messages_sent:0};
+    void user;
+    const error=new Error('Official route manual reconciliation is retired');error.code='RETIRED_POLICY';error.status=410;throw error;
   }
   async recordManualOfficialRouteAction(id,body,user){
     const route=await this.repository.recordManualOfficialRouteAction(id,{
@@ -988,15 +978,15 @@ export class Phase7Service {
           top_product_opportunity:_topProductOpportunity,...businessRow}=row;
         return {
         ...businessRow,market:row.country_code,
-        target_category:exportBusinessList(row.matched_scopes),
-        category_match_status:row.category_procurement_match_status,
+        matched_categories:exportBusinessList(row.matched_scopes),
         category_evidence:exportBusinessList(row.observed_customer_categories||row.observed_categories),
         company_verification:row.verification_status,
-        buyer_model:row.buyer_business_model,
-        named_buyer_readiness:row.decision_maker_status==='VERIFIED'&&row.buyer_name?'NAMED_BUYER_READY':'NOT_AVAILABLE',
-        official_email_route:row.official_email_route||'',
-        official_phone_whatsapp_form:exportBusinessList([row.official_phone_route,row.official_whatsapp_route,row.official_form_route].filter(Boolean)),
-        supplier_vendor_route:row.supplier_vendor_route||row.supplier_portal_url||'',
+        buyer_type:row.buyer_business_model,
+        named_buyer:row.decision_maker_status==='VERIFIED'&&row.buyer_name?row.buyer_name:'',
+        official_email:row.official_email_route||'',
+        official_phone:row.official_phone_route||'',
+        official_whatsapp:row.official_whatsapp_route||'',
+        official_contact_page:row.official_form_route||'',
         opportunity_status:row.display_opportunity_status||row.system_recommendation_status,
         primary_blocker:(row.opportunity_decision_reason_codes||[])[0]||'',
         next_action:['RECOMMENDED','MANAGEMENT_APPROVED'].includes(row.display_opportunity_status||row.system_recommendation_status)
@@ -1007,11 +997,11 @@ export class Phase7Service {
         buyer_business_model:row.buyer_business_model,
         product_profile:row.product_profile,product_category_score:row.category_procurement_match_score,
         product_category_score_band:row.category_procurement_match_band,
-        category_procurement_match:row.category_procurement_match_status,
-        customer_procurement_categories:exportBusinessList(row.observed_customer_categories||row.observed_categories),
+        target_category_match:row.category_procurement_match_status,
+        observed_company_categories:exportBusinessList(row.observed_customer_categories||row.observed_categories),
         dpv_supply_categories:exportBusinessList(row.matched_scopes||row.dpv_category_scopes),
         category_opportunity_basis:row.match_basis,
-        supplier_access:row.supplier_access_band,readiness_blockers:(row.readiness_blockers||[]).join?.('; ')||'',
+        readiness_blockers:(row.readiness_blockers||[]).join?.('; ')||'',
         decision_maker:row.buyer_name,buying_department:row.buyer_department,business_contact:row.best_contact,
         contact_verification:row.contact_verification,management_baseline_match:row.customer_match,
         mexico_historical_reference_match:row.historical_customer_match,last_assessed_at:row.feasibility_calculated_at,

@@ -53,7 +53,7 @@ test('Phase 10 automation monitor uses compatible fields and one contextual live
 test('company detail presents category-level opportunity facts without specific product candidates',async()=>{
   const app=await readPublic('app.js');
   for(const label of [
-    '客户采购类目','Customer Procurement Categories','DPV 可供货批准类目','DPV Approved Supply Categories',
+    '公司经营类目','Observed Company Categories','DPV 可供货批准类目','DPV Approved Supply Categories',
     '类目机会依据','Category opportunity basis'
   ]) assert.ok(app.includes(label),`missing detail label ${label}`);
   for(const field of ['match_basis','matched_scopes','observed_customer_categories','auto_evidence_status']) {
@@ -63,11 +63,13 @@ test('company detail presents category-level opportunity facts without specific 
   assert.doesNotMatch(app,/共享商品资料（参考）|Shared Product Data \(Reference\)|Top Product Opportunity|Product candidates|共享商品参考/);
 });
 
-test('Commercial Product Fit skips absent commercial terms until the prospect shows interest',async()=>{
+test('Commercial Product Fit remains available to the API but stays outside the main category/contact decision surface',async()=>{
   const [app,labels]=await Promise.all([readPublic('app.js'),readPublic('product-match-ui.js')]);
-  for(const text of ['商业商品适配','Commercial Product Fit','非阻断排序','non-blocking ranking',
-    '有意向后沟通','Discuss after interest','不触发补证','does not trigger enrichment'])assert.ok(app.includes(text));
+  for(const text of ['商业商品适配','Commercial Product Fit','有意向后沟通','Discuss after interest',
+    '不触发补证','does not trigger enrichment'])assert.ok(app.includes(text));
   assert.match(app,/\/commercial-product-fit/);
+  const mainCard=app.slice(app.indexOf('function productMatchResultCard'),app.indexOf('function wireProductMatchRetry'));
+  assert.doesNotMatch(mainCard,/commercialProductFitView|data-commercial-product-fit/);
   assert.match(app,/does not change the category gate, contact eligibility, approval or send permission/);
   for(const dimension of ['COMMERCIAL_POSITIONING_PRICE_BAND','MOQ_ORDER_FORMAT_COMPATIBILITY',
     'RECENT_PRODUCT_BUYING_SIGNAL'])assert.ok(labels.includes(dimension));
@@ -80,15 +82,15 @@ test('new-customer product scoring is visibly category-level in filters, tables,
     readPublic('app.js'),
     readPublic('ui/workspace-system.css')
   ]);
-  assert.match(html,/<span lang="zh-CN">目标类目匹配<\/span><span lang="en">Target Category Match<\/span>/);
+  assert.match(html,/<span lang="zh-CN">匹配类目<\/span><span lang="en">Matched Category<\/span>/);
   assert.match(html,/商品类目评分 \/ Product Category Score/);
   assert.match(app,/p8-evidence-score/);
   assert.match(app,/商品类目评分','Product Category Score/);
-  assert.match(app,/data-label="目标类目匹配 \/ Target Category Match"/);
+  assert.match(app,/data-label="匹配类目 \/ Matched Category"/);
   assert.match(app,/类目供货机会','Category supply opportunity/);
-  assert.match(app,/客户采购类目/);
+  assert.match(app,/公司经营类目/);
   assert.match(app,/DPV 可供货批准类目/);
-  assert.match(app,/客户类目资料','Customer Category Evidence/);
+  assert.match(app,/公司类目证据','Company Category Evidence/);
   assert.match(css,/\.p8-evidence-score/);
   assert.doesNotMatch(`${html}\n${app}`,/>产品匹配<|>Product Match<|产品匹配 \/ Product Match/);
 });

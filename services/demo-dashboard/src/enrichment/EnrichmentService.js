@@ -12,6 +12,7 @@ import { CooperationFeasibilityEngine, targetFitBand } from './cooperationFeasib
 import { HunterProvider } from './HunterProvider.js';
 import { LinkedInDiscoveryAdapter } from './LinkedInDiscoveryAdapter.js';
 import { normalizedIdentity, normalizeDecisionRole, productRoleRelevance, roleRelevance } from './roleNormalizer.js';
+import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
 
 const clean = (value,max=1000) => String(value || '').replace(/\s+/g,' ').trim().slice(0,max);
 const nowIso = () => new Date().toISOString();
@@ -356,8 +357,40 @@ export class EnrichmentService {
   }
 
   async upsertContact(client,jobId,decisionMakerId,contact) {
-    const value = clean(contact.contact_value_normalized || contact.contact_value_raw,1000);
+    const routeType=String(contact.contact_type||'').trim().toUpperCase();
+    const rawValue=clean(contact.contact_value_normalized || contact.contact_value_raw,1000);
+    const value=['CONTACT_FORM','PUBLIC_PROFILE_URL','OTHER_BUSINESS_ROUTE'].includes(routeType)
+      ?(domainService.normalizeUrl(rawValue)||rawValue):['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL'].includes(routeType)
+        ?rawValue.toLowerCase():rawValue;
     if (!value) return null;
+    const existing=await client.query(`WITH target AS (
+      SELECT company_id FROM leadgen.decision_makers WHERE id=$1
+    ), locked AS (
+      SELECT pg_advisory_xact_lock(hashtextextended(concat_ws('|',(SELECT company_id::text FROM target),$2,lower(btrim($3))),0))
+    )
+    SELECT dc.* FROM leadgen.decision_maker_contacts dc
+    JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+    CROSS JOIN locked
+    WHERE dm.company_id=(SELECT company_id FROM target) AND dc.contact_type=$2
+      AND lower(btrim(dc.contact_value_normalized))=lower(btrim($3))
+    ORDER BY dc.last_verified_at DESC NULLS LAST,dc.updated_at DESC,dc.id LIMIT 1 FOR UPDATE OF dc`,[
+      decisionMakerId,routeType,value
+    ]);
+    if(existing.rowCount){
+      const refreshed=await client.query(`UPDATE leadgen.decision_maker_contacts SET
+        research_job_id=$2,contact_value_raw=$3,evidence_origin=$4,source_url=$5,
+        is_generic=$6,is_department=$7,
+        verification_status=CASE WHEN $8='HUNTER' THEN $9 WHEN $9='VALID' THEN 'VALID'
+          ELSE verification_status END,
+        verification_provider=$8,
+        verification_score=CASE WHEN $8='HUNTER' THEN $10 ELSE verification_score END,
+        last_verified_at=$11,updated_at=now() WHERE id=$1 RETURNING *`,[
+        existing.rows[0].id,jobId,contact.contact_value_raw,contact.evidence_origin||'OFFICIAL_SITE_OBSERVED',contact.source_url,
+        contact.is_generic===true,contact.is_department===true,contact.verification_provider||null,
+        contact.verification_status||'NOT_VERIFIED',contact.verification_score??null,contact.last_verified_at||null
+      ]);
+      return refreshed.rows[0];
+    }
     const result = await client.query(`INSERT INTO leadgen.decision_maker_contacts
       (decision_maker_id,research_job_id,contact_type,contact_value_raw,contact_value_normalized,evidence_origin,
        verification_status,verification_provider,verification_score,last_verified_at,source_url,is_generic,is_department)
@@ -375,7 +408,7 @@ export class EnrichmentService {
           ELSE leadgen.decision_maker_contacts.verification_score END,
         last_verified_at=EXCLUDED.last_verified_at,updated_at=now()
       RETURNING *`,[
-      decisionMakerId,jobId,contact.contact_type,contact.contact_value_raw,value,contact.evidence_origin || 'OFFICIAL_SITE_OBSERVED',
+      decisionMakerId,jobId,routeType,contact.contact_value_raw,value,contact.evidence_origin || 'OFFICIAL_SITE_OBSERVED',
       contact.verification_status || 'NOT_VERIFIED',contact.verification_provider || null,contact.verification_score ?? null,
       contact.last_verified_at || null,contact.source_url,contact.is_generic === true,contact.is_department === true
     ]);
@@ -420,18 +453,18 @@ export class EnrichmentService {
       await client.query('BEGIN');
       const pageResults = pages.filter(page=>page.extracted).map(page=>page.extracted);
       const candidates = unique(pageResults.flatMap(page=>page.decision_makers),candidate=>`${candidate.person_name_normalized || ''}|${candidate.department_name_normalized || ''}|${candidate.normalized_role}|${candidate.raw_title}`);
-      const routes = unique(pageResults.flatMap(page=>page.supplier_routes),route=>`${route.contact_type}|${route.contact_value_normalized}`);
+      const routes = [];
       const observedContacts = boundedObservedContacts(pages,company);
       let corporateRoute = null;
-      if (!candidates.length && (routes.length || observedContacts.length)) {
-        const sourceUrl = routes[0]?.source_url || observedContacts[0]?.source_url || company.website_url;
+      if (!candidates.length && observedContacts.length) {
+        const sourceUrl = observedContacts[0]?.source_url || company.website_url;
         corporateRoute = {
-          person_name:null,department_name:routes.length?'Procurement Department':'Corporate Contact Route',raw_title:routes.length?'Procurement Department':'Corporate Contact Route',
-          normalized_role:routes.length?'PROCUREMENT_DEPARTMENT':'OTHER_RELEVANT',role_relevance:routes.length?'HIGH':'MEDIUM',
-          verification_status:routes.length?'VERIFIED':'REVIEW',evidence_strength:routes.length?'STRONG':'SUPPORTED',
+          person_name:null,department_name:'Corporate Contact Route',raw_title:'Corporate Contact Route',
+          normalized_role:'OTHER_RELEVANT',role_relevance:'MEDIUM',
+          verification_status:'REVIEW',evidence_strength:'SUPPORTED',
           source:{ source_url:sourceUrl,source_type:'OFFICIAL_COMPANY_PAGE',source_authority:'OFFICIAL',captured_at:new Date(),
-            evidence_text:routes.length?(routes[0].label || 'Supplier registration route'):'Corporate business contact route',
-            evidence_hash:sha(sourceUrl,routes.length?'supplier_route':'corporate_contact'),evidence_status:routes.length?'VERIFIED':'REVIEW',is_primary:true,content_fetched:true }
+            evidence_text:'Corporate business contact route',
+            evidence_hash:sha(sourceUrl,'corporate_contact'),evidence_status:'REVIEW',is_primary:true,content_fetched:true }
         };
         candidates.push(corporateRoute);
       }
@@ -670,14 +703,11 @@ export class EnrichmentService {
     const row=context.rows[0];
     const sourceCount=Number(findings?.decision_makers?.reduce((sum,item)=>sum+Number(item.source_ids?.length||0),0)||0);
     const currentFeasibility=feasibility?.find(item=>item.product_profile===profile)||null;
-    const supplierReady=['OPEN','ACCESSIBLE','SUPPORTED'].includes(String(currentFeasibility?.supplier_access_band||row.supplier_access_band||'').toUpperCase())
-      || Number(currentFeasibility?.supplier_access_coverage||row.supplier_access_coverage||0)>0;
     const currentFeasibilityId=currentFeasibility?.id || row.cooperation_feasibility_result_id;
     const stages=[
       ['IDENTITY','IDENTITY_READY',null,null,null,null,null,null,null],
       ['BUYER_MODEL',['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(row.buyer_model)?'BUYER_MODEL_READY':'EVIDENCE_REQUIRED_BUYER_MODEL',row.buyer_business_model_result_id,null,null,null,null,null,null],
-      ['CATEGORY_PROCUREMENT',row.match_status==='CATEGORY_PROCUREMENT_MATCH'?'CATEGORY_PROCUREMENT_MATCH':'EVIDENCE_REQUIRED_CATEGORY',null,row.category_procurement_match_result_id,null,null,null,null,null],
-      ['SUPPLIER_ACCESS',supplierReady?'SUPPLIER_ACCESS_SUPPORTED':'EVIDENCE_REQUIRED_SUPPLIER_ACCESS',null,null,null,currentFeasibilityId,null,null,null],
+      ['CATEGORY_PROCUREMENT',isCategoryMatchConfirmed(row.match_status)?'CATEGORY_MATCH_CONFIRMED':'EVIDENCE_REQUIRED_CATEGORY',null,row.category_procurement_match_result_id,null,null,null,null,null],
       ['BUYER_ROLE',row.decision_maker_status==='VERIFIED'?'PROFILE_BUYER_VERIFIED':'EVIDENCE_REQUIRED_BUYER_ROLE',null,null,null,null,row.decision_maker_id,null,null],
       ['EMAIL_VERIFICATION',row.contact_status==='VALID'?'VALID':row.contact_status||hunter?.stop_reason||'EVIDENCE_REQUIRED_EMAIL',null,null,null,null,row.decision_maker_id,row.decision_maker_contact_id,row.provider_usage_event_id]
     ];

@@ -39,18 +39,18 @@ test('Phase 10 resolves exact, taxonomy, alias and profile scope in frozen order
 
 test('approved Womenswear scope passes with zero internal SKU while missing customer evidence stays unresolved',()=>{
   const result=match({catalog_snapshot:{eligible_product_count:0,classified_product_count:0,unknown_product_count:0}});
-  assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
   assert.equal(result.match_basis,'EXACT_CATEGORY');
   assert.equal(result.catalog_completeness_non_blocking,true);
   const missing=match({observed_customer_categories:[],dimensions:{...dimensions,target_category_procurement_evidence:unknown(45)}});
-  assert.equal(missing.match_status,'NEEDS_PRODUCT_EVIDENCE');
+  assert.equal(missing.match_status,'CATEGORY_CONFIRMATION_REQUIRED');
   assert.equal(missing.score,null);
 });
 
-test('irrelevant verified category is PRODUCT_MISMATCH and no approved scope is never guessed',()=>{
+test('irrelevant verified category is CATEGORY_MISMATCH and no approved scope is never guessed',()=>{
   const industrial=match({observed_customer_categories:[observation({normalized_profile:'UNKNOWN',normalized_category:'INDUSTRIAL_EQUIPMENT'})],
     confirmed_unrelated_assortment:true,dimensions:{...dimensions,target_category_procurement_evidence:observed(0,45)}});
-  assert.equal(industrial.match_status,'PRODUCT_MISMATCH');
+  assert.equal(industrial.match_status,'CATEGORY_MISMATCH');
   assert.equal(industrial.match_basis,'OUT_OF_SCOPE');
   const unapproved=match({scope_revision:null,approved_category_scopes:[]});
   assert.equal(unapproved.match_status,'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL');
@@ -74,7 +74,7 @@ test('category match plus zero SKU is category-only and requires a named or offi
   assert.equal(business.business_fit_status,'FIT');
   assert.equal(business.system_recommendation_status,'EVIDENCE_REQUIRED');
   assert.ok(business.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT'));
-  assert.ok(business.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT_ROUTE'));
+  assert.ok(business.reason_codes.includes('CONTACT_ROUTE_REQUIRED'));
 });
 
 test('Hunter UNKNOWN, history and suppression remain hard recommendation gates; Supplier Access UNKNOWN is not',()=>{
@@ -98,20 +98,20 @@ test('Phase 10 dry-run exposes old/new category and business differences without
   const report=buildPhase10RuleDryRun({company_id:'company-1',product_profile:'WOMENSWEAR',old_category_result:oldCategory,
     new_category_result:newCategory,old_decision:oldDecision,new_decision:newDecision});
   assert.equal(report.old_category_status,'NEEDS_INTERNAL_CATALOG_EVIDENCE');
-  assert.equal(report.new_category_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(report.new_category_status,'CATEGORY_MATCH_CONFIRMED');
   assert.equal(report.new_business_fit,'FIT');
   assert.equal('sku_readiness_status' in report,false);
   assert.equal(report.changed,true);
   assert.deepEqual(oldCategory,{match_status:'NEEDS_INTERNAL_CATALOG_EVIDENCE'});
 });
 
-test('legacy internal-catalog readiness is normalized to approved-category readiness without a catalog task',()=>{
+test('legacy internal-catalog uncertainty projects to category confirmation without a catalog task',()=>{
   const result=resolveReadinessV3({relationship_status:'NEW_PROSPECT',buyer_model:'DIRECT_END_BUYER',
     category_procurement_match_status:'NEEDS_INTERNAL_CATALOG_EVIDENCE',category_procurement_match_score:70,
     category_procurement_coverage:70,has_verified_decision_route:true,has_current_valid_contact_route:true,
     company_verified_active:true,eligible_target_organization:true,has_traceable_evidence:true,
     supplier_access_band:'UNKNOWN',product_opportunity_count:0});
-  assert.equal(result.opportunity_readiness,'SALES_READY');
+  assert.equal(result.opportunity_readiness,'CATEGORY_CONFIRMATION_REQUIRED');
   assert.ok(!result.readiness_blockers.includes('NEEDS_INTERNAL_CATALOG_EVIDENCE'));
   assert.ok(!result.readiness_blockers.includes('NEEDS_PRODUCT_RECOMMENDATION'));
 });

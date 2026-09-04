@@ -188,7 +188,7 @@ export class Phase7Repository {
         if(current.business_fit_status!=='FIT')reasons.push('BUSINESS_FIT_NOT_READY');
         if(current.contact_readiness!=='READY')reasons.push('CONTACT_NOT_READY');
         if(current.policy_contact_status!=='OPEN'||current.relationship_status!=='NEW_PROSPECT')reasons.push('CONTACT_POLICY_BLOCKED');
-        if(current.rule_version!=='business-opportunity-decision-v4')reasons.push('DECISION_RULE_VERSION_STALE');
+        if(current.rule_version!=='business-opportunity-decision-v5')reasons.push('DECISION_RULE_VERSION_STALE');
         if(companyLock.rows[0]?.verification_status!=='VERIFIED'||companyLock.rows[0]?.lifecycle_status!=='ACTIVE')reasons.push('COMPANY_NOT_ACTIVE_VERIFIED');
         if(reasons.length)throw approvalGateBlocked(reasons);
 
@@ -276,105 +276,55 @@ export class Phase7Repository {
   }
 
   async listContactQueue({ limit = 200 } = {}) {
-    const result = await this.pool.query(`SELECT q.id queue_id,q.queue_status,q.owner_identity,q.reason_codes,
-      q.created_at queue_created_at,q.updated_at queue_updated_at,c.company_name,c.country_code,c.website_url,
-      o.*,e.actor_identity approved_by,e.created_at approved_at,
-      route.named_buyer_ready,route.official_email_route,route.official_phone_route,
-      route.official_whatsapp_route,route.official_form_route,route.supplier_vendor_route
-      FROM leadgen.contact_work_queue q JOIN leadgen.business_opportunity_current o
-        ON o.id=q.decision_snapshot_id AND o.company_id=q.company_id AND o.product_profile=q.product_profile
-      JOIN leadgen.business_opportunity_management_events e ON e.id=q.management_event_id
-      JOIN leadgen.companies c ON c.id=q.company_id
-      LEFT JOIN LATERAL(SELECT
-        bool_or(dm.person_name IS NOT NULL AND dm.verification_status='VERIFIED') named_buyer_ready,
-        bool_or(dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) official_email_route,
-        bool_or(dc.contact_type='BUSINESS_PHONE') official_phone_route,
-        bool_or(dc.contact_type='BUSINESS_WHATSAPP') official_whatsapp_route,
-        bool_or(dc.contact_type='CONTACT_FORM') official_form_route,
-        bool_or(dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')) supplier_vendor_route
-        FROM leadgen.decision_makers dm LEFT JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=dm.id
-        WHERE dm.company_id=q.company_id AND dm.lifecycle_status='ACTIVE')route ON true
-      WHERE q.queue_status='ACTIVE'
-      ORDER BY q.created_at DESC LIMIT $1`, [Math.max(1,Math.min(500,Number(limit)||200))]);
+    const result = await this.pool.query(`WITH recommended AS (
+      SELECT o.company_id,array_agg(DISTINCT o.product_profile ORDER BY o.product_profile) matched_categories,
+        (array_agg(o.id ORDER BY o.created_at DESC,o.id DESC))[1] opportunity_id,
+        max(o.created_at) assessed_at
+      FROM leadgen.business_opportunity_current o
+      WHERE o.display_opportunity_status='RECOMMENDED'
+      GROUP BY o.company_id
+    )
+    SELECT r.opportunity_id,c.id company_id,c.company_name,c.country_code,c.website_url,
+      'CONTACT_READY' queue_status,r.matched_categories,'RECOMMENDED' opportunity_status,r.assessed_at,
+      route.named_buyers,route.contact_routes,route.route_count,
+      coalesce(cardinality(route.named_buyers),0)>0 named_buyer_ready,
+      coalesce(route.contact_routes@>'[{"route_type":"BUSINESS_EMAIL"}]'::jsonb,false)
+        OR coalesce(route.contact_routes@>'[{"route_type":"GENERIC_BUSINESS_EMAIL"}]'::jsonb,false)
+        OR coalesce(route.contact_routes@>'[{"route_type":"DEPARTMENT_EMAIL"}]'::jsonb,false) official_email_route,
+      coalesce(route.contact_routes@>'[{"route_type":"BUSINESS_PHONE"}]'::jsonb,false) official_phone_route,
+      coalesce(route.contact_routes@>'[{"route_type":"BUSINESS_WHATSAPP"}]'::jsonb,false) official_whatsapp_route,
+      coalesce(route.contact_routes@>'[{"route_type":"CONTACT_FORM"}]'::jsonb,false) official_form_route
+    FROM recommended r JOIN leadgen.companies c ON c.id=r.company_id
+    JOIN LATERAL(SELECT
+      coalesce(array_agg(DISTINCT dm.person_name ORDER BY dm.person_name)
+        FILTER(WHERE dm.person_name IS NOT NULL AND dm.verification_status='VERIFIED'),'{}'::text[]) named_buyers,
+      coalesce(jsonb_agg(DISTINCT jsonb_build_object(
+        'route_type',dc.contact_type,'value',dc.contact_value_normalized,'source_url',dc.source_url,
+        'last_verified_at',dc.last_verified_at,'canonical_route_key',encode(sha256(convert_to(
+          concat_ws('|',c.id::text,dc.contact_type,lower(btrim(dc.contact_value_normalized))),'UTF8')),'hex')))
+        FILTER(WHERE dc.id IS NOT NULL),'[]'::jsonb) contact_routes,
+      count(DISTINCT (dc.contact_type,lower(btrim(dc.contact_value_normalized))))::int route_count
+      FROM leadgen.decision_makers dm
+      LEFT JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=dm.id
+        AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED' AND dc.source_url~'^https?://'
+        AND ((dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+              AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
+          OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
+          OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))
+          OR (dc.contact_type='CONTACT_FORM' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED')
+              AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry)(/|[?#]|$)'))
+      WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
+    )route ON route.route_count>0
+    WHERE c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+      AND c.explicit_exclusion_reason IS NULL AND c.replaced_by_company_id IS NULL
+      AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions sx WHERE sx.company_id=c.id AND sx.lifted_at IS NULL)
+    ORDER BY r.assessed_at DESC,c.company_name LIMIT $1`, [Math.max(1,Math.min(500,Number(limit)||200))]);
     return result.rows;
   }
 
   async syncManualOfficialRoutes({ verificationTtlDays = 30, sourceTtlDays = 90, createdBy = 'SYSTEM_RECONCILIATION' } = {}) {
-    const result=await this.pool.query(`WITH eligible AS (
-      SELECT o.company_id,o.product_profile,dc.id contact_id,dc.contact_type,
-        dc.contact_value_normalized,dc.source_url,dc.last_verified_at,
-        src.id source_id,src.captured_at,src.source_url official_source_url,
-        CASE dc.contact_type
-          WHEN 'SUPPLIER_PORTAL' THEN 'SUPPLIER_PORTAL'
-          WHEN 'VENDOR_REGISTRATION' THEN 'VENDOR_REGISTRATION'
-          WHEN 'CONTACT_FORM' THEN 'CONTACT_FORM'
-          WHEN 'DEPARTMENT_EMAIL' THEN 'PROCUREMENT_DEPARTMENT_EMAIL'
-          WHEN 'BUSINESS_PHONE' THEN 'PROCUREMENT_DEPARTMENT_PHONE'
-        END route_type
-      FROM leadgen.business_opportunity_current o
-      JOIN leadgen.companies c ON c.id=o.company_id
-      JOIN leadgen.decision_makers dm ON dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
-      JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=dm.id
-      JOIN LATERAL (
-        SELECT s.id,s.captured_at,s.source_url
-        FROM leadgen.sources s
-        WHERE s.company_id=c.id AND s.source_url~'^https?://'
-          AND (s.source_url=dc.source_url OR s.source_url=dc.contact_value_normalized OR
-            lower(regexp_replace(split_part(split_part(regexp_replace(s.source_url,'^https?://','','i'),'/',1),':',1),'^www\\.','','i'))
-              =lower(coalesce(c.official_root_domain,c.normalized_domain)))
-        ORDER BY (s.source_url=dc.source_url OR s.source_url=dc.contact_value_normalized) DESC,s.captured_at DESC,s.id DESC
-        LIMIT 1
-      ) src ON true
-      WHERE c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-        AND c.explicit_exclusion_reason IS NULL AND c.replaced_by_company_id IS NULL
-        AND o.display_opportunity_status NOT IN('NOT_SUITABLE','HOLD')
-        AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED' AND dc.source_url~'^https?://'
-        AND dc.last_verified_at>=now()-($1::int*interval '1 day')
-        AND src.captured_at>=now()-($2::int*interval '1 day')
-        AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID','NOT_VERIFIED')
-        AND (
-          dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
-          OR (dc.contact_type='CONTACT_FORM' AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)')
-          OR (dc.contact_type='DEPARTMENT_EMAIL' AND dm.normalized_role IN('BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT'))
-          OR (dc.contact_type='BUSINESS_PHONE' AND dm.normalized_role IN('BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT'))
-        )
-        AND (
-          lower(regexp_replace(split_part(split_part(regexp_replace(dc.source_url,'^https?://','','i'),'/',1),':',1),'^www\\.','','i'))
-            =lower(coalesce(c.official_root_domain,c.normalized_domain))
-          OR lower(regexp_replace(split_part(split_part(regexp_replace(dc.source_url,'^https?://','','i'),'/',1),':',1),'^www\\.','','i'))
-            LIKE '%.'||lower(coalesce(c.official_root_domain,c.normalized_domain))
-        )
-        AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions sx
-          WHERE sx.company_id=c.id AND sx.lifted_at IS NULL)
-        AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx
-          WHERE sx.company_id=c.id AND sx.lifted_at IS NULL AND (
-            sx.decision_maker_contact_id=dc.id OR
-            sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))
-        AND NOT EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l
-          JOIN leadgen.historical_customers hc ON hc.id=l.historical_customer_id
-          WHERE l.company_id=c.id AND l.link_status='CONFIRMED'
-            AND hc.customer_role='INTERNAL_EXISTING_CUSTOMER')
-    ), prepared AS (
-      SELECT e.*,encode(sha256(convert_to(concat_ws('|',e.company_id::text,e.product_profile,e.contact_id::text),'UTF8')),'hex') task_key
-      FROM eligible e WHERE e.route_type IS NOT NULL
-    )
-    INSERT INTO leadgen.official_route_manual_tasks(
-      task_key,revision,company_id,product_profile,route_type,official_url,official_contact,
-      source_id,verified_at,captured_at,manual_action_status,qualification_basis,created_by,idempotency_key)
-    SELECT p.task_key,1,p.company_id,p.product_profile,p.route_type,
-      CASE WHEN p.route_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION','CONTACT_FORM')
-        THEN p.contact_value_normalized ELSE p.source_url END,
-      CASE WHEN p.route_type IN('PROCUREMENT_DEPARTMENT_EMAIL','PROCUREMENT_DEPARTMENT_PHONE')
-        THEN p.contact_value_normalized ELSE NULL END,
-      p.source_id,p.last_verified_at,p.captured_at,'READY',
-      jsonb_build_object('official_domain_verified',true,'source_kind','OFFICIAL_SITE_OBSERVED',
-        'suppression_clear',true,'history_conflict_clear',true),$3,
-      encode(sha256(convert_to(p.task_key||'|INITIAL','UTF8')),'hex')
-    FROM prepared p
-    ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[
-      Math.max(1,Number(verificationTtlDays)||30),Math.max(1,Number(sourceTtlDays)||90),String(createdBy||'SYSTEM_RECONCILIATION')
-    ]);
-    return{created:result.rowCount,items:result.rows};
+    void verificationTtlDays;void sourceTtlDays;void createdBy;
+    return{created:0,items:[],retired_policy:true};
   }
 
   async listManualOfficialRoutes({ status = 'ACTIVE', limit = 200 } = {}) {
@@ -410,40 +360,8 @@ export class Phase7Repository {
   }
 
   async recordManualOfficialRouteAction(id,{ status, ownerIdentity, outcome, actor, requestId }={}){
-    requiredUuid(id,'manual_route_task_id');
-    const normalized=String(status||'').trim().toUpperCase();
-    if(!['READY','IN_PROGRESS','COMPLETED','DISMISSED'].includes(normalized)){
-      const error=new Error('Invalid manual route action status');error.code='MANUAL_ROUTE_STATUS_INVALID';error.status=400;throw error;
-    }
-    const cleanOutcome=String(outcome||'').replace(/[\u0000-\u001f]/g,' ').trim().slice(0,2000)||null;
-    if(['COMPLETED','DISMISSED'].includes(normalized)&&!cleanOutcome){
-      const error=new Error('An outcome is required when completing or dismissing a route');error.code='MANUAL_ROUTE_OUTCOME_REQUIRED';error.status=400;throw error;
-    }
-    return this.transaction(async client=>{
-      const currentResult=await client.query(`SELECT * FROM leadgen.official_route_manual_tasks
-        WHERE task_key=(SELECT task_key FROM leadgen.official_route_manual_tasks WHERE id=$1)
-        ORDER BY revision DESC,created_at DESC,id DESC LIMIT 1 FOR UPDATE`,[id]);
-      const current=currentResult.rows[0];
-      if(!current)throw notFound('Manual official route task not found','MANUAL_ROUTE_TASK_NOT_FOUND');
-      if(['COMPLETED','DISMISSED'].includes(current.manual_action_status)){
-        const error=new Error('Completed or dismissed route tasks are final');error.code='MANUAL_ROUTE_TASK_FINAL';error.status=409;throw error;
-      }
-      if(current.manual_action_status===normalized){
-        const error=new Error('Manual route task is already in the requested status');error.code='MANUAL_ROUTE_STATUS_UNCHANGED';error.status=409;throw error;
-      }
-      const owner=String(ownerIdentity||actor||current.owner_identity||'').replace(/[\u0000-\u001f]/g,' ').trim().slice(0,160)||null;
-      const idempotencyKey=sha256(JSON.stringify({task_key:current.task_key,revision:current.revision+1,status:normalized,
-        owner,outcome:cleanOutcome,actor:String(actor||''),request_id:String(requestId||'')}));
-      const inserted=await client.query(`INSERT INTO leadgen.official_route_manual_tasks(
-        task_key,revision,previous_revision_id,company_id,product_profile,route_type,official_url,official_contact,
-        source_id,verified_at,captured_at,owner_identity,manual_action_status,outcome,qualification_basis,created_by,idempotency_key)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17)
-        ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[current.task_key,current.revision+1,current.id,current.company_id,
-        current.product_profile,current.route_type,current.official_url,current.official_contact,current.source_id,current.verified_at,
-        current.captured_at,owner,normalized,cleanOutcome,JSON.stringify(current.qualification_basis||{}),String(actor||'MANUAL_OPERATOR'),idempotencyKey]);
-      if(inserted.rowCount)return inserted.rows[0];
-      return (await client.query('SELECT * FROM leadgen.official_route_manual_tasks WHERE idempotency_key=$1',[idempotencyKey])).rows[0];
-    });
+    void id;void status;void ownerIdentity;void outcome;void actor;void requestId;
+    const error=new Error('Official route review tasks are retired');error.code='RETIRED_POLICY';error.status=410;throw error;
   }
 
   async refreshOpportunityDecisions({ ttlDays = 7 } = {}) {
@@ -464,8 +382,6 @@ export class Phase7Repository {
         EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l JOIN leadgen.historical_customers hc
           ON hc.id=l.historical_customer_id WHERE l.company_id=c.id AND l.link_status='CONFIRMED'
           AND hc.customer_role='INTERNAL_EXISTING_CUSTOMER') confirmed_existing_customer,
-        EXISTS(SELECT 1 FROM leadgen.category_procurement_match_dimensions md
-          WHERE md.category_procurement_match_result_id=cpm.id AND md.dimension='EXTERNAL_SOURCING_IMPORT' AND md.state='OBSERVED') procurement_resale_evidence,
         (SELECT count(DISTINCT dm.id)::int FROM leadgen.decision_makers dm
           JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
@@ -504,10 +420,8 @@ export class Phase7Repository {
                   AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
               OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))
-              OR (dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
-                  AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='CONTACT_FORM' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED')
-                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)'))
+                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry)(/|[?#]|$)'))
             AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
               AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
                 sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) active_company_contact_route_count,
@@ -519,10 +433,8 @@ export class Phase7Repository {
                   AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
               OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))
-              OR (dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
-                  AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='CONTACT_FORM' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED')
-                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)'))) company_contact_route_types,
+                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry)(/|[?#]|$)'))) company_contact_route_types,
         (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
             AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
@@ -563,7 +475,6 @@ export class Phase7Repository {
           verified_decision_maker_count:fact.verified_decision_maker_count},
         underlying_relationship_status:fact.relationship_status,company_suppressed:fact.company_suppressed,
         confirmed_existing_customer:fact.confirmed_existing_customer,
-        procurement_resale_evidence:fact.procurement_resale_evidence,
         profile_relevant_buyer_count:fact.profile_relevant_buyer_count,
         verified_buyer_role_count:fact.verified_buyer_role_count,
         business_email_route_count:fact.business_email_route_count,
@@ -610,12 +521,11 @@ export class Phase7Repository {
       });
       results.push(stored);
     }
-    const manualRoutes=await this.syncManualOfficialRoutes({verificationTtlDays:30,sourceTtlDays:90});
     return {processed:results.length,created:results.filter(item=>item.created).length,
       recommended:results.filter(item=>item.snapshot.system_recommendation_status==='RECOMMENDED').length,
       blocked:results.filter(item=>item.eligibility_status==='BLOCKED').length,
       eligible:results.filter(item=>item.eligibility_status==='ELIGIBLE').length,
-      manual_official_routes_created:manualRoutes.created};
+      manual_official_routes_created:0,manual_official_route_policy:'RETIRED'};
   }
 
   async findContact(id) {

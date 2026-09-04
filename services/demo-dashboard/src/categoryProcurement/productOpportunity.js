@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {isCategoryMatchConfirmed,projectCategoryMatchStatus} from './categoryMatchStatus.js';
 
 export const PRODUCT_OPPORTUNITY_VERSION='product-opportunity-v2';
 const upper=value=>String(value||'').trim().toUpperCase();
@@ -6,13 +7,13 @@ const sha=value=>crypto.createHash('sha256').update(JSON.stringify(value)).diges
 
 export function calculateProductOpportunity(input={}){
   const category_procurement_match=input.category_procurement_match_result||input.category_procurement_match||{};
-  const passed=upper(category_procurement_match.match_status)==='CATEGORY_PROCUREMENT_MATCH';
+  const passed=isCategoryMatchConfirmed(category_procurement_match.match_status);
   if(!passed){
-    const skuReadiness=upper(category_procurement_match.match_status)==='PRODUCT_MISMATCH'?'OUT_OF_SCOPE':'NO_EXACT_SKU';
+    const skuReadiness=['PRODUCT_MISMATCH','CATEGORY_MISMATCH'].includes(upper(category_procurement_match.match_status))?'OUT_OF_SCOPE':'NO_EXACT_SKU';
     return {recommendation_status:'NOT_RUN_GATE_FAILED',sku_readiness_status:skuReadiness,
       category_scope_match_result_id:category_procurement_match.id||null,
       candidate_count:0,candidates:[],gaps:[],observed_categories:[],
-      category_procurement_match_status:category_procurement_match.match_status||'NEEDS_PRODUCT_EVIDENCE',
+      category_procurement_match_status:projectCategoryMatchStatus(category_procurement_match.match_status),
       reason_codes:['CATEGORY_PROCUREMENT_GATE_FAILED'],missing_catalog_evidence:[],
       calculation_version:PRODUCT_OPPORTUNITY_VERSION,
       input_digest:sha([category_procurement_match.id,category_procurement_match.match_status,skuReadiness])};
@@ -23,7 +24,7 @@ export function calculateProductOpportunity(input={}){
   return {recommendation_status:'CATEGORY_SCOPE_QUALIFIED',sku_readiness_status:'NO_EXACT_SKU',
     category_scope_match_result_id:category_procurement_match.id||null,
     candidate_count:0,candidates:[],gaps:[],observed_categories:[],
-    category_procurement_match_status:category_procurement_match.match_status,
+    category_procurement_match_status:projectCategoryMatchStatus(category_procurement_match.match_status),
     reason_codes:['APPROVED_CATEGORY_SCOPE_QUALIFIED','EXACT_SKU_NOT_REQUIRED'],
     missing_catalog_evidence:[],
     calculation_version:PRODUCT_OPPORTUNITY_VERSION,

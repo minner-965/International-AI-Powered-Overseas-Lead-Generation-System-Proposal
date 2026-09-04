@@ -68,7 +68,7 @@ const STATUS_LABELS = Object.freeze({
 const TYPE_LABELS = Object.freeze({
   COMPANY_DISCOVERY:['企业发现','Company discovery'],
   DECISION_MAKER_ENRICHMENT:['采购人员与联系方式','Buyer and contact evidence'],
-  CATEGORY_PROCUREMENT_ENRICHMENT:['品类采购资料','Category procurement evidence'],
+  CATEGORY_PROCUREMENT_ENRICHMENT:['公司类目资料','Company Category Evidence'],
   REAL_OPPORTUNITY_RESEARCH:['业务机会补证','Opportunity evidence'],
   AUTO_EVIDENCE:['自动补证','Auto enrichment'],
   RESEARCH:['市场研究','Market research'],
@@ -76,7 +76,7 @@ const TYPE_LABELS = Object.freeze({
 
 const BLOCKER_LABELS = Object.freeze({
   PRODUCT:['产品资料','Product evidence'], BUYER_MODEL:['采购模式','Buyer Model'],
-  SUPPLIER_ACCESS:['供应商准入','Supplier Access'], CONTACT:['采购联系人','Buyer Contact'],
+  CONTACT:['联系方式','Contact route'],
   BUYER_ROLE:['采购职责','Buyer Role'], EMAIL:['邮箱核验','Email verification'],
   TEMPORARY_ERROR:['暂时错误','Temporary Error'], HISTORY:['历史记录','History'],
   IDENTITY:['企业身份','Identity'], SUPPRESSION:['联系暂停','Contact Hold'], EVIDENCE_REQUIRED:['待补资料','Evidence Required'],
@@ -86,7 +86,6 @@ const BLOCKER_LABELS = Object.freeze({
 const BLOCKER_ACTIONS = Object.freeze({
   PRODUCT:['收集品类资料','Collect category evidence'],
   BUYER_MODEL:['核验采购与转售模式','Verify buyer model and resale'],
-  SUPPLIER_ACCESS:['复核供应商准入','Review supplier access'],
   CONTACT:['查找采购联系人','Find profile buyer'],
   BUYER_ROLE:['核验采购职责','Verify procurement responsibility'],
   EMAIL:['核验商务邮箱','Verify business email'],
@@ -424,7 +423,8 @@ function jobObjective(job) {
   return ({
     COMPANY_DISCOVERY:'企业发现 / Company Discovery',
     BUYER_AND_CONTACT_EVIDENCE:'采购人员与联系方式 / Buyer and Contact Evidence',
-    CATEGORY_PROCUREMENT_EVIDENCE:'品类采购资料 / Category Procurement Evidence',
+    CATEGORY_PROCUREMENT_EVIDENCE:'公司类目资料 / Company Category Evidence',
+    COMPANY_CATEGORY_EVIDENCE:'公司类目资料 / Company Category Evidence',
     RESEARCH:'研究任务 / Research Job',
     AUTO_EVIDENCE:'自动补证 / Auto Enrichment',
   })[value.toUpperCase()] || (/^[A-Z0-9_:-]+$/.test(value) ? '研究任务 / Research Job' : value);
@@ -459,13 +459,19 @@ function jobBlocker(job) {
 }
 
 const DISPATCH_LABELS=Object.freeze({
-  PENDING:['等待调度','Pending dispatch'],DISPATCHED:['已交给工作流','Dispatched'],
+  PENDING:['已自动排队','Automatically queued'],DISPATCHED:['已自动排队','Automatically queued'],
   ORCHESTRATOR_UNAVAILABLE:['自动化服务暂不可用','Automation unavailable'],
   WORKFLOW_INACTIVE:['工作流未启用','Workflow inactive'],WEBHOOK_AUTH_FAILED:['工作流认证失败','Workflow authentication failed'],
   QUEUE_UNAVAILABLE:['任务队列暂不可用','Queue unavailable']
 });
 function dispatchLabel(job){
   const state=text(first(job,['dispatch_state'],'')).toUpperCase();
+  const status=text(first(job,['auto_evidence_status','status'],'')).toUpperCase();
+  const blocker=jobBlocker(job);
+  if(status==='PROVIDER_CAPACITY_WAIT')return ['等待服务商重试','Waiting for Provider retry'];
+  if(status==='EVIDENCE_EXHAUSTED')return ['自动搜索已完成','Automated research complete'];
+  if(blocker==='PRODUCT')return ['类目待确认','Category confirmation required'];
+  if(blocker==='CONTACT')return ['联系方式待补充','Contact route required'];
   return DISPATCH_LABELS[state]||null;
 }
 
@@ -474,8 +480,8 @@ const STAGE_LABELS = Object.freeze({
   EXTRACTING:['整理资料','Extracting'], NORMALIZING_CATEGORY:['归一类目','Normalizing category'],
   VALIDATING_EVIDENCE:['核验资料','Validating evidence'], FINDING_BUYER:['查找采购负责人','Finding buyer'],
   VERIFYING_EMAIL:['核验商务邮箱','Verifying email'], REFRESHING_DECISION:['刷新机会状态','Refreshing status'],
-  IDENTITY:['企业身份','Identity'], BUYER_MODEL:['采购模式','Buyer model'], CATEGORY_PROCUREMENT:['品类采购','Category procurement'],
-  PRODUCT:['品类采购','Category procurement'], SUPPLIER_ACCESS:['供应商准入','Supplier access'],
+  IDENTITY:['企业身份','Identity'], BUYER_MODEL:['采购模式','Buyer model'], CATEGORY_PROCUREMENT:['公司类目','Company category'],
+  PRODUCT:['公司经营类目','Company category'],
   BUYER_ROLE:['采购人员与职责','Buyer / role'], BUYER:['采购人员与职责','Buyer / role'],
   EMAIL_VERIFICATION:['邮箱核验','Email verification'], EMAIL:['邮箱核验','Email verification'],
   DECISION_REFRESH:['机会状态刷新','Status refresh'], DECISION:['机会状态刷新','Status refresh'],
@@ -597,7 +603,8 @@ function renderJobs(jobItems,{ append = false } = {}) {
     const blockerLabel = blocker ? blockerPair(blocker) : null;
     const activity = first(job,['updated_at','created_at']);
     const dispatch=dispatchLabel(job);
-    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}</div></td><td data-label="进度 / Progress"><span class="p9-job-progress">${esc(jobProgress(job))}</span></td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
+    const queuedAt=first(job,['queued_at']);
+    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}${queuedAt?`<small>${bi('排队时间','Queued')}: ${dateTimeMarkup(queuedAt)}</small>`:''}</div></td><td data-label="进度 / Progress"><span class="p9-job-progress">${esc(jobProgress(job))}</span></td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
   }).join('');
   if (append) host.insertAdjacentHTML('beforeend',rows); else host.innerHTML = rows;
   host.querySelectorAll('[data-open-job]').forEach(button=>button.addEventListener('click',()=>openJobDetail(button.dataset.openJob,{ trigger:button })));
@@ -711,7 +718,7 @@ function renderJobDetail(job, results = null) {
   const usageMarkup=`<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('供应商用量','Provider usage')}</h4></header><div class="card-body"><div class="p9-catalog-facts" aria-label="供应商用量 Provider usage">${usageFacts.map(([zh,en,value])=>`<div><small>${bi(zh,en)}</small><strong>${esc(value)}</strong></div>`).join('')}</div></div></section>`;
   const stages=hasPhase10Pipeline ? phase10Stages : [
     ['企业身份','Identity',['IDENTITY']],['采购模式','Buyer Model',['BUYER_MODEL']],
-    ['品类采购','Category Procurement',['CATEGORY_PROCUREMENT','PRODUCT']],['供应商准入','Supplier Access',['SUPPLIER_ACCESS']],
+    ['公司经营类目','Company Category',['CATEGORY_PROCUREMENT','PRODUCT']],
     ['采购人员与职责','Buyer / Role',['BUYER_ROLE','BUYER']],['邮箱核验','Email verification',['EMAIL_VERIFICATION','EMAIL','HUNTER']],
     ['机会状态刷新','Status refresh',['DECISION_REFRESH','DECISION']]
   ];

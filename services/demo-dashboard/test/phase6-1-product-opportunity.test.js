@@ -16,19 +16,19 @@ const productMasterCandidate={
 };
 
 test('Product Opportunity runs only after Category Procurement Match PASS',()=>{
-  for(const match_status of ['NEEDS_PRODUCT_EVIDENCE','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','WEAK_CATEGORY_MATCH','PRODUCT_MISMATCH','INELIGIBLE_BUYER_MODEL']){
+  for(const match_status of ['CATEGORY_CONFIRMATION_REQUIRED','NEEDS_PRODUCT_EVIDENCE','WEAK_CATEGORY_MATCH','CATEGORY_MISMATCH','PRODUCT_MISMATCH','INELIGIBLE_BUYER_MODEL']){
     const result=calculateProductOpportunity({category_procurement_match:{...passingMatch,score:null,match_status}});
     assert.equal(result.recommendation_status,'NOT_RUN_GATE_FAILED');
     assert.equal(result.candidate_count,0);
     assert.deepEqual(result.candidates,[]);
-    assert.equal(result.sku_readiness_status,match_status==='PRODUCT_MISMATCH'?'OUT_OF_SCOPE':'NO_EXACT_SKU');
+    assert.equal(result.sku_readiness_status,['CATEGORY_MISMATCH','PRODUCT_MISMATCH'].includes(match_status)?'OUT_OF_SCOPE':'NO_EXACT_SKU');
   }
 });
 
 test('approved category scope creates a category-level opportunity with no exact SKU candidate',()=>{
   const result=calculateProductOpportunity({category_procurement_match:passingMatch});
   assert.equal(result.recommendation_status,'CATEGORY_SCOPE_QUALIFIED');
-  assert.equal(result.category_procurement_match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(result.category_procurement_match_status,'CATEGORY_MATCH_CONFIRMED');
   assert.equal(result.sku_readiness_status,'NO_EXACT_SKU');
   assert.equal(result.candidate_count,0);
   assert.deepEqual(result.candidates,[]);

@@ -28,7 +28,7 @@ test('new research job is a native four-step category-driven dialog with explici
   assert.match(ui,/dialogOpener\.focus\(\{ preventScroll:true \}\)/);
 });
 
-test('Jobs Inbox preserves three tabs, seven decision columns and seven pipeline stages',async()=>{
+test('Jobs Inbox preserves three tabs, seven decision columns and the simplified six pipeline stages',async()=>{
   const [html,ui]=await Promise.all([
     readPublic('index.html'),
     readPublic('ui/phase9-research-workbench.js')
@@ -40,7 +40,7 @@ test('Jobs Inbox preserves three tabs, seven decision columns and seven pipeline
   ]){
     assert.ok(html.includes(`>${zh}<`)&&html.includes(`>${en}<`),`missing jobs heading: ${zh} / ${en}`);
   }
-  for(const stage of ['Identity','Buyer Model','Category Procurement','Supplier Access','Buyer / Role','Email verification','Status refresh']){
+  for(const stage of ['Identity','Buyer Model','Company Category','Buyer / Role','Email verification','Status refresh']){
     assert.ok(ui.includes(`'${stage}'`),`missing pipeline stage: ${stage}`);
   }
 });

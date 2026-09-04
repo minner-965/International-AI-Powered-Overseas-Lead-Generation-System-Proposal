@@ -165,7 +165,7 @@
         "test_evidence": [
           {
             "file": "test/phase10-category-scope-and-rules.test.js",
-            "title": "irrelevant verified category is PRODUCT_MISMATCH and no approved scope is never guessed"
+            "title": "irrelevant verified category is CATEGORY_MISMATCH and no approved scope is never guessed"
           }
         ]
       },

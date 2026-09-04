@@ -26,7 +26,12 @@ export async function queryCategoryProcurementOpportunities({
   if(query.buyer_business_model)add(upper(query.buyer_business_model),index=>`bbm.buyer_model=$${index}`);
   if(query.buyer_subtype)add(upper(query.buyer_subtype),index=>`bbm.buyer_subtype=$${index}`);
   if(query.category_procurement_match_band)add(upper(query.category_procurement_match_band),index=>`cpm.band=$${index}`);
-  if(query.category_procurement_match_status)add(upper(query.category_procurement_match_status),index=>`cpm.match_status=$${index}`);
+  if(query.category_procurement_match_status){
+    const requested=upper(query.category_procurement_match_status);
+    if(requested==='CATEGORY_MATCH_CONFIRMED')clauses.push("cpm.match_status IN('CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE')");
+    else if(requested==='CATEGORY_CONFIRMATION_REQUIRED')clauses.push("cpm.match_status IN('CATEGORY_CONFIRMATION_REQUIRED','NEEDS_PRODUCT_EVIDENCE','NEEDS_INTERNAL_CATALOG_EVIDENCE')");
+    else add(requested,index=>`cpm.match_status=$${index}`);
+  }
   if(query.product_access_matrix)add(upper(query.product_access_matrix),index=>`f.product_access_matrix=$${index}`);
   if(query.readiness)add(upper(query.readiness),index=>`f.opportunity_readiness=$${index}`);
   if(query.historical_crm_status)add(upper(query.historical_crm_status),index=>`f.relationship_status=$${index}`);
@@ -48,7 +53,7 @@ export async function queryCategoryProcurementOpportunities({
   if(managementBand)clauses.push(managementBand);
   if(historicalBand)clauses.push(historicalBand);
 
-  const defaultOrder=`CASE WHEN cpm.match_status='CATEGORY_PROCUREMENT_MATCH' THEN 1 ELSE 2 END,
+  const defaultOrder=`CASE WHEN cpm.match_status IN('CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE') THEN 1 ELSE 2 END,
     CASE bbm.buyer_model WHEN 'DIRECT_END_BUYER' THEN 1 WHEN 'DISTRIBUTION_BUYER' THEN 2 WHEN 'UNCLEAR_INTERMEDIARY' THEN 3 WHEN 'UNKNOWN' THEN 4 ELSE 5 END,
     CASE cpm.band WHEN 'VERY_HIGH' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 WHEN 'VERY_LOW' THEN 5 ELSE 6 END,
     cpm.score DESC NULLS LAST,cpm.coverage_percent DESC,
@@ -88,7 +93,12 @@ export async function queryCategoryProcurementOpportunities({
     bod.contact_readiness,bod.policy_contact_status,bod.reason_codes opportunity_decision_reason_codes,
     bod.latest_management_event_id,bod.management_contact_status,bod.created_at opportunity_decision_assessed_at,
     cpm.score category_procurement_match_score,cpm.band category_procurement_match_band,
-    cpm.match_status category_procurement_match_status,cpm.coverage_percent category_procurement_coverage,
+    CASE
+      WHEN cpm.match_status IN('CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE') THEN 'CATEGORY_MATCH_CONFIRMED'
+      WHEN cpm.match_status IN('NEEDS_PRODUCT_EVIDENCE','NEEDS_INTERNAL_CATALOG_EVIDENCE') THEN 'CATEGORY_CONFIRMATION_REQUIRED'
+      WHEN cpm.match_status='PRODUCT_MISMATCH' THEN 'CATEGORY_MISMATCH'
+      ELSE cpm.match_status
+    END category_procurement_match_status,cpm.coverage_percent category_procurement_coverage,
     cpm.scope_revision_id,cpm.match_basis,cpm.similarity_rule,cpm.matched_scope_ids,
     cpm.observed_customer_category_ids,cpm.catalog_completeness_non_blocking,
     scope_revision.revision scope_revision,

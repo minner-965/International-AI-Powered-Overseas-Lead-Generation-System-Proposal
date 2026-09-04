@@ -128,11 +128,11 @@ test('sales opportunity export uses approved category scope and omits SKU/catalo
   assert.equal(row.product_profile,'WOMENSWEAR');
   assert.equal(row.product_category_score,87);
   assert.equal(row.product_category_score_band,'VERY_HIGH');
-  assert.equal(row.customer_procurement_categories,'DRESSES; TOPS');
+  assert.equal(row.observed_company_categories,'DRESSES; TOPS');
   assert.equal(row.dpv_supply_categories,'WOMENSWEAR');
   assert.equal(row.category_opportunity_basis,'PROFILE_SCOPE');
-  assert.equal(row.target_category,'WOMENSWEAR');
-  assert.equal(row.category_match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(row.matched_categories,'WOMENSWEAR');
+  assert.equal(row.target_category_match,'CATEGORY_PROCUREMENT_MATCH');
   assert.equal(row.category_evidence,'DRESSES; TOPS');
   assert.equal(row.company_verification,undefined);
 });
@@ -143,14 +143,15 @@ test('default sales-opportunity export exposes category score context without ex
     requesterRole:'MANAGEMENT',requesterIdentity:'manager@example.com'
   });
   for(const field of ['product_profile','product_category_score','product_category_score_band',
-    'customer_procurement_categories','dpv_supply_categories','category_opportunity_basis','target_category',
-    'category_match_status','category_evidence','company_verification','buyer_model','named_buyer_readiness',
-    'official_email_route','official_phone_whatsapp_form','supplier_vendor_route','opportunity_status',
+    'observed_company_categories','dpv_supply_categories','category_opportunity_basis','matched_categories',
+    'target_category_match','category_evidence','company_verification','buyer_type','named_buyer',
+    'official_email','official_phone','official_whatsapp','official_contact_page','opportunity_status',
     'primary_blocker','next_action','latest_evidence_time','evidence_url']) {
     assert.ok(request.columns.includes(field),`missing category export field ${field}`);
   }
   for(const removed of ['product_opportunity_status','product_opportunity_count','top_product_opportunity',
-    'sku_readiness_status','catalog_enrichment_required']) assert.ok(!request.columns.includes(removed));
+    'sku_readiness_status','catalog_enrichment_required','supplier_vendor_route','supplier_access',
+    'official_phone_whatsapp_form']) assert.ok(!request.columns.includes(removed));
 });
 
 test('snapshot digest stays stable for the same filtered rows and schema', () => {

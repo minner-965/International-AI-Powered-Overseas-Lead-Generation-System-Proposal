@@ -16,7 +16,9 @@ import {applyPhase7Migration,PHASE10_CATEGORY_SCOPE_MIGRATION_KEY,
   PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY,
   PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY,PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY,
   PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY,
-  PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+  PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,
+  PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,
+  PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 
 const root=process.env.DPV_PROJECT_ROOT
   ? path.resolve(process.env.DPV_PROJECT_ROOT)
@@ -68,7 +70,7 @@ test('030 persists automatic evidence lifecycle, dual ResearchJob lineage and im
   assert.match(sql,/UNIQUE \(task_id,attempt_number,stage,event_type\)/);
 });
 
-test('explicit migration runner applies Phase 10 migrations in order through category-driven context',()=>{
+test('explicit migration runner applies Phase 10 migrations in order through category-status compatibility',()=>{
   assert.match(runner,/030_phase10_category_scope_and_auto_evidence\.sql/);
   assert.equal(PHASE10_AUDIT_HARDENING_MIGRATION_KEY,'031_phase10_controlled_evidence_audit_hardening.sql');
   assert.match(runner,/verifyPhase10CategoryScopeMigration/);
@@ -79,10 +81,14 @@ test('explicit migration runner applies Phase 10 migrations in order through cat
   assert.equal(PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY,'046_phase10_empty_research_job_purge_audit.sql');
   assert.equal(PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY,'047_phase10_retire_internal_tavily_enforcement.sql');
   assert.equal(PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,'048_phase10_category_driven_context.sql');
+  assert.equal(PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,'049_phase10_1_category_contact_simplification.sql');
+  assert.equal(PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY,'050_phase10_1_category_status_compatibility.sql');
   assert.ok(runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration')>runner.indexOf('phase10ProviderAccountState=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration')>runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration')>runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration'));
-  assert.match(runner,/status:phase10CategoryDrivenContext\.status/);
+  assert.ok(runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration')>runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase10CategoryStatusCompatibility=await applyPhase7Migration')>runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration'));
+  assert.match(runner,/status:phase10CategoryStatusCompatibility\.status/);
 });
 
 test('048 moves automatic evidence identity to target category scope while preserving legacy profile metadata',()=>{
@@ -92,6 +98,27 @@ test('048 moves automatic evidence identity to target category scope while prese
   assert.match(migration,/UNIQUE \(company_id,target_category_scope_key,business_blocker,evidence_revision\)/);
   assert.match(migration,/ALTER COLUMN product_profile DROP NOT NULL/);
   assert.doesNotMatch(migration,/DELETE FROM|TRUNCATE|DROP TABLE/i);
+});
+
+test('049 adds company-level canonical contact projection and retires new manual-route writes',()=>{
+  const migration=fs.readFileSync(path.join(root,'database/migrations',PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY),'utf8');
+  assert.match(migration,/^BEGIN;/);
+  assert.match(migration,/COMMIT;\s*$/);
+  assert.match(migration,/ADD COLUMN IF NOT EXISTS company_id uuid/);
+  assert.match(migration,/idx_decision_maker_contacts_company_canonical/);
+  assert.match(migration,/company_contact_route_current/);
+  assert.match(migration,/retired_policy boolean/);
+  assert.match(migration,/trg_official_route_manual_tasks_no_new/);
+  assert.doesNotMatch(migration,/DELETE\s+FROM|TRUNCATE|DROP\s+TABLE/i);
+});
+
+test('050 permits new category/contact statuses while preserving historical status values',()=>{
+  const migration=fs.readFileSync(path.join(root,'database/migrations',PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY),'utf8');
+  for(const status of ['CATEGORY_MATCH_CONFIRMED','CATEGORY_CONFIRMATION_REQUIRED','CATEGORY_MISMATCH',
+    'CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_PRODUCT_EVIDENCE'])assert.match(migration,new RegExp(status));
+  assert.match(migration,/canonical_route_key/);
+  assert.match(migration,/uq_decision_maker_contacts_company_route/);
+  assert.doesNotMatch(migration,/DELETE\s+FROM|TRUNCATE|DROP\s+TABLE/i);
 });
 
 test('033 adds heartbeat and dispatch diagnostics after 032 without business-status expansion',()=>{

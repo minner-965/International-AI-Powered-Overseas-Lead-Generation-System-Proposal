@@ -140,6 +140,7 @@ async function collectLineage(pool,jobId){
 }
 
 async function waitForDownstream(pool,jobId,deadline,pollMilliseconds){
+  let emptyPromotionObservedAt=null;
   while(Date.now()<deadline){
     const state=(await pool.query(`WITH promoted AS (
         SELECT DISTINCT company_id FROM leadgen.research_candidate_verifications
@@ -154,7 +155,14 @@ async function waitForDownstream(pool,jobId,deadline,pollMilliseconds){
         (SELECT count(*)::int FROM leadgen.business_opportunity_current o
           WHERE o.company_id IN(SELECT company_id FROM promoted) AND o.created_at>=(SELECT created_at FROM leadgen.research_jobs WHERE id=$1)) opportunities`,
       [jobId,`post-discovery-category:${jobId}`])).rows[0];
-    if(Number(state.promoted_companies)===0)return{...state,outcome:'NO_PROMOTED_COMPANY'};
+    if(Number(state.promoted_companies)===0){
+      emptyPromotionObservedAt??=Date.now();
+      if(Date.now()-emptyPromotionObservedAt>=Math.min(60000,Math.max(15000,pollMilliseconds*3))){
+        throw Object.assign(new Error('CANARY_NO_PROMOTED_COMPANY'),{exitCode:1,state});
+      }
+      await new Promise(resolve=>setTimeout(resolve,pollMilliseconds));
+      continue;
+    }
     if(['COMPLETED','PARTIAL','EVIDENCE_EXHAUSTED'].includes(state.category_job_status)
       &&Number(state.category_matches)>0&&Number(state.opportunities)>0)return{...state,outcome:'DOWNSTREAM_TERMINAL'};
     if(state.category_job_status==='FAILED')throw Object.assign(new Error('CATEGORY_AUTOMATION_FAILED'),{exitCode:1});
@@ -169,14 +177,18 @@ async function collectBusinessOutcome(pool,jobId,lineage){
   const categoryMatches=(await pool.query(`SELECT id,research_job_id,company_id,match_status,band,score,coverage_percent,
     matched_scope_ids,observed_categories,created_at FROM leadgen.category_procurement_match_results
     WHERE research_job_id=ANY($1::uuid[]) ORDER BY created_at,id`,[relatedJobIds])).rows;
-  const companyIds=[...new Set(categoryMatches.map(item=>item.company_id).filter(Boolean))];
+  const companyIds=[...new Set([
+    ...lineage.company_ids,
+    ...categoryMatches.map(item=>item.company_id)
+  ].filter(Boolean))];
   const namedBuyers=(await pool.query(`SELECT dm.id,dm.company_id,dm.research_job_id,dm.normalized_role,dm.verification_status,
     dm.lifecycle_status,dm.evidence_strength,count(dmc.id)::int verified_route_count
     FROM leadgen.decision_makers dm LEFT JOIN leadgen.decision_maker_contacts dmc ON dmc.decision_maker_id=dm.id
       AND dmc.verification_status IN ('VALID','VERIFIED')
     WHERE dm.research_job_id=ANY($1::uuid[]) GROUP BY dm.id ORDER BY dm.created_at,dm.id`,[relatedJobIds])).rows;
-  const officialRoutes=companyIds.length?(await pool.query(`SELECT id,company_id,route_type,manual_action_status,
-    outcome,verified_at,captured_at FROM leadgen.official_route_manual_task_current
+  const officialRoutes=companyIds.length?(await pool.query(`SELECT id,company_id,contact_type AS route_type,
+    contact_value_normalized,verification_status,last_verified_at,source_url,created_at
+    FROM leadgen.company_contact_route_current
     WHERE company_id=ANY($1::uuid[]) ORDER BY created_at,id`,[companyIds])).rows:[];
   const opportunities=(await pool.query(`SELECT id,company_id,research_job_id,system_recommendation_status,contact_readiness,
     policy_contact_status,display_opportunity_status,business_fit_status,management_contact_status,assessment_revision,created_at

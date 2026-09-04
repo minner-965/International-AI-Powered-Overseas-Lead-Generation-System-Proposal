@@ -1,3 +1,5 @@
+import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
+
 const BUYER_ROLES = Object.freeze([
   'BUYER', 'SENIOR_BUYER', 'HEAD_OF_BUYING', 'PURCHASING', 'PROCUREMENT',
   'CATEGORY_MANAGEMENT', 'MERCHANDISING', 'SOURCING', 'BUYING_DEPARTMENT', 'PROCUREMENT_DEPARTMENT'
@@ -192,7 +194,7 @@ export function createAutoEvidenceExecutors({
 
     async find_profile_buyer({ task, research_job_id,strategy }) {
       const category = await latestCategoryMatch(pool, task);
-      if (category?.match_status !== 'CATEGORY_PROCUREMENT_MATCH') {
+      if (!isCategoryMatchConfirmed(category?.match_status)) {
         return { outcome_status: 'COMPLETED', research_job_id,
           category_procurement_match_result_id: category?.id || null, buyer_search_skipped: true };
       }

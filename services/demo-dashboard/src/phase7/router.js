@@ -9,7 +9,6 @@ const MANAGEMENT_APPROVER_ROLES = Object.freeze(['MANAGEMENT','MANAGEMENT_APPROV
 const OUTREACH_APPROVER_ROLES = Object.freeze(['MANAGEMENT','OUTREACH_APPROVER']);
 const SENDER_ROLES = Object.freeze(['MANAGEMENT','SENDER_OPERATOR']);
 const DATA_ROLES = Object.freeze(['DATA_ADMIN','MANAGEMENT']);
-const MANUAL_ROUTE_ROLES = Object.freeze(['SALES','DATA_ADMIN','MANAGEMENT']);
 const EXPORT_ROLES = Object.freeze(['SALES','MANAGEMENT','FINANCE']);
 
 function asyncRoute(handler) {
@@ -37,11 +36,9 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   const outreachApprove = [auth.authenticate,auth.requireRoles(...OUTREACH_APPROVER_ROLES)];
   const send = [auth.authenticate,auth.requireRoles(...SENDER_ROLES)];
   const dataWrite = [auth.authenticate,auth.requireRoles(...DATA_ROLES)];
-  const manualRouteWrite = [auth.authenticate,auth.requireRoles(...MANUAL_ROUTE_ROLES)];
   const exportWrite = [auth.authenticate,auth.requireRoles(...EXPORT_ROLES)];
 
   router.get('/api/workspace/contact-queue', asyncRoute(async(req,res)=>res.json(await service.listWorkspaceContactQueue(req.query))));
-  router.get('/api/workspace/manual-official-routes', asyncRoute(async(req,res)=>res.json(await service.listWorkspaceManualOfficialRoutes(req.query))));
 
   router.get('/api/opportunities/:id/decision-history', ...read, asyncRoute(async(req,res)=>res.json(await service.opportunityDecisionHistory(req.params.id))));
   router.post('/api/opportunities/:id/management-approve', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.manageOpportunity(req.params.id,'MANAGEMENT_APPROVED',req.body,req.managementUser))));
@@ -52,7 +49,7 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   router.get('/api/manual-official-routes', ...read, asyncRoute(async(req,res)=>res.json(await service.listManualOfficialRoutes(req.query))));
   router.post('/api/manual-official-routes/reconcile', ...dataWrite,
     asyncRoute(async(req,res)=>res.status(201).json(await service.reconcileManualOfficialRoutes(req.managementUser))));
-  router.post('/api/manual-official-routes/:id/actions', ...manualRouteWrite,
+  router.post('/api/manual-official-routes/:id/actions', ...dataWrite,
     asyncRoute(async(req,res)=>res.status(201).json(await service.recordManualOfficialRouteAction(req.params.id,req.body,req.managementUser))));
 
   router.get('/api/outreach/marketing-context', ...read, asyncRoute(async(_req,res)=>res.json(await service.getMarketingContext())));

@@ -28,6 +28,8 @@ export const PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY = '045_phase10_provide
 export const PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY = '046_phase10_empty_research_job_purge_audit.sql';
 export const PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY = '047_phase10_retire_internal_tavily_enforcement.sql';
 export const PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY = '048_phase10_category_driven_context.sql';
+export const PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY = '049_phase10_1_category_contact_simplification.sql';
+export const PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY = '050_phase10_1_category_status_compatibility.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -54,6 +56,8 @@ const phase10ProviderAccountStatePath = path.resolve(projectRoot, 'database/migr
 const phase10EmptyResearchPurgeAuditPath = path.resolve(projectRoot, 'database/migrations', PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY);
 const phase10RetireInternalTavilyEnforcementPath = path.resolve(projectRoot, 'database/migrations', PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY);
 const phase10CategoryDrivenContextPath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY);
+const phase10CategoryContactSimplificationPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY);
+const phase10CategoryStatusCompatibilityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -537,6 +541,38 @@ export async function verifyPhase10CategoryDrivenContextMigration(client){
   return{phase10_category_driven_context_verified:true};
 }
 
+export async function verifyPhase10CategoryContactSimplificationMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='decision_maker_contacts' AND column_name='company_id' AND is_nullable='NO') company_contact_identity,
+    to_regclass('leadgen.company_contact_route_current') IS NOT NULL company_route_view,
+    to_regclass('leadgen.idx_decision_maker_contacts_company_canonical') IS NOT NULL company_route_index,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='official_route_manual_tasks' AND column_name='retired_policy') retired_policy_marker,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.official_route_manual_tasks'::regclass
+      AND tgname='trg_official_route_manual_tasks_no_new' AND NOT tgisinternal) manual_route_insert_retired`);
+  const row=result.rows[0]||{};
+  if(!row.company_contact_identity||!row.company_route_view||!row.company_route_index
+    ||!row.retired_policy_marker||!row.manual_route_insert_retired)
+    throw new Error('Phase 10.1 category/contact simplification migration verification failed');
+  return{phase10_1_category_contact_simplification_verified:true};
+}
+
+export async function verifyPhase10CategoryStatusCompatibilityMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.category_procurement_match_results'::regclass
+      AND conname='category_procurement_match_results_match_status_check'
+      AND pg_get_constraintdef(oid) LIKE '%CATEGORY_MATCH_CONFIRMED%'
+      AND pg_get_constraintdef(oid) LIKE '%CATEGORY_PROCUREMENT_MATCH%') status_compatibility,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='decision_maker_contacts' AND column_name='canonical_route_key') canonical_route_key,
+    to_regclass('leadgen.uq_decision_maker_contacts_company_route') IS NOT NULL company_route_unique`);
+  const row=result.rows[0]||{};
+  if(!row.status_compatibility||!row.canonical_route_key||!row.company_route_unique)
+    throw new Error('Phase 10.1 category status compatibility migration verification failed');
+  return{phase10_1_category_status_compatibility_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -602,13 +638,20 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10CategoryDrivenContext=await applyPhase7Migration({...options,
     migrationPath:options.phase10CategoryDrivenContextMigrationPath||phase10CategoryDrivenContextPath,
     appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10CategoryContactSimplification=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CategoryContactSimplificationMigrationPath||phase10CategoryContactSimplificationPath,
+    appliedBy:options.appliedBy||'dpv-phase10.1-explicit-migration-runner'});
+  const phase10CategoryStatusCompatibility=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CategoryStatusCompatibilityMigrationPath||phase10CategoryStatusCompatibilityPath,
+    appliedBy:options.appliedBy||'dpv-phase10.1-explicit-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
     phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,phase10CategoryDrivenContext,
-    status:phase10CategoryDrivenContext.status,database:phase10CategoryDrivenContext.database};
+    phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,
+    status:phase10CategoryStatusCompatibility.status,database:phase10CategoryStatusCompatibility.database};
 }
 
 export async function applyPhase7Migration({
@@ -689,8 +732,19 @@ export async function applyPhase7Migration({
                                       ?await verifyPhase10BudgetResumeContinuationMigration(client)
                                       :migrationKey===PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY
                                         ?await verifyPhase10TavilyProviderAccountOnlyMigration(client)
-                                        :migrationKey===PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY
-                                          ?await verifyPhase10ProviderAccountStateMigration(client):await verifyPhase7Migration(client);
+          :migrationKey===PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY
+                                          ?await verifyPhase10ProviderAccountStateMigration(client)
+                                          :migrationKey===PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY
+                                            ?await verifyPhase10EmptyResearchPurgeAuditMigration(client)
+                                            :migrationKey===PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY
+                                              ?await verifyPhase10RetireInternalTavilyEnforcementMigration(client)
+                                              :migrationKey===PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY
+                                                ?await verifyPhase10CategoryDrivenContextMigration(client)
+                                                :migrationKey===PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY
+                                                  ?await verifyPhase10CategoryContactSimplificationMigration(client)
+                                                  :migrationKey===PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY
+                                                    ?await verifyPhase10CategoryStatusCompatibilityMigration(client)
+                                                    :await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
         migration_key: migrationKey,
@@ -752,7 +806,11 @@ export async function applyPhase7Migration({
                                                 ?await verifyPhase10RetireInternalTavilyEnforcementMigration(client)
                                                 :migrationKey===PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY
                                                   ?await verifyPhase10CategoryDrivenContextMigration(client)
-                                                  :await verifyPhase7Migration(client);
+                                                  :migrationKey===PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY
+                                                    ?await verifyPhase10CategoryContactSimplificationMigration(client)
+                                                    :migrationKey===PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY
+                                                      ?await verifyPhase10CategoryStatusCompatibilityMigration(client)
+                                                      :await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

@@ -291,7 +291,7 @@ async function refreshCategoryProcurementJobProgress(researchJobId,{error=null}=
     (SELECT count(*)::int FROM leadgen.prospect_category_observations o WHERE o.research_job_id=$1) observations,
     (SELECT count(*)::int FROM leadgen.buyer_business_model_results b WHERE b.research_job_id=$1) buyers,
     (SELECT count(*)::int FROM leadgen.category_procurement_match_results r
-       WHERE r.research_job_id=$1 AND r.match_status='CATEGORY_PROCUREMENT_MATCH') passed,
+       WHERE r.research_job_id=$1 AND r.match_status IN('CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE')) passed,
     (SELECT count(*)::int FROM leadgen.category_procurement_match_results r
        WHERE r.research_job_id=$1 AND r.score IS NULL) unknown,
     (SELECT coalesce(sum(po.candidate_count),0)::int

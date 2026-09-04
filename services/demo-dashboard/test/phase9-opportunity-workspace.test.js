@@ -34,7 +34,7 @@ test('Opportunity Workspace keeps the released decision contracts and avoids dec
   ]);
   const statuses = ['RECOMMENDED', 'EVIDENCE_REQUIRED', 'MANAGEMENT_APPROVED', 'HOLD', 'NOT_SUITABLE', 'ALL'];
   for (const status of statuses) assert.equal((html.match(new RegExp(`data-opportunity-status="${status}"`, 'g')) || []).length, 1);
-  assert.equal((html.match(/<th class="op-col-/g) || []).length, 8);
+  assert.equal((html.match(/<th class="op-col-/g) || []).length, 9);
   assert.match(html, /name="contact_verification"/);
   assert.match(html, /id="start-enrichment"/);
   assert.doesNotMatch(`${html}\n${module}\n${css}`, /linear-gradient|radial-gradient/);

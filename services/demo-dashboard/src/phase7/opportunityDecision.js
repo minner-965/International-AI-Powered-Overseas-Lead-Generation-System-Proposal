@@ -22,7 +22,6 @@ export const DISPLAY_OPPORTUNITY_STATUSES = Object.freeze([
 
 const EXCLUDED_LIFECYCLES = new Set(['DUPLICATE', 'SUPERSEDED', 'INVALID', 'ARCHIVED']);
 const DEAD_WEBSITE_STATES = new Set(['DEAD', 'INVALID', 'UNREACHABLE', 'UNSUPPORTED']);
-const ELIGIBLE_BUYERS = new Set(['DIRECT_END_BUYER', 'DISTRIBUTION_BUYER']);
 
 export function deriveChannelReadiness({ namedBuyerRouteReady = false, companyContactRouteTypes = [] } = {}) {
   const types = new Set((companyContactRouteTypes || []).map(upper));
@@ -32,7 +31,6 @@ export function deriveChannelReadiness({ namedBuyerRouteReady = false, companyCo
   if (types.has('BUSINESS_PHONE')) channels.push('MANUAL_PHONE_READY');
   if (types.has('BUSINESS_WHATSAPP')) channels.push('MANUAL_WHATSAPP_READY');
   if (types.has('CONTACT_FORM')) channels.push('MANUAL_FORM_READY');
-  if (['SUPPLIER_PORTAL','VENDOR_REGISTRATION'].some(type => types.has(type))) channels.push('SUPPLIER_PORTAL_READY');
   return channels;
 }
 
@@ -85,10 +83,7 @@ export function deriveOpportunityDecision(input = {}) {
     || input.recipient_suppressed === true
     || input.market_policy_hold === true
     || input.channel_policy_hold === true
-    || rawRelationship === 'SUPPRESSED'
-    || input.supplier_route_closed === true
-    || upper(cooperation.supplier_route_status) === 'CLOSED'
-    || upper(cooperation.opportunity_readiness) === 'HOLD';
+    || rawRelationship === 'SUPPRESSED';
   const reasons = [];
   const exclusionReasons = [];
   const evidenceReasons = [];
@@ -100,9 +95,13 @@ export function deriveOpportunityDecision(input = {}) {
   const matchStatus = upper(category.match_status);
   const categoryRuleVersion=String(category.calculation_version||'');
   const categoryScopeBasis=upper(category.match_basis);
-  const categoryScopeApproved=categoryRuleVersion==='category-procurement-match-v2'
+  const categoryScopeApproved=['category-procurement-match-v2','category-company-match-v3'].includes(categoryRuleVersion)
     &&Boolean(category.scope_revision_id)
     &&['EXACT_CATEGORY','SIMILAR_CATEGORY','PROFILE_SCOPE'].includes(categoryScopeBasis);
+  const explicitCategoryStatus=upper(category.category_confirmation_status);
+  const categoryConfirmed=explicitCategoryStatus==='MATCH_CONFIRMED'
+    || (!explicitCategoryStatus&&categoryScopeApproved&&['CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'].includes(matchStatus));
+  const categoryMismatch=explicitCategoryStatus==='MISMATCH_CONFIRMED'||['CATEGORY_MISMATCH','PRODUCT_MISMATCH'].includes(matchStatus);
   const websiteStatus = upper(input.website_status || company.website_status || 'UNKNOWN');
 
   if (EXCLUDED_LIFECYCLES.has(lifecycle) || company.replaced_by_company_id) exclusionReasons.push('COMPANY_DUPLICATE_OR_INACTIVE');
@@ -110,15 +109,12 @@ export function deriveOpportunityDecision(input = {}) {
   if (DEAD_WEBSITE_STATES.has(websiteStatus)) exclusionReasons.push('PUBLIC_WEBSITE_INVALID');
   if (normalizedRelationship === 'EXISTING_CUSTOMER' || input.confirmed_existing_customer === true) exclusionReasons.push('EXISTING_CUSTOMER');
   if (buyerModel === 'EXCLUDED_INTERMEDIARY' || buyerEligibility === 'INELIGIBLE') exclusionReasons.push('EXCLUDED_BUYER_MODEL');
-  if (matchStatus === 'PRODUCT_MISMATCH') exclusionReasons.push('PRODUCT_MISMATCH');
+  if (categoryMismatch) exclusionReasons.push('CATEGORY_MISMATCH');
 
   if (verification !== 'VERIFIED') evidenceReasons.push('COMPANY_VERIFICATION_REQUIRED');
   if (lifecycle !== 'ACTIVE' && !EXCLUDED_LIFECYCLES.has(lifecycle)) evidenceReasons.push('COMPANY_LIFECYCLE_REVIEW');
   if (normalizedRelationship === 'HISTORICAL_REVIEW' || normalizedRelationship === 'UNKNOWN') evidenceReasons.push('RELATIONSHIP_REVIEW_REQUIRED');
-  if (!ELIGIBLE_BUYERS.has(buyerModel) || buyerEligibility !== 'ELIGIBLE') evidenceReasons.push('BUYER_MODEL_EVIDENCE_REQUIRED');
-  if (buyerModel === 'DISTRIBUTION_BUYER' && input.procurement_resale_evidence !== true) evidenceReasons.push('DISTRIBUTION_PROCUREMENT_RESALE_EVIDENCE_REQUIRED');
-  if (matchStatus !== 'CATEGORY_PROCUREMENT_MATCH') evidenceReasons.push('CATEGORY_PROCUREMENT_EVIDENCE_REQUIRED');
-  else if(!categoryScopeApproved)evidenceReasons.push('DPV_APPROVED_CATEGORY_SCOPE_REQUIRED');
+  if (!categoryConfirmed) evidenceReasons.push('CATEGORY_CONFIRMATION_REQUIRED');
   if (input.identity_conflict === true) evidenceReasons.push('COMPANY_IDENTITY_CONFLICT');
   if (input.evidence_conflict === true) evidenceReasons.push('BUSINESS_EVIDENCE_CONFLICT');
 
@@ -133,19 +129,23 @@ export function deriveOpportunityDecision(input = {}) {
   const activeCompanyRouteCount = Number(input.active_company_contact_route_count ?? input.company_contact_route_count ?? 0);
   const companyContactRouteTypes = [...new Set((Array.isArray(input.company_contact_route_types)
     ? input.company_contact_route_types : []).map(upper).filter(Boolean))];
+  const supportedCompanyRouteTypes = new Set([
+    'BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL',
+    'BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM'
+  ]);
   const businessEmailRouteCount = Number(input.business_email_route_count ?? freshValidRouteCount);
   const expiredValidRouteCount = Number(input.expired_valid_email_route_count ?? 0);
   const emailRouteStatuses = [...new Set((Array.isArray(input.email_route_statuses)
     ? input.email_route_statuses : []).map(upper).filter(Boolean))];
   const cooperationReadiness = upper(cooperation.opportunity_readiness);
   const namedBuyerRouteReady = profileRelevantBuyerCount > 0 && verifiedBuyerRoleCount > 0 && freshValidRouteCount > 0;
-  const companyRouteReady = activeCompanyRouteCount > 0;
-  const routeCanCompleteReadiness = cooperationReadiness === 'SALES_READY'
-    || (companyRouteReady && ['NEEDS_DECISION_MAKER','NEEDS_CONTACT_ROUTE'].includes(cooperationReadiness));
+  const companyRouteReady = activeCompanyRouteCount > 0
+    && companyContactRouteTypes.some(type=>supportedCompanyRouteTypes.has(type));
+  const routeCanCompleteReadiness = namedBuyerRouteReady || companyRouteReady;
   const officialEmailRouteReady=companyRouteReady&&companyContactRouteTypes.some(type=>
     ['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL'].includes(type));
   const officialManualRouteReady=companyRouteReady&&companyContactRouteTypes.some(type=>
-    ['BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION'].includes(type));
+    ['BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM'].includes(type));
   const channelReadiness=deriveChannelReadiness({namedBuyerRouteReady,companyContactRouteTypes});
   let contactReadiness = 'EVIDENCE_REQUIRED';
   if (businessFitStatus === 'NOT_SUITABLE' || policyHold) contactReadiness = 'BLOCKED';
@@ -156,7 +156,7 @@ export function deriveOpportunityDecision(input = {}) {
   else {
     if (profileRelevantBuyerCount <= 0 && !companyRouteReady) reasons.push('EVIDENCE_REQUIRED_CONTACT');
     else if (verifiedBuyerRoleCount <= 0) reasons.push('EVIDENCE_REQUIRED_BUYER_ROLE');
-    if (freshValidRouteCount <= 0 && !companyRouteReady) reasons.push('EVIDENCE_REQUIRED_CONTACT_ROUTE');
+    if (freshValidRouteCount <= 0 && !companyRouteReady) reasons.push('CONTACT_ROUTE_REQUIRED');
     if (!routeCanCompleteReadiness) reasons.push('SALES_READINESS_REQUIRED');
   }
 
@@ -178,7 +178,7 @@ export function deriveOpportunityDecision(input = {}) {
     policy_contact_status: policyHold ? 'HOLD' : 'OPEN',
     relationship_status: normalizedRelationship,
     reason_codes: reasonCodes,
-    rule_version: 'business-opportunity-decision-v4'
+    rule_version: 'business-opportunity-decision-v5'
   };
   return {
     ...decision,
@@ -191,7 +191,7 @@ export function deriveOpportunityDecision(input = {}) {
       normalized_relationship: normalizedRelationship,
       policy_hold: policyHold,
       confirmed_existing_customer: input.confirmed_existing_customer === true,
-      procurement_resale_evidence: input.procurement_resale_evidence === true,
+      category_confirmation_status:explicitCategoryStatus||null,
       profile_relevant_buyer_count: profileRelevantBuyerCount,
       verified_buyer_role_count: verifiedBuyerRoleCount,
       active_valid_email_route_count: freshValidRouteCount,

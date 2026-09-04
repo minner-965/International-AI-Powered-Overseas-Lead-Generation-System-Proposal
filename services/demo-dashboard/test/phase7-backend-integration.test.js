@@ -79,8 +79,9 @@ test('backend wiring registers raw webhook before JSON, all management APIs and 
   assert.ok(server.indexOf('registerPhase7RawWebhookRoutes')<server.indexOf("app.use(express.json"));
   for(const route of ['/api/contact-queue','/api/outreach/marketing-context','/api/contacts/:id/hunter-verify',
     '/api/outreach/drafts','/api/outreach/messages/:id/enqueue','/api/outreach/inbox','/api/crm-sync-outbox',
-    '/api/data-imports/dry-run','/api/data-exports','/api/workspace/contact-queue','/api/workspace/manual-official-routes','/api/manual-official-routes',
+    '/api/data-imports/dry-run','/api/data-exports','/api/workspace/contact-queue','/api/manual-official-routes',
     '/api/manual-official-routes/reconcile','/api/manual-official-routes/:id/actions','/api/internal/phase7/orchestrate'])assert.ok(router.includes(route),route);
+  assert.ok(!router.includes("router.get('/api/workspace/manual-official-routes'"));
   for(const action of ['OUTREACH_RECHECK','IMPORT_DISCOVER','EXPORT_PROCESS','CRM_SYNC'])assert.ok(router.includes(action));
   assert.match(router,/requiredUuid\(req\.body\?\.resource_id,'resource_id'\)/);
   assert.match(router,/action==='IMPORT_DISCOVER'\)return res\.status\(202\)\.json\(await service\.enqueueSharedImportDiscovery\(req\.body\)\)/);

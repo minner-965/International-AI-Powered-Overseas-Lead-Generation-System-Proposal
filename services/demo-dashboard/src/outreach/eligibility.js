@@ -7,6 +7,7 @@ import {
   upper
 } from './constants.js';
 import { digestCanonical } from './marketingContext.js';
+import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ID = /^[a-z0-9][a-z0-9_.:-]{0,127}$/i;
@@ -100,7 +101,7 @@ export function evaluateOutreachEligibility(input = {}, options = {}) {
   if (companyLifecycle !== 'ACTIVE') reasons.push('COMPANY_NOT_ACTIVE');
   if (relationship !== 'NEW_PROSPECT') reasons.push('RELATIONSHIP_NOT_NEW_PROSPECT');
   if (!ELIGIBLE_BUYER_MODELS.includes(buyerModel)) reasons.push('BUYER_MODEL_NOT_ELIGIBLE');
-  if (matchStatus !== 'CATEGORY_PROCUREMENT_MATCH') reasons.push('CATEGORY_PROCUREMENT_MATCH_REQUIRED');
+  if (!isCategoryMatchConfirmed(matchStatus)) reasons.push('CATEGORY_MATCH_CONFIRMATION_REQUIRED');
   if (readiness !== 'SALES_READY') reasons.push('READINESS_NOT_SALES_READY');
 
   const namedBuyer = truthy(input, ['has_verified_profile_relevant_named_buyer', 'decision_route.verified_named_buyer']);

@@ -12,12 +12,12 @@ const readinessLabels = Object.freeze({
   STRATEGIC_LONG_SHOT: pair('战略长期机会', 'Strategic long shot'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
   NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('历史状态（现按批准类目）', 'Legacy state (approved category now applies)'),
-  CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('品类匹配，采购模式待确认', 'Category match; buying evidence required'),
+  CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE: pair('类目已确认', 'Category confirmed'),
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
   NEEDS_PRODUCT_RECOMMENDATION: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
   PRODUCT_MISMATCH: pair('商品类目不匹配', 'Product category mismatch'),
   WEAK_PRODUCT_MATCH: pair('商品类目适配较弱', 'Weak product category fit'),
-  NEEDS_PRODUCT_EVIDENCE: pair('需补充客户类目资料', 'Customer category evidence required'),
+  NEEDS_PRODUCT_EVIDENCE: pair('需补充公司类目资料', 'Company category evidence required'),
   REVIEW: pair('待业务审核', 'Business review')
 });
 
@@ -127,12 +127,12 @@ const sourceTypeLabels = Object.freeze({
 
 const enrichmentStatusLabels = Object.freeze({
   QUEUED: pair('任务排队中', 'Job queued'),
-  DISCOVERING: pair('正在查找采购资料', 'Finding buying information'),
-  RESOLVING: pair('正在整理采购角色', 'Resolving buying roles'),
+  DISCOVERING: pair('正在查找联系人资料', 'Finding contact details'),
+  RESOLVING: pair('正在整理联系人角色', 'Resolving contact roles'),
   VERIFYING: pair('正在核验联系方式', 'Verifying contact routes'),
   PERSISTING: pair('正在保存结果', 'Saving results'),
-  COMPLETE: pair('采购资料更新完成', 'Buying information updated'),
-  COMPLETED: pair('采购资料更新完成', 'Buying information updated'),
+  COMPLETE: pair('联系人资料更新完成', 'Contact details updated'),
+  COMPLETED: pair('联系人资料更新完成', 'Contact details updated'),
   PARTIAL: pair('部分企业已更新', 'Partially updated'),
   FAILED: pair('更新未完成', 'Update incomplete')
 });

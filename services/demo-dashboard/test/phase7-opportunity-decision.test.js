@@ -25,16 +25,16 @@ test('verified direct buyer and exact category match becomes recommended', () =>
   assert.equal(result.contact_readiness, 'READY');
   assert.equal(result.contact_route_readiness,'NAMED_BUYER_READY');
   assert.equal(result.display_opportunity_status, 'RECOMMENDED');
-  assert.equal(result.rule_version, 'business-opportunity-decision-v4');
+  assert.equal(result.rule_version, 'business-opportunity-decision-v5');
   assert.match(result.input_digest, /^[a-f0-9]{64}$/);
 });
 
-test('distribution buyer additionally requires procurement-and-resale evidence', () => {
+test('distribution buyer does not require procurement-and-resale evidence', () => {
   const missing = deriveOpportunityDecision(eligible({
     buyer: { buyer_model: 'DISTRIBUTION_BUYER', eligibility_status: 'ELIGIBLE' }
   }));
-  assert.equal(missing.system_recommendation_status, 'EVIDENCE_REQUIRED');
-  assert.ok(missing.reason_codes.includes('DISTRIBUTION_PROCUREMENT_RESALE_EVIDENCE_REQUIRED'));
+  assert.equal(missing.system_recommendation_status, 'RECOMMENDED');
+  assert.ok(!missing.reason_codes.includes('DISTRIBUTION_PROCUREMENT_RESALE_EVIDENCE_REQUIRED'));
   const present = deriveOpportunityDecision(eligible({
     buyer: { buyer_model: 'DISTRIBUTION_BUYER', eligibility_status: 'ELIGIBLE' },
     procurement_resale_evidence: true
@@ -53,7 +53,6 @@ test('certain exclusions become not suitable while unresolved facts require evid
 
   for (const input of [
     eligible({ company: { verification_status: 'REVIEW', lifecycle_status: 'ACTIVE' } }),
-    eligible({ buyer: { buyer_model: 'UNKNOWN', eligibility_status: 'NEEDS_EVIDENCE' } }),
     eligible({ category: { match_status: 'NEEDS_PRODUCT_EVIDENCE' } }),
     eligible({ evidence_conflict: true })
   ]) assert.equal(deriveOpportunityDecision(input).system_recommendation_status, 'EVIDENCE_REQUIRED');
@@ -83,12 +82,12 @@ test('contact evidence is required before a business-fit opportunity can be reco
   ]) {
     const emailRequired=deriveOpportunityDecision(eligible(emailFacts));
     assert.equal(emailRequired.system_recommendation_status,'EVIDENCE_REQUIRED');
-    assert.ok(emailRequired.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT_ROUTE'));
+    assert.ok(emailRequired.reason_codes.includes('CONTACT_ROUTE_REQUIRED'));
   }
 });
 
-test('verified official company routes can make a fit company a business opportunity without a named buyer',()=>{
-  for(const contactType of ['BUSINESS_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION']){
+test('verified ordinary company routes can make a fit company a business opportunity without a named buyer',()=>{
+  for(const contactType of ['BUSINESS_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM']){
     const result=deriveOpportunityDecision(eligible({
       cooperation:{opportunity_readiness:'NEEDS_DECISION_MAKER',verified_decision_maker_count:0},
       profile_relevant_buyer_count:0,verified_buyer_role_count:0,active_valid_email_route_count:0,
@@ -102,9 +101,16 @@ test('verified official company routes can make a fit company a business opportu
     assert.equal(result.contact_route_readiness,contactType==='BUSINESS_EMAIL'
       ?'OFFICIAL_EMAIL_ROUTE_READY':'OFFICIAL_MANUAL_ROUTE_READY');
     const expectedChannel=({BUSINESS_EMAIL:'EMAIL_ROUTE_READY',BUSINESS_PHONE:'MANUAL_PHONE_READY',
-      BUSINESS_WHATSAPP:'MANUAL_WHATSAPP_READY',CONTACT_FORM:'MANUAL_FORM_READY',
-      SUPPLIER_PORTAL:'SUPPLIER_PORTAL_READY',VENDOR_REGISTRATION:'SUPPLIER_PORTAL_READY'})[contactType];
+      BUSINESS_WHATSAPP:'MANUAL_WHATSAPP_READY',CONTACT_FORM:'MANUAL_FORM_READY'})[contactType];
     assert.deepEqual(result.channel_readiness,[expectedChannel]);
+  }
+  for(const retiredType of ['SUPPLIER_PORTAL','VENDOR_REGISTRATION']){
+    const result=deriveOpportunityDecision(eligible({
+      cooperation:{opportunity_readiness:'NEEDS_DECISION_MAKER',verified_decision_maker_count:0},
+      profile_relevant_buyer_count:0,verified_buyer_role_count:0,active_valid_email_route_count:0,
+      active_company_contact_route_count:1,company_contact_route_types:[retiredType]
+    }));
+    assert.equal(result.system_recommendation_status,'EVIDENCE_REQUIRED');
   }
 });
 
@@ -129,7 +135,7 @@ test('contact readiness never compensates failed product or business gates', () 
   assert.equal(highAccessMismatch.business_fit_status, 'NOT_SUITABLE');
 });
 
-test('exact SKU and legacy catalog state do not block fit, while closed supplier route is HOLD',()=>{
+test('exact SKU, legacy catalog state, and closed supplier route do not block category-contact fit',()=>{
   const noSku=deriveOpportunityDecision(eligible({product_opportunity:{sku_readiness_status:'NO_EXACT_SKU',candidate_count:0},
     cooperation:{opportunity_readiness:'SALES_READY',supplier_access_band:'UNKNOWN',verified_decision_maker_count:1}}));
   assert.equal(noSku.business_fit_status,'FIT');
@@ -139,17 +145,17 @@ test('exact SKU and legacy catalog state do not block fit, while closed supplier
   assert.equal(legacyCatalog.business_fit_status,'FIT');
   assert.equal(legacyCatalog.system_recommendation_status,'RECOMMENDED');
   assert.ok(!legacyCatalog.reason_codes.includes('INTERNAL_CATALOG_UPLOAD_REQUIRED'));
-  const closed=deriveOpportunityDecision(eligible({cooperation:{opportunity_readiness:'HOLD',supplier_route_status:'CLOSED'}}));
-  assert.equal(closed.system_recommendation_status,'EVIDENCE_REQUIRED');
-  assert.equal(closed.policy_contact_status,'HOLD');
-  assert.equal(closed.display_opportunity_status,'HOLD');
+  const closed=deriveOpportunityDecision(eligible({cooperation:{opportunity_readiness:'HOLD',supplier_route_status:'CLOSED',verified_decision_maker_count:1}}));
+  assert.equal(closed.system_recommendation_status,'RECOMMENDED');
+  assert.equal(closed.policy_contact_status,'OPEN');
+  assert.equal(closed.display_opportunity_status,'RECOMMENDED');
 });
 
 test('a legacy category match without an approved scope revision is not recommended by V3',()=>{
   const result=deriveOpportunityDecision(eligible({category:{match_status:'CATEGORY_PROCUREMENT_MATCH',calculation_version:'category-procurement-match-v1'}}));
   assert.equal(result.business_fit_status,'EVIDENCE_REQUIRED');
   assert.equal(result.system_recommendation_status,'EVIDENCE_REQUIRED');
-  assert.ok(result.reason_codes.includes('DPV_APPROVED_CATEGORY_SCOPE_REQUIRED'));
+  assert.ok(result.reason_codes.includes('CATEGORY_CONFIRMATION_REQUIRED'));
 });
 
 test('policy hold and exact current management event deterministically derive five display states', () => {

@@ -850,7 +850,7 @@ function phase9BlockerGroup(item,reasons = []) {
 
 function phase9BlockerLabel(code) {
   return ({
-    PRODUCT:['客户类目资料','Customer Category Evidence'], BUYER_MODEL:['采购模式','Buyer Model'],
+    PRODUCT:['公司类目资料','Company Category Evidence'], BUYER_MODEL:['客户类型','Buyer Type'],
     SUPPLIER_ACCESS:['供应商准入','Supplier Access'], CONTACT:['采购联系人','Buyer Contact'],
     BUYER_ROLE:['采购职责','Buyer Role'], EMAIL:['邮箱核验','Email verification'],
     TEMPORARY_ERROR:['暂时错误','Temporary Error'], HISTORY:['历史记录','History'],
@@ -973,10 +973,11 @@ function renderOpportunityTable() {
     return `<tr data-opportunity-key="${esc(opportunityKey)}">
       <td class="op-col-company" data-label="公司 / Company"><div class="crm-op-cell"><button class="crm-company-link crm-opportunity-company" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看机会','View opportunity')}</span></button></div></td>
       <td class="op-col-market" data-label="市场 / Market"><div class="crm-op-cell"><strong>${esc(marketValue(item))}</strong></div></td>
-      <td class="op-col-product-match" data-label="目标类目匹配 / Target Category Match"><div class="crm-op-cell">${opportunityProductMatchCell(item)}</div></td>
+      <td class="op-col-product-match" data-label="匹配类目 / Matched Category"><div class="crm-op-cell">${opportunityProductMatchCell(item)}</div></td>
       <td class="op-col-verification" data-label="公司核验 / Company Verification"><div class="crm-op-cell">${verificationBadge(item)}</div></td>
-      <td class="op-col-buyer-model" data-label="采购模式 / Buyer Model"><div class="crm-op-cell">${opportunityBuyerModelCell(item)}</div></td>
-      <td class="op-col-contact" data-label="具名买手或官方路径 / Named Buyer or Official Route"><div class="crm-op-cell">${opportunityBuyerCell(item)}${opportunityRouteReadinessCell(item)}</div></td>
+      <td class="op-col-buyer-model" data-label="客户类型 / Buyer Type"><div class="crm-op-cell">${opportunityBuyerModelCell(item)}</div></td>
+      <td class="op-col-buyer" data-label="具名联系人 / Named Buyer"><div class="crm-op-cell">${opportunityBuyerCell(item)}</div></td>
+      <td class="op-col-contact" data-label="官方联系方式 / Official Contact Channels"><div class="crm-op-cell">${opportunityRouteReadinessCell(item)}</div></td>
       <td class="op-col-status" data-label="机会状态 / Opportunity Status"><div class="crm-op-cell is-status">${displayOpportunity ? phase7OpportunityBadge(displayOpportunity) : `<span class="crm-cell-empty">${bi('待确认','To confirm')}</span>`}</div></td>
       <td class="op-col-action" data-label="下一步 / Next Action"><div class="crm-op-cell crm-op-action-cell">${opportunityNextActionCell(item)}</div></td></tr>`;
   }).join('');
@@ -1550,8 +1551,8 @@ function productMatchDimensionRows(result) {
 function productMatchEvidence(result) {
   const evidence = productMatchCollection(result,'source_references','evidence_sources','public_evidence','sources','evidence');
   const links = evidence.map(item=>({ url:safeUrl(typeof item === 'string' ? item : item?.source_url || item?.url), captured:item?.captured_at })).filter(item=>item.url !== '#');
-  if (!links.length) return `<div class="crm-empty-inline">${bi('暂无客户类目资料链接。','No customer category source is available.')}</div>`;
-  return `<div class="sources crm-product-match-evidence">${links.map(item=>`<a href="${esc(item.url)}" target="_blank" rel="noreferrer">${bi('查看客户类目资料','Open customer category source')}${item.captured ? `<small>${esc(new Date(item.captured).toLocaleString())}</small>` : ''}</a>`).join('')}</div>`;
+  if (!links.length) return `<div class="crm-empty-inline">${bi('暂无公司类目资料链接。','No company category source is available.')}</div>`;
+  return `<div class="sources crm-product-match-evidence">${links.map(item=>`<a href="${esc(item.url)}" target="_blank" rel="noreferrer">${bi('查看公司类目资料','Open company category source')}${item.captured ? `<small>${esc(new Date(item.captured).toLocaleString())}</small>` : ''}</a>`).join('')}</div>`;
 }
 
 function productMatchStateCard(profile, stateName, companyId = '') {
@@ -1586,7 +1587,7 @@ function categoryScopeRelationshipView(result, observed, matched) {
     PROVIDER_CAPACITY_WAIT:['等待搜索服务额度恢复','Waiting for search capacity'], COMPLETED:['已完成','Completed']
   })[automation] || ['状态待同步','Status pending'];
   return `<div class="p10-category-relationship">
-    <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">客户采购类目</span><span lang="en">Customer Procurement Categories</span></h5>${productMatchTags(observed,'客户采购类目待补充。','Customer procurement categories required.',{taxonomy:true})}</section>
+    <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">公司经营类目</span><span lang="en">Observed Company Categories</span></h5>${productMatchTags(observed,'公司经营类目待确认。','Observed company categories to confirm.',{taxonomy:true})}</section>
     <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">DPV 可供货批准类目</span><span lang="en">DPV Approved Supply Categories</span></h5>${productMatchTags(matched,'公司批准类目范围待确认。','Approved company category scope to confirm.',{taxonomy:true})}<div class="p10-category-basis"><small class="bi"><span lang="zh-CN">类目机会依据</span><span lang="en">Category opportunity basis</span></small>${pairHtml(basisLabel)}</div><div class="p10-category-basis"><small class="bi"><span lang="zh-CN">自动补证</span><span lang="en">Auto enrichment</span></small>${pairHtml(automationLabel)}</div></section>
   </div>`;
 }
@@ -1633,14 +1634,11 @@ function productMatchResultCard(profile, result, { apiError = false, companyId =
   const matchStatus = String(result?.category_procurement_match_status || result?.match_status || 'NEEDS_PRODUCT_EVIDENCE').toUpperCase();
   const buyerModel = String(result?.buyer_business_model || result?.buyer_model || 'UNKNOWN').toUpperCase();
   const buyerSubtype = String(result?.buyer_subtype || 'UNKNOWN').toUpperCase();
-  const unknown = score == null || !band || band === 'UNKNOWN' || ['CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_PRODUCT_EVIDENCE'].includes(matchStatus);
+  const unknown = score == null || !band || band === 'UNKNOWN' || matchStatus==='NEEDS_PRODUCT_EVIDENCE';
   const cardState = apiError ? 'error' : buyerModel === 'EXCLUDED_INTERMEDIARY' || matchStatus === 'INELIGIBLE_BUYER_MODEL' ? 'excluded' : matchStatus === 'PRODUCT_MISMATCH' ? 'mismatch' : matchStatus === 'WEAK_CATEGORY_MATCH' ? 'weak' : unknown ? 'unknown' : 'ready';
   const matched = productMatchCollection(result,'matched_categories','matched_dpv_categories','matched_scopes','dpv_category_scopes','matched_subcategories');
   const observed = productMatchCollection(result,'observed_categories','observed_customer_categories','customer_procurement_categories','prospect_observed_categories','product_observations');
   const coverage = numericValue(result?.category_procurement_coverage ?? result?.coverage_percent ?? result?.coverage);
-  const supplierBand = String(result?.supplier_access_band || 'UNKNOWN').toUpperCase();
-  const supplierScore = numericValue(result?.supplier_access_score);
-  const supplierCoverage = numericValue(result?.supplier_access_coverage);
   return `<article class="crm-product-match-card crm-product-profile-card is-${esc(cardState)}" data-product-profile="${esc(profile)}" data-product-match-profile="${esc(profile)}" data-product-match-state="${esc(cardState)}">
     <header><div><h4>${productMatchProfileHtml(profile)}</h4><div class="crm-product-match-type">${enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))}</div></div><div class="crm-product-match-score">${unknown ? enumBadge(productMatchBandLabel('UNKNOWN'),'unknown') : `<b>${esc(Math.round(score))}/100</b>${enumBadge(productMatchBandLabel(band),productMatchBandTone(band))}`}</div></header>
     ${apiError ? `<div class="alert alert-warning crm-product-match-api-error" role="alert">${bi('部分商品类目评分资料读取未完成。','Some Product Category Score data could not be loaded.')}<button class="btn btn-outline-secondary crm-product-match-retry" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></div>` : ''}
@@ -1649,15 +1647,13 @@ function productMatchResultCard(profile, result, { apiError = false, companyId =
       ['客户类型','Buyer subtype',pairHtml(buyerSubtypeLabel(buyerSubtype))],
       ['客户资格','Eligibility',pairHtml(({ELIGIBLE:['符合','Eligible'],NEEDS_EVIDENCE:['依据待补充','Evidence required'],INELIGIBLE:['不符合','Ineligible']})[String(result?.eligibility_status || '').toUpperCase()] || ['待确认','To confirm'])],
       ['判断把握度','Confidence',pairHtml(({HIGH:['高','High'],MEDIUM:['中','Medium'],LOW:['低','Low'],UNKNOWN:['待确认','To confirm']})[String(result?.confidence_band || 'UNKNOWN').toUpperCase()] || ['待确认','To confirm'])],
-      ['品类采购状态','Category Procurement Match',enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))],
+      ['目标类目匹配','Target Category Match',enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))],
       ['资料覆盖率','Evidence coverage',coverage == null ? '-' : `${esc(coverage)}%`],
-      ['供应商准入','Supplier Access',`${supplierScore == null ? '' : `<b>${esc(Math.round(supplierScore))}/100</b>`}${enumBadge(supplierAccessBandLabel(supplierBand),supplierAccessBandTone(supplierBand))}${supplierCoverage == null ? '' : `<small>${bi(`资料覆盖率 ${supplierCoverage}%`,`Evidence coverage ${supplierCoverage}%`)}</small>`}`],
       ['最近评估','Last assessed',productMatchDate(result)]
     ])}
     ${categoryScopeRelationshipView(result,observed,matched)}
     <section class="crm-detail-section"><h5>${bi('零售、门店或分销依据','Retail, store or distribution evidence')}</h5>${productMatchBusinessEvidence(result)}</section>
-    <section class="crm-detail-section"><h5>${bi('品类采购匹配维度','Category Procurement Match dimensions')}</h5>${productMatchDimensionRows(result)}</section>
-    <section class="crm-detail-section"><h5>${bi('商业商品适配（非阻断排序）','Commercial Product Fit (non-blocking ranking)')}</h5>${commercialProductFitView(result?.commercial_product_fit)}</section>
+    <section class="crm-detail-section"><h5>${bi('公司类目证据','Company Category Evidence')}</h5>${productMatchDimensionRows(result)}</section>
     <section class="crm-detail-section"><h5>${bi('待补资料','Missing evidence')}</h5>${productMatchMissingEvidence(result)}</section>
     <section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${productMatchEvidence(result)}</section>
   </article>`;
@@ -1901,11 +1897,10 @@ function cooperationFeasibilityView(payload, contactRoutes) {
       ['合作机会矩阵','Cooperation matrix',pairHtml(cooperationMatrixLabel(item.access_opportunity_matrix))],
       ['跟进准备状态','Opportunity readiness',enumBadge(opportunityReadinessLabel(item.opportunity_readiness),readinessTone(item.opportunity_readiness))],
       ['历史客户关系','Historical CRM status',enumBadge(relationshipStatusLabel(item.relationship_status),relationshipTone(item.relationship_status))],
-      ['供应商路径','Supplier routes',esc(item.supplier_route_count ?? 0)],
       ['已核验采购角色','Verified buying roles',esc(item.verified_decision_maker_count ?? 0)],
       ['可用联系路径','Usable contact routes',esc(item.usable_contact_route_count ?? 0)],
       ['最近评估','Last assessed',esc(item.calculated_at ? new Date(item.calculated_at).toLocaleString() : '-')]
-    ])}<section class="crm-detail-section"><h5>${bi('供应商准入路径','Supplier onboarding route')}</h5>${routeList(contactRoutes,{supplierOnly:true})}</section><section class="crm-detail-section"><h5>${bi('已知供应障碍','Known supplier barriers')}</h5>${barrierList(item.barrier_signals)}</section><section class="crm-detail-section"><h5>${bi('待补资料','Missing evidence')}</h5>${missingEvidenceList(item.missing_evidence)}</section><section class="crm-detail-section"><h5>${bi('可行性维度','Feasibility dimensions')}</h5>${feasibilityDimensionView(item.dimension_breakdown)}</section><section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${feasibilityEvidenceList(item.evidence_sources)}</section></article>`;
+    ])}<section class="crm-detail-section"><h5>${bi('官方联系方式','Official contact channels')}</h5>${routeList(contactRoutes)}</section><section class="crm-detail-section"><h5>${bi('可行性维度','Feasibility dimensions')}</h5>${feasibilityDimensionView(item.dimension_breakdown)}</section><section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${feasibilityEvidenceList(item.evidence_sources)}</section></article>`;
   }).join('')}</div>`;
 }
 
@@ -2154,7 +2149,7 @@ function renderEnrichmentStatus(job) {
   const attempted = Number(job.companies_attempted || 0);
   const decisionMakers = Number(job.decision_makers_found || 0);
   const contactRoutes = Number(job.contact_routes_found || 0);
-  host.innerHTML = `<span class="crm-enrichment-state">${enumBadge(pair,['COMPLETE','COMPLETED'].includes(String(job.status || '').toUpperCase()) ? 'active' : String(job.status || '').toUpperCase() === 'FAILED' ? 'rejected' : 'review')}<span>${bi(`已处理 ${attempted} 家，采购角色 ${decisionMakers} 条，联系路径 ${contactRoutes} 条`,`Processed ${attempted} companies, ${decisionMakers} buying roles and ${contactRoutes} contact routes`)}</span></span>`;
+  host.innerHTML = `<span class="crm-enrichment-state">${enumBadge(pair,['COMPLETE','COMPLETED'].includes(String(job.status || '').toUpperCase()) ? 'active' : String(job.status || '').toUpperCase() === 'FAILED' ? 'rejected' : 'review')}<span>${bi(`已处理 ${attempted} 家，联系人 ${decisionMakers} 条，联系路径 ${contactRoutes} 条`,`Processed ${attempted} companies, ${decisionMakers} contacts and ${contactRoutes} contact routes`)}</span></span>`;
 }
 
 function setEnrichmentButtonBusy(isBusy) {
@@ -2163,8 +2158,8 @@ function setEnrichmentButtonBusy(isBusy) {
   button.disabled = isBusy;
   button.setAttribute('aria-busy',isBusy ? 'true' : 'false');
   button.innerHTML = isBusy
-    ? `<i class="ti ti-loader" aria-hidden="true"></i>${bi('正在更新采购联系人','Updating Buying Contacts')}`
-    : `<i class="ti ti-user-search" aria-hidden="true"></i>${bi('更新采购联系人','Update Buying Contacts')}`;
+    ? `<i class="ti ti-loader" aria-hidden="true"></i>${bi('正在更新联系人资料','Updating Contact Details')}`
+    : `<i class="ti ti-user-search" aria-hidden="true"></i>${bi('更新联系人资料','Update Contact Details')}`;
 }
 
 async function pollEnrichmentJob(jobId) {
@@ -2185,7 +2180,7 @@ async function pollEnrichmentJob(jobId) {
   } catch {
     const host = $('#enrichment-job-status');
     state.enrichmentPollFailures = Number(state.enrichmentPollFailures || 0) + 1;
-    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('采购资料状态待确认，正在重新读取。','Buying-information status is being confirmed. Retrying now.')}</span>`;
+    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('联系人资料状态待确认，正在重新读取。','Contact-detail status is being confirmed. Retrying now.')}</span>`;
     const retryMs = Math.min(10000,1500 * (2 ** Math.min(3,state.enrichmentPollFailures - 1)));
     state.enrichmentPollTimer = setTimeout(()=>pollEnrichmentJob(jobId),retryMs);
   }
@@ -2213,14 +2208,14 @@ async function startEnrichmentJob() {
     max_results:100
   };
   setEnrichmentButtonBusy(true);
-  if (host) host.innerHTML = bi('正在建立采购资料更新任务。','Creating a buying-information update job.');
+  if (host) host.innerHTML = bi('正在建立联系人资料更新任务。','Creating a contact-detail update job.');
   try {
     const created = await json('/api/enrichment/jobs',{ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(request) });
     state.enrichmentJobId = created.job_id || created.id;
     renderEnrichmentStatus({ ...created,companies_attempted:0,decision_makers_found:0,contact_routes_found:0 });
     pollEnrichmentJob(state.enrichmentJobId);
   } catch {
-    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('采购资料更新任务未建立，请稍后重试。','The buying-information update job was not created. Try again shortly.')}</span>`;
+    if (host) host.innerHTML = `<span class="crm-enrichment-error">${bi('联系人资料更新任务未建立，请稍后重试。','The contact-detail update job was not created. Try again shortly.')}</span>`;
     setEnrichmentButtonBusy(false);
   }
 }
@@ -2365,6 +2360,7 @@ $('#reset').addEventListener('click', async () => {
 });
 
 ensureCrmHistoryPanel();
+document.addEventListener('crm:opencompany',event=>{if(event.detail?.companyId)showLead(event.detail.companyId);});
 initPhase7Ui();
 syncOpportunityFilters();
 const initialLoads = await Promise.allSettled([loadMetrics(),loadLeads(),loadIcpProfiles(),loadImportBatches(),loadCrmHistory(),loadLatestEnrichmentJob()]);

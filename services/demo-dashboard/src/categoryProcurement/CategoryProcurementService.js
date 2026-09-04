@@ -5,6 +5,7 @@ import { CatalogSnapshotService } from './catalogSnapshot.js';
 import { calculateProductOpportunity,publicProductOpportunityProjection,PRODUCT_OPPORTUNITY_VERSION } from './productOpportunity.js';
 import { CooperationFeasibilityV3Engine,COOPERATION_V3_VERSION } from './cooperationV3.js';
 import { calculateCommercialProductFit,publicCommercialProductFitProjection,COMMERCIAL_PRODUCT_FIT_VERSION } from './commercialProductFit.js';
+import {projectCategoryMatchStatus} from './categoryMatchStatus.js';
 export { buildCategoryBuyerDiscoveryQueries } from './CategoryEvidenceService.js';
 
 const upper=value=>String(value||'').trim().toUpperCase();
@@ -26,18 +27,24 @@ export function buildCategoryProcurementWorkItems({company_ids=[],product_profil
 }
 
 export function publicCategoryProcurementProjection(result={}){
+  const projectedStatus=projectCategoryMatchStatus(result.match_status);
+  const projectedConfirmation=projectedStatus==='CATEGORY_MATCH_CONFIRMED'?'MATCH_CONFIRMED'
+    :projectedStatus==='CATEGORY_MISMATCH'?'MISMATCH_CONFIRMED':'MATCH_NOT_CONFIRMED';
   return {category_procurement_match_result_id:result.id||result.category_procurement_match_result_id||null,product_profile:result.product_profile,
-    category_procurement_match_score:result.score??null,category_procurement_match_band:result.band||'UNKNOWN',category_procurement_match_status:result.match_status||'NEEDS_PRODUCT_EVIDENCE',
+    category_procurement_match_score:result.score??null,category_procurement_match_band:result.band||'UNKNOWN',category_procurement_match_status:projectedStatus,
+    category_confirmation_status:result.category_confirmation_status||projectedConfirmation,
+    category_confirmation_reason:result.category_confirmation_reason||(projectedConfirmation==='MATCH_CONFIRMED'?'TARGET_CATEGORY_MATCH':projectedConfirmation==='MISMATCH_CONFIRMED'?'CATEGORY_MISMATCH':'CATEGORY_CONFIRMATION_REQUIRED'),
+    category_confirmation_message:result.category_confirmation_message||(projectedConfirmation==='MATCH_CONFIRMED'?'已确认该公司经营目标类目':projectedConfirmation==='MISMATCH_CONFIRMED'?'已确认该公司不经营目标类目':'尚未确认该公司经营目标类目'),
     category_procurement_coverage:Number(result.coverage_percent||0),buyer_business_model:result.buyer_model||'UNKNOWN',buyer_subtype:result.buyer_subtype||'OTHER',
     scope_revision_id:result.scope_revision_id||null,match_basis:result.match_basis||null,
     scope_revision:result.scope_revision??null,matched_scopes:result.matched_scopes||[],
     observed_customer_categories:result.observed_customer_categories||result.observed_categories||[],
     matched_scope_ids:result.matched_scope_ids||[],observed_customer_category_ids:result.observed_customer_category_ids||[],
-    similarity_rule:result.similarity_rule||null,catalog_completeness_non_blocking:result.catalog_completeness_non_blocking===true,
+    similarity_rule:result.similarity_rule||null,catalog_completeness_non_blocking:result.catalog_completeness_non_blocking===true,product_profile_optional:result.product_profile_optional===true,
     observed_categories:result.observed_categories||[],reason_codes:result.reason_codes||[],missing_evidence:result.missing_evidence||[],
     dimensions:result.dimensions||[],product_opportunity:result.product_opportunity?publicProductOpportunityProjection(result.product_opportunity):null,
     supplier_access_score:result.supplier_access_score??null,supplier_access_band:result.supplier_access_band||'UNKNOWN',supplier_access_coverage:Number(result.supplier_access_coverage||0),
-    product_access_matrix:result.product_access_matrix||'UNKNOWN_PRODUCT',readiness:result.opportunity_readiness||'NEEDS_PRODUCT_EVIDENCE',readiness_blockers:result.readiness_blockers||[],created_at:result.created_at||null};
+    product_access_matrix:result.product_access_matrix||'UNKNOWN_PRODUCT',readiness:result.opportunity_readiness||'CATEGORY_CONFIRMATION_REQUIRED',readiness_blockers:result.readiness_blockers||[],created_at:result.created_at||null};
 }
 
 function accessDimensions(previous={}){const breakdown=previous.dimension_breakdown||{};return Object.fromEntries(['external_supplier_openness','supplier_onboarding_accessibility','buying_procurement_accessibility','commercial_operational_feasibility','supplier_lock_in_barrier'].map(key=>[key,breakdown[key]||{state:'UNKNOWN',points:null,evidence_ids:[]} ]));}

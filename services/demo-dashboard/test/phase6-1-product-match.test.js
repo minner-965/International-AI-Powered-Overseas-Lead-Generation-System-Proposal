@@ -58,7 +58,7 @@ test('direct retailer with official target-category evidence passes at the 70 co
   assert.equal(result.score,70);
   assert.equal(result.coverage_percent,70);
   assert.equal(result.band,'HIGH');
-  assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
 test('eligible distribution buyer passes when category, sourcing and operating evidence satisfy its model gate',()=>{
@@ -73,17 +73,17 @@ test('eligible distribution buyer passes when category, sourcing and operating e
   });
   assert.equal(result.score,71);
   assert.equal(result.coverage_percent,80);
-  assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
-test('optional dimensions cannot compensate for a missing category or buyer-model core gate',()=>{
+test('category confirmation is the only category gate and buyer-model detail is non-blocking',()=>{
   const missingCategory=calculate({dimensions:dimensions({
     target_category_procurement_evidence:unknown(45),buyer_business_model_fit:observed(25,25),
     assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
   })});
   assert.equal(missingCategory.score,null);
   assert.equal(missingCategory.band,'UNKNOWN');
-  assert.equal(missingCategory.match_status,'NEEDS_PRODUCT_EVIDENCE');
+  assert.equal(missingCategory.match_status,'CATEGORY_CONFIRMATION_REQUIRED');
 
   const missingBuyer=calculate({
     buyer_business_model:{buyer_model:'UNKNOWN',buyer_subtype:'OTHER',eligibility_status:'NEEDS_EVIDENCE'},
@@ -92,23 +92,23 @@ test('optional dimensions cannot compensate for a missing category or buyer-mode
       assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
     })
   });
-  assert.equal(missingBuyer.score,null);
-  assert.equal(missingBuyer.band,'UNKNOWN');
-  assert.equal(missingBuyer.match_status,'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE');
+  assert.equal(missingBuyer.score,75);
+  assert.equal(missingBuyer.band,'HIGH');
+  assert.equal(missingBuyer.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
-test('score 60 is the PASS floor and an observed score below 60 is WEAK_CATEGORY_MATCH',()=>{
+test('confirmed company category is retained even when optional scoring coverage is low',()=>{
   const atGate=calculate({dimensions:dimensions({
     target_category_procurement_evidence:observed(35,45),buyer_business_model_fit:observed(25,25)
   })});
   assert.equal(atGate.score,60);
-  assert.equal(atGate.match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(atGate.match_status,'CATEGORY_MATCH_CONFIRMED');
 
   const belowGate=calculate({dimensions:dimensions({
     target_category_procurement_evidence:observed(34,45),buyer_business_model_fit:observed(25,25)
   })});
   assert.equal(belowGate.score,59);
-  assert.equal(belowGate.match_status,'WEAK_CATEGORY_MATCH');
+  assert.equal(belowGate.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
 test('sufficient observed unrelated assortment is PRODUCT_MISMATCH; absence of evidence is not',()=>{
@@ -117,29 +117,28 @@ test('sufficient observed unrelated assortment is PRODUCT_MISMATCH; absence of e
     buyer_business_model_fit:observed(25,25)
   }),confirmed_unrelated_assortment:true});
   assert.equal(mismatch.score,25);
-  assert.equal(mismatch.match_status,'PRODUCT_MISMATCH');
+  assert.equal(mismatch.match_status,'CATEGORY_MISMATCH');
 
   const absent=calculate({dimensions:dimensions({
     target_category_procurement_evidence:unknown(45),buyer_business_model_fit:observed(25,25)
   })});
   assert.equal(absent.score,null);
-  assert.equal(absent.match_status,'NEEDS_PRODUCT_EVIDENCE');
+  assert.equal(absent.match_status,'CATEGORY_CONFIRMATION_REQUIRED');
 });
 
-test('unclear and excluded intermediaries never publish an eligible Product Match score',()=>{
+test('buyer-model classification does not rewrite company-category confirmation',()=>{
   const unclear=calculate({
     buyer_business_model:{buyer_model:'UNCLEAR_INTERMEDIARY',buyer_subtype:'DISTRIBUTOR',eligibility_status:'NEEDS_EVIDENCE'},
     dimensions:dimensions({target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:unknown(25)})
   });
-  assert.equal(unclear.score,null);
-  assert.equal(unclear.match_status,'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE');
+  assert.equal(unclear.score,45);
+  assert.equal(unclear.match_status,'CATEGORY_MATCH_CONFIRMED');
 
   const excluded=calculate({
     buyer_business_model:{buyer_model:'EXCLUDED_INTERMEDIARY',buyer_subtype:'SOURCING_AGENT',eligibility_status:'INELIGIBLE'},
     dimensions:dimensions({target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:observed(0,25)})
   });
-  assert.equal(excluded.match_status,'INELIGIBLE_BUYER_MODEL');
-  assert.notEqual(excluded.match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(excluded.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
 test('internal SKU count and catalog snapshot completeness do not block an approved category scope match',()=>{
@@ -147,7 +146,7 @@ test('internal SKU count and catalog snapshot completeness do not block an appro
     const result=calculate({catalog_snapshot:snapshot});
     assert.equal(result.score,70);
     assert.equal(result.band,'HIGH');
-    assert.equal(result.match_status,'CATEGORY_PROCUREMENT_MATCH');
+    assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
     assert.equal(result.catalog_completeness_non_blocking,true);
   }
 });
@@ -168,5 +167,5 @@ test('requested product categories, Management Match and DPV Score cannot create
     dpv_score:100
   });
   assert.equal(result.score,null);
-  assert.equal(result.match_status,'NEEDS_PRODUCT_EVIDENCE');
+  assert.equal(result.match_status,'CATEGORY_CONFIRMATION_REQUIRED');
 });
