@@ -22,7 +22,8 @@
 ### Verification
 
 - Migrations 025–050 replayed with checksum verification; 049 and 050 returned `SKIPPED_ALREADY_APPLIED`.
-- Final clean-tree suite: 775 tests, 723 passed, 52 conditionally skipped, 0 failed; current-project status verification and `git diff --check` passed.
+- Opportunity `ALL` excludes category matches without a current decision, keeping the displayed total aligned with the five status buckets.
+- Final clean-tree suite: 776 tests, 724 passed, 52 conditionally skipped, 0 failed; current-project status verification and `git diff --check` passed.
 
 ## phase10 — 2026-09-04 — pre-email category-driven automation accepted
 
