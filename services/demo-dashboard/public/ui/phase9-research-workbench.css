@@ -596,6 +596,48 @@ button.p9-metric:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.p9-progress-block {
+  width: 100%;
+}
+
+.p9-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--p8-space-3);
+  margin-bottom: var(--p8-space-2);
+  color: var(--p8-ink);
+  font-size: .875rem;
+}
+
+.p9-progress-copy b {
+  flex: 0 0 auto;
+  color: var(--p8-primary-hover);
+  font-variant-numeric: tabular-nums;
+}
+
+.p9-progress-block progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--p8-border);
+  accent-color: var(--p8-primary);
+}
+
+.p9-progress-block progress::-webkit-progress-bar { background: var(--p8-border); }
+.p9-progress-block progress::-webkit-progress-value { background: var(--p8-primary); }
+.p9-progress-block progress::-moz-progress-bar { background: var(--p8-primary); }
+
+.p9-progress-block.is-compact { min-width: 132px; }
+.p9-progress-block.is-compact .p9-progress-copy { margin-bottom: 5px; font-size: .75rem; }
+.p9-progress-block.is-compact .p9-progress-copy strong { display: none; }
+.p9-progress-block.is-compact progress { height: 7px; }
+
+.p9-detail-progress { margin-top: var(--p8-space-3); }
+
 .p9-jobs-pagination {
   display: flex;
   justify-content: center;

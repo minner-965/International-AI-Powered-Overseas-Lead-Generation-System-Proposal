@@ -22,6 +22,24 @@ export function researchStatusLabel(value) {
   })[value] || pair(value || '待确认', value || 'To confirm');
 }
 
+export function researchProgress(job = {}) {
+  const status = String(job.status || '').trim().toUpperCase();
+  if (status === 'COMPLETED' || status === 'COMPLETE') return 100;
+  if (status === 'QUEUED') return 0;
+  const supplied = Number(job.progress_percent);
+  if (Number.isFinite(supplied)) return Math.max(0, Math.min(100, Math.round(supplied)));
+  const target = Math.max(1, Number(job.candidates_found || job.max_results || job.companies_selected || 1));
+  const checked = Math.max(0, Number(job.candidate_verifications_completed || job.candidates_checked || job.companies_attempted || 0));
+  if (status === 'DISCOVERING') return Math.max(8, Math.min(25, Math.round((Number(job.candidates_found || 0) / target) * 25)));
+  if (status === 'CRAWLING') return Math.max(30, Math.min(68, 30 + Math.round((checked / target) * 38)));
+  if (status === 'QUALIFYING') return 76;
+  if (status === 'SCORING') return 90;
+  if (['FAILED','FAILED_RETRYABLE','FAILED_FINAL','WAITING_EVIDENCE','CANCELLED'].includes(status)) {
+    return Math.max(0, Math.min(99, Math.round(Number(job.progress_percent || 0))));
+  }
+  return 0;
+}
+
 export function sizeLabel(value) {
   const key = String(value || 'UNKNOWN').toUpperCase();
   return ({

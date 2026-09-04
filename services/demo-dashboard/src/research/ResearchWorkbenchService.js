@@ -56,9 +56,14 @@ function publicJob(row = {}) {
   const companiesSelected=Array.isArray(row.requested_company_ids)&&row.requested_company_ids.length
     ? row.requested_company_ids.length : Number(row.companies_attempted || row.candidates_found || 0);
   const companiesAttempted=Number(row.companies_attempted || 0);
+  const rawStatus=upper(row.status);
+  const completedUnits=Math.max(companiesAttempted,Number(row.candidate_verifications_completed || 0));
+  const stageFloor=rawStatus==='DISCOVERING'?8:rawStatus==='CRAWLING'?30:rawStatus==='QUALIFYING'?76:rawStatus==='SCORING'?90:0;
+  const stageCeiling=rawStatus==='DISCOVERING'?25:rawStatus==='CRAWLING'?68:rawStatus==='QUALIFYING'?84:rawStatus==='SCORING'?98:99;
   const progressPercent=publicStatus === 'COMPLETED' ? 100
     : publicStatus === 'QUEUED' ? 0
-      : companiesSelected > 0 ? Math.min(100,Math.round((companiesAttempted/companiesSelected)*100)) : null;
+      : companiesSelected > 0 ? Math.max(stageFloor,Math.min(stageCeiling,
+        stageFloor+Math.round((completedUnits/companiesSelected)*Math.max(0,stageCeiling-stageFloor)))) : stageFloor;
   return Object.freeze({
     job_id:row.id,
     objective:jobObjective(upper(row.job_type)),
@@ -338,6 +343,8 @@ export class ResearchWorkbenchService {
       pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
       pu.provider_temporary_error_count,pu.provider_failed_count,pu.reserved_units,pu.used_units,
       pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
+      (SELECT count(*)::int FROM leadgen.research_candidate_verifications v
+        WHERE v.research_job_id=j.id) candidate_verifications_completed,
       (SELECT count(DISTINCT d.id)::int FROM leadgen.decision_makers d JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=d.id
         WHERE d.research_job_id=j.id AND d.person_name IS NOT NULL AND d.verification_status='VERIFIED' AND pr.relevance IN('HIGH','MEDIUM')) verified_named_buyers,
       (SELECT count(DISTINCT dc.id)::int FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers d ON d.id=dc.decision_maker_id
@@ -360,6 +367,8 @@ export class ResearchWorkbenchService {
       pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
       pu.provider_temporary_error_count,pu.provider_failed_count,pu.reserved_units,pu.used_units,
       pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
+      (SELECT count(*)::int FROM leadgen.research_candidate_verifications v
+        WHERE v.research_job_id=j.id) candidate_verifications_completed,
       (SELECT count(DISTINCT d.id)::int FROM leadgen.decision_makers d JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=d.id
         WHERE d.research_job_id=j.id AND d.person_name IS NOT NULL AND d.verification_status='VERIFIED' AND pr.relevance IN('HIGH','MEDIUM')) verified_named_buyers,
       (SELECT count(DISTINCT dc.id)::int FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers d ON d.id=dc.decision_maker_id

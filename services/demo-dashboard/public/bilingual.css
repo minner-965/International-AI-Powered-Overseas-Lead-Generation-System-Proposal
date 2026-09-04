@@ -218,6 +218,45 @@ th .bi { line-height: 1.25; }
   margin-top: 14px;
 }
 
+.research-progress {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.research-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.research-progress-copy b {
+  flex: 0 0 auto;
+  color: var(--color-brand-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.research-progress progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--line-soft);
+  accent-color: var(--color-brand);
+}
+
+.research-progress progress::-webkit-progress-bar { background: var(--line-soft); }
+.research-progress progress::-webkit-progress-value { background: var(--color-brand); }
+.research-progress progress::-moz-progress-bar { background: var(--color-brand); }
+
 .research-job-grid > div {
   min-width: 0;
   min-height: 88px;

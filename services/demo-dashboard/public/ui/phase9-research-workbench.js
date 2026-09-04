@@ -445,13 +445,26 @@ function jobResultFacts(job) {
   }).filter(Boolean).join('') || bi('尚未报告结果','Results not reported');
 }
 
-function jobProgress(job) {
+function jobProgressValue(job) {
   const percent = finiteNumber(first(job,['progress_percent','progress']));
-  if (percent !== null) return `${Math.max(0,Math.min(100,Math.round(percent)))}%`;
+  if (percent !== null) return Math.max(0,Math.min(100,Math.round(percent)));
   const selected = finiteNumber(first(job,['companies_selected','candidates_found']));
   const maximum = finiteNumber(first(job,['max_results']));
-  if (selected !== null && maximum !== null && maximum > 0) return `${selected} / ${maximum}`;
-  return '-';
+  if (selected !== null && maximum !== null && maximum > 0) return Math.max(0,Math.min(99,Math.round((selected/maximum)*100)));
+  return 0;
+}
+
+function jobProgress(job) {
+  return `${jobProgressValue(job)}%`;
+}
+
+function jobProgressMarkup(job,{ compact=false }={}) {
+  const percent=jobProgressValue(job);
+  const stage=stagePair(first(job,['progress_stage','stage','current_stage'],first(job,['status'],'QUEUED')));
+  return `<div class="p9-progress-block${compact?' is-compact':''}">
+    <div class="p9-progress-copy"><strong>${bi(`当前阶段：${stage[0]}`,`Current stage: ${stage[1]}`)}</strong><b>${esc(percent)}%</b></div>
+    <progress value="${esc(percent)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${percent}%`)}">${esc(percent)}%</progress>
+  </div>`;
 }
 
 function jobBlocker(job) {
@@ -485,6 +498,9 @@ const STAGE_LABELS = Object.freeze({
   BUYER_ROLE:['采购人员与职责','Buyer / role'], BUYER:['采购人员与职责','Buyer / role'],
   EMAIL_VERIFICATION:['邮箱核验','Email verification'], EMAIL:['邮箱核验','Email verification'],
   DECISION_REFRESH:['机会状态刷新','Status refresh'], DECISION:['机会状态刷新','Status refresh'],
+  DISCOVERING:['搜索候选企业','Searching candidate companies'], QUALIFYING:['核验公司真实性','Verifying company identity'],
+  SCORING:['计算匹配结果','Calculating match results'], RUNNING:['自动处理中','Processing automatically'],
+  COMPLETED:['全部阶段已完成','All stages completed'], WAITING_EVIDENCE:['自动核验已结束','Automated verification finished'],
 });
 const stagePair = value => STAGE_LABELS[text(value).toUpperCase()] || ['阶段待确认','Stage to confirm'];
 
@@ -604,7 +620,7 @@ function renderJobs(jobItems,{ append = false } = {}) {
     const activity = first(job,['updated_at','created_at']);
     const dispatch=dispatchLabel(job);
     const queuedAt=first(job,['queued_at']);
-    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}${queuedAt?`<small>${bi('排队时间','Queued')}: ${dateTimeMarkup(queuedAt)}</small>`:''}</div></td><td data-label="进度 / Progress"><span class="p9-job-progress">${esc(jobProgress(job))}</span></td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
+    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}${queuedAt?`<small>${bi('排队时间','Queued')}: ${dateTimeMarkup(queuedAt)}</small>`:''}</div></td><td data-label="进度 / Progress">${jobProgressMarkup(job,{compact:true})}</td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
   }).join('');
   if (append) host.insertAdjacentHTML('beforeend',rows); else host.innerHTML = rows;
   host.querySelectorAll('[data-open-job]').forEach(button=>button.addEventListener('click',()=>openJobDetail(button.dataset.openJob,{ trigger:button })));
@@ -725,7 +741,7 @@ function renderJobDetail(job, results = null) {
   host.hidden = false;
   if (empty) empty.hidden = true;
   host.setAttribute('aria-busy','false');
-  host.innerHTML = `<header class="p9-detail-header"><div><h3>${esc(jobObjective(job))}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions">${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header>${usageMarkup}<div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
+  host.innerHTML = `<header class="p9-detail-header"><div><h3>${esc(jobObjective(job))}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions">${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section>${usageMarkup}<div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
   host.scrollIntoView({ block:'start', behavior:'auto' });
 }

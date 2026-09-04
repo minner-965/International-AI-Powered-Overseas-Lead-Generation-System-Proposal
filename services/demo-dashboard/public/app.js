@@ -9,6 +9,7 @@ import {
   promotionStatusLabel,
   reasonCodeLabel,
   relevanceLabel,
+  researchProgress,
   researchStatusLabel,
   sizeLabel,
   socialEnrichmentLabel,
@@ -515,13 +516,18 @@ function renderResearchJob(job) {
   const status = researchStatusLabel(job.status);
   const market = [job.country_name || job.country, job.region, job.city].map(displayValue).filter(Boolean).join(' / ');
   const taskErrors = Math.max(Number(job.search_failed_requests || 0), Number(job.error_count || 0));
+  const progress = researchProgress(job);
   const compactCompleted = window.matchMedia('(max-width: 560px)').matches && job.status === 'COMPLETED';
   $('#research-job').hidden = false;
   const terminalStatuses = ['COMPLETED','FAILED','FAILED_RETRYABLE','FAILED_FINAL','WAITING_EVIDENCE','CANCELLED'];
   $('#research-job').setAttribute('aria-busy', String(!terminalStatuses.includes(String(job.status || '').toUpperCase())));
-  $('#research-job').innerHTML = `<div class="research-job-head"><div><p class="kicker">${bi('研究任务','Research job')}</p><h4>${esc(job.job_id || job.id || '-')}</h4></div><span class="job-status status-${esc(String(job.status || '').toLowerCase())}" role="status" aria-live="polite" aria-atomic="true">${bi(status[0],status[1])}</span></div>
+  $('#research-job').innerHTML = `<div class="research-job-head"><div><p class="kicker">${bi('研究任务','Research job')}</p><h4>${esc(job.job_id || job.id || '-')}</h4></div><span class="job-status status-${esc(String(job.status || '').toLowerCase())}">${bi(status[0],status[1])}</span></div>
     <details class="job-disclosure"${compactCompleted ? '' : ' open'}>
       <summary>${bi('查看任务详情与结果','View job details and results')}</summary>
+      <section class="research-progress" role="status" aria-live="polite" aria-atomic="true">
+        <div class="research-progress-copy"><strong>${bi(`当前阶段：${status[0]}`,`Current stage: ${status[1]}`)}</strong><b>${esc(progress)}%</b></div>
+        <progress value="${esc(progress)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${progress}%`)}">${esc(progress)}%</progress>
+      </section>
       <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
       ${job.status === 'FAILED' ? `<p class="job-error">${bi('研究任务未完成。','Research job failed.')}</p>` : ''}
       <div id="research-query-summary"></div><div id="research-candidate-results"></div><div id="research-verification-results"></div>

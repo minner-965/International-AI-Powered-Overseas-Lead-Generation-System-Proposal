@@ -9,6 +9,7 @@ import {
   marketSelection,
   partitionVerifications,
   presetFilters,
+  researchProgress,
   researchStatusLabel,
   sizeLabel,
   verificationStatusLabel
@@ -71,6 +72,15 @@ test('research lifecycle labels include Phase 4 crawling and qualifying states',
   assert.deepEqual(researchStatusLabel('CRAWLING'), ['正在核验企业页面','Verifying company pages']);
   assert.deepEqual(researchStatusLabel('QUALIFYING'), ['正在评估企业','Assessing companies']);
   assert.deepEqual(researchStatusLabel('COMPLETED'), ['已完成','Completed']);
+});
+
+test('research progress reports stable stage floors and live verification progress', () => {
+  assert.equal(researchProgress({ status:'QUEUED' }),0);
+  assert.equal(researchProgress({ status:'DISCOVERING',candidates_found:5,max_results:5 }),25);
+  assert.equal(researchProgress({ status:'CRAWLING',candidates_found:5,candidate_verifications_completed:2 }),45);
+  assert.equal(researchProgress({ status:'QUALIFYING' }),76);
+  assert.equal(researchProgress({ status:'SCORING' }),90);
+  assert.equal(researchProgress({ status:'COMPLETED' }),100);
 });
 
 test('company size and verification labels include enterprise without Tier semantics', () => {

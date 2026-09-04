@@ -1306,7 +1306,9 @@ app.get('/api/research/jobs', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
       pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
-      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at
+      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
+      (SELECT count(*)::int FROM leadgen.research_candidate_verifications v
+        WHERE v.research_job_id=j.id) candidate_verifications_completed
       FROM leadgen.research_jobs j LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
       ORDER BY j.created_at DESC,j.id DESC LIMIT 100`);
     res.json(rows.map(researchJobResponse));
@@ -1317,7 +1319,9 @@ app.get('/api/research/jobs/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
       pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
-      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at
+      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
+      (SELECT count(*)::int FROM leadgen.research_candidate_verifications v
+        WHERE v.research_job_id=j.id) candidate_verifications_completed
       FROM leadgen.research_jobs j LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
       WHERE j.id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Research job not found' });
