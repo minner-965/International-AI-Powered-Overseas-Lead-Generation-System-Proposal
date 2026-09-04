@@ -23,6 +23,7 @@ import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './
 import { CategoryScopeService } from './categoryProcurement/CategoryScopeService.js';
 import { resolveTargetCategoryContext,resolveTargetCategoryContextFromDatabase } from './categoryProcurement/targetCategoryContext.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
+import {companyCategoryAdmittedSql,confirmedCategoryProfilesSql} from './categoryProcurement/categoryAdmission.js';
 import { AutoEvidenceOrchestrator,autoEvidenceConfig,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
 import { Phase7Service } from './phase7/service.js';
@@ -1065,7 +1066,7 @@ async function metrics(db = pool) {
       count(*) FILTER (WHERE r.approval_status = 'approved')::int AS approved,
       count(*) FILTER (WHERE r.send_status <> 'disabled')::int AS send_enabled,
       count(*) FILTER (WHERE c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-        AND c.explicit_exclusion_reason IS NULL)::int AS verified_active,
+        AND c.explicit_exclusion_reason IS NULL AND ${companyCategoryAdmittedSql('c')})::int AS verified_active,
       count(*) FILTER (WHERE c.verification_status='REVIEW')::int AS review,
       count(*) FILTER (WHERE c.verification_status='REJECTED')::int AS rejected,
       count(*) FILTER (WHERE c.lifecycle_status='STALE')::int AS stale,
@@ -1085,7 +1086,8 @@ async function metrics(db = pool) {
     LEFT JOIN (SELECT company_id, count(*) source_count FROM leadgen.sources GROUP BY company_id) s
       ON s.company_id = c.id
     WHERE c.data_origin IN (${publicDataOriginSql})
-      AND ${companyMarketVisibleSql('c')}`);
+      AND ${companyMarketVisibleSql('c')}
+      AND ${companyCategoryAdmittedSql('c')}`);
   const lastRun = await db.query('SELECT new_companies,updated_companies,fetched_records,completed_at FROM leadgen.collection_runs ORDER BY completed_at DESC LIMIT 1');
   return { ...rows[0], data_origin: 'mixed_public_provenance', last_run: lastRun.rows[0] || null };
 }
@@ -2309,7 +2311,8 @@ app.get('/api/leads', async (req, res, next) => {
     const clauses = [
       `c.data_origin IN (${publicDataOriginSql})`,
       companyMarketVisibleSql('c'),
-      excludesConfirmedExistingCustomerSql('c')
+      excludesConfirmedExistingCustomerSql('c'),
+      companyCategoryAdmittedSql('c')
     ];
     if (req.query.tier) { params.push(req.query.tier); clauses.push(`r.tier = $${params.length}`); }
     if (req.query.approval) { params.push(req.query.approval); clauses.push(`r.approval_status = $${params.length}`); }
@@ -2324,7 +2327,7 @@ app.get('/api/leads', async (req, res, next) => {
         c.website_url, c.data_origin, c.importer_wholesaler_fit, c.chain_supply_fit, c.source_record_count,
         c.research_job_id, c.company_size_band, c.procurement_access_fit, c.size_evidence, c.social_profiles,
         c.verification_status,c.lifecycle_status,c.last_verified_at,c.verification_source_count,
-        c.verification_freshness,c.explicit_exclusion_reason,c.product_categories AS product_profiles,
+        c.verification_freshness,c.explicit_exclusion_reason,${confirmedCategoryProfilesSql('c')} AS product_profiles,
         r.lead_score, r.tier, r.approval_status, r.send_status, r.next_action
       FROM leadgen.companies c JOIN leadgen.lead_reviews r ON r.company_id = c.id
       WHERE ${clauses.join(' AND ')} ORDER BY r.lead_score DESC, c.company_name`, params);
@@ -2339,7 +2342,7 @@ app.get('/api/export/leads', managementAuth.authenticate,
       SELECT c.id,c.company_name,c.city,c.website_url,c.company_type,c.company_description,
         c.data_origin,c.research_job_id,
         c.verification_status,c.lifecycle_status,c.last_verified_at,c.verification_source_count,
-        c.verification_freshness,c.explicit_exclusion_reason,c.product_categories AS product_profiles,
+        c.verification_freshness,c.explicit_exclusion_reason,${confirmedCategoryProfilesSql('c')} AS product_profiles,
         c.importer_wholesaler_fit,c.chain_supply_fit,c.importer_wholesaler_evidence,
         c.chain_store_supply_evidence,c.source_record_count,c.created_at,c.last_collected_at,
         c.company_size_band,c.procurement_access_fit,c.size_evidence,c.social_profiles,
@@ -2364,6 +2367,7 @@ app.get('/api/export/leads', managementAuth.authenticate,
       WHERE c.data_origin IN (${publicDataOriginSql})
         AND ${companyMarketVisibleSql('c')}
         AND ${excludesConfirmedExistingCustomerSql('c')}
+        AND ${companyCategoryAdmittedSql('c')}
       ORDER BY r.lead_score DESC,c.company_name`);
     res.json({ generated_at: new Date().toISOString(), target_product: '全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）', leads: rows });
   } catch (e) { next(e); }
@@ -2375,7 +2379,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
       SELECT c.*, r.*, ct.full_name, ct.job_title, ct.business_email, ct.business_phone,
         ct.email_verification_status,ct.verification_method,ct.verification_detail,ct.verification_checked_at,
         ct.contact_verification_status,ct.contact_lifecycle_status,ct.contact_last_verified_at,
-        c.product_categories AS product_profiles,
+        ${confirmedCategoryProfilesSql('c')} AS product_profiles,
         coalesce(src.sources,'[]'::json) AS sources
       FROM leadgen.companies c
       JOIN leadgen.lead_reviews r ON r.company_id = c.id
@@ -2392,6 +2396,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
         FROM leadgen.sources WHERE company_id=c.id
       ) src ON true
       WHERE c.id = $1 AND ${companyMarketVisibleSql('c')}
+        AND ${companyCategoryAdmittedSql('c')}
       `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
     const lead=rows[0];
