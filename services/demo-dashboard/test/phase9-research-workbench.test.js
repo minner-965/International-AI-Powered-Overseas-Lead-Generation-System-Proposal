@@ -64,6 +64,18 @@ test('job progress is derived from the frozen cohort and terminal state',()=>{
   assert.equal(completed.progress_percent,100);
 });
 
+test('company discovery projects live verification and contact counters',()=>{
+  const projected=publicJob({id:'discovery',status:'COMPLETED',job_type:'COMPANY_DISCOVERY',
+    candidates_found:3,reachable_candidates:2,candidates_verified:1,candidates_in_review:2,
+    candidates_rejected_phase4:0,companies_promoted_new:1,companies_enriched_existing:0,
+    public_emails_found:2,public_phones_found:4,public_whatsapp_found:1,contact_forms_found:1});
+  assert.equal(projected.websites_found,2);
+  assert.equal(projected.verified_companies,1);
+  assert.equal(projected.review_required_companies,2);
+  assert.equal(projected.companies_inserted,1);
+  assert.equal(projected.contacts_found,8);
+});
+
 test('cursor contract is bounded and rejects malformed values',()=>{
   const encoded=encodeCursor(42);
   assert.equal(decodeCursor(encoded),42);

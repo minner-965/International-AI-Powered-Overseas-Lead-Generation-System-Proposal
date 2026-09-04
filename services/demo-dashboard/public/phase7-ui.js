@@ -3,7 +3,6 @@ const esc = value => text(value).replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<'
 const bi = (zh, en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const items = payload => Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.results) ? payload.results : [];
 const firstValue = (object, keys) => keys.map(key => object?.[key]).find(value => value !== undefined && value !== null && value !== '');
-const accessState = { csrf:'', pending:null };
 
 const STATE_LABELS = Object.freeze({
   DRY_RUN_READY:['检查通过','Check passed'], DRY_RUN_FAILED:['需要修正','Correction required'],
@@ -63,6 +62,8 @@ const REASON_LABELS = Object.freeze({
   BUSINESS_EVIDENCE_CONFLICT:['业务资料存在冲突','Business evidence conflicts'],
   VERIFIED_BUYER_REQUIRED:['需补充已核验采购联系人','A verified buyer contact is required'],
   VERIFIED_EMAIL_ROUTE_REQUIRED:['需补充有效邮箱路径','A verified email route is required'],
+  EVIDENCE_REQUIRED_CONTACT_ROUTE:['需查找公司邮箱、电话或 WhatsApp','Company email, phone or WhatsApp is required'],
+  COMPANY_CONTACT_ROUTE_AVAILABLE:['已有公司级联系通道','Company-level contact route available'],
   SALES_READINESS_REQUIRED:['销售跟进条件尚未满足','Sales readiness is not met'],
   POLICY_CONTACT_HOLD:['当前存在联系暂停策略','A contact-hold policy is active'],
 });
@@ -103,117 +104,12 @@ function statusBadge(value) {
 
 export const phase7StatusTone = value => statusTone(text(value).toUpperCase() || 'UNKNOWN');
 
-function accessValues() {
-  return {
-    token:sessionStorage.getItem('dpvManagementToken') || '',
-    actor:sessionStorage.getItem('dpvManagementActor') || '',
-    role:sessionStorage.getItem('dpvManagementRole') || '',
-  };
-}
-
-function accessHeaders({ csrf = false } = {}) {
-  const values = accessValues();
-  return {
-    authorization:`Bearer ${values.token}`,
-    'X-DPV-Actor':values.actor,
-    'X-DPV-Role':values.role,
-    ...(csrf && accessState.csrf ? { 'X-DPV-CSRF':accessState.csrf } : {}),
-  };
-}
-
 export function phase7SessionHeaders() {
-  return accessValues().token ? accessHeaders() : {};
-}
-
-function ensureAccessDialog() {
-  let dialog = document.querySelector('#phase7-management-access');
-  if (dialog) return dialog;
-  dialog = document.createElement('dialog');
-  dialog.id = 'phase7-management-access';
-  dialog.className = 'crm-management-dialog';
-  dialog.setAttribute('aria-labelledby','phase7-management-title');
-  dialog.innerHTML = `<header class="crm-detail-toolbar"><button class="btn btn-ghost-secondary" type="button" data-management-close><i class="ti ti-arrow-left" aria-hidden="true"></i>${bi('返回','Back')}</button><strong id="phase7-management-title">${bi('管理验证','Management Access')}</strong><button class="btn btn-icon btn-ghost-secondary" type="button" data-management-close aria-label="关闭管理验证 Close management access"><i class="ti ti-x" aria-hidden="true"></i></button></header><form id="phase7-management-form" class="crm-management-form"><label for="phase7-management-token">${bi('管理访问令牌','Management access token')}<input id="phase7-management-token" class="form-control" name="token" type="password" autocomplete="current-password" required></label><div id="phase7-management-status" class="crm-operation-status" role="status" aria-live="polite"></div><div class="crm-management-actions"><button class="btn btn-outline-secondary" type="button" data-management-close>${bi('取消','Cancel')}</button><button class="btn btn-primary" type="submit">${bi('验证并继续','Verify and continue')}</button></div></form>`;
-  document.body.append(dialog);
-  dialog.querySelectorAll('[data-management-close]').forEach(button => button.addEventListener('click',()=>dialog.close('cancel')));
-  dialog.addEventListener('cancel',event => { event.preventDefault(); dialog.close('cancel'); });
-  dialog.addEventListener('click',event => {
-    if (event.target !== dialog) return;
-    const bounds = dialog.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close('cancel');
-  });
-  return dialog;
-}
-
-async function verifyAccessSession() {
-  const response = await fetch('/api/management/session',{ cache:'no-store', credentials:'same-origin', headers:accessHeaders() });
-  const payload = await response.json().catch(()=>({}));
-  if (!response.ok) {
-    const error = new Error(payload.error || response.statusText || 'Management access failed');
-    error.status = response.status;
-    error.code = payload.code;
-    throw error;
-  }
-  accessState.csrf = payload.csrf_token || payload.csrfToken || '';
-  return payload;
-}
-
-async function ensureManagementAccess({ force = false } = {}) {
-  const current = accessValues();
-  if (!force && current.token) {
-    try { return await verifyAccessSession(); } catch {}
-  }
-  if (accessState.pending) return accessState.pending;
-  const dialog = ensureAccessDialog();
-  const form = dialog.querySelector('#phase7-management-form');
-  const status = dialog.querySelector('#phase7-management-status');
-  form.token.value = '';
-  accessState.pending = new Promise((resolve,reject) => {
-    const finish = () => {
-      form.removeEventListener('submit',submit);
-      dialog.removeEventListener('close',close);
-      accessState.pending = null;
-    };
-    const close = () => {
-      if (dialog.returnValue !== 'verified') {
-        const error = new Error('Management access cancelled');
-        error.status = 401;
-        finish();
-        reject(error);
-      }
-    };
-    const submit = async event => {
-      event.preventDefault();
-      const button = form.querySelector('[type="submit"]');
-      setBusy(button,true,['正在验证','Verifying','验证并继续','Verify and continue']);
-      sessionStorage.setItem('dpvManagementToken',form.token.value);
-      try {
-        const session = await verifyAccessSession();
-        sessionStorage.setItem('dpvManagementActor',session.identity || '');
-        sessionStorage.setItem('dpvManagementRole',session.role || '');
-        dialog.close('verified');
-        finish();
-        resolve(session);
-      } catch (error) {
-        sessionStorage.removeItem('dpvManagementToken');
-        accessState.csrf = '';
-        status.innerHTML = operationError(error);
-      } finally {
-        setBusy(button,false,['正在验证','Verifying','验证并继续','Verify and continue']);
-      }
-    };
-    form.addEventListener('submit',submit);
-    dialog.addEventListener('close',close);
-    dialog.showModal();
-    requestAnimationFrame(()=>form.token.focus({ preventScroll:true }));
-  });
-  return accessState.pending;
+  return {};
 }
 
 async function request(url, options = {}) {
-  await ensureManagementAccess();
-  const method = text(options.method || 'GET').toUpperCase();
-  const write = !['GET','HEAD'].includes(method);
-  const headers = { ...accessHeaders({ csrf:write }), ...(options.headers || {}) };
+  const headers = { ...(options.headers || {}) };
   const response = await fetch(url, { cache:'no-store', credentials:'same-origin', ...options, headers });
   const type = response.headers.get('content-type') || '';
   const payload = type.includes('application/json') ? await response.json() : null;
@@ -229,8 +125,7 @@ async function request(url, options = {}) {
 export { request as managementRequest };
 
 async function downloadResponse(url, fallbackName) {
-  await ensureManagementAccess();
-  const response = await fetch(url, { cache:'no-store', credentials:'same-origin', headers:accessHeaders() });
+  const response = await fetch(url, { cache:'no-store', credentials:'same-origin' });
   if (!response.ok) {
     let message = response.statusText;
     try { message = (await response.json()).error || message; } catch {}

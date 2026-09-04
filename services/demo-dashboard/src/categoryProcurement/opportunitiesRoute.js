@@ -145,9 +145,14 @@ export async function queryCategoryProcurementOpportunities({
       WHERE dx.company_id=c.id AND dx.lifecycle_status='ACTIVE'
       ORDER BY(dx.verification_status='VERIFIED')DESC,CASE pr.relevance WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
         (dx.person_name IS NOT NULL)DESC,dx.updated_at DESC LIMIT 1)dm ON true
-    LEFT JOIN LATERAL(SELECT cx.* FROM leadgen.decision_maker_contacts cx WHERE cx.decision_maker_id=dm.id
-      ORDER BY(cx.verification_status='VALID')DESC,CASE cx.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2
-        WHEN 'SUPPLIER_PORTAL' THEN 3 WHEN 'VENDOR_REGISTRATION' THEN 4 WHEN 'BUSINESS_PHONE' THEN 5 ELSE 6 END,
+    LEFT JOIN LATERAL(SELECT cx.* FROM leadgen.decision_maker_contacts cx
+      JOIN leadgen.decision_makers contact_owner ON contact_owner.id=cx.decision_maker_id
+      WHERE contact_owner.company_id=c.id AND contact_owner.lifecycle_status='ACTIVE'
+      ORDER BY CASE cx.verification_status WHEN 'VALID' THEN 1 WHEN 'BUSINESS_WHATSAPP_OBSERVED' THEN 2
+        WHEN 'FORMAT_VALID' THEN 3 WHEN 'PUBLICLY_OBSERVED' THEN 4 WHEN 'NOT_VERIFIED' THEN 5 ELSE 6 END,
+        CASE cx.contact_type WHEN 'DEPARTMENT_EMAIL' THEN 1 WHEN 'BUSINESS_EMAIL' THEN 2
+        WHEN 'GENERIC_BUSINESS_EMAIL' THEN 3 WHEN 'BUSINESS_WHATSAPP' THEN 4 WHEN 'BUSINESS_PHONE' THEN 5
+        WHEN 'SUPPLIER_PORTAL' THEN 6 WHEN 'VENDOR_REGISTRATION' THEN 7 ELSE 8 END,
         cx.updated_at DESC LIMIT 1)bc ON true
     LEFT JOIN LATERAL(SELECT px.* FROM leadgen.decision_maker_contacts px JOIN leadgen.decision_makers pd ON pd.id=px.decision_maker_id
       WHERE pd.company_id=c.id AND px.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')

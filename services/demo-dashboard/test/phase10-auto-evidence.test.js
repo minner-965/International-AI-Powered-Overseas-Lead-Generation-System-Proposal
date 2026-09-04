@@ -27,6 +27,10 @@ function taskFixture(overrides = {}) {
     human_owner: null,
     technical_blocker: null,
     attempt_count: 0,
+    strategy_attempt_count: 0,
+    provider_retry_count:0,
+    worker_retry_count:0,
+    checkpoint_replay_count:0,
     max_attempts: 3,
     budget_state: 'AVAILABLE',
     input_digest: 'a'.repeat(64),
@@ -42,9 +46,30 @@ class FakeRepository {
     this.exceptions = [];
     this.schedules = [];
     this.resolvedEventCompanyIds = null;
+    this.dueFairnessRetries = [];
+    this.dueBudgetResumes = [];
+    this.researchKinds = [];
   }
 
   async selectCandidates(options) { this.lastSelectOptions=options;return this.candidates.slice(0, options.limit); }
+
+  async selectDueFairnessRetries(options) {
+    this.lastDueRetryOptions=options;
+    return this.dueFairnessRetries.slice(0,options.limit);
+  }
+
+  async selectDueBudgetResumes(options) {
+    this.lastDueBudgetOptions=options;
+    return this.dueBudgetResumes.slice(0,options.limit);
+  }
+
+  async autoResumeBudgetPaused(taskId, options) {
+    assert.equal(taskId,this.task.id);
+    this.schedules.push({candidate:null,options:{...options,source:'RECONCILIATION'}});
+    this.task={...this.task,task_status:'RETRY_SCHEDULED',budget_state:'AVAILABLE',
+      technical_blocker:null,checkpoint_replay_count:(this.task.checkpoint_replay_count||0)+1};
+    return{task:this.task,resumed:true,schedule_event_id:'auto-resume-event-1'};
+  }
 
   async resolveEventCompanyIds(input) {
     this.lastResolveInput=input;
@@ -68,11 +93,12 @@ class FakeRepository {
     assert.equal(taskId,this.task.id);
     this.schedules.push({candidate:null,options:{...options,source:'MANUAL_RETRY'}});
     this.task={...this.task,task_status:'RETRY_SCHEDULED',budget_state:'AVAILABLE',
-      technical_blocker:null,attempt_count:this.task.attempt_count+1};
+      technical_blocker:null,checkpoint_replay_count:(this.task.checkpoint_replay_count||0)+1};
     return{task:this.task,resumed:true,schedule_event_id:'resume-event-1'};
   }
 
   async ensureResearchJob(_task, kind) {
+    this.researchKinds.push(kind);
     const category = kind === 'CATEGORY';
     const id = category
       ? '33333333-3333-4333-8333-333333333333'
@@ -84,27 +110,32 @@ class FakeRepository {
     return { id, job_type: category ? 'CATEGORY_PROCUREMENT_ENRICHMENT' : 'DECISION_MAKER_ENRICHMENT', replay: true };
   }
 
-  async getSettledAttempt(_taskId, attemptNumber, stage) {
+  async getSettledAttempt(_taskId, attemptNumber, stage,providerRetryCount=0,workerRetryCount=0) {
     return this.attempts.find(item => item.event_type === 'SETTLED'
-      && item.attempt_number === attemptNumber && item.stage === stage) || null;
+      && item.attempt_number === attemptNumber && item.stage === stage
+      && (item.provider_retry_count||0)===providerRetryCount&&(item.worker_retry_count||0)===workerRetryCount) || null;
   }
 
   async beginStage(_task, stage) {
-    this.task = { ...this.task, task_status: 'RUNNING', current_stage: stage, attempt_count: Math.max(1, this.task.attempt_count) };
+    const strategyAttempt=Math.max(1,this.task.strategy_attempt_count||0);
+    this.task = { ...this.task, task_status: 'RUNNING', current_stage: stage,
+      strategy_attempt_count:strategyAttempt,attempt_count:strategyAttempt };
     this.attempts.push({ event_type: 'STARTED', attempt_number: this.task.attempt_count, stage });
     return { task: this.task, started: true };
   }
 
   async settleStage(task, stage, outcome, result, _inputDigest, _outputDigest, technicalBlocker, retryAt) {
     this.attempts.push({
-      event_type: 'SETTLED', attempt_number: task.attempt_count, stage,
+      event_type: 'SETTLED', attempt_number: task.strategy_attempt_count||task.attempt_count, stage,
+      provider_retry_count:task.provider_retry_count||0,worker_retry_count:task.worker_retry_count||0,
       outcome_status: outcome, technical_blocker: technicalBlocker, retry_at: retryAt, result
     });
   }
 
   async recordBundledStage(task, stage) {
-    this.attempts.push({ event_type: 'STARTED', attempt_number: task.attempt_count, stage });
-    this.attempts.push({ event_type: 'SETTLED', attempt_number: task.attempt_count, stage, outcome_status: 'COMPLETED' });
+    this.attempts.push({ event_type: 'STARTED', attempt_number: task.strategy_attempt_count||task.attempt_count, stage });
+    this.attempts.push({ event_type: 'SETTLED', attempt_number: task.strategy_attempt_count||task.attempt_count, stage,
+      provider_retry_count:task.provider_retry_count||0,worker_retry_count:task.worker_retry_count||0,outcome_status: 'COMPLETED' });
   }
 
   async completeTask(_taskId, cooldownUntil) {
@@ -118,10 +149,13 @@ class FakeRepository {
       task_status: status,
       technical_blocker: technicalBlocker,
       retry_at: retryAt,
-      budget_state: budgetState,
-      attempt_count: status === 'RETRY_SCHEDULED' ? this.task.attempt_count + 1 : this.task.attempt_count
+      budget_state: budgetState
     };
     return this.task;
+  }
+
+  async incrementProviderRetry(){
+    this.task={...this.task,provider_retry_count:(this.task.provider_retry_count||0)+1};return this.task;
   }
 
   async openException(_task, input) {
@@ -147,15 +181,59 @@ function queueFixture() {
   };
 }
 
-test('Phase 10 automatic evidence is inactive-first with bounded defaults', () => {
+test('Phase 10 automatic evidence is inactive-first and defaults to provider-account-only Tavily usage', () => {
   const config = autoEvidenceConfig({});
   assert.equal(config.enabled, false);
   assert.equal(config.reconcileMinutes, 30);
   assert.equal(config.batchSize, 10);
-  assert.equal(config.cooldownHours, 168);
-  assert.equal(config.maxAttempts, 3);
+  assert.equal(config.cooldownHours, null);
+  assert.equal(config.maxAttempts, 10);
   assert.equal(config.sourceTtlDays, 90);
+  assert.equal(config.tavilyInternalLimitsEnabled, false);
+  assert.equal(config.tavilyRunCapUnits, null);
+  assert.equal(config.tavilyDailyCapUnits, null);
   assert.equal(AUTO_EVIDENCE_STAGES.length, 8);
+});
+
+test('Phase 10 deployment configuration fails closed with key-only errors', () => {
+  const invalid = [
+    ['AUTO_EVIDENCE_ENABLED', 'sometimes'],
+    ['AUTO_EVIDENCE_RECONCILE_MINUTES', '4'],
+    ['TAVILY_USAGE_POLICY', 'LOCAL_BOUNDED']
+  ];
+  for (const [key, value] of invalid) {
+    assert.throws(() => autoEvidenceConfig({[key]:value}), error => {
+      assert.equal(error.code, 'INVALID_CONFIGURATION');
+      assert.equal(error.message, `Invalid configuration: ${key}`);
+      assert.equal(error.message.includes(value), false);
+      return true;
+    });
+  }
+  const ignored=autoEvidenceConfig({AUTO_EVIDENCE_MAX_ATTEMPTS:'1',AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS:'8760',
+    MAX_TAVILY_CREDITS_PER_DAY_UNITS:'0'});
+  assert.equal(ignored.maxAttempts,10);assert.equal(ignored.cooldownHours,null);assert.equal(ignored.tavilyDailyCapUnits,null);
+});
+
+test('Phase 10 settings status exposes effective values without provider credentials', () => {
+  const service = new AutoEvidenceOrchestrator({
+    repository: new FakeRepository(),
+    queue: queueFixture(),
+    env: {
+      AUTO_EVIDENCE_ENABLED: 'false',
+      AUTO_EVIDENCE_MAX_ATTEMPTS: '10',
+      MAX_TAVILY_CREDITS_PER_DAY_UNITS: '25',
+      MAX_TAVILY_CREDITS_PER_RUN_UNITS: '5',
+      TAVILY_API_KEY: 'must-not-be-projected'
+    }
+  });
+  const status = service.status();
+  assert.equal(status.enabled, false);
+  assert.equal(status.maxAttempts, 10);
+  assert.equal(status.tavilyUsagePolicy,'PROVIDER_ACCOUNT_ONLY');
+  assert.equal(status.tavilyDailyCapUnits, null);
+  assert.equal(status.tavilyRunCapUnits, null);
+  assert.equal(JSON.stringify(status).includes('must-not-be-projected'), false);
+  assert.equal(Object.keys(status).some(key => /api.?key|secret|token/i.test(key)), false);
 });
 
 test('disabled event and reconciliation create no database or queue activity', async () => {
@@ -207,6 +285,69 @@ test('reconciliation respects the configured batch cap and records no duplicate 
   assert.equal(queue.calls.length, 2);
 });
 
+test('provider-only policy accepts one hundred unique tasks without a local daily quota gate', async () => {
+  const candidates = Array.from({ length: 100 }, (_, index) => ({
+    company_id: `${index + 1}`.padStart(8, '0') + '-1111-4111-8111-111111111111',
+    product_profile: 'WOMENSWEAR', business_blocker: 'CATEGORY_EVIDENCE', evidence_revision: index + 1
+  }));
+  const repository = new FakeRepository({ candidates });
+  const queue = queueFixture();
+  const service = new AutoEvidenceOrchestrator({ repository, queue,
+    env: { AUTO_EVIDENCE_ENABLED: 'true', AUTO_EVIDENCE_BATCH_SIZE: '100',
+      TAVILY_USAGE_POLICY: 'PROVIDER_ACCOUNT_ONLY', MAX_TAVILY_CREDITS_PER_DAY_UNITS: '1',
+      MAX_TAVILY_CREDITS_PER_RUN_UNITS: '1' } });
+  const result = await service.reconcile({ batch_size: 100, reconcile_bucket: 'stub-unlimited-queue' });
+  assert.equal(result.selected, 100);
+  assert.equal(result.scheduled, 100);
+  assert.equal(repository.schedules.length, 100);
+  assert.equal(queue.calls.length, 100);
+  assert.equal(result.results.some(item => /BUDGET|QUOTA|LIMIT/.test(item.status)), false);
+});
+
+test('reconciliation resumes due legacy-ready and fairness rounds before selecting new company-profile work', async () => {
+  const repository = new FakeRepository({ candidates: [{
+    company_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    product_profile: 'WOMENSWEAR', business_blocker: 'CATEGORY_EVIDENCE', evidence_revision: 1
+  }] });
+  repository.dueFairnessRetries=[taskFixture({
+    task_status:'RETRY_SCHEDULED',strategy_state:'READY',retry_at:new Date(0),
+    attempt_count:1,strategy_attempt_count:1,current_stage:null,current_strategy_code:null
+  })];
+  const queue=queueFixture();
+  const service=new AutoEvidenceOrchestrator({repository,queue,
+    env:{AUTO_EVIDENCE_ENABLED:'true',AUTO_EVIDENCE_BATCH_SIZE:'1'}});
+  const result=await service.reconcile({batch_size:1,reconcile_bucket:'fairness-window'});
+  assert.equal(result.selected,1);
+  assert.equal(result.fairness_resumed,1);
+  assert.equal(result.scheduled,0);
+  assert.equal(repository.schedules.length,0);
+  assert.equal(queue.calls.length,1);
+  assert.equal(queue.calls[0].name,PHASE5_QUEUES.DISCOVER_OPPORTUNITY_EVIDENCE);
+  assert.equal(queue.calls[0].data.strategy_attempt_number,2);
+  assert.match(queue.calls[0].options.singletonKey,/fairness:fairness-window/);
+});
+
+test('reconciliation automatically resumes prior-day budget pauses before other work', async () => {
+  const repository=new FakeRepository({candidates:[{
+    company_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',product_profile:'WOMENSWEAR',
+    business_blocker:'CATEGORY_EVIDENCE',evidence_revision:1
+  }]});
+  repository.task=taskFixture({task_status:'BUDGET_PAUSED',budget_state:'PAUSED',
+    current_stage:'VERIFYING_EMAIL',current_strategy_code:'S08'});
+  repository.dueBudgetResumes=[repository.task];
+  const queue=queueFixture();
+  const service=new AutoEvidenceOrchestrator({repository,queue,
+    env:{AUTO_EVIDENCE_ENABLED:'true',AUTO_EVIDENCE_BATCH_SIZE:'1'}});
+  const result=await service.reconcile({batch_size:1,reconcile_bucket:'new-budget-day'});
+  assert.equal(result.selected,1);
+  assert.equal(result.budget_auto_resumed,1);
+  assert.equal(result.scheduled,0);
+  assert.equal(queue.calls.length,1);
+  assert.equal(queue.calls[0].data.stage,'VERIFYING_EMAIL');
+  assert.equal(queue.calls[0].data.checkpoint_replay_number,1);
+  assert.match(repository.schedules[0].options.scheduleKey,/budget-auto-resume/);
+});
+
 test('event reconciliation targets a singular company id instead of scanning the global queue', async () => {
   const repository=new FakeRepository();
   const service=new AutoEvidenceOrchestrator({repository,queue:queueFixture(),env:{AUTO_EVIDENCE_ENABLED:'true'}});
@@ -256,11 +397,13 @@ test('repository event resolvers use direct job cohort, import and approved-scop
     category_scope_revision_id:'55555555-5555-4555-8555-555555555555'
   }),[companyId,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'].sort());
   assert.ok(queries.some(item=>item.sql.includes('enrichment_job_companies')));
+  assert.ok(queries.some(item=>item.sql.includes('research_candidate_verifications')));
+  assert.ok(queries.some(item=>item.sql.includes('leadgen.companies WHERE research_job_id')));
   assert.ok(queries.some(item=>item.sql.includes('data_import_effect_outbox')));
   assert.ok(queries.some(item=>item.sql.includes('business_opportunity_current')));
 });
 
-test('repository cooldown is company-profile scoped and blocks a new evidence revision before task insert', async () => {
+test('historical cooldown never blocks a new evidence revision while exact execution remains deduplicated', async () => {
   const statements = [];
   const coolingTask = taskFixture({
     task_status: 'COMPLETED',
@@ -269,9 +412,7 @@ test('repository cooldown is company-profile scoped and blocks a new evidence re
   const client = {
     async query(sql) {
       statements.push(sql);
-      if (/SELECT \* FROM leadgen\.auto_evidence_tasks[\s\S]*cooldown_until>now\(\)/.test(sql)) {
-        return { rows: [coolingTask], rowCount: 1 };
-      }
+      if (/INSERT INTO leadgen\.auto_evidence_tasks/.test(sql))return{rows:[{...coolingTask,id:'new-task',task_status:'QUEUED',cooldown_until:null}],rowCount:1};
       if (/INSERT INTO leadgen\.auto_evidence_schedule_events/.test(sql)) {
         return { rows: [{ id: 'event-1' }], rowCount: 1 };
       }
@@ -291,13 +432,40 @@ test('repository cooldown is company-profile scoped and blocks a new evidence re
     maxAttempts: 3,
     inputDigest: 'a'.repeat(64)
   });
-  assert.equal(result.outcome, 'SKIPPED_COOLDOWN');
-  assert.equal(result.dispatch_required, false);
-  assert.ok(statements.some(sql => /FOR SHARE/.test(sql)));
-  assert.equal(statements.some(sql => /INSERT INTO leadgen\.auto_evidence_tasks/.test(sql)), false);
+  assert.equal(result.outcome, 'SCHEDULED');
+  assert.equal(result.dispatch_required, true);
+  assert.equal(statements.some(sql => /cooldown_until>now/.test(sql)), false);
+  assert.equal(statements.some(sql => /INSERT INTO leadgen\.auto_evidence_tasks/.test(sql)), true);
 });
 
-test('successful stage chain records crawler/extractor audit and completes with cooldown', async () => {
+test('each strategy gets a distinct ResearchJob while retries within that strategy reuse it', async () => {
+  const oldJob='33333333-3333-4333-8333-333333333333';
+  const newJob='55555555-5555-4555-8555-555555555555';
+  const calls=[];
+  let linked=false;
+  const pool={async query(sql,params=[]){
+    calls.push({sql:String(sql),params});
+    if(String(sql).includes('FROM leadgen.auto_evidence_task_attempts'))return{rows:linked?[{exists:1}]:[],rowCount:linked?1:0};
+    if(String(sql).startsWith('INSERT INTO leadgen.research_jobs'))return{rows:[{id:newJob,job_type:'CATEGORY_PROCUREMENT_ENRICHMENT'}],rowCount:1};
+    if(String(sql).startsWith('UPDATE leadgen.auto_evidence_tasks'))return{rows:[],rowCount:1};
+    return{rows:[],rowCount:0};
+  }};
+  const repository=new AutoEvidenceRepository({pool});
+  const task=taskFixture({task_status:'RUNNING',attempt_count:2,strategy_attempt_count:2,
+    current_strategy_code:'S02_OFFICIAL_ASSORTMENT',category_research_job_id:oldJob});
+  const created=await repository.ensureResearchJob(task,'CATEGORY',{runBudgetCapUnits:5});
+  assert.equal(created.id,newJob);
+  assert.equal(created.replay,false);
+  const insert=calls.find(call=>call.sql.startsWith('INSERT INTO leadgen.research_jobs'));
+  assert.match(insert.params[2],/:category:strategy:2$/);
+  assert.ok(calls.some(call=>call.sql.startsWith('UPDATE leadgen.auto_evidence_tasks')&&call.params[1]===newJob));
+  linked=true;
+  const replay=await repository.ensureResearchJob({...task,category_research_job_id:newJob},'CATEGORY',{runBudgetCapUnits:5});
+  assert.deepEqual(replay,{id:newJob,job_type:'CATEGORY_PROCUREMENT_ENRICHMENT',replay:true});
+  assert.equal(calls.filter(call=>call.sql.startsWith('INSERT INTO leadgen.research_jobs')).length,1);
+});
+
+test('successful stage chain records crawler/extractor audit and completes without a cooldown gate', async () => {
   const repository = new FakeRepository();
   const queue = queueFixture();
   const names = [
@@ -315,7 +483,7 @@ test('successful stage chain records crawler/extractor audit and completes with 
     await service.runStage(stage, { task_id: repository.task.id, execution_key: repository.task.execution_key });
   }
   assert.equal(repository.task.task_status, 'COMPLETED');
-  assert.equal(repository.task.cooldown_until.toISOString(), '2026-09-08T00:00:00.000Z');
+  assert.equal(repository.task.cooldown_until, null);
   assert.ok(repository.attempts.some(item => item.stage === 'CRAWLING' && item.event_type === 'SETTLED'));
   assert.ok(repository.attempts.some(item => item.stage === 'EXTRACTING' && item.event_type === 'SETTLED'));
   assert.ok(repository.attempts.filter(item => item.event_type === 'SETTLED')
@@ -339,13 +507,14 @@ test('temporary provider failure schedules exponential retry without changing bu
     task_id: repository.task.id, execution_key: repository.task.execution_key
   });
   assert.equal(result.status, 'RETRY_SCHEDULED');
-  assert.equal(repository.task.attempt_count, 2);
+  assert.equal(repository.task.strategy_attempt_count, 1);
+  assert.equal(repository.task.provider_retry_count,1);
   assert.equal(repository.task.technical_blocker, 'TEMPORARY_PROVIDER_ERROR');
   assert.equal(queue.calls.at(-1).options.startAfter.toISOString(), '2026-09-01T00:01:00.000Z');
   assert.equal(repository.exceptions.length, 0);
 });
 
-test('retry attempt numbers progress 1 to 2 to 3 and then open one human exception', async () => {
+test('provider retries progress independently while the strategy attempt stays fixed', async () => {
   const repository = new FakeRepository();
   const queue = queueFixture();
   const failure = Object.assign(new Error('temporary provider timeout'), { code: 'PROVIDER_TIMEOUT', retryable: true });
@@ -357,20 +526,20 @@ test('retry attempt numbers progress 1 to 2 to 3 and then open one human excepti
   });
   const payload = { task_id: repository.task.id, execution_key: repository.task.execution_key };
   assert.equal((await service.runStage('DISCOVERING_SOURCES', payload)).status, 'RETRY_SCHEDULED');
-  assert.equal(repository.task.attempt_count, 2);
+  assert.equal(repository.task.strategy_attempt_count,1);
+  assert.equal(repository.task.provider_retry_count,1);
   assert.equal((await service.runStage('DISCOVERING_SOURCES', payload)).status, 'RETRY_SCHEDULED');
-  assert.equal(repository.task.attempt_count, 3);
-  assert.equal((await service.runStage('DISCOVERING_SOURCES', payload)).status, 'HUMAN_REVIEW_REQUIRED');
-  assert.equal(repository.task.attempt_count, 3);
-  assert.equal(repository.exceptions.length, 1);
-  assert.match(queue.calls[0].options.singletonKey, /:2:DISCOVERING_SOURCES$/);
-  assert.match(queue.calls[1].options.singletonKey, /:3:DISCOVERING_SOURCES$/);
-  assert.deepEqual(queue.calls.map(call => call.data.attempt_number), [2, 3]);
+  assert.equal(repository.task.strategy_attempt_count,1);
+  assert.equal(repository.task.provider_retry_count,2);
+  assert.equal((await service.runStage('DISCOVERING_SOURCES', payload)).status,'RETRY_SCHEDULED');
+  assert.equal(repository.task.strategy_attempt_count,1);assert.equal(repository.task.provider_retry_count,3);
+  assert.equal(repository.exceptions.length,0);
+  assert.deepEqual(queue.calls.map(call=>call.data.strategy_attempt_number),[1,1,1]);
 });
 
 test('a delayed message from an older attempt never repeats provider work', async () => {
   const repository = new FakeRepository();
-  repository.task = taskFixture({ task_status: 'RETRY_SCHEDULED', attempt_count: 2 });
+  repository.task = taskFixture({ task_status: 'RETRY_SCHEDULED',attempt_count:2,strategy_attempt_count:2 });
   const queue = queueFixture();
   let providerCalls = 0;
   const service = new AutoEvidenceOrchestrator({
@@ -394,6 +563,73 @@ test('a delayed message from an older attempt never repeats provider work', asyn
   assert.equal(providerCalls, 0);
   assert.equal(repository.attempts.length, 0);
   assert.equal(queue.calls.length, 0);
+});
+
+test('a settled strategy start stage advances instead of redirecting the next stage forever', async () => {
+  const repository = new FakeRepository();
+  repository.task = taskFixture({
+    task_status: 'RUNNING',
+    attempt_count: 1,
+    strategy_attempt_count: 1,
+    current_strategy_code: 'S01_OFFICIAL_CATEGORY',
+    current_stage: 'DISCOVERING_SOURCES'
+  });
+  repository.attempts.push({
+    event_type: 'SETTLED',
+    attempt_number: 1,
+    stage: 'DISCOVERING_SOURCES',
+    provider_retry_count: 0,
+    worker_retry_count: 0,
+    outcome_status: 'COMPLETED'
+  });
+  repository.blockerState = async () => ({ hard_stop: false, resolved: false, responsibility_conflict: false });
+  repository.prepareNextStrategy = async () => ({
+    ...repository.task,
+    strategy: { code: 'S01_OFFICIAL_CATEGORY' }
+  });
+  const queue = queueFixture();
+  let normalizeCalls = 0;
+  const service = new AutoEvidenceOrchestrator({
+    repository,
+    queue,
+    executors: {
+      normalize_opportunity_category: async () => {
+        normalizeCalls += 1;
+        return { outcome_status: 'COMPLETED' };
+      }
+    },
+    env: { AUTO_EVIDENCE_ENABLED: 'true' }
+  });
+  const result = await service.runStage('NORMALIZING_CATEGORY', {
+    task_id: repository.task.id,
+    execution_key: repository.task.execution_key,
+    strategy_code: 'S01_OFFICIAL_CATEGORY',
+    attempt_number: 1
+  });
+  assert.equal(result.status, 'RUNNING');
+  assert.notEqual(result.status, 'STRATEGY_REDIRECTED');
+  assert.equal(normalizeCalls, 1);
+  assert.ok(repository.attempts.some(item => item.event_type === 'SETTLED' && item.stage === 'NORMALIZING_CATEGORY'));
+  assert.equal(queue.calls.at(-1).name, PHASE5_QUEUES.REFRESH_CATEGORY_SCOPE_MATCH);
+});
+
+test('decision refresh preserves the strategy ResearchJob lineage instead of creating the opposite kind', async () => {
+  for(const [strategyCode,currentStage,expectedKind] of [
+    ['S01_OFFICIAL_CATEGORY','REFRESHING_DECISION','CATEGORY'],
+    ['S04_OFFICIAL_LEADERSHIP','REFRESHING_DECISION','CONTACT']
+  ]){
+    const repository=new FakeRepository();
+    repository.task=taskFixture({task_status:'RUNNING',attempt_count:1,strategy_attempt_count:1,
+      current_strategy_code:strategyCode,current_stage:currentStage});
+    const service=new AutoEvidenceOrchestrator({repository,queue:queueFixture(),
+      executors:{refresh_business_opportunity_v3:async()=>({outcome_status:'COMPLETED'})},
+      env:{AUTO_EVIDENCE_ENABLED:'true'}});
+    await service.runStage('REFRESHING_DECISION',{
+      task_id:repository.task.id,execution_key:repository.task.execution_key,
+      strategy_code:strategyCode,attempt_number:1
+    });
+    assert.equal(repository.researchKinds.at(-1),expectedKind);
+  }
 });
 
 test('budget exhaustion and evidence conflicts are separated from automatic retry', async () => {
@@ -440,7 +676,7 @@ test('queue handler registry exposes every bounded Phase 10 queue', () => {
 });
 
 test('stage claim is transactional and an active lease blocks duplicate provider work', async () => {
-  const task=taskFixture({task_status:'RUNNING',attempt_count:1,current_stage:'DISCOVERING_SOURCES'});
+  const task=taskFixture({task_status:'RUNNING',attempt_count:1,strategy_attempt_count:1,current_stage:'DISCOVERING_SOURCES'});
   const queries=[];
   let released=false;
   const client={
@@ -463,8 +699,8 @@ test('stage claim is transactional and an active lease blocks duplicate provider
   assert.equal(released,true);
 });
 
-test('a stale stage lease is recovered without creating a second STARTED event', async () => {
-  const task=taskFixture({task_status:'RUNNING',attempt_count:1,current_stage:'DISCOVERING_SOURCES'});
+test('a stale stage lease records a worker recovery without consuming a provider retry', async () => {
+  const task=taskFixture({task_status:'RUNNING',attempt_count:1,strategy_attempt_count:1,current_stage:'DISCOVERING_SOURCES'});
   const queries=[];
   const client={
     async query(sql){
@@ -479,7 +715,9 @@ test('a stale stage lease is recovered without creating a second STARTED event',
   const claimed=await repository.beginStage(task,'DISCOVERING_SOURCES','b'.repeat(64));
   assert.equal(claimed.started,true);
   assert.equal(claimed.recovered,true);
-  assert.ok(!queries.some(sql=>String(sql).startsWith('INSERT INTO leadgen.auto_evidence_task_attempts')));
+  assert.ok(queries.some(sql=>String(sql).startsWith('INSERT INTO leadgen.auto_evidence_task_attempts')));
+  assert.ok(queries.some(sql=>String(sql).includes('worker_retry_count=$2')));
+  assert.ok(!queries.some(sql=>String(sql).includes('provider_retry_count=provider_retry_count+1')));
 });
 
 test('controlled batch override is independent, internal-only and append-audited as MANUAL_RETRY', async () => {
@@ -518,14 +756,25 @@ test('controlled batch override is independent, internal-only and append-audited
 });
 
 test('budget resume appends an attributed MANUAL_RETRY event in the same transaction',async()=>{
-  const paused=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,
+  const paused=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
     max_attempts:3,budget_state:'PAUSED',contact_research_job_id:'44444444-4444-4444-8444-444444444444'});
   const resumed={...paused,task_status:'RETRY_SCHEDULED',attempt_count:2,budget_state:'AVAILABLE',technical_blocker:null};
+  const linked={...resumed,contact_research_job_id:'55555555-5555-4555-8555-555555555555'};
   const queries=[];
   const client={async query(sql,params=[]){queries.push({sql:String(sql),params});
-    if(String(sql).includes('FOR UPDATE'))return{rows:[paused],rowCount:1};
+    if(String(sql).includes('FROM leadgen.auto_evidence_tasks WHERE id=$1 FOR UPDATE'))return{rows:[paused],rowCount:1};
+    if(String(sql).includes('historical_customer_company_links'))return{rows:[{suppressed:false,historical_customer:false}],rowCount:1};
+    if(String(sql).includes('provider_credit_ledger'))return{rows:[],rowCount:0};
+    if(String(sql).includes('FROM leadgen.research_jobs WHERE id=$1 FOR SHARE'))
+      return{rows:[{id:paused.contact_research_job_id,stop_reason_code:'TAVILY_CREDIT_CAP'}],rowCount:1};
+    if(String(sql).startsWith('SELECT stop_reason_code FROM leadgen.research_jobs'))
+      return{rows:[{stop_reason_code:'TAVILY_CREDIT_CAP'}],rowCount:1};
     if(String(sql).startsWith('UPDATE leadgen.auto_evidence_tasks'))return{rows:[resumed],rowCount:1};
     if(String(sql).startsWith('INSERT INTO leadgen.auto_evidence_schedule_events'))return{rows:[{id:'resume-event'}],rowCount:1};
+    if(String(sql).startsWith('INSERT INTO leadgen.research_jobs'))
+      return{rows:[{id:linked.contact_research_job_id}],rowCount:1};
+    if(String(sql).includes('SET contact_research_job_id=$2'))return{rows:[linked],rowCount:1};
+    if(String(sql).startsWith('INSERT INTO leadgen.auto_evidence_resume_outbox'))return{rows:[{id:7}],rowCount:1};
     return{rows:[],rowCount:1};
   },release(){}};
   const repository=new AutoEvidenceRepository({pool:{connect:async()=>client}});
@@ -535,6 +784,7 @@ test('budget resume appends an attributed MANUAL_RETRY event in the same transac
   });
   assert.equal(result.resumed,true);assert.equal(result.schedule_event_id,'resume-event');
   assert.ok(queries.some(item=>item.sql.startsWith('UPDATE leadgen.auto_evidence_tasks')&&/retry_at=now\(\)/.test(item.sql)));
+  assert.ok(queries.some(item=>/checkpoint_replay_count=greatest\(checkpoint_replay_count\+1/.test(item.sql)));
   const auditInsert=queries.find(item=>item.sql.startsWith('INSERT INTO leadgen.auto_evidence_schedule_events'));
   assert.ok(auditInsert);assert.match(auditInsert.sql,/VALUES \('MANUAL_RETRY'/);
   assert.deepEqual(auditInsert.params.slice(-3),['owner.fixture','MANAGEMENT','budget-restored-fixture']);
@@ -543,7 +793,7 @@ test('budget resume appends an attributed MANUAL_RETRY event in the same transac
 
 test('persisted controlled resume runs its checkpoint while global automation is disabled',async()=>{
   const repository=new FakeRepository();
-  repository.task=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,
+  repository.task=taskFixture({task_status:'BUDGET_PAUSED',current_stage:'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,
     max_attempts:3,budget_state:'PAUSED'});
   const queue=queueFixture();
   const service=new AutoEvidenceOrchestrator({repository,queue,
@@ -561,7 +811,7 @@ test('persisted controlled resume runs its checkpoint while global automation is
     executors:{verify_profile_buyer_email:async()=>({outcome_status:'COMPLETED'})},
     env:{AUTO_EVIDENCE_ENABLED:'false',AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED:'false'}});
   const stage=await worker.runStage('VERIFYING_EMAIL',{
-    task_id:repository.task.id,execution_key:repository.task.execution_key,attempt_number:2
+    task_id:repository.task.id,execution_key:repository.task.execution_key,attempt_number:1
   });
   assert.equal(stage.status,'RUNNING');assert.equal(stage.outcome,'COMPLETED');
   assert.equal(queue.calls.at(-1).name,PHASE5_QUEUES.REFRESH_BUSINESS_OPPORTUNITY_V3);
@@ -636,7 +886,7 @@ test('real executor resets a temporary contact ResearchJob to FAILED so the sche
     task: taskFixture(),
     research_job_id: '44444444-4444-4444-8444-444444444444'
   });
-  assert.equal(result.outcome_status, 'RETRYABLE_ERROR');
+  assert.equal(result.outcome_status, 'TEMPORARY_ERROR');
   const reset = updates.find(item => /SET status='FAILED'/.test(item.sql));
   assert.ok(reset);
   assert.equal(reset.params[1], 'PROVIDER_TEMPORARY_ERROR_THRESHOLD');

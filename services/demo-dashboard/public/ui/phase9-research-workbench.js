@@ -117,7 +117,7 @@ function setInlineState(host, zh, en, { error = false, retry = null } = {}) {
   if (!host) return;
   host.classList.add('p9-inline-state');
   host.classList.toggle('is-error',error);
-  host.innerHTML = `${bi(zh,en)}${retry ? ` <button class="btn btn-sm btn-outline-secondary" type="button" data-p9-retry>${bi('重新读取','Retry')}</button>` : ''}`;
+  host.innerHTML = `${bi(zh,en)}${retry ? ` <button class="btn btn-outline-secondary" type="button" data-p9-retry>${bi('重新读取','Retry')}</button>` : ''}`;
   host.querySelector('[data-p9-retry]')?.addEventListener('click',retry);
 }
 
@@ -168,7 +168,9 @@ function providerState(summary) {
 const AUTOMATION_STATUS_LABELS = Object.freeze({
   ENABLED:['已启用','Enabled'], READY:['已启用','Enabled'], DISABLED:['未启用','Disabled'],
   UNAVAILABLE:['状态暂不可用','Unavailable'], DEGRADED:['部分服务待恢复','Degraded'],
-  BUDGET_PAUSED:['预算暂停','Budget paused'], BUDGET_HOLD:['预算暂停','Budget paused'],
+  BUDGET_PAUSED:['等待搜索服务额度','Waiting for search credits'], BUDGET_HOLD:['等待邮箱核验额度','Waiting for email verification credits'],
+  RATE_LIMITED:['搜索服务速率等待','Search rate limited'], CREDIT_EXHAUSTED:['搜索服务额度已用完','Search credits exhausted'],
+  AUTH_ERROR:['搜索服务配置不可用','Search configuration unavailable'], UNKNOWN:['搜索服务状态未知','Search status unknown'],
 });
 
 function automationProjection(summary = {}) {
@@ -188,6 +190,7 @@ function automationProjection(summary = {}) {
     emailHealth:text(first(source,['email_verification_health','email_service_health'],'' )).toUpperCase(),
     remaining:finiteNumber(first(source,['budget_remaining','remaining_budget','remaining_credits'],null)),
     budgetUnit:text(first(source,['budget_unit','remaining_budget_unit'],'' )).toUpperCase(),
+    tavily:first(source,['tavily_usage'],{})||{},
   };
 }
 
@@ -216,6 +219,7 @@ function renderAutomationMonitors(summary) {
   const budget = value.remaining === null
     ? ['-','-']
     : [`${Math.max(0,value.remaining)}${unit[0] ? ` ${unit[0]}` : ''}`,`${Math.max(0,value.remaining)}${unit[1] ? ` ${unit[1]}` : ''}`];
+  const tavily=value.tavily||{};
   const markup = [
     ['自动补证总开关','Auto enrichment switch',statusLabel,automationTone(value.status)],
     ['当前运行','Running',countText(value.running),''],
@@ -224,6 +228,10 @@ function renderAutomationMonitors(summary) {
     ['需人工复核','Human review',countText(value.human),''],
     ['资料服务 / 邮箱核验','Source / Email verification',[`资料 ${sourceHealth[0]} · 邮箱 ${emailHealth[0]}`,`Source ${sourceHealth[1]} · Email ${emailHealth[1]}`],''],
     ['剩余额度 / 最近对账','Budget / Last reconciliation',[`${budget[0]} · ${value.last ? dateTime(value.last) : '-'}`,`${budget[1]} · ${value.last ? dateTime(value.last) : '-'}`],''],
+    ['今日 Tavily 用量单位','Tavily units used today',countText(finiteNumber(tavily.units_used_today)),''],
+    ['今日已尝试企业','Companies attempted today',countText(finiteNumber(tavily.companies_attempted_today)),''],
+    ['今日已尝试策略','Strategies attempted today',countText(finiteNumber(tavily.strategies_attempted_today)),''],
+    ['今日新增可用资料','New usable evidence today',countText(finiteNumber(tavily.new_usable_evidence_today)),''],
   ].map(([zh,en,display,tone])=>`<div class="p10-automation-fact"><span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span><strong class="${tone}">${Array.isArray(display)?bi(display[0],display[1]):esc(display)}</strong></div>`).join('');
   ['#research-automation-monitor','#jobs-automation-monitor','#settings-automation-monitor'].forEach(selector=>{
     const host=$(selector);
@@ -262,7 +270,7 @@ function renderSummaryError() {
   const host = $('#research-workbench-summary');
   if (host) {
     host.setAttribute('aria-busy','false');
-    host.innerHTML = `<div class="p9-inline-state is-error">${bi('研究指标读取失败。','Research metrics could not be loaded.')} <button class="btn btn-sm btn-outline-secondary" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
+    host.innerHTML = `<div class="p9-inline-state is-error">${bi('研究指标读取失败。','Research metrics could not be loaded.')} <button class="btn btn-outline-secondary" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
     host.querySelector('[data-summary-retry]')?.addEventListener('click',loadSummary);
   }
   const provider = $('#research-provider-status');
@@ -350,6 +358,14 @@ function taskAge(task) {
   return captured ? dateTimeMarkup(captured) : '-';
 }
 
+function strategyAttemptLabel(task){
+  const strategy=Math.max(0,Number(first(task,['strategy_attempt_number','attempt_count'],0))||0);
+  const provider=Math.max(0,Number(first(task,['provider_retry_number'],0))||0);
+  const worker=Math.max(0,Number(first(task,['worker_retry_number'],0))||0);
+  return bi(`已执行策略 ${strategy} · Provider 重试 ${provider} · Worker 恢复 ${worker}`,
+    `Strategies executed ${strategy} · Provider retries ${provider} · Worker recoveries ${worker}`);
+}
+
 function openEvidenceTask(task, trigger = null) {
   const blocker = taskBlocker(task);
   if (['HISTORY','IDENTITY','SUPPRESSION'].includes(blocker) && first(task,['company_id'])) {
@@ -375,7 +391,7 @@ function renderPriorityTasks(taskItems) {
     const action = ['处理例外','Review exception'];
     const company = first(task,['company_name','resolved_company_name'],'-');
     const profile = first(task,['product_profile','profile'],'-');
-    return `<article class="p9-priority-item"><span class="p9-priority-rank">${index + 1}</span><div class="p9-item-main"><strong>${esc(company)}</strong><small>${esc(profile)}</small></div><div class="p9-item-fact"><small>${bi('阻断','Blocker')}</small>${bi(blockerLabel[0],blockerLabel[1])}</div><div class="p9-item-fact"><small>${bi('资料时效','Evidence age')}</small>${taskAge(task)}</div><button class="btn btn-outline-primary" type="button" data-priority-index="${index}">${bi(action[0],action[1])}</button></article>`;
+    return `<article class="p9-priority-item"><span class="p9-priority-rank">${index + 1}</span><div class="p9-item-main"><strong>${esc(company)}</strong><small>${esc(profile)}</small><small>${strategyAttemptLabel(task)}</small></div><div class="p9-item-fact"><small>${bi('阻断','Blocker')}</small>${bi(blockerLabel[0],blockerLabel[1])}</div><div class="p9-item-fact"><small>${bi('资料时效','Evidence age')}</small>${taskAge(task)}</div><button class="btn btn-outline-primary" type="button" data-priority-index="${index}">${bi(action[0],action[1])}</button></article>`;
   }).join('');
   host.querySelectorAll('[data-priority-index]').forEach(button=>button.addEventListener('click',()=>openEvidenceTask(reviewItems[Number(button.dataset.priorityIndex)],button)));
 }
@@ -423,6 +439,8 @@ function jobResultFacts(job) {
     ['category_matches','品类匹配','Category'],
     ['verified_buyers','核验采购人员','Buyers'],
     ['verified_email_routes','有效邮箱','VALID'],
+    ['provider_call_count','供应商调用','Provider calls'],
+    ['used_units','已用额度','Used units'],
   ];
   return definitions.map(([key,zh,en])=>{
     const value = finiteNumber(first(job,[key]));
@@ -441,6 +459,17 @@ function jobProgress(job) {
 
 function jobBlocker(job) {
   return text(first(job,['latest_blocker','blocker','blocker_group'])).toUpperCase();
+}
+
+const DISPATCH_LABELS=Object.freeze({
+  PENDING:['等待调度','Pending dispatch'],DISPATCHED:['已交给工作流','Dispatched'],
+  ORCHESTRATOR_UNAVAILABLE:['自动化服务暂不可用','Automation unavailable'],
+  WORKFLOW_INACTIVE:['工作流未启用','Workflow inactive'],WEBHOOK_AUTH_FAILED:['工作流认证失败','Workflow authentication failed'],
+  QUEUE_UNAVAILABLE:['任务队列暂不可用','Queue unavailable']
+});
+function dispatchLabel(job){
+  const state=text(first(job,['dispatch_state'],'')).toUpperCase();
+  return DISPATCH_LABELS[state]||null;
 }
 
 const STAGE_LABELS = Object.freeze({
@@ -570,7 +599,8 @@ function renderJobs(jobItems,{ append = false } = {}) {
     const blocker = jobBlocker(job);
     const blockerLabel = blocker ? blockerPair(blocker) : null;
     const activity = first(job,['updated_at','created_at']);
-    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small></div></td><td data-label="进度 / Progress"><span class="p9-job-progress">${esc(jobProgress(job))}</span></td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
+    const dispatch=dispatchLabel(job);
+    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${esc(jobObjective(job))}</strong><small>${esc(id || '-')} / ${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}</div></td><td data-label="进度 / Progress"><span class="p9-job-progress">${esc(jobProgress(job))}</span></td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job)}</div></td><td data-label="阻断 / Blocker"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('无已报告阻断','No reported blocker')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
   }).join('');
   if (append) host.insertAdjacentHTML('beforeend',rows); else host.innerHTML = rows;
   host.querySelectorAll('[data-open-job]').forEach(button=>button.addEventListener('click',()=>openJobDetail(button.dataset.openJob,{ trigger:button })));
@@ -663,6 +693,7 @@ function renderJobDetail(job, results = null) {
   const stageMap = pipelineRecords(results || {});
   const evidence = items(first(results || {},['evidence','evidence_links','sources'],[])).slice(0,8);
   const workstream=jobWorkstreamPair(job);
+  const dispatch=dispatchLabel(job);
   const phase10Stages=[
     ['查找资料','Finding sources',['DISCOVERING_SOURCES']],['读取资料','Reading sources',['CRAWLING']],
     ['整理资料','Extracting',['EXTRACTING']],['归一类目','Normalizing category',['NORMALIZING_CATEGORY']],
@@ -670,6 +701,17 @@ function renderJobDetail(job, results = null) {
     ['核验商务邮箱','Verifying email',['VERIFYING_EMAIL']],['刷新机会状态','Refreshing status',['REFRESHING_DECISION']]
   ];
   const hasPhase10Pipeline=phase10Stages.some(([, ,keys])=>keys.some(key=>stageMap.has(key)));
+  const usageFacts=[
+    ['供应商调用','Provider calls',first(job,['provider_call_count'],0)],
+    ['完成','Completed',first(job,['provider_completed_count'],0)],
+    ['未找到','Not found',first(job,['provider_not_found_count'],0)],
+    ['临时错误','Temporary errors',first(job,['provider_temporary_error_count'],0)],
+    ['预留额度','Reserved units',first(job,['reserved_units'],0)],
+    ['已用额度','Used units',first(job,['used_units'],0)],
+    ['已释放额度','Released units',first(job,['released_units'],0)],
+    ['最近事件','Last event',dateTime(first(job,['last_provider_event_at']))]
+  ];
+  const usageMarkup=`<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('供应商用量','Provider usage')}</h4></header><div class="card-body"><div class="p9-catalog-facts" aria-label="供应商用量 Provider usage">${usageFacts.map(([zh,en,value])=>`<div><small>${bi(zh,en)}</small><strong>${esc(value)}</strong></div>`).join('')}</div></div></section>`;
   const stages=hasPhase10Pipeline ? phase10Stages : [
     ['企业身份','Identity',['IDENTITY']],['采购模式','Buyer Model',['BUYER_MODEL']],
     ['品类采购','Category Procurement',['CATEGORY_PROCUREMENT','PRODUCT']],['供应商准入','Supplier Access',['SUPPLIER_ACCESS']],
@@ -679,7 +721,7 @@ function renderJobDetail(job, results = null) {
   host.hidden = false;
   if (empty) empty.hidden = true;
   host.setAttribute('aria-busy','false');
-  host.innerHTML = `<header class="p9-detail-header"><div><h3>${esc(jobObjective(job))}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div><div class="p9-command-actions">${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
+  host.innerHTML = `<header class="p9-detail-header"><div><h3>${esc(jobObjective(job))}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions">${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header>${usageMarkup}<div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
   host.scrollIntoView({ block:'start', behavior:'auto' });
 }

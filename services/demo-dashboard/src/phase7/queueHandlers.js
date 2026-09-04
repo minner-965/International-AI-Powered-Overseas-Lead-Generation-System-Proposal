@@ -19,6 +19,8 @@ export function createPhase7QueueHandlers({ service }) {
       return {status:draft?.draft_status||'MISSING',draft_id:data.draft_id};
     },
     [PHASE5_QUEUES.SEND_OUTREACH_EMAIL]: data => service.sendMessageWork(data),
+    [PHASE5_QUEUES.RECONCILE_GMAIL_AMBIGUOUS_SEND]: data => service.reconcileGmailAmbiguousSendWork(data),
+    [PHASE5_QUEUES.GMAIL_INBOUND_SYNC]: () => service.syncGmailInboundWork(),
     [PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT]: async data => {
       const result=await service.processProviderEventWork(data);
       const sourceId=data.webhook_id||data.event_id||data.message_id||null;

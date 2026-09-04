@@ -368,7 +368,7 @@ test('hard 6: concurrent schedulers converge on one singleton delivery', async (
   assert.deepEqual([first.status, second.status].sort(), ['DEDUPLICATED', 'SCHEDULED']);
   assert.equal(requested.length, 2);
   assert.equal(effectiveSingletons.size, 1);
-  assert.match([...effectiveSingletons][0], /:1:DISCOVERING_SOURCES$/);
+  assert.match([...effectiveSingletons][0], /:1:ready:DISCOVERING_SOURCES:p0:w0:r0$/);
 });
 
 test('hard 7: history or suppression arriving after queueing invalidates contact eligibility immediately', () => {
@@ -420,20 +420,22 @@ test('hard 8: stale approval and withdrawn category scope block send without cha
   assert.ok(send.reason_codes.includes('APPROVAL_DIGEST_MISMATCH'));
 });
 
-test('hard 11: budget pause resumes from the preserved email verification checkpoint after allowance returns', async () => {
+test('hard 11: confirmed provider-credit pause resumes from the preserved checkpoint after provider recovery', async () => {
   const paused = {
     id: '00000000-0000-4000-8000-000000005001',
     company_id: '00000000-0000-4000-8000-000000005002',
     product_profile: 'WOMENSWEAR', business_blocker: 'VERIFIED_EMAIL_EVIDENCE', evidence_revision: 7,
     execution_key: 'auto-evidence:v1:budget-resume', task_status: 'BUDGET_PAUSED',
-    current_stage: 'VERIFYING_EMAIL', attempt_count: 1, max_attempts: 3, budget_state: 'PAUSED'
+    current_stage: 'VERIFYING_EMAIL',attempt_count:1,strategy_attempt_count:1,max_attempts:10,
+    current_strategy_code:'S04_OFFICIAL_LEADERSHIP',provider_retry_count:0,worker_retry_count:0,
+    checkpoint_replay_count:0,budget_state:'PAUSED'
   };
   const repository = {
     async resumeBudgetPaused(taskId) {
       assert.equal(taskId, paused.id);
       return {
         resumed: true,
-        task: { ...paused, task_status: 'RETRY_SCHEDULED', attempt_count: 2, budget_state: 'AVAILABLE' }
+        task: { ...paused,task_status:'RETRY_SCHEDULED',checkpoint_replay_count:1,budget_state:'AVAILABLE' }
       };
     }
   };
@@ -445,14 +447,14 @@ test('hard 11: budget pause resumes from the preserved email verification checkp
   });
   const result = await service.runControlledBatch({ resume_task_id: paused.id }, {
     trusted_management: true,
-    operator_identity: 'management.fixture', operator_role: 'MANAGEMENT', approval_reference: 'budget-restored-1'
+    operator_identity: 'management.fixture', operator_role: 'MANAGEMENT', approval_reference: 'provider-restored-1'
   });
   assert.equal(result.status, 'BUDGET_RESUME_QUEUED');
   assert.equal(result.stage, 'VERIFYING_EMAIL');
-  assert.equal(result.attempt_number, 2);
+  assert.equal(result.attempt_number,1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].name, PHASE5_QUEUES.VERIFY_PROFILE_BUYER_EMAIL);
-  assert.match(calls[0].options.singletonKey, /:2:VERIFYING_EMAIL$/);
+  assert.match(calls[0].options.singletonKey, /:1:S04_OFFICIAL_LEADERSHIP:VERIFYING_EMAIL:p0:w0:r1$/);
 });
 
 test('hard 12: reply opt-out hard bounce and complaint derive exact CRM and suppression actions', () => {

@@ -73,6 +73,29 @@ async function latestDecision(pool, task) {
   return result.rows[0] || null;
 }
 
+async function evidenceCounts(pool,task){
+  const result=await pool.query(`SELECT
+    (SELECT count(DISTINCT source_url)::int FROM leadgen.prospect_category_sources WHERE company_id=$1) url_count,
+    (SELECT count(*)::int FROM leadgen.prospect_category_observations
+      WHERE company_id=$1 AND normalized_profile=$2 AND verification_status='VERIFIED') usable_evidence_count,
+    (SELECT count(DISTINCT d.id)::int FROM leadgen.decision_makers d
+      WHERE d.company_id=$1 AND d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') named_buyer_candidate_count,
+    (SELECT count(DISTINCT dc.id)::int FROM leadgen.decision_makers d
+      JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=d.id
+        AND pr.product_profile=$2 AND pr.relevance IN ('HIGH','MEDIUM')
+      JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=d.id AND dc.verification_status='VALID'
+      WHERE d.company_id=$1 AND d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') valid_contact_count`,
+    [task.company_id,task.product_profile]);
+  return result.rows[0]||{url_count:0,usable_evidence_count:0,named_buyer_candidate_count:0,valid_contact_count:0};
+}
+
+const metricDelta=(before,after)=>({
+  new_url_count:Math.max(0,Number(after.url_count||0)-Number(before.url_count||0)),
+  usable_evidence_count:Math.max(0,Number(after.usable_evidence_count||0)-Number(before.usable_evidence_count||0)),
+  named_buyer_candidate_count:Math.max(0,Number(after.named_buyer_candidate_count||0)-Number(before.named_buyer_candidate_count||0)),
+  valid_contact_count:Math.max(0,Number(after.valid_contact_count||0)-Number(before.valid_contact_count||0))
+});
+
 export function createAutoEvidenceExecutors({
   pool,
   categoryEvidenceService,
@@ -88,17 +111,20 @@ export function createAutoEvidenceExecutors({
     throw new TypeError('Auto-evidence executors require the existing evidence, enrichment and decision services');
   }
   return Object.freeze({
-    async discover_opportunity_evidence({ task, research_job_id }) {
+    async discover_opportunity_evidence({ task, research_job_id,strategy }) {
       await setCategoryJobStatus(pool, research_job_id, 'CRAWLING');
       try {
+        const before=await evidenceCounts(pool,task);
         const result = await categoryEvidenceService.collect({
           researchJobId: research_job_id,
           companyId: task.company_id,
           productProfile: task.product_profile,
           tavilyEnabled,
-          reuseFreshEvidence:true,
-          sourceTtlDays
+          reuseFreshEvidence:!strategy,
+          sourceTtlDays,
+          strategy
         });
+        const metrics=metricDelta(before,await evidenceCounts(pool,task));
         const references=result.reused_fresh_evidence?{
           prospect_category_source_id:result.prospect_category_source_id||null,
           prospect_category_observation_id:result.prospect_category_observation_id||null,
@@ -107,15 +133,16 @@ export function createAutoEvidenceExecutors({
         await setCategoryJobStatus(pool, research_job_id, 'QUALIFYING');
         if (Number(result.search_failures || 0) > 0
           && Number(result.sources ?? result.source_count ?? result.sources_found ?? 0) === 0) {
-          return { outcome_status: 'RETRYABLE_ERROR', research_job_id, ...references,
+          return { outcome_status: 'TEMPORARY_ERROR', research_job_id, ...references,...metrics,
             technical_blocker: 'SOURCE_PROVIDER_TEMPORARY_ERROR' };
         }
-        return { outcome_status: 'COMPLETED', research_job_id, ...references,
+        const found=Object.values(metrics).some(value=>Number(value)>0);
+        return { outcome_status: strategy?(found?'NEW_EVIDENCE_FOUND':'NO_NEW_EVIDENCE'):'COMPLETED', research_job_id, ...references,...metrics,
           reused_fresh_evidence:result.reused_fresh_evidence===true };
       } catch (error) {
-        if(error?.code==='TAVILY_CREDIT_CAP') {
-          await setCategoryJobStatus(pool,research_job_id,'PARTIAL',{error:'TAVILY_CREDIT_CAP'});
-          return {outcome_status:'BUDGET_PAUSED',research_job_id,technical_blocker:'TAVILY_CREDIT_CAP'};
+        if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED'].includes(error?.code)) {
+          await setCategoryJobStatus(pool,research_job_id,'PARTIAL',{error:error.code});
+          return {outcome_status:'BUDGET_PAUSED',research_job_id,technical_blocker:error.code};
         }
         await setCategoryJobStatus(pool, research_job_id, 'FAILED', { complete: true, error: error?.code || error?.message });
         throw error;
@@ -127,7 +154,7 @@ export function createAutoEvidenceExecutors({
         researchJobId: research_job_id,
         companyId: task.company_id,
         productProfile: task.product_profile,
-        executionKey: task.execution_key
+        executionKey: `${task.execution_key}:${task.current_strategy_code||'legacy'}`
       });
       await setCategoryJobStatus(pool, research_job_id, 'SCORING');
       return {
@@ -142,7 +169,14 @@ export function createAutoEvidenceExecutors({
         researchJobId: research_job_id,
         companyId: task.company_id,
         productProfile: task.product_profile,
-        executionKey: task.execution_key
+        executionKey: `${task.execution_key}:${task.current_strategy_code||'legacy'}`
+      });
+      const commercialFit = await categoryProcurementService.calculateCommercialFitAndPersist({
+        researchJobId: research_job_id,
+        companyId: task.company_id,
+        productProfile: task.product_profile,
+        executionKey: `${task.execution_key}:${task.current_strategy_code||'legacy'}`,
+        categoryProcurementMatchResultId: result.category_procurement_match_result_id
       });
       await setCategoryJobStatus(pool, research_job_id, 'COMPLETED', { complete: true });
       return {
@@ -151,28 +185,33 @@ export function createAutoEvidenceExecutors({
         buyer_business_model_result_id: result.buyer_business_model_result_id,
         category_procurement_match_result_id: result.category_procurement_match_result_id,
         product_opportunity_result_id: result.product_opportunity_result_id,
-        cooperation_feasibility_result_id: result.cooperation_result_id
+        cooperation_feasibility_result_id: result.cooperation_result_id,
+        commercial_product_fit_result_id: commercialFit.commercial_product_fit_result_id
       };
     },
 
-    async find_profile_buyer({ task, research_job_id }) {
+    async find_profile_buyer({ task, research_job_id,strategy }) {
       const category = await latestCategoryMatch(pool, task);
       if (category?.match_status !== 'CATEGORY_PROCUREMENT_MATCH') {
         return { outcome_status: 'COMPLETED', research_job_id,
           category_procurement_match_result_id: category?.id || null, buyer_search_skipped: true };
       }
-      const result = await enrichmentService.runJob(research_job_id,{tavilyEnabled,hunterEnabled});
-      if (['HUNTER_BUDGET_CAP','TAVILY_CREDIT_CAP'].includes(result.stop_reason)) {
+      const before=await evidenceCounts(pool,task);
+      if(strategy)await markContactJobRetryable(pool,research_job_id,`STRATEGY_${strategy.code}`);
+      const result = await enrichmentService.runJob(research_job_id,{tavilyEnabled,hunterEnabled,...(strategy?{strategy}:{})});
+      if (['HUNTER_BUDGET_CAP','TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED'].includes(result.stop_reason)) {
         return { outcome_status: 'BUDGET_PAUSED', research_job_id, technical_blocker: result.stop_reason };
       }
       if (['PROVIDER_TEMPORARY_ERROR_THRESHOLD','HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'].includes(result.stop_reason) || result.status === 'FAILED') {
         if (['PROVIDER_TEMPORARY_ERROR_THRESHOLD','HUNTER_BUSINESS_RESULT_LOOKUP_REQUIRED'].includes(result.stop_reason)) {
           await markContactJobRetryable(pool,research_job_id,result.stop_reason);
         }
-        return { outcome_status: 'RETRYABLE_ERROR', research_job_id, technical_blocker: 'CONTACT_PROVIDER_TEMPORARY_ERROR' };
+        return { outcome_status: 'TEMPORARY_ERROR', research_job_id, technical_blocker: 'CONTACT_PROVIDER_TEMPORARY_ERROR' };
       }
       const contact=await latestContactEvidence(pool,task);
-      return { outcome_status: 'COMPLETED', research_job_id,
+      const metrics=metricDelta(before,await evidenceCounts(pool,task));
+      const found=Object.values(metrics).some(value=>Number(value)>0);
+      return { outcome_status: strategy?(found?'NEW_EVIDENCE_FOUND':'NO_NEW_EVIDENCE'):'COMPLETED', research_job_id,...metrics,
         decision_maker_id:contact?.decision_maker_id||null,
         decision_maker_contact_id:contact?.decision_maker_contact_id||null,
         contact_verification_event_id:contact?.contact_verification_event_id||null,
@@ -184,7 +223,7 @@ export function createAutoEvidenceExecutors({
       if (!contact) return { outcome_status: 'COMPLETED', research_job_id };
       const status = upper(contact.verification_status);
       if (status === 'TEMPORARY_ERROR') {
-        return { outcome_status: 'RETRYABLE_ERROR', research_job_id,
+        return { outcome_status: 'TEMPORARY_ERROR', research_job_id,
           decision_maker_id: contact.decision_maker_id,
           decision_maker_contact_id: contact.decision_maker_contact_id,
           contact_verification_event_id: contact.contact_verification_event_id,
@@ -222,7 +261,7 @@ export function createAutoEvidenceExecutors({
         && decision?.business_fit_status === 'FIT' && decision?.contact_readiness === 'READY') {
         return { ...result, outcome_status: 'COMPLETED' };
       }
-      return { ...result, outcome_status: 'EVIDENCE_EXHAUSTED' };
+      return { ...result, outcome_status: 'NO_NEW_EVIDENCE' };
     }
   });
 }

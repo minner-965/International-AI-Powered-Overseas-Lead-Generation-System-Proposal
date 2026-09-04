@@ -306,11 +306,11 @@
         "id": "RH-07",
         "hard_scenario": 11,
         "title": "Budget pause resumes from the preserved checkpoint",
-        "expected": "No provider work occurs while paused; after allowance returns, the same task resumes at email verification",
+        "expected": "No provider work occurs during confirmed provider-credit exhaustion; after provider recovery, the same task resumes from its preserved checkpoint",
         "test_evidence": [
           {
             "file": "test/phase10-four-quadrant-validation.test.js",
-            "title": "hard 11: budget pause resumes from the preserved email verification checkpoint after allowance returns"
+            "title": "hard 11: confirmed provider-credit pause resumes from the preserved checkpoint after provider recovery"
           }
         ]
       },

@@ -80,6 +80,11 @@
 }
 
 .crm-status-tab[aria-selected="true"] { background: var(--p8-surface); color: var(--p8-primary); box-shadow: 0 1px 3px rgb(23 32 51 / .1); }
+
+.crm-detail-toolbar .detail-close {
+  min-width: var(--p8-control-height);
+  min-height: var(--p8-control-height);
+}
 .crm-status-tab-count { margin-inline-start: .35rem; font-family: var(--font-mono); font-size: .76rem; }
 
 .data-state-badge,

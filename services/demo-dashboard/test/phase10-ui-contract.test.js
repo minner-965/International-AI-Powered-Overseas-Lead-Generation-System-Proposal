@@ -58,6 +58,17 @@ test('company detail presents category-level opportunity facts without specific 
   assert.doesNotMatch(app,/共享商品资料（参考）|Shared Product Data \(Reference\)|Top Product Opportunity|Product candidates|共享商品参考/);
 });
 
+test('Commercial Product Fit skips absent commercial terms until the prospect shows interest',async()=>{
+  const [app,labels]=await Promise.all([readPublic('app.js'),readPublic('product-match-ui.js')]);
+  for(const text of ['商业商品适配','Commercial Product Fit','非阻断排序','non-blocking ranking',
+    '有意向后沟通','Discuss after interest','不触发补证','does not trigger enrichment'])assert.ok(app.includes(text));
+  assert.match(app,/\/commercial-product-fit/);
+  assert.match(app,/does not change the category gate, contact eligibility, approval or send permission/);
+  for(const dimension of ['COMMERCIAL_POSITIONING_PRICE_BAND','MOQ_ORDER_FORMAT_COMPATIBILITY',
+    'RECENT_PRODUCT_BUYING_SIGNAL'])assert.ok(labels.includes(dimension));
+  assert.doesNotMatch(app,/Commercial Product Fit[\s\S]{0,300}product candidate/i);
+});
+
 test('new-customer product scoring is visibly category-level in filters, tables, evidence cards and detail',async()=>{
   const [html,app,css]=await Promise.all([
     readPublic('index.html'),

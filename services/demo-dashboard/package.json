@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
+    "test:native-smoke": "node scripts/check-native-dependencies.mjs",
     "phase6.1:migrate": "node src/categoryProcurement/migrationRunner.js --apply",
     "phase7:migrate": "node src/phase7/migrationRunner.js --apply",
     "phase6.1:taxonomy:check": "node src/productMatch/productTaxonomyCli.js",

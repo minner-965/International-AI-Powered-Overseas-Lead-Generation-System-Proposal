@@ -11,7 +11,6 @@ import {
   createOutboundProvider,
   deriveDeliveryState,
   digestCanonical,
-  evaluateProviderPurpose,
   providerRetryDecision,
   sanitizeInboundText,
   validateOutreachDraft
@@ -171,7 +170,19 @@ export class Phase7Service {
       apiKey: env.RESEND_API_KEY || '',
       useCase: env.RESEND_USE_CASE || 'DISABLED',
       endpoint: env.RESEND_API_ENDPOINT || 'https://api.resend.com/emails',
-      timeoutMs: Number(env.OUTBOUND_EMAIL_TIMEOUT_MS || 10_000)
+      timeoutMs: Number(env.OUTBOUND_EMAIL_TIMEOUT_MS || 10_000),
+      enabled: env.GMAIL_API_ENABLED,
+      inboundEnabled: env.GMAIL_INBOUND_SYNC_ENABLED,
+      controlledTestMode: env.GMAIL_CONTROLLED_TEST_MODE,
+      useCaseApproved: env.GMAIL_USE_CASE_APPROVED,
+      clientId: env.GMAIL_OAUTH_CLIENT_ID || '',
+      clientSecret: env.GMAIL_OAUTH_CLIENT_SECRET || '',
+      refreshToken: env.GMAIL_OAUTH_REFRESH_TOKEN || '',
+      senderEmail: env.GMAIL_SENDER_EMAIL || '',
+      replyToEmail: env.GMAIL_REPLY_TO_EMAIL || '',
+      unsubscribeEmail: env.GMAIL_UNSUBSCRIBE_EMAIL || '',
+      controlledRecipientAllowlist: env.GMAIL_CONTROLLED_RECIPIENT_ALLOWLIST || '',
+      messageIdDomain: env.GMAIL_MESSAGE_ID_DOMAIN || 'dpvinternational.com'
     });
     this.resendInbound = createInboundProvider({
       provider: 'RESEND', webhookSecret: env.RESEND_WEBHOOK_SECRET || '',
@@ -227,6 +238,36 @@ export class Phase7Service {
 
   async opportunityDecisionHistory(reference) { return this.repository.opportunityDecisionHistory(reference); }
   async listContactQueue(query = {}) { return this.repository.listContactQueue({limit:query.limit}); }
+  async listWorkspaceContactQueue(query = {}) {
+    const rows=await this.repository.listContactQueue({limit:query.limit});
+    return rows.map(row=>({queue_id:row.queue_id,queue_status:row.queue_status,owner_identity:row.owner_identity,
+      company_name:row.company_name,country_code:row.country_code,product_profile:row.product_profile,
+      approved_by:row.approved_by,approved_at:row.approved_at}));
+  }
+  async listManualOfficialRoutes(query = {}) {
+    return this.repository.listManualOfficialRoutes({status:query.status,limit:query.limit});
+  }
+  async listWorkspaceManualOfficialRoutes(query = {}) {
+    const rows=await this.repository.listManualOfficialRoutes({status:query.status,limit:query.limit});
+    return rows.map(row=>({id:row.id,company_name:row.company_name,country_code:row.country_code,
+      product_profile:row.product_profile,route_type:row.route_type,official_url:row.official_url,
+      official_contact:row.official_contact,verified_at:row.verified_at,manual_action_status:row.manual_action_status}));
+  }
+  async reconcileManualOfficialRoutes(user) {
+    const result=await this.repository.syncManualOfficialRoutes({
+      verificationTtlDays:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),
+      sourceTtlDays:Number(this.env.AUTO_EVIDENCE_SOURCE_TTL_DAYS||90),
+      createdBy:user.identity
+    });
+    return{status:'COMPLETED',created:result.created,provider_calls:0,automatic_submissions:0,messages_sent:0};
+  }
+  async recordManualOfficialRouteAction(id,body,user){
+    const route=await this.repository.recordManualOfficialRouteAction(id,{
+      status:upper(body?.status),ownerIdentity:text(body?.owner_identity,160)||null,
+      outcome:text(body?.outcome,2000)||null,actor:user.identity,requestId:text(body?.request_id,120)||null
+    });
+    return{route,provider_calls:0,automatic_submissions:0,messages_sent:0,management_approvals_created:0};
+  }
 
   async manageOpportunity(reference, action, body, user) {
     const mapping = {
@@ -513,7 +554,8 @@ export class Phase7Service {
         approved_claim_ids:claims,evidence_snapshot_hash:approval.evidence_snapshot_hash});
       if(exact.approval_digest!==approval.approval_digest)reasons.push('APPROVAL_DIGEST_MISMATCH');
     }catch{reasons.push('APPROVAL_DIGEST_MISMATCH');}
-    const providerPurpose=evaluateProviderPurpose({provider,purpose,consent_status:approval.consent_status,use_case:this.env.RESEND_USE_CASE||'DISABLED'});
+    const providerPurpose=this.outboundProvider.validatePurpose({purpose,consent_status:approval.consent_status,
+      to:approval.normalized_recipient,normalized_recipient:approval.normalized_recipient});
     if(!providerPurpose.allowed)reasons.push(providerPurpose.code);
     const rateFacts=approval.sent_today===undefined?await this.#rateFacts(approval.company_id):approval;
     const minuteCap=Math.max(0,Number(this.env.OUTREACH_MAX_SENDS_PER_MINUTE||0));
@@ -546,6 +588,11 @@ export class Phase7Service {
   async sendMessageWork({message_id}) {
     const message=await this.repository.getOutboundMessage(message_id);if(!message)throw notFound('Message not found','OUTBOUND_MESSAGE_NOT_FOUND');
     if(message.send_status==='BLOCKED')return {status:'BLOCKED',reason_codes:message.reason_codes,network_calls:0};
+    if(message.send_status==='AMBIGUOUS'){
+      const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
+        {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
+      return{status:'AMBIGUOUS',code:'GMAIL_RECONCILIATION_REQUIRED',reconcile_queue_job_id:queueJobId,network_calls:0};
+    }
     const gate=await this.currentOutboundGate(message,message.provider_purpose);
     if(gate.reasons.length){
       const attempt=await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:false});
@@ -557,21 +604,63 @@ export class Phase7Service {
       await this.repository.completeOutboundAttempt({messageId:message.id,attemptId:attempt.id,attemptStatus:'BLOCKED',sendStatus:'BLOCKED',reasonCodes:['PROVIDER_NOT_CONFIGURED']});
       return{status:'BLOCKED',code:'PROVIDER_NOT_CONFIGURED',network_calls:0};}
     const attempt=await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:true});
+    if(attempt.idempotent_replay)return{status:'PROVIDER_ACCEPTED',code:'IDEMPOTENT_REPLAY',provider_message_id:attempt.provider_message_id,network_calls:0};
     let result;
     try{result=await this.outboundProvider.send({from:message.from_identity,to:message.normalized_recipient,
       reply_to:message.reply_to,subject:message.subject,body_text:message.body_text,purpose:message.provider_purpose,
       consent_status:message.consent_status},message.idempotency_key);}catch(error){result={status:'FAILED',code:'PROVIDER_NETWORK_ERROR',error_type:'NETWORK_ERROR',network_calls:1};}
-    const accepted=result.status==='PROVIDER_ACCEPTED';const blocked=result.status==='BLOCKED';
+    const accepted=result.status==='PROVIDER_ACCEPTED';const blocked=result.status==='BLOCKED';const ambiguous=result.status==='AMBIGUOUS';
     const retryDecision=providerRetryDecision({http_status:result.http_status,error_type:result.error_type,
       attempt:attempt.attempt_number,max_attempts:Number(this.env.OUTREACH_PROVIDER_MAX_ATTEMPTS||3)});
-    const retryable=!accepted&&!blocked&&retryDecision.retry;
+    const retryable=!accepted&&!blocked&&!ambiguous&&retryDecision.retry;
     await this.repository.completeOutboundAttempt({messageId:message.id,attemptId:attempt.id,
-      attemptStatus:accepted?'ACCEPTED':blocked?'BLOCKED':retryable?'RETRYABLE_ERROR':'PERMANENT_ERROR',
-      sendStatus:accepted?'PROVIDER_ACCEPTED':blocked?'BLOCKED':retryable?'QUEUED':'FAILED',reasonCodes:[result.code],
-      responseCode:result.code,responseDigest:responseDigest(result),providerMessageId:result.provider_message_id});
+      attemptStatus:accepted?'ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable?'RETRYABLE_ERROR':'PERMANENT_ERROR',
+      sendStatus:accepted?'PROVIDER_ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable?'QUEUED':'FAILED',reasonCodes:[result.code],
+      responseCode:result.code,responseDigest:responseDigest(result),providerMessageId:result.provider_message_id,
+      providerThreadId:result.provider_thread_id,rfcMessageId:result.rfc_message_id,sendExecutionKey:result.send_execution_key});
+    if(ambiguous){await this.repository.recordGmailAmbiguousEvent(message.id,{eventType:'AMBIGUOUS',rfcMessageId:result.rfc_message_id});
+      const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
+        {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
+      return{...result,reconcile_queue_job_id:queueJobId};}
     if(retryable){const error=new Error(`Retryable provider failure: ${result.code}`);error.code=result.code;
       error.retry_delay_seconds=retryDecision.next_delay_seconds;throw error;}
     return result;
+  }
+
+  async gmailHealth({verify_oauth=false}={}){
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='GMAIL_API')return{provider:'GMAIL_API',configured:false,enabled:false,ready:false,code:'GMAIL_PROVIDER_NOT_SELECTED',network_calls:0};
+    return this.outboundProvider.healthCheck({verifyOAuth:verify_oauth===true});
+  }
+
+  async reconcileGmailAmbiguousSendWork({message_id}){
+    const message=await this.repository.getOutboundMessage(message_id);if(!message)return{status:'MISSING',network_calls:0};
+    if(message.provider!=='GMAIL_API'||message.send_status!=='AMBIGUOUS')return{status:message.send_status,code:'GMAIL_RECONCILE_NOT_REQUIRED',network_calls:0};
+    const result=await this.outboundProvider.reconcileAmbiguousSend({rfcMessageId:message.rfc_message_id});
+    await this.repository.recordGmailAmbiguousEvent(message.id,{eventType:result.status==='PROVIDER_ACCEPTED'?'RECONCILED':'NOT_FOUND',
+      rfcMessageId:message.rfc_message_id,providerMessageId:result.provider_message_id,providerThreadId:result.provider_thread_id});
+    if(result.status==='PROVIDER_ACCEPTED')await this.repository.resolveGmailAmbiguousSend(message.id,result);
+    return result;
+  }
+
+  async syncGmailInboundWork(){
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='GMAIL_API')return{status:'DISABLED',code:'GMAIL_PROVIDER_NOT_SELECTED',messages:0,network_calls:0};
+    const mailbox=String(this.env.GMAIL_SENDER_EMAIL||'').trim().toLowerCase();const checkpoint=await this.repository.getGmailCheckpoint(mailbox);
+    const changes=await this.outboundProvider.readMailboxChanges({historyId:checkpoint?.history_id||null});
+    if(changes.status==='DISABLED'){await this.repository.saveGmailCheckpoint(mailbox,{historyId:checkpoint?.history_id,status:'DISABLED'});return{...changes,messages:0};}
+    let queued=0;
+    for(const item of changes.messages){
+      const payload={provider:'GMAIL_API',provider_event_id:item.provider_message_id,provider_message_id:item.provider_message_id,
+        event_type:item.dsn?(item.dsn_details?.bounce_class==='HARD'?'HARD_BOUNCED':'SOFT_BOUNCED'):'INBOUND_RECEIVED',direction:'INBOUND',occurred_at:item.occurred_at,
+        metadata:{from:item.from,to:[item.to],subject:item.subject},subject:sanitizeInboundText(item.subject,500),
+        body_text:sanitizeInboundText(item.body_text,20000),from:text(item.from,320),in_reply_to:item.in_reply_to,
+        references:item.references,attachment_status:item.attachments.length?'REVIEW':'NONE',automatic:item.automatic,dsn:item.dsn,
+        dsn_details:item.dsn_details||null};
+      const row=await this.repository.persistWebhook({provider:'GMAIL_API',provider_event_id:item.provider_message_id,signature_status:'VERIFIED',
+        event_type:payload.event_type,raw_body_digest:digestCanonical(payload),sanitized_payload:payload,processing_status:'RECEIVED'});
+      await this.queue.enqueue('process-inbound-message',{webhook_id:row.id},{singletonKey:`phase10:gmail-inbound:${item.provider_message_id}`});queued+=1;
+    }
+    await this.repository.saveGmailCheckpoint(mailbox,{historyId:changes.history_id,status:'COMPLETED'});
+    return{status:'COMPLETED',messages:changes.messages.length,queued,history_id_advanced:Boolean(changes.history_id),network_calls:changes.network_calls};
   }
 
   async acceptWebhook(providerName, rawBody, headers) {
@@ -642,16 +731,31 @@ export class Phase7Service {
       webhook_inbox_id:webhook.id,thread_id:correlated?.id||null,correlation_status:correlated?'MATCHED':'REVIEW',from_address_hash:sha256(sender),
       subject_sanitized:sanitizeInboundText(payload.subject,500),body_text_sanitized:sanitizeInboundText(payload.body_text,20000),
       attachment_status:payload.attachment_status||'NONE',received_at:payload.occurred_at||webhook.received_at});
+    if(payload.dsn===true&&payload.dsn_details?.status){
+      const outbound=await this.repository.findOutboundByRfcReferences(references);
+      if(outbound){const eventType=String(payload.dsn_details.status).startsWith('5.')?'HARD_BOUNCED':'SOFT_BOUNCED';
+        const event=await this.repository.recordProviderEvent({outbound_message_id:outbound.id,webhook_inbox_id:webhook.id,event_type:eventType,
+          occurred_at:payload.occurred_at||webhook.received_at,provider_sequence:payload.provider_event_id,
+          event_digest:digestCanonical({provider:webhook.provider,id:webhook.provider_event_id,type:eventType})});
+        const events=await this.repository.getOutboundEvents(outbound.id);await this.repository.updateOutboundState(outbound.id,deriveDeliveryState(events,outbound.send_status));
+        if(eventType==='HARD_BOUNCED')await this.repository.suppressRecipientForMessage(outbound.id,'HARD_BOUNCE',event.id);
+      }
+    }
     await this.repository.markWebhookProcessed(webhook.id);const queueJobId=await this.queue.enqueue('classify-inbound-reply',{inbound_message_id:inbound.id},{singletonKey:`phase7:classify-inbound:${inbound.id}`});
     return{status:'PROCESSED',inbound_message_id:inbound.id,queue_job_id:queueJobId};
   }
 
   async classifyInboundWork({inbound_message_id}){
     const result=await this.pool.query(`SELECT i.*,
-      coalesce((w.sanitized_payload->'company_wide')='true'::jsonb,false) company_wide_opt_out
+      coalesce((w.sanitized_payload->'company_wide')='true'::jsonb,false) company_wide_opt_out,
+      coalesce((w.sanitized_payload->'automatic')='true'::jsonb,false) gmail_automatic,
+      coalesce((w.sanitized_payload->'dsn')='true'::jsonb,false) gmail_dsn
       FROM leadgen.inbound_messages i LEFT JOIN leadgen.email_webhook_inbox w ON w.id=i.webhook_inbox_id
       WHERE i.id=$1`,[requiredUuid(inbound_message_id,'inbound_message_id')]);
-    if(!result.rowCount)return{status:'MISSING'};const inbound=result.rows[0];const classified=classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized});
+    if(!result.rowCount)return{status:'MISSING'};const inbound=result.rows[0];
+    const classified=inbound.gmail_automatic?{intent:'AUTO_REPLY',confidence:0.99,confidence_basis:'GMAIL_AUTOMATIC_HEADER',actions:[]}
+      :inbound.gmail_dsn?{intent:'IRRELEVANT',confidence:0.99,confidence_basis:'STRUCTURED_DSN',actions:[]}
+      :classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized});
     const stored=await this.repository.createReplyClassification({inbound_message_id:inbound.id,intent:mapReplyIntent(classified.intent),
       confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v1',reason_codes:[classified.confidence_basis]});
     if(stored.intent==='OPT_OUT')await this.repository.suppressRecipientForInbound(inbound.id,
@@ -854,6 +958,25 @@ export class Phase7Service {
     return{job:safeExportJob(row),download_token:created.downloadToken,queue_job_id:queueJobId};}
 
   async queryExportRows(resolved){
+    if(resolved.exportType==='RESEARCH_JOB_PROVIDER_USAGE'){
+      const params=[];const clauses=[];
+      if(resolved.filters?.job_id){params.push(resolved.filters.job_id);clauses.push(`j.id=$${params.length}`);}
+      if(resolved.filters?.status){params.push(String(resolved.filters.status).toUpperCase());clauses.push(`j.status=$${params.length}`);}
+      if(resolved.filters?.market){params.push(String(resolved.filters.market).toUpperCase());clauses.push(`($${params.length}=ANY(j.market_codes) OR j.country_code=$${params.length})`);}
+      if(resolved.mode==='SELECTED_ROWS'){
+        params.push(resolved.selectedEntityIds);clauses.push(`j.id=ANY($${params.length}::uuid[])`);
+      }
+      const rows=await this.pool.query(`SELECT j.id research_job_id,j.job_type,j.status,
+        coalesce(j.country_code,j.market_codes[1]) market,coalesce(j.product_profile,j.product_profiles[1]) product_profile,
+        pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
+        pu.provider_temporary_error_count,pu.provider_failed_count,pu.reserved_units,pu.used_units,
+        pu.released_units,pu.last_provider_event_at,pu.projection_updated_at
+        FROM leadgen.research_jobs j
+        LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
+        ${clauses.length?`WHERE ${clauses.join(' AND ')}`:''}
+        ORDER BY j.created_at DESC,j.id DESC LIMIT 5000`,params);
+      return rows.rows;
+    }
     if(['LEAD_MASTER_INTERNAL','SALES_OPPORTUNITY'].includes(resolved.exportType)){
       if(!this.opportunityQuery)throw new Error('Opportunity query is not configured');const rows=await this.opportunityQuery(resolved.filters);
       return rows.filter(row=>resolved.mode!=='SELECTED_ROWS'||resolved.selectedEntityIds.includes(row.company_id)).map(row=>{

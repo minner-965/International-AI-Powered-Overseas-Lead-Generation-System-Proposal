@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { csrfFor, createManagementAuth } from '../src/phase7/managementAuth.js';
+import { createManagementAuth } from '../src/phase7/managementAuth.js';
 import { Phase7Service, mapProviderEventType, mapReplyIntent, validateCrmPayload } from '../src/phase7/service.js';
 import { Phase7Repository } from '../src/phase7/repository.js';
 import { buildApprovalDigest } from '../src/outreach/approvalDigest.js';
@@ -19,16 +19,12 @@ function mockResponse() {
   return { statusCode:200,payload:null,status(value){this.statusCode=value;return this;},json(value){this.payload=value;return this;} };
 }
 
-test('management bearer contract uses a token-bound actor, role and independent CSRF secret', () => {
-  const env={DPV_MANAGEMENT_API_TOKEN:'management-token',DPV_MANAGEMENT_CSRF_SECRET:'csrf-secret',
-    DPV_MANAGEMENT_API_ACTOR:'sales.owner',DPV_MANAGEMENT_API_ROLE:'MANAGEMENT'};
-  const auth=createManagementAuth(env);const headers={authorization:'Bearer management-token','x-dpv-actor':'spoofed.actor','x-dpv-role':'SALES'};
-  const req={get:name=>headers[String(name).toLowerCase()]||'',managementUser:null};const res=mockResponse();let authenticated=false;
-  auth.authenticate(req,res,()=>{authenticated=true;});assert.equal(authenticated,true);assert.deepEqual(req.managementUser,{identity:'sales.owner',role:'MANAGEMENT'});
-  headers['x-dpv-csrf']=csrfFor({secret:'csrf-secret',identity:'sales.owner',role:'MANAGEMENT'});let verified=false;
-  auth.requireCsrf(req,res,()=>{verified=true;});assert.equal(verified,true);
-  headers['x-dpv-csrf']=csrfFor({token:'management-token',identity:'sales.owner',role:'MANAGEMENT'});verified=false;
-  auth.requireCsrf(req,res,()=>{verified=true;});assert.equal(verified,false);assert.equal(res.statusCode,403);
+test('workspace request context has no browser token or CSRF challenge', () => {
+  const auth=createManagementAuth({DPV_WORKSPACE_ACTOR:'sales.owner',DPV_WORKSPACE_ROLE:'MANAGEMENT'});
+  const req={managementUser:null};const res=mockResponse();let attached=false;
+  auth.authenticate(req,res,()=>{attached=true;});
+  assert.equal(attached,true);assert.deepEqual(req.managementUser,{identity:'sales.owner',role:'MANAGEMENT'});
+  assert.equal('requireCsrf' in auth,false);
 });
 
 test('Phase 7 event and reply adapters use the exact migration enums', async () => {
@@ -81,9 +77,10 @@ test('send current gate rejects suppression-after-queue, stale management approv
 test('backend wiring registers raw webhook before JSON, all management APIs and the strict internal orchestrator', async () => {
   const [server,router]=await Promise.all([textFile('services/demo-dashboard/src/server.js'),textFile('services/demo-dashboard/src/phase7/router.js')]);
   assert.ok(server.indexOf('registerPhase7RawWebhookRoutes')<server.indexOf("app.use(express.json"));
-  for(const route of ['/api/management/session','/api/contact-queue','/api/outreach/marketing-context','/api/contacts/:id/hunter-verify',
+  for(const route of ['/api/contact-queue','/api/outreach/marketing-context','/api/contacts/:id/hunter-verify',
     '/api/outreach/drafts','/api/outreach/messages/:id/enqueue','/api/outreach/inbox','/api/crm-sync-outbox',
-    '/api/data-imports/dry-run','/api/data-exports','/api/internal/phase7/orchestrate'])assert.ok(router.includes(route),route);
+    '/api/data-imports/dry-run','/api/data-exports','/api/workspace/contact-queue','/api/workspace/manual-official-routes','/api/manual-official-routes',
+    '/api/manual-official-routes/reconcile','/api/manual-official-routes/:id/actions','/api/internal/phase7/orchestrate'])assert.ok(router.includes(route),route);
   for(const action of ['OUTREACH_RECHECK','IMPORT_DISCOVER','EXPORT_PROCESS','CRM_SYNC'])assert.ok(router.includes(action));
   assert.match(router,/requiredUuid\(req\.body\?\.resource_id,'resource_id'\)/);
   assert.match(router,/action==='IMPORT_DISCOVER'\)return res\.status\(202\)\.json\(await service\.enqueueSharedImportDiscovery\(req\.body\)\)/);
@@ -158,14 +155,14 @@ test('committed import schedules auto-evidence only for its exact affected compa
   assert.equal(result.auto_evidence_schedule_status,'QUEUED');
 });
 
-test('release RBAC keeps legacy writes and exports behind server-bound management authorization', async () => {
+test('workspace context keeps legacy write roles without browser token verification', async () => {
   const [server,router,ui]=await Promise.all([
     textFile('services/demo-dashboard/src/server.js'),textFile('services/demo-dashboard/src/phase7/router.js'),
     textFile('services/demo-dashboard/public/phase7-ui.js')
   ]);
   for(const route of ['/api/live/collect','/api/research/jobs','/api/enrichment/jobs','/api/category-procurement/jobs']) {
     const start=server.indexOf(`app.post('${route}'`);assert.notEqual(start,-1,route);
-    const declaration=server.slice(start,start+260);assert.match(declaration,/managementAuth\.authenticate/);assert.match(declaration,/managementAuth\.requireCsrf/);
+    const declaration=server.slice(start,start+260);assert.match(declaration,/managementAuth\.authenticate/);assert.doesNotMatch(declaration,/requireCsrf/);
   }
   assert.match(server,/app\.get\('\/api\/export\/leads', managementAuth\.authenticate/);
   assert.match(server,/app\.get\('\/api\/leads\/:id', managementAuth\.tryAuthenticate/);
@@ -173,7 +170,8 @@ test('release RBAC keeps legacy writes and exports behind server-bound managemen
   const enqueue=router.slice(router.indexOf("router.post('/api/outreach/messages/:id/enqueue'"),router.indexOf("router.get('/api/outreach/messages/:id'"));
   assert.match(enqueue,/\.\.\.send/);assert.match(router,/SENDER_OPERATOR/);
   assert.doesNotMatch(ui,/name="role"|value="MANAGEMENT"/);
-  assert.match(ui,/session\.identity/);assert.match(ui,/session\.role/);
+  assert.doesNotMatch(ui,/management\/session|dpvManagementToken|X-DPV-CSRF/);
+  assert.doesNotMatch(await textFile('services/demo-dashboard/src/phase7/managementAuth.js'),/Bearer|DPV_MANAGEMENT_API_TOKEN|DPV_MANAGEMENT_CSRF_SECRET|timingSafeEqual/);
 });
 
 test('draft submit and exact approval rerun the database-authoritative deterministic contract', async () => {

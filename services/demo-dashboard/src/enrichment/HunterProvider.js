@@ -121,6 +121,7 @@ export class HunterCreditBudget {
             AND created_at < now() - interval '30 minutes' FOR UPDATE
         ), released AS (
           UPDATE leadgen.provider_usage_events e SET status='TEMPORARY_ERROR',reserved_units=0,
+            released_units=e.released_units+s.reserved_units,
             error_code='STALE_RESERVATION_RELEASED',completed_at=now()
           FROM stale_events s WHERE e.id=s.id RETURNING s.reserved_units
         ) SELECT reserved_units FROM released`,[period]);
@@ -183,7 +184,8 @@ export class HunterCreditBudget {
       this.localUsed += used;
       const settledPayload={logical_request_fingerprint:event.logical_request_fingerprint,
         retry_number:Number(event.retry_number||0),...safeUsageSummary(resultPayload)};
-      const settled = { ...event,status,used_units:used,reserved_units:0,provider_request_id:providerRequestId,error_code:errorCode,result_payload:settledPayload,
+      const settled = { ...event,status,used_units:used,reserved_units:0,
+        released_units:Number(event.released_units||0)+Math.max(0,Number(event.reserved_units)-used),provider_request_id:providerRequestId,error_code:errorCode,result_payload:settledPayload,
         credits_after_units:Math.max(0,this.billingPeriodCapUnits-this.localUsed) };
       this.localEvents.set(event.request_fingerprint,settled);
       return settled;
@@ -201,7 +203,8 @@ export class HunterCreditBudget {
       const settledPayload={logical_request_fingerprint:event.logical_request_fingerprint || locked.rows[0].result_payload?.logical_request_fingerprint,
         retry_number:Number(event.retry_number ?? locked.rows[0].result_payload?.retry_number ?? 0),...safeUsageSummary(resultPayload)};
       const result = await client.query(`UPDATE leadgen.provider_usage_events SET status=$2,reserved_units=0,used_units=$3,
-        credits_after_units=$4,provider_request_id=$5,error_code=$6,result_payload=$7::jsonb,completed_at=now() WHERE id=$1 RETURNING *`,[
+        released_units=released_units+greatest(0,reserved_units-$3),credits_after_units=$4,provider_request_id=$5,error_code=$6,
+        result_payload=$7::jsonb,completed_at=now() WHERE id=$1 RETURNING *`,[
         event.id,status,used,after,providerRequestId,errorCode,JSON.stringify(settledPayload)
       ]);
       await client.query('COMMIT');

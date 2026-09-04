@@ -522,7 +522,7 @@ function renderResearchJob(job) {
   $('#research-job').innerHTML = `<div class="research-job-head"><div><p class="kicker">${bi('研究任务','Research job')}</p><h4>${esc(job.job_id || job.id || '-')}</h4></div><span class="job-status status-${esc(String(job.status || '').toLowerCase())}" role="status" aria-live="polite" aria-atomic="true">${bi(status[0],status[1])}</span></div>
     <details class="job-disclosure"${compactCompleted ? '' : ' open'}>
       <summary>${bi('查看任务详情与结果','View job details and results')}</summary>
-      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('搜索查询','Search queries')}<b id="research-query-count">${esc(job.search_api_requests ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
+      <div class="research-job-grid"><div>${bi('市场','Market')}<b>${esc(market || '-')}</b></div><div>${bi('品类','Category')}<b>${esc(job.product_category || '-')}</b></div><div>${bi('供应商调用','Provider calls')}<b id="research-query-count">${esc(job.provider_call_count ?? job.search_api_requests ?? 0)}</b></div><div>${bi('搜索候选企业/页面','Research candidates')}<b>${esc(job.candidates_found ?? 0)}</b></div><div>${bi('任务错误','Task errors')}<b>${esc(taskErrors)}</b></div></div>
       ${job.status === 'FAILED' ? `<p class="job-error">${bi('研究任务未完成。','Research job failed.')}</p>` : ''}
       <div id="research-query-summary"></div><div id="research-candidate-results"></div><div id="research-verification-results"></div>
     </details>`;
@@ -1574,6 +1574,36 @@ function productMatchMissingEvidence(result) {
   return `<ul class="reason-list">${missing.map(item=>`<li>${pairHtml(productMatchReasonLabel(typeof item === 'object' ? item.code || item.reason_code || item.dimension : item))}</li>`).join('')}</ul>`;
 }
 
+function commercialProductFitView(result) {
+  if (!result) return `<div class="crm-empty-inline">${bi('商业商品适配待评估。','Commercial Product Fit is not assessed.')}</div>`;
+  const score=numericValue(result.commercial_fit_score);
+  const coverage=numericValue(result.coverage_percent);
+  const band=String(result.commercial_fit_band || 'UNKNOWN').toUpperCase();
+  const bandLabel=({HIGH:['高','High'],MEDIUM:['中','Medium'],LOW:['低','Low'],UNKNOWN:['暂无公开资料','No public facts']})[band] || ['暂无公开资料','No public facts'];
+  const order=['ASSORTMENT_RELEVANCE','COMMERCIAL_POSITIONING_PRICE_BAND','ATTRIBUTE_SPECIFICATION_FIT',
+    'MOQ_ORDER_FORMAT_COMPATIBILITY','IMPORT_SOURCING_MODEL_FIT','RECENT_PRODUCT_BUYING_SIGNAL'];
+  const dimensions=Array.isArray(result.dimensions)?[...result.dimensions].sort((a,b)=>order.indexOf(String(a.dimension))-order.indexOf(String(b.dimension))):[];
+  const rows=dimensions.length?`<div class="crm-dimension-list">${dimensions.map(item=>{
+    const state=String(item.state || 'UNKNOWN').toUpperCase();
+    const reasons=Array.isArray(item.reason_codes)?item.reason_codes:[];
+    const deferred=reasons.some(reason=>String(reason).endsWith('_OPTIONAL_UNTIL_INTEREST'));
+    return `<div class="crm-dimension-row"><div><span>${pairHtml(productMatchDimensionLabel(item.dimension))}</span>${reasons.length?`<small>${reasons.map(reason=>pairHtml(productMatchReasonLabel(reason))).join('<br>')}</small>`:''}</div><b>${state==='UNKNOWN'?(deferred?bi('意向后沟通','After interest'):bi('暂无公开资料','No public data')):`${esc(item.points)}/${esc(item.maximum)}`}</b></div>`;
+  }).join('')}</div>`:`<div class="crm-empty-inline">${bi('商业商品适配维度待评估。','Commercial fit dimensions are not assessed.')}</div>`;
+  const evidence=dimensions.flatMap(item=>Array.isArray(item.evidence)?item.evidence:[]);
+  const sourceLinks=[...new Map(evidence.map(item=>[item.source_url,item])).values()].filter(item=>safeUrl(item?.source_url)!=='#');
+  const unknown=Array.isArray(result.unknown_dimensions)?result.unknown_dimensions:[];
+  const deferred=Array.isArray(result.deferred_dimensions)?result.deferred_dimensions:[];
+  return `<article class="crm-detail-section" data-commercial-product-fit>
+    <header><h5>${bi('商业商品适配','Commercial Product Fit')}</h5><span>${score==null?pairHtml(bandLabel):`<b>${esc(Math.round(score))}/100</b> ${pairHtml(bandLabel)}`}</span></header>
+    <p class="crm-helper-text">${bi('仅使用现有公开资料进行参考匹配。价格、规格和起订量没有公开资料时直接跳过，不触发补证；客户有意向后由老板通过电话或 WhatsApp 沟通。该结果不改变类目门槛、联系人资格、审批或发送权限。','Uses existing public facts only. Missing price, specification or MOQ data is skipped and does not trigger enrichment; management discusses it by phone or WhatsApp after the prospect shows interest. It does not change the category gate, contact eligibility, approval or send permission.')}</p>
+    ${factRows([['可用公开资料覆盖','Available public-fact coverage',coverage==null?'-':`${esc(coverage)}%`]])}
+    ${rows}
+    ${unknown.length?`<section class="crm-detail-section"><h5>${bi('暂无公开资料','No public data')}</h5><ul class="reason-list">${unknown.map(item=>`<li>${pairHtml(productMatchDimensionLabel(item))}</li>`).join('')}</ul></section>`:''}
+    ${deferred.length?`<section class="crm-detail-section"><h5>${bi('有意向后沟通','Discuss after interest')}</h5><p class="crm-helper-text">${bi('这些项目不要求前期补充，也不影响公司匹配、机会状态或联系人搜索。','These items require no pre-contact enrichment and do not affect company matching, opportunity status or contact discovery.')}</p><ul class="reason-list">${deferred.map(item=>`<li>${pairHtml(productMatchDimensionLabel(item))}</li>`).join('')}</ul></section>`:''}
+    <section class="crm-detail-section"><h5>${bi('资料来源','Evidence references')}</h5>${sourceLinks.length?`<div class="sources crm-product-match-evidence">${sourceLinks.map(item=>`<a href="${esc(safeUrl(item.source_url))}" target="_blank" rel="noreferrer">${bi('查看商业适配资料','Open commercial-fit source')}</a>`).join('')}</div>`:`<div class="crm-empty-inline">${bi('暂无可引用的商业适配资料。','No commercial-fit evidence reference is available.')}</div>`}</section>
+  </article>`;
+}
+
 function productMatchResultCard(profile, result, { apiError = false, companyId = '' } = {}) {
   const score = categoryProcurementScore(result);
   const band = String(result?.category_procurement_match_band || result?.band || '').toUpperCase();
@@ -1604,6 +1634,7 @@ function productMatchResultCard(profile, result, { apiError = false, companyId =
     ${categoryScopeRelationshipView(result,observed,matched)}
     <section class="crm-detail-section"><h5>${bi('零售、门店或分销依据','Retail, store or distribution evidence')}</h5>${productMatchBusinessEvidence(result)}</section>
     <section class="crm-detail-section"><h5>${bi('品类采购匹配维度','Category Procurement Match dimensions')}</h5>${productMatchDimensionRows(result)}</section>
+    <section class="crm-detail-section"><h5>${bi('商业商品适配（非阻断排序）','Commercial Product Fit (non-blocking ranking)')}</h5>${commercialProductFitView(result?.commercial_product_fit)}</section>
     <section class="crm-detail-section"><h5>${bi('待补资料','Missing evidence')}</h5>${productMatchMissingEvidence(result)}</section>
     <section class="crm-detail-section"><h5>${bi('资料来源','Source references')}</h5>${productMatchEvidence(result)}</section>
   </article>`;
@@ -1626,10 +1657,11 @@ async function loadProductMatchesPanel(companyId, requestId) {
   host.setAttribute('aria-busy','true');
   host.innerHTML = `<div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'loading',companyId)).join('')}</div>`;
   const encodedCompanyId = encodeURIComponent(companyId);
-  const [categoryResponse,buyerResponse,opportunityResponse] = await Promise.allSettled([
+  const [categoryResponse,buyerResponse,opportunityResponse,commercialResponse] = await Promise.allSettled([
     json(`/api/companies/${encodedCompanyId}/category-procurement-matches`),
     json(`/api/companies/${encodedCompanyId}/buyer-business-model`),
-    json(`/api/companies/${encodedCompanyId}/product-opportunities`)
+    json(`/api/companies/${encodedCompanyId}/product-opportunities`),
+    json(`/api/companies/${encodedCompanyId}/commercial-product-fit`)
   ]);
   if (requestId !== state.productMatchRequestId) return;
   if (categoryResponse.status === 'rejected') {
@@ -1638,12 +1670,16 @@ async function loadProductMatchesPanel(companyId, requestId) {
     const categories = categoryProcurementItems(categoryResponse.value).map(productMatchApiRecord);
     const buyers = buyerResponse.status === 'fulfilled' ? buyerBusinessModelItems(buyerResponse.value).map(productMatchApiRecord) : [];
     const opportunities = opportunityResponse.status === 'fulfilled' ? productOpportunityItems(opportunityResponse.value).map(productMatchApiRecord) : [];
-    const apiError = buyerResponse.status === 'rejected' || opportunityResponse.status === 'rejected';
+    const commercialFits = commercialResponse.status === 'fulfilled' ? arrayPayload(commercialResponse.value).map(productMatchApiRecord) : [];
+    const apiError = buyerResponse.status === 'rejected' || opportunityResponse.status === 'rejected' || commercialResponse.status === 'rejected';
     const cards = PRODUCT_MATCH_PROFILES.map(profile=>{
       const category = categories.find(item=>productMatchProfile(item) === profile);
       if (!category) return productMatchStateCard(profile,'empty',companyId);
       const buyer = buyers.find(item=>productMatchProfile(item) === profile) || buyers[0] || {};
       const opportunity = opportunities.find(item=>productMatchProfile(item) === profile) || {};
+      const commercialFit = commercialFits.find(item=>productMatchProfile(item) === profile
+        && (!item.category_procurement_match_result_id || String(item.category_procurement_match_result_id)===String(category.category_procurement_match_result_id)))
+        || category.commercial_product_fit || null;
       const opportunityRow = state.opportunities.find(item=>String(companyIdFor(item)) === String(companyId) && productProfileCode(item) === profile) || {};
       const result = {
         ...opportunityRow,
@@ -1652,7 +1688,8 @@ async function loadProductMatchesPanel(companyId, requestId) {
         buyer_business_model:buyer.buyer_business_model || buyer.buyer_model || category.buyer_business_model || opportunityRow.buyer_business_model,
         buyer_subtype:buyer.buyer_subtype || category.buyer_subtype || opportunityRow.buyer_subtype,
         eligibility_status:buyer.eligibility_status || category.eligibility_status,
-        confidence_band:buyer.confidence_band || category.confidence_band
+        confidence_band:buyer.confidence_band || category.confidence_band,
+        commercial_product_fit:commercialFit
       };
       return productMatchResultCard(profile,result,{ apiError, companyId });
     });

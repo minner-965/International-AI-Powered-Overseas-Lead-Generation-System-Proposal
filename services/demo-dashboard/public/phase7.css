@@ -20,8 +20,7 @@
   margin-top: 1rem;
 }
 
-.crm-data-form > label,
-.crm-management-form > label {
+.crm-data-form > label {
   display: grid;
   min-width: 0;
   gap: .4rem;
@@ -36,8 +35,7 @@
   grid-column: 1 / -1;
 }
 
-.crm-data-form small,
-.crm-management-form > p {
+.crm-data-form small {
   color: var(--crm-muted);
   font-size: .72rem;
   font-weight: 500;
@@ -71,8 +69,7 @@
 
 .crm-data-form > .btn,
 .crm-data-actions .btn,
-.crm-export-result .btn,
-.crm-management-actions .btn {
+.crm-export-result .btn {
   min-height: 44px;
 }
 
@@ -278,36 +275,6 @@
 .crm-phase7-history { min-width: 34rem; }
 .crm-phase7-history td { overflow-wrap: anywhere; }
 
-#phase7-management-access.crm-management-dialog {
-  width: fit-content;
-  min-width: min(27rem,calc(100vw - 2rem));
-  max-width: min(34rem,calc(100vw - 2rem));
-  max-height: min(86dvh,38rem);
-  margin: auto;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--crm-border-strong);
-  border-radius: var(--radius-card);
-  background: var(--crm-surface);
-  color: var(--crm-text);
-  box-shadow: var(--crm-shadow);
-}
-
-#phase7-management-access::backdrop { background: color-mix(in srgb,var(--crm-text) 42%,transparent); backdrop-filter: blur(2px); }
-
-.crm-management-form {
-  display: grid;
-  max-height: calc(86dvh - 3.5rem);
-  gap: .8rem;
-  padding: 1rem;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scroll-padding-block: 1rem;
-}
-
-.crm-management-form > p { margin: 0; }
-.crm-management-actions { display: flex; justify-content: flex-end; gap: .55rem; }
-
 @media (max-width:1023px) {
   .crm-data-exchange-layout { grid-template-columns: 1fr; }
 }
@@ -334,13 +301,4 @@
   .crm-phase7-record-card > header { align-items: flex-start; flex-direction: column; }
   .crm-opportunity-company-state .data-state-badge,
   .crm-opportunity-readiness-stack .data-state-badge { max-width: 100%; }
-  #phase7-management-access.crm-management-dialog[open] {
-    inset: max(.5rem,env(safe-area-inset-top)) max(.5rem,env(safe-area-inset-right)) auto max(.5rem,env(safe-area-inset-left));
-    width: auto;
-    min-width: 0;
-    max-width: none;
-    max-height: calc(100dvh - max(1rem,env(safe-area-inset-top) + env(safe-area-inset-bottom)));
-    margin: 0;
-  }
-  .crm-management-actions { display: grid; grid-template-columns: 1fr; }
 }

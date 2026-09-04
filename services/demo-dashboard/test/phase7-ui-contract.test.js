@@ -54,22 +54,12 @@ test('Data Export defaults to the cumulative permitted master and does not offer
   assert.match(ui, /!emptyReady/);
 });
 
-test('Phase 7 management access uses a session-only token, server-bound actor/role and CSRF', async () => {
+test('Phase 7 workspace actions do not expose or request a management token', async () => {
   const ui = await read('phase7-ui.js');
-  assert.match(ui,/sessionStorage\.getItem\('dpvManagementToken'\)/);
-  assert.match(ui,/sessionStorage\.setItem\('dpvManagementToken'/);
-  assert.match(ui,/authorization:`Bearer \$\{values\.token\}`/);
-  assert.match(ui,/'X-DPV-Actor':values\.actor/);
-  assert.match(ui,/'X-DPV-Role':values\.role/);
-  assert.match(ui,/'X-DPV-CSRF':accessState\.csrf/);
-  assert.match(ui,/fetch\('\/api\/management\/session'/);
-  assert.match(ui,/id = 'phase7-management-access'/);
-  assert.match(ui,/data-management-close/);
-  assert.match(ui,/Management Access/);
-  assert.doesNotMatch(ui,/name="role"|value="MANAGEMENT"/);
-  assert.match(ui,/sessionStorage\.setItem\('dpvManagementActor',session\.identity/);
-  assert.match(ui,/sessionStorage\.setItem\('dpvManagementRole',session\.role/);
-  assert.doesNotMatch(ui,/localStorage\.setItem\('dpvManagementToken'/);
+  assert.match(ui,/export function phase7SessionHeaders\(\)\s*\{\s*return \{\};/);
+  assert.match(ui,/async function request\(url, options = \{\}\)/);
+  assert.doesNotMatch(ui,/dpvManagementToken|authorization:`Bearer|X-DPV-CSRF|\/api\/management\/session/);
+  assert.doesNotMatch(ui,/phase7-management-access|Management Access|Management access token|showModal/);
 });
 
 test('Opportunities defaults to RECOMMENDED while keeping explicit ALL and five-state filters', async () => {
@@ -121,7 +111,7 @@ test('Phase 7 customer-facing values use deterministic bilingual mappings', () =
   assert.deepEqual(phase7FieldLabel('unknown_column'),['业务字段','Business field']);
 });
 
-test('Phase 7 responsive CSS keeps dense data inside components and preserves practical dialog exits', async () => {
+test('Phase 7 responsive CSS keeps dense data inside components and practical actions', async () => {
   const [html,css] = await Promise.all([read('index.html'),read('phase7.css')]);
   assert.match(css,/\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns/);
   assert.match(css,/\.crm-data-row-table\s*\{[^}]*min-width/);
@@ -130,9 +120,7 @@ test('Phase 7 responsive CSS keeps dense data inside components and preserves pr
   assert.match(css,/@media \(max-width:1023px\)[\s\S]*\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css,/@media \(max-width:767px\)[\s\S]*\.crm-data-form\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css,/@media \(max-width:767px\)[\s\S]*\.crm-phase7-action-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
-  assert.match(css,/@media \(max-width:420px\)[\s\S]*#phase7-management-access\.crm-management-dialog\[open\]/);
-  assert.match(css,/#phase7-management-access\.crm-management-dialog\s*\{[^}]*width:\s*fit-content[^}]*max-height/);
-  assert.match(css,/\.crm-management-actions \.btn[\s\S]*min-height:\s*44px/);
+  assert.doesNotMatch(css,/phase7-management-access|crm-management-form|crm-management-actions/);
   assert.match(css,/\.crm-phase7-inline-actions \.btn[\s\S]*min-height:\s*44px/);
   assert.match(html,/content="width=device-width,initial-scale=1"/);
   assert.doesNotMatch(html,/maximum-scale|user-scalable/i);

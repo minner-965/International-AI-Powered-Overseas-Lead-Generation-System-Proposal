@@ -90,6 +90,12 @@
 .crm-contact-queue-row dl { display: contents; }
 .crm-contact-queue-row dt { color: var(--p8-muted); font-size: .75rem; }
 .crm-contact-queue-row dd { margin: .2rem 0 0; color: var(--p8-ink-soft); }
+.p10-manual-route-panel { margin-top: 1.5rem; }
+.p10-manual-route-row > div { min-width: 0; display: grid; align-content: start; gap: .3rem; }
+.p10-manual-route-value a,.p10-manual-route-value span { overflow-wrap: anywhere; }
+.p10-manual-route-action { display: grid; gap: .75rem; min-width: 0; }
+.p10-manual-route-action label { display: grid; gap: .4rem; }
+.p10-manual-route-buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 .crm-company-table { width: 100%; table-layout: fixed; }
 .crm-company-table th:first-child { width: 22%; }

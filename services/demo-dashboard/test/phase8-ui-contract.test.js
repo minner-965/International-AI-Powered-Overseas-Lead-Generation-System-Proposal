@@ -62,7 +62,8 @@ test('Contact Queue is a standalone execution view with stable hooks and its exi
   assert.match(html, /data-app-view="contact-queue"/);
   assert.match(html, /id="contact-queue-list"/);
   assert.match(queue, /querySelector\('#contact-queue-list'\)/);
-  assert.match(queue, /managementRequest\('\/api\/contact-queue'\)/);
+  assert.match(queue, /workspaceRequest\('\/api\/workspace\/contact-queue'\)/);
+  assert.doesNotMatch(queue, /managementRequest\('\/api\/contact-queue'\)/);
   assert.match(queue, /crm:viewchange/);
   assert.match(queue, /view === 'contact-queue'/);
 });
@@ -84,7 +85,7 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
     ['product_category', ["Women's Apparel", 'General Merchandise']],
     ['buyer_type', ['Importer', 'Wholesaler', 'Distributor', 'Department Store', 'Large Retail Group', 'Regional Retail Chain', 'Supermarket']],
     ['import_type', ['PROSPECT_LEADS', 'PRODUCT_MASTER_UPDATE', 'CUSTOMER_DEALS', 'CUSTOMER_DEAL_LINES']],
-    ['export_type', ['LEAD_MASTER_INTERNAL', 'SALES_OPPORTUNITY', 'PRODUCT_CATALOG_INTERNAL', 'CUSTOMER_DEAL_HISTORY', 'IMPORT_ERROR_REPORT']],
+    ['export_type', ['LEAD_MASTER_INTERNAL', 'SALES_OPPORTUNITY', 'PRODUCT_CATALOG_INTERNAL', 'CUSTOMER_DEAL_HISTORY', 'RESEARCH_JOB_PROVIDER_USAGE', 'IMPORT_ERROR_REPORT']],
     ['mode', ['CURRENT_FILTER', 'FULL_AUTHORIZED_MASTER']],
     ['format', ['XLSX', 'CSV']]
   ]) {

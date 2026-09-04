@@ -1,6 +1,7 @@
 import { BraveSearchProvider } from './BraveSearchProvider.js';
 import { DataForSeoSearchProvider } from './DataForSeoSearchProvider.js';
 import { TavilySearchProvider } from './TavilySearchProvider.js';
+import { TavilyUsageAudit } from './TavilyUsageAudit.js';
 import { generateResearchQueries, searchCountryCode } from './queryGenerator.js';
 import { normalizeSearchResult } from './resultNormalizer.js';
 import { mergeSearchCandidates } from './resultFilter.js';
@@ -58,6 +59,8 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
   }
   const started = Date.now();
   const provider = createSearchProvider(config, overrides);
+  const searchAudit=String(provider.name||'').toLowerCase()==='tavily'
+    ?new TavilyUsageAudit({provider,pool,...(overrides.tavilyUsageConfig||{})}):null;
   const client = await pool.connect();
   try {
     const jobResult = await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [jobId]);
@@ -88,7 +91,7 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
       requests += 1;
       await client.query("UPDATE leadgen.research_search_queries SET status='RUNNING',error_message=NULL WHERE id=$1", [query.id]);
       try {
-        const response = await provider.search({
+        const request={
           query: query.query_text,
           count: resultDepth,
           country: searchCountryCode(job.country_name || job.country, marketProfile.countryCode),
@@ -96,7 +99,14 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
           locationName,
           searchLang: marketSearchLanguage(job, marketProfile),
           tag: `dpv-phase4:${jobId}`
-        });
+        };
+        const response=searchAudit?await searchAudit.search({researchJobId:job.id,purpose:'NEW_COMPANY_DISCOVERY',
+          budgetPool:'DISCOVERY',request,persistResults:async()=>({referenceIds:[]}),
+          loadPersistedResults:async()=>{const cached=await client.query(`SELECT DISTINCT ON(c.normalized_url)
+            c.title,c.url,c.snippet,c.provider_score,c.rank FROM leadgen.research_candidates c
+            LEFT JOIN leadgen.research_candidate_queries cq ON cq.research_candidate_id=c.id
+            WHERE c.research_job_id=$1 AND (c.search_query_id=$2 OR cq.research_search_query_id=$2)
+            ORDER BY c.normalized_url,c.rank,c.id`,[job.id,query.id]);return cached.rows;}}):await provider.search(request);
         successful += 1;
         creditsUsed += Number(response.credits || 0);
         rawResults += response.results.length;

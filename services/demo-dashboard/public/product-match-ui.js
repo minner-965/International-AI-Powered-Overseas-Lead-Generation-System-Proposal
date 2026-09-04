@@ -100,17 +100,20 @@ const dimensionLabels = Object.freeze({
   EXTERNAL_SOURCING_IMPORT_EVIDENCE: pair('外部采购与进口依据', 'External sourcing and import evidence'),
   RECENT_CATEGORY_ACTIVITY: pair('近期品类活动', 'Recent category activity'),
   CATEGORY_OVERLAP: pair('品类重合度', 'Category overlap'),
+  ASSORTMENT_RELEVANCE: pair('产品组合相关性', 'Assortment relevance'),
   ASSORTMENT_DEPTH_RELEVANCE: pair('产品组合深度与相关性', 'Assortment depth and relevance'),
   ASSORTMENT_DEPTH: pair('产品组合深度与相关性', 'Assortment depth and relevance'),
   COMMERCIAL_POSITIONING_PRICE_BAND: pair('商业定位与价格区间', 'Commercial positioning and price band'),
   PRICE_BAND_FIT: pair('商业定位与价格区间', 'Commercial positioning and price band'),
   PRODUCT_ATTRIBUTE_SPECIFICATION_FIT: pair('产品属性与规格匹配', 'Product attribute and specification fit'),
+  ATTRIBUTE_SPECIFICATION_FIT: pair('产品属性与规格匹配', 'Product attribute and specification fit'),
   ATTRIBUTE_FIT: pair('产品属性与规格匹配', 'Product attribute and specification fit'),
   MOQ_ORDER_FORMAT_COMPATIBILITY: pair('起订量与订单形式', 'MOQ and order-format compatibility'),
   MOQ_FIT: pair('起订量与订单形式', 'MOQ and order-format compatibility'),
   IMPORT_SOURCING_MODEL_FIT: pair('进口与采购模式', 'Import and sourcing model fit'),
   SOURCING_MODEL_FIT: pair('进口与采购模式', 'Import and sourcing model fit'),
-  RECENT_PRODUCT_SIGNAL: pair('近期产品信号', 'Recent product signal')
+  RECENT_PRODUCT_SIGNAL: pair('近期产品信号', 'Recent product signal'),
+  RECENT_PRODUCT_BUYING_SIGNAL: pair('近期产品与采购信号', 'Recent product and buying signal')
 });
 
 const taxonomyLabels = Object.freeze({
@@ -140,6 +143,19 @@ const reasonLabels = Object.freeze({
   MOQ_UNKNOWN: pair('起订量与订单形式待确认', 'MOQ and order format require confirmation'),
   IMPORT_SOURCING_SUPPORTED: pair('公开资料支持外部采购模式', 'Published sources support external sourcing'),
   RECENT_PRODUCT_SIGNAL: pair('发现近期产品信息', 'Recent product information found'),
+  ASSORTMENT_RELEVANCE_SUPPORTED: pair('公开产品组合与批准类目相关', 'Published assortment is relevant to the approved category'),
+  ASSORTMENT_RELEVANCE_MISMATCH: pair('公开产品组合与批准类目不匹配', 'Published assortment does not match the approved category'),
+  IMPORT_SOURCING_MODEL_SUPPORTED: pair('公开资料支持进口或外部采购模式', 'Published sources support an import or external-sourcing model'),
+  RECENT_PRODUCT_BUYING_SIGNAL_SUPPORTED: pair('公开资料显示近期产品或采购活动', 'Published sources show recent product or buying activity'),
+  ASSORTMENT_RELEVANCE_UNKNOWN: pair('公开产品组合相关性待确认', 'Assortment relevance requires confirmation'),
+  COMMERCIAL_POSITIONING_PRICE_BAND_UNKNOWN: pair('价格定位兼容性待确认', 'Price-positioning compatibility requires confirmation'),
+  ATTRIBUTE_SPECIFICATION_FIT_UNKNOWN: pair('产品属性与规格兼容性待确认', 'Attribute and specification compatibility requires confirmation'),
+  MOQ_ORDER_FORMAT_COMPATIBILITY_UNKNOWN: pair('起订量与订单形式兼容性待确认', 'MOQ and order-format compatibility requires confirmation'),
+  COMMERCIAL_POSITIONING_PRICE_BAND_OPTIONAL_UNTIL_INTEREST: pair('已有公开资料时参考；无资料则跳过，意向后由老板沟通', 'Use existing public facts when available; otherwise skip until management discusses it after interest'),
+  ATTRIBUTE_SPECIFICATION_FIT_OPTIONAL_UNTIL_INTEREST: pair('无需前期补充；客户有意向后由老板沟通', 'No pre-contact enrichment required; management discusses it after interest'),
+  MOQ_ORDER_FORMAT_OPTIONAL_UNTIL_INTEREST: pair('无需前期补充；客户有意向后由老板沟通', 'No pre-contact enrichment required; management discusses it after interest'),
+  IMPORT_SOURCING_MODEL_FIT_UNKNOWN: pair('进口与采购模式兼容性待确认', 'Import and sourcing model compatibility requires confirmation'),
+  RECENT_PRODUCT_BUYING_SIGNAL_UNKNOWN: pair('近期产品与采购信号待确认', 'Recent product and buying signals require confirmation'),
   PRODUCT_EVIDENCE_MISSING: pair('公开产品资料待补充', 'Public product evidence required')
 });
 

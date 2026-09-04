@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { upper } from './constants.js';
+import { GmailApiProviderAdapter } from './gmailApiProvider.js';
+
+export { GmailApiProviderAdapter, buildGmailMime, stableGmailMessageId } from './gmailApiProvider.js';
 
 export const PROVIDER_PURPOSES = Object.freeze({
   COLD_OUTREACH: 'COLD_OUTREACH',
@@ -128,6 +131,10 @@ export function evaluateProviderPurpose({ provider = 'NONE', purpose, consent_st
     }
     if (!['OPT_IN', 'TRANSACTIONAL'].includes(useCase)) return { allowed: false, code: 'PROVIDER_PURPOSE_NOT_ALLOWED' };
     return { allowed: true, code: 'PROVIDER_PURPOSE_ALLOWED' };
+  }
+  if (providerName === 'GMAIL_API') {
+    if (!['CONTROLLED_TEST','APPROVED'].includes(rawUseCase)) return { allowed:false,code:'GMAIL_USE_CASE_NOT_APPROVED' };
+    return { allowed:true,code:'PROVIDER_PURPOSE_ALLOWED' };
   }
   return { allowed: false, code: 'PROVIDER_POLICY_ADAPTER_REQUIRED' };
 }
@@ -266,6 +273,7 @@ export class ResendInboundProvider {
 export function createOutboundProvider(config = {}) {
   const name = upper(config.provider || config.outboundEmailProvider || 'NONE');
   if (name === 'RESEND') return new ResendProvider(config);
+  if (name === 'GMAIL_API') return new GmailApiProviderAdapter(config);
   return new NoneProvider();
 }
 

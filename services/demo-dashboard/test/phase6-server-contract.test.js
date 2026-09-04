@@ -61,7 +61,7 @@ test('pg-boss retains its bounded policy and adds a dedicated enrichment queue',
   assert.match(server,/PHASE5_QUEUES\.ENRICH_DECISION_MAKERS/);
 });
 
-test('opportunities keep Phase 5, Phase 6 and Phase 6.1 matrices separate under the buyer-first V3 order', () => {
+test('opportunities keep scoring matrices separate while allowing a company-level contact route', () => {
   const block = routeBlock("app.get('/api/opportunities'","app.get('/api/internal/data-cleanup/dry-run'");
   assert.match(`${block}\n${opportunitySource}`,/mr\.opportunity_matrix/);
   assert.match(opportunitySource,/f\.access_opportunity_matrix cooperation_matrix/);
@@ -70,7 +70,7 @@ test('opportunities keep Phase 5, Phase 6 and Phase 6.1 matrices separate under 
   assert.match(opportunitySource,/DIRECT_END_BUYER/);
   assert.match(opportunitySource,/mr\.match_score DESC NULLS LAST,hmr\.match_score DESC NULLS LAST,sr\.final_score DESC NULLS LAST/);
   assert.match(opportunitySource,/dx\.company_id=c\.id/);
-  assert.match(opportunitySource,/cx\.decision_maker_id=dm\.id/);
+  assert.match(opportunitySource,/contact_owner\.company_id=c\.id/);
   assert.doesNotMatch(opportunitySource,/dx\.research_job_id=f\.research_job_id/);
 });
 

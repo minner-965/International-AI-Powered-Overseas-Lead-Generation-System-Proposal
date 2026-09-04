@@ -23,7 +23,7 @@ import { CategoryEvidenceService } from './categoryProcurement/CategoryEvidenceS
 import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './categoryProcurement/CategoryProcurementService.js';
 import { CategoryScopeService } from './categoryProcurement/CategoryScopeService.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
-import { AutoEvidenceOrchestrator,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
+import { AutoEvidenceOrchestrator,autoEvidenceConfig,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
 import { Phase7Service } from './phase7/service.js';
 import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
@@ -31,6 +31,9 @@ import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/rou
 import { createManagementAuth } from './phase7/managementAuth.js';
 import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
 import { createResearchRouter } from './research/router.js';
+import { OrchestratorHealthService,classifyDispatchFailure } from './orchestration/OrchestratorHealthService.js';
+import { ResearchDirectDispatchService,ResearchJobDirectExecutor,researchDirectQueueConfig } from './research/ResearchDirectDispatchService.js';
+import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 
 const { Pool } = pg;
 const app = express();
@@ -56,6 +59,8 @@ const telemetry = createTelemetryService({
   enabled: /^(1|true|yes|on)$/i.test(process.env.OTEL_ENABLED || ''),
   serviceName: 'dpv-leadgen-dashboard'
 });
+const effectivePhase10Config = autoEvidenceConfig(process.env);
+const effectiveResearchDirectQueueConfig=researchDirectQueueConfig(process.env);
 
 function canonicalDigest(value) {
   const canonical = Object.fromEntries(Object.entries(value || {}).sort(([left],[right])=>left.localeCompare(right)));
@@ -92,10 +97,15 @@ const searchConfig = Object.freeze({
     socialMaxSearches: Math.max(0, Math.min(3, Number(process.env.SOCIAL_ENRICHMENT_MAX_SEARCHES_PER_JOB || 3)))
   })
 });
-const tavilyUsageConfig = Object.freeze({
-  runCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_RUN_UNITS || 25)),
-  dailyCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_DAY_UNITS || 100)),
-  billingPeriodCapUnits: Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS || 1000)),
+const tavilyUsageConfigBase = Object.freeze({
+  internalLimitsEnabled:effectivePhase10Config.tavilyInternalLimitsEnabled,
+  runCapUnits: effectivePhase10Config.tavilyRunCapUnits,
+  dailyCapUnits: effectivePhase10Config.tavilyDailyCapUnits,
+  discoveryDailyCapUnits:effectivePhase10Config.tavilyDiscoveryDailyUnits,
+  evidenceDailyCapUnits:effectivePhase10Config.tavilyEvidenceDailyUnits,
+  companyProfileCycleCapUnits:effectivePhase10Config.tavilyCompanyProfileCycleUnits,
+  billingPeriodCapUnits: effectivePhase10Config.tavilyInternalLimitsEnabled
+    ?Math.max(0,Number(process.env.MAX_TAVILY_CREDITS_PER_BILLING_PERIOD_UNITS || 1000)):null,
   reservationUnits: Math.max(1,Number(process.env.TAVILY_CREDITS_PER_SEARCH_RESERVATION_UNITS || 1))
 });
 const pool = new Pool({
@@ -106,6 +116,11 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD,
 });
 instrumentPgPool(pool, telemetry);
+const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:searchConfig.tavilyApiKey,
+  usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
+  refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||600000),
+  timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
+const tavilyUsageConfig=Object.freeze({...tavilyUsageConfigBase,providerAccountState:tavilyProviderAccountState});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -223,6 +238,46 @@ async function matchCompanySet(data, job) {
   return { processed: results.length, match_result_ids: results.flatMap(row => row.id ? [row.id] : [row.management_baseline?.id,row.mx_historical_reference?.id].filter(Boolean)) };
 }
 
+async function schedulePostDiscoveryAutomation(jobId) {
+  const jobResult=await pool.query(`SELECT * FROM leadgen.research_jobs
+    WHERE id=$1 AND job_type='COMPANY_DISCOVERY'`,[jobId]);
+  if(!jobResult.rowCount)return {companies:0,category_job_id:null,enrichment_job_id:null};
+  const sourceJob=jobResult.rows[0];
+  const promoted=await pool.query(`SELECT DISTINCT v.company_id,c.country_code
+    FROM leadgen.research_candidate_verifications v
+    JOIN leadgen.companies c ON c.id=v.company_id
+    WHERE v.research_job_id=$1 AND v.verification_status='VERIFIED_BUSINESS'
+      AND v.promotion_status IN('PROMOTED_NEW','ENRICHED_EXISTING')
+      AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+    ORDER BY v.company_id`,[jobId]);
+  const companyIds=promoted.rows.map(row=>row.company_id);
+  if(!companyIds.length)return {companies:0,category_job_id:null,enrichment_job_id:null};
+  const productProfiles=[String(sourceJob.product_profile||'WOMENSWEAR').toUpperCase()];
+
+  const categoryIdempotencyKey=`post-discovery-category:${jobId}`;
+  let categoryJob=(await pool.query(`SELECT * FROM leadgen.research_jobs WHERE idempotency_key=$1`,[categoryIdempotencyKey])).rows[0];
+  if(!categoryJob){
+    categoryJob=await createCategoryProcurementResearchJob({companyIds,maxResults:companyIds.length,
+      idempotencyKey:categoryIdempotencyKey,productProfiles});
+  }
+  if(categoryJob.status==='QUEUED'){
+    const items=buildCategoryProcurementWorkItems({job_id:categoryJob.id,company_ids:companyIds,
+      product_profiles:categoryJob.product_profiles});
+    await pool.query(`UPDATE leadgen.research_jobs SET status='DISCOVERING',started_at=coalesce(started_at,now()),
+      category_profiles_attempted=$2,last_error=NULL WHERE id=$1`,[categoryJob.id,items.length]);
+    for(const item of items){
+      const payload=categoryProcurementQueuePayload({...item,
+        execution_key:`category-procurement:${categoryJob.id}:${item.company_id}:${item.product_profile}`});
+      await phase5Queue.enqueue(PHASE5_QUEUES.COLLECT_CATEGORY_BUYER_EVIDENCE,payload,
+        {singletonKey:`phase6.1:collect:${payload.execution_key}`});
+    }
+  }
+
+  audit('POST_DISCOVERY_AUTOMATION_SCHEDULED',{job_id:jobId,companies:companyIds.length,
+    category_job_id:categoryJob.id,enrichment_job_id:null,route:'CATEGORY_GATE_FIRST'});
+  return {companies:companyIds.length,category_job_id:categoryJob.id,enrichment_job_id:null};
+}
+
 function categoryProcurementQueuePayload(data={}) {
   const profile=String(data.product_profile||'').toUpperCase();
   const executionKey=data.execution_key||`category-procurement:${data.job_id}:${data.company_id}:${profile}`;
@@ -249,11 +304,14 @@ async function refreshCategoryProcurementJobProgress(researchJobId,{error=null}=
        FROM leadgen.product_opportunity_results po WHERE po.research_job_id=$1) opportunities,
     (SELECT count(*)::int FROM leadgen.cooperation_feasibility_results f
        WHERE f.research_job_id=$1 AND f.category_procurement_match_result_id IS NOT NULL) cooperation_count`,[researchJobId]);
-  const job=await pool.query(`SELECT cardinality(requested_company_ids)*2 expected FROM leadgen.research_jobs
+  const job=await pool.query(`SELECT cardinality(requested_company_ids)*cardinality(product_profiles) expected,
+    category_procurement_errors FROM leadgen.research_jobs
     WHERE id=$1 AND job_type='CATEGORY_PROCUREMENT_ENRICHMENT'`,[researchJobId]);
   if(!job.rowCount)return null;
   const counts=summary.rows[0];const expected=Number(job.rows[0].expected||0);
   const complete=expected>0&&Number(counts.cooperation_count)>=expected;
+  const terminal=complete||Boolean(error)&&expected>0&&
+    Number(job.rows[0].category_procurement_errors||0)+1>=expected;
   const updated=await pool.query(`UPDATE leadgen.research_jobs SET
     companies_attempted=GREATEST(companies_attempted,$2),companies_qualified=GREATEST(companies_qualified,$2),
     category_sources_found=$3,category_observations_found=$4,buyer_models_classified=$5,
@@ -265,7 +323,7 @@ async function refreshCategoryProcurementJobProgress(researchJobId,{error=null}=
     completed_at=CASE WHEN $10 THEN now() ELSE completed_at END
     WHERE id=$1 AND job_type='CATEGORY_PROCUREMENT_ENRICHMENT' RETURNING *`,[
     researchJobId,Number(counts.companies||0),Number(counts.sources||0),Number(counts.observations||0),
-    Number(counts.buyers||0),Number(counts.passed||0),Number(counts.unknown||0),Number(counts.opportunities||0),error,complete]);
+    Number(counts.buyers||0),Number(counts.passed||0),Number(counts.unknown||0),Number(counts.opportunities||0),error,terminal]);
   return updated.rows[0]||null;
 }
 
@@ -295,13 +353,17 @@ async function calculateCategoryProcurementMatchWork(data){const payload=categor
 
 async function calculateProductOpportunitiesWork(data){const payload=categoryProcurementQueuePayload(data);try{
   const result=await categoryProcurementService.calculateProductOpportunityAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id});
+  await categoryProcurementService.calculateCommercialFitAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id});
   const next={...payload,product_opportunity_result_id:result.id};const queueJobId=await phase5Queue.enqueue(PHASE5_QUEUES.RECALCULATE_COOPERATION_V3,next,{singletonKey:`phase6.1:cooperation:${payload.execution_key}`});
   await refreshCategoryProcurementJobProgress(payload.job_id);return{product_opportunity_result_id:result.id,recommendation_status:result.recommendation_status,candidate_count:result.candidate_count,queue_job_id:queueJobId};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
 
 async function recalculateCooperationV3Work(data){const payload=categoryProcurementQueuePayload(data);try{
   const result=await categoryProcurementService.calculateCooperationAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id,productOpportunityResultId:payload.product_opportunity_result_id});
-  await refreshCategoryProcurementJobProgress(payload.job_id);return{cooperation_result_id:result.id,readiness:result.opportunity_readiness,product_access_matrix:result.product_access_matrix};
+  const updatedJob=await refreshCategoryProcurementJobProgress(payload.job_id);
+  if(['COMPLETED','PARTIAL'].includes(updatedJob?.status))await enqueueAutoEvidenceEvent(
+    `category-procurement-completed:${payload.job_id}`,{research_job_id:payload.job_id});
+  return{cooperation_result_id:result.id,readiness:result.opportunity_readiness,product_access_matrix:result.product_access_matrix};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
 
 const phase7QueueProxy = Object.freeze({
@@ -329,11 +391,21 @@ const autoEvidenceService = new AutoEvidenceOrchestrator({
   audit,
   executors:autoEvidenceExecutors
 });
+const orchestratorHealth = new OrchestratorHealthService({
+  pool,
+  intervalMinutes:Number(process.env.AUTO_EVIDENCE_RECONCILE_MINUTES || 30),
+  queuedThresholdMinutes:Number(process.env.ORCHESTRATOR_QUEUED_THRESHOLD_MINUTES || 10),
+  retryDelayMinutes:Number(process.env.ORCHESTRATOR_RETRY_DELAY_MINUTES || 5),
+  researchWorkflowActive:/^(1|true|yes|on)$/i.test(process.env.N8N_RESEARCH_WORKFLOW_ACTIVE || 'true')
+});
 const autoEvidenceQueueHandlers=createAutoEvidenceQueueHandlers({service:autoEvidenceService});
 
 const enqueueAutoEvidenceEvent=(eventKey,payload={})=>phase5Queue.enqueue(PHASE5_QUEUES.SCHEDULE_AUTO_EVIDENCE,
   {schedule_source:'RECONCILIATION',reconcile_bucket:String(eventKey),batch_size:10,...payload},
   {singletonKey:`phase10:auto-evidence:event:${String(eventKey).slice(0,180)}`});
+
+let researchDirectDispatchService;
+let researchDirectExecutor;
 
 const phase5Queue = createPhase5Queue({
   telemetry,
@@ -380,9 +452,34 @@ const phase5Queue = createPhase5Queue({
     [PHASE5_QUEUES.CALCULATE_PRODUCT_OPPORTUNITIES]: calculateProductOpportunitiesWork,
     [PHASE5_QUEUES.RECALCULATE_COOPERATION_V3]: recalculateCooperationV3Work,
     ...autoEvidenceQueueHandlers,
-    ...phase7QueueHandlers
+    ...phase7QueueHandlers,
+    [PHASE5_QUEUES.EXECUTE_RESEARCH_JOB]:data=>researchDirectDispatchService.execute(data)
   }
 });
+
+researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
+  generateQueries:async jobId=>{
+    const client=await pool.connect();
+    try{await client.query('BEGIN');const job=await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1',[jobId]);
+      if(!job.rowCount)throw Object.assign(new Error('Research job not found'),{code:'RESEARCH_JOB_NOT_FOUND'});
+      await persistGeneratedQueries(client,job.rows[0],searchConfig);await client.query('COMMIT');
+    }catch(error){try{await client.query('ROLLBACK');}catch{}throw error;}finally{client.release();}
+  },
+  discover:jobId=>discoverResearchCandidates(pool,jobId,searchConfig,{tavilyUsageConfig}),
+  checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
+  verify:jobId=>verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,promote:true,allowSocialSearch:true}),
+  score:async(jobId,executionKey)=>{
+    await scoreCompanySet({research_job_id:jobId},{id:`${executionKey}:score`});
+    await matchCompanySet({research_job_id:jobId},{id:`${executionKey}:match`});
+  },
+  completed:async jobId=>{
+    const downstream=await schedulePostDiscoveryAutomation(jobId);
+    await enqueueAutoEvidenceEvent(`research-direct-completed:${jobId}`,{research_job_id:jobId});
+    return downstream;
+  }
+}});
+researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,
+  enabled:effectiveResearchDirectQueueConfig.enabled,audit});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -397,6 +494,7 @@ const researchWorkbenchService = new ResearchWorkbenchService({
   pool,
   hunter:enrichmentService.hunter,
   autoEvidence:autoEvidenceService,
+  providerAccountState:tavilyProviderAccountState,
   contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
   runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
   billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000),
@@ -431,9 +529,9 @@ app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,require
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 
 const categoryScopeRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
-const categoryScopeWrite=[managementAuth.authenticate,managementAuth.requireCsrf,
+const categoryScopeWrite=[managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN')];
-const categoryScopeApprove=[managementAuth.authenticate,managementAuth.requireCsrf,
+const categoryScopeApprove=[managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','MANAGEMENT_APPROVER')];
 
 app.get('/api/category-scopes/candidates',...categoryScopeRead,async(req,res,next)=>{
@@ -490,7 +588,20 @@ app.post('/api/internal/auto-evidence/reconcile',requireInternalToken,async(req,
     res.status(202).json(await autoEvidenceService.reconcile(req.body||{}));
   }catch(error){next(error);}
 });
-app.post('/api/auto-evidence/controlled-batch',managementAuth.authenticate,managementAuth.requireCsrf,
+app.post('/api/internal/orchestrator/heartbeat',requireInternalToken,async(req,res,next)=>{
+  try{res.status(202).json(await orchestratorHealth.heartbeat(req.body||{}));}catch(error){next(error);}
+});
+app.post('/api/internal/orchestrator/watchdog',requireInternalToken,async(req,res,next)=>{
+  try{res.status(202).json(await orchestratorHealth.watchdog({dispatch:dispatchResearchJob,limit:req.body?.limit}));}
+  catch(error){next(error);}
+});
+app.post('/api/internal/research/direct-dispatch/reconcile',requireInternalToken,async(req,res,next)=>{
+  try{res.status(202).json(await researchDirectDispatchService.reconcile({limit:req.body?.limit}));}catch(error){next(error);}
+});
+app.get('/api/orchestrator/status',...categoryScopeRead,async(_req,res,next)=>{
+  try{res.json(await orchestratorHealth.status('dpvPhase1TwoWeekDemo'));}catch(error){next(error);}
+});
+app.post('/api/auto-evidence/controlled-batch',managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN'),async(req,res,next)=>{
     try{
       const result=await autoEvidenceService.runControlledBatch(req.body||{}, {
@@ -979,7 +1090,7 @@ app.get('/api/health', async (_req, res) => {
   catch (error) { res.status(503).json({ status: 'error', error: error.message }); }
 });
 
-app.post('/api/live/collect', managementAuth.authenticate, managementAuth.requireCsrf,
+app.post('/api/live/collect', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     const requested = Number(req.body?.limit || 50);
@@ -995,11 +1106,15 @@ app.get('/api/metrics', async (_req, res, next) => {
 
 function researchJobResponse(row) {
   const { id, ...fields } = row;
+  if (Object.hasOwn(row,'provider_call_count')) {
+    fields.search_api_requests=Number(row.provider_call_count||0);
+    fields.search_credits_used=Number(row.used_units||0);
+  }
   return { job_id: id, ...fields };
 }
 
 async function triggerResearchWorkflow(job) {
-  if (!n8nResearchWebhookUrl) throw new Error('Research workflow webhook is not configured');
+  if (!n8nResearchWebhookUrl) throw Object.assign(new Error('Research workflow webhook is not configured'),{code:'WORKFLOW_INACTIVE'});
   const response = await fetch(n8nResearchWebhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -1019,8 +1134,15 @@ async function triggerResearchWorkflow(job) {
     }),
     signal: AbortSignal.timeout(n8nWebhookTimeoutMs)
   });
-  if (!response.ok) throw new Error(`Research workflow returned HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`Research workflow returned HTTP ${response.status}`),{status:response.status});
   return { accepted: true, status_code: response.status };
+}
+
+async function dispatchResearchJob(job){
+  if(!effectiveResearchDirectQueueConfig.enabled)return triggerResearchWorkflow(job);
+  const result=await researchDirectDispatchService.dispatch(job.id);
+  if(result.state!=='DISPATCHED'&&result.state!=='COMPLETED')throw Object.assign(new Error('Direct research queue is unavailable'),{code:'QUEUE_UNAVAILABLE'});
+  return {accepted:true,status_code:202,mode:'DIRECT_QUEUE',queue_job_id:result.queue_job_id||null};
 }
 
 async function triggerEnrichmentWorkflow(job) {
@@ -1050,7 +1172,7 @@ async function triggerCategoryProcurementWorkflow(job) {
     body:JSON.stringify({
       job_id:job.id,
       job_type:'CATEGORY_PROCUREMENT_ENRICHMENT',
-      product_profiles:['WOMENSWEAR','GENERAL_MERCHANDISE']
+      product_profiles:job.product_profiles||['WOMENSWEAR','GENERAL_MERCHANDISE']
     }),
     signal:AbortSignal.timeout(n8nWebhookTimeoutMs)
   });
@@ -1058,8 +1180,13 @@ async function triggerCategoryProcurementWorkflow(job) {
   return { accepted:true,status_code:response.status };
 }
 
-async function createCategoryProcurementResearchJob({companyIds=[],maxResults=100}={}) {
+async function createCategoryProcurementResearchJob({companyIds=[],maxResults=100,idempotencyKey=null,
+  productProfiles=['WOMENSWEAR','GENERAL_MERCHANDISE']}={}) {
   const uniqueIds=[...new Set((companyIds||[]).map(value=>optionalUuid(value,'company_id')).filter(Boolean))];
+  const requestedProfiles=[...new Set((productProfiles||[]).map(value=>String(value||'').trim().toUpperCase()))]
+    .filter(value=>['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(value));
+  if(!requestedProfiles.length)throw Object.assign(new Error('At least one supported product profile is required'),{
+    code:'CATEGORY_PROCUREMENT_PROFILE_INVALID'});
   const params=[];
   const clauses=[`c.data_origin IN (${publicDataOriginSql})`,companyMarketVisibleSql('c'),"c.verification_status='VERIFIED'",
     "c.lifecycle_status='ACTIVE'",'c.explicit_exclusion_reason IS NULL',excludesConfirmedExistingCustomerSql('c')];
@@ -1071,16 +1198,19 @@ async function createCategoryProcurementResearchJob({companyIds=[],maxResults=10
     throw Object.assign(new Error('One or more companies are not verified active Category Procurement targets'),{code:'CATEGORY_PROCUREMENT_COMPANY_INELIGIBLE'});
   }
   if(!selected.rowCount)throw Object.assign(new Error('No verified active companies are available for Category Procurement'),{code:'CATEGORY_PROCUREMENT_SCOPE_EMPTY'});
+  await tavilyProviderAccountState.assertCanCreate();
   const requestedCompanyIds=selected.rows.map(row=>row.id);
   const marketCodes=[...new Set(selected.rows.map(row=>row.country_code).filter(Boolean))];
-  const productProfiles=['WOMENSWEAR','GENERAL_MERCHANDISE'];
   const created=await pool.query(`INSERT INTO leadgen.research_jobs
     (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
      buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
-     category_profiles_attempted)
+     category_profiles_attempted,idempotency_key,request_digest)
     VALUES ('MULTI_MARKET','XX','Multi-market','en','MULTI_MARKET','Category Procurement Match','WOMENSWEAR',
-      '{}',$1,'QUEUED','CATEGORY_PROCUREMENT_ENRICHMENT',$2,$3,$4,$5) RETURNING *`,[
-    requestedCompanyIds.length,marketCodes,productProfiles,requestedCompanyIds,requestedCompanyIds.length*productProfiles.length]);
+      '{}',$1,'QUEUED','CATEGORY_PROCUREMENT_ENRICHMENT',$2,$3,$4,$5,$6,$7)
+    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+    DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *`,[
+    requestedCompanyIds.length,marketCodes,requestedProfiles,requestedCompanyIds,requestedCompanyIds.length*requestedProfiles.length,
+    idempotencyKey?String(idempotencyKey).slice(0,200):randomUUID(),canonicalDigest({requestedCompanyIds,marketCodes,productProfiles:requestedProfiles})]);
   return created.rows[0];
 }
 
@@ -1107,7 +1237,25 @@ app.get('/api/markets', (_req, res) => {
   });
 });
 
-app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+app.get('/api/research/provider-status',managementAuth.authenticate,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT','SALES'),async(_req,res,next)=>{
+  try{
+    const state=await tavilyProviderAccountState.getState();
+    res.json({provider:'SEARCH',status:state.status,retry_after_at:state.retry_after_at||null,
+      checked_at:state.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR'].includes(state.status)});
+  }catch(error){next(error);}
+});
+
+app.post('/api/research/provider-status/refresh',managementAuth.authenticate,
+  managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'),async(_req,res,next)=>{
+  try{
+    const state=await tavilyProviderAccountState.refreshUsage({force:true,source:'ADMIN_REFRESH'});
+    res.json({provider:'SEARCH',status:state.status,retry_after_at:state.retry_after_at||null,
+      checked_at:state.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR'].includes(state.status)});
+  }catch(error){next(error);}
+});
+
+app.post('/api/research/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     const requestedCountryName = clean(req.body?.country_name || req.body?.country);
@@ -1143,6 +1291,7 @@ app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requi
     if (explicitProductProfile && mappedProductProfile && explicitProductProfile !== mappedProductProfile) {
       return res.status(400).json({ error: 'Invalid research job', detail: 'product_profile does not match product_category' });
     }
+    await tavilyProviderAccountState.assertCanCreate();
     const requestPayload = {
       country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
       preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
@@ -1150,8 +1299,8 @@ app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requi
     };
     const requestDigest = canonicalDigest(requestPayload);
     const idempotencyKey = clean(req.get('idempotency-key') || req.body?.idempotency_key).slice(0,200) || randomUUID();
-    const { rows } = await pool.query(`
-      INSERT INTO leadgen.research_jobs
+    const created=await researchDirectDispatchService.createAtomic(async client=>{
+      const {rows}=await client.query(`INSERT INTO leadgen.research_jobs
         (country,country_code,country_name,city,region,preferred_language,market_profile,
          product_category,product_profile,buyer_types,max_results,status,idempotency_key,request_digest,
          created_by_identity,created_by_role,run_budget_cap_units)
@@ -1162,50 +1311,62 @@ app.post('/api/research/jobs', managementAuth.authenticate, managementAuth.requi
       preferredLanguage, marketProfile.profileKey, productCategory, productProfile, buyerTypes, maxResults,
       idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
       Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000)]);
-    const job = rows[0];
+      return rows[0];
+    });
+    const job = created.job;
     if (!job.inserted) {
       return res.status(200).json({ id:job.id,job_id:job.id,status:job.status,idempotent_replay:true });
     }
     audit('RESEARCH_JOB_CREATED', { job_id: job.id });
+    if(effectiveResearchDirectQueueConfig.enabled){
+      const state=created.dispatch?.state||'RETRY_PENDING';
+      audit('RESEARCH_DIRECT_QUEUE_REQUESTED',{job_id:job.id,dispatch_state:state});
+      return res.status(202).json({id:job.id,job_id:job.id,status:'QUEUED',dispatch:'direct_queue',dispatch_state:state});
+    }
     audit('N8N_DISPATCH_REQUESTED', { job_id: job.id });
     try {
+      await orchestratorHealth.recordDispatch(job.id,'PENDING');
       const dispatch = await triggerResearchWorkflow(job);
+      await orchestratorHealth.recordDispatch(job.id,'DISPATCHED');
       audit('N8N_DISPATCH_SUCCEEDED', { job_id: job.id, status_code: dispatch.status_code });
-      res.status(202).json({ id: job.id, job_id: job.id, status: 'QUEUED', dispatch: 'accepted' });
+      res.status(202).json({ id: job.id, job_id: job.id, status: 'QUEUED', dispatch: 'accepted',dispatch_state:'DISPATCHED' });
     } catch (dispatchError) {
-      const safeError = clean(dispatchError.message).slice(0, 500);
-      await pool.query(`
-        UPDATE leadgen.research_jobs
-        SET status='FAILED', completed_at=now(), error_count=error_count+1, last_error=$2
-        WHERE id=$1`, [job.id, safeError]);
-      audit('N8N_DISPATCH_FAILED', { job_id: job.id, error: safeError });
-      res.status(502).json({
-        error: 'Research workflow dispatch failed',
-        job_id: job.id,
-        status: 'FAILED'
-      });
+      const dispatchState=classifyDispatchFailure(dispatchError,{workflowActive:orchestratorHealth.researchWorkflowActive});
+      const reason=`DISPATCH_${dispatchState}`;
+      await orchestratorHealth.recordDispatch(job.id,dispatchState,{reason});
+      audit('N8N_DISPATCH_DEFERRED', { job_id: job.id, dispatch_state:dispatchState });
+      res.status(202).json({job_id:job.id,id:job.id,status:'QUEUED',dispatch:'deferred',dispatch_state:dispatchState,blocked_reason:reason});
     }
   } catch (error) { next(error); }
 });
 
 app.get('/api/research/jobs', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM leadgen.research_jobs ORDER BY created_at DESC, id DESC LIMIT 100');
+    const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
+      pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
+      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at
+      FROM leadgen.research_jobs j LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
+      ORDER BY j.created_at DESC,j.id DESC LIMIT 100`);
     res.json(rows.map(researchJobResponse));
   } catch (error) { next(error); }
 });
 
 app.get('/api/research/jobs/:id', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [req.params.id]);
+    const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
+      pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
+      pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at
+      FROM leadgen.research_jobs j LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
+      WHERE j.id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Research job not found' });
     res.json(researchJobResponse(rows[0]));
   } catch (error) { next(error); }
 });
 
-app.post('/api/enrichment/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+app.post('/api/enrichment/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
+    await tavilyProviderAccountState.assertCanCreate();
     const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
     let productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
@@ -1576,7 +1737,7 @@ app.post('/api/internal/research/jobs/:id/discover', requireInternalToken, async
       provider: searchConfig.provider,
       operation: 'candidate_discovery'
     }, async span => {
-      const discovered = await discoverResearchCandidates(pool, req.params.id, searchConfig);
+      const discovered = await discoverResearchCandidates(pool, req.params.id, searchConfig,{tavilyUsageConfig});
       span.setAttribute('result_count', discovered.candidates_found || 0);
       span.setAttribute('credits', discovered.search_credits_used || discovered.successful_requests || 0);
       return discovered;
@@ -1925,6 +2086,11 @@ app.get('/api/companies/:id/buyer-business-model', async (req,res,next) => {
   }catch(error){next(error);}
 });
 
+app.get('/api/companies/:id/commercial-product-fit', async (req,res,next) => {
+  try{res.json(await categoryProcurementService.getCompanyCommercialFitResults(optionalUuid(req.params.id,'company_id')));}
+  catch(error){next(error);}
+});
+
 app.get('/api/companies/:id/product-opportunities', async (req,res,next) => {
   try{
     const companyId=optionalUuid(req.params.id,'company_id');
@@ -1942,7 +2108,7 @@ app.get('/api/companies/:id/product-opportunities', async (req,res,next) => {
   }catch(error){next(error);}
 });
 
-app.post('/api/category-procurement/jobs', managementAuth.authenticate, managementAuth.requireCsrf,
+app.post('/api/category-procurement/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req,res,next) => {
   try{
     const companyIds=Array.isArray(req.body?.company_ids)?req.body.company_ids:[];
@@ -2279,7 +2445,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
   } catch (e) { next(e); }
 });
 
-app.patch('/api/leads/:id/approval', managementAuth.authenticate, managementAuth.requireCsrf,
+app.patch('/api/leads/:id/approval', managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','MANAGEMENT_APPROVER'), async (req, res, next) => {
   try {
     if (!['approved', 'rejected', 'pending', 'needs_changes'].includes(req.body.status))
@@ -2304,7 +2470,8 @@ app.use((error, _req, res, _next) => {
   const declaredStatus=Number(error.status);
   const status = Number.isInteger(declaredStatus)&&declaredStatus>=400&&declaredStatus<=599
     ? declaredStatus : badRequestCodes.has(error.code) ? 400 : notFoundCodes.has(error.code) ? 404 : 500;
-  res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message, code: error.code || undefined });
+  res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message,
+    code: error.code || undefined,...(error.created===false?{created:false,research_job_id:null}:{}) });
 });
 
 async function start() {
@@ -2315,6 +2482,12 @@ async function start() {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
+  // Non-search workers intentionally receive no Tavily credential. They must not
+  // overwrite the shared provider projection with a false AUTH_ERROR at startup.
+  if(httpListenEnabled||searchConfig.tavilyApiKey){
+    await tavilyProviderAccountState.refreshUsage({source:'STARTUP_PROBE'})
+      .catch(error=>audit('TAVILY_USAGE_STARTUP_PROBE_FAILED',{code:error?.code||'PROVIDER_STATE_ERROR'}));
+  }
   if (httpListenEnabled) {
     const liveCount = await pool.query(`SELECT count(*)::int AS count FROM leadgen.companies WHERE data_origin IN (${publicDataOriginSql})`);
     if (liveCount.rows[0].count === 0) {
@@ -2322,6 +2495,13 @@ async function start() {
     }
   }
   await phase5Queue.start();
+  let researchOutboxTimer=null;
+  if(httpListenEnabled&&effectiveResearchDirectQueueConfig.enabled){
+    await researchDirectDispatchService.reconcile({limit:25});
+    researchOutboxTimer=setInterval(()=>researchDirectDispatchService.reconcile({limit:25})
+      .catch(error=>audit('RESEARCH_DIRECT_OUTBOX_RECONCILE_FAILED',{code:error?.code||'QUEUE_UNAVAILABLE'})),30000);
+    researchOutboxTimer.unref?.();
+  }
   const server = httpListenEnabled
     ? app.listen(port, '0.0.0.0', () => console.log(`DPV workspace listening on ${port}`))
     : null;
@@ -2329,6 +2509,7 @@ async function start() {
   const shutdown = async signal => {
     audit('application_shutdown', { signal });
     server?.close();
+    if(researchOutboxTimer)clearInterval(researchOutboxTimer);
     await phase5Queue.stop();
     await telemetry.shutdown();
     await pool.end();

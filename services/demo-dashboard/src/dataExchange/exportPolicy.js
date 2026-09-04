@@ -51,6 +51,13 @@ const BASE_COLUMNS = Object.freeze([
   'last_verified_at',
 ]);
 
+const PROVIDER_USAGE_COLUMNS = Object.freeze([
+  'research_job_id','job_type','status','market','product_profile',
+  'provider_call_count','provider_completed_count','provider_not_found_count',
+  'provider_temporary_error_count','provider_failed_count','reserved_units',
+  'used_units','released_units','last_provider_event_at','projection_updated_at',
+]);
+
 export const EXPORT_COLUMN_ALLOWLISTS = Object.freeze({
   SALES: Object.freeze([...BASE_COLUMNS]),
   MANAGEMENT: Object.freeze([...BASE_COLUMNS]),
@@ -77,9 +84,10 @@ function sameDigest(left, right) {
   return timingSafeEqual(Buffer.from(String(left).toLowerCase()), Buffer.from(String(right).toLowerCase()));
 }
 
-function exportColumnsForRole(role, { financeAuthorized = false } = {}) {
+function exportColumnsForRole(role, { financeAuthorized = false, exportType = '' } = {}) {
   const base = EXPORT_COLUMN_ALLOWLISTS[role];
   if (!base) return null;
+  if (exportType === 'RESEARCH_JOB_PROVIDER_USAGE') return [...PROVIDER_USAGE_COLUMNS];
   if (role !== 'FINANCE' || financeAuthorized !== true) {
     return base.filter((column) => column !== 'supplier_cost');
   }
@@ -96,7 +104,10 @@ export function resolveExportRequest(request) {
   if (!EXPORT_MODES.includes(request?.mode)) {
     throw new DataExchangeContractError('EXPORT_MODE_UNKNOWN', 'Unknown export mode.');
   }
-  const allowlist = exportColumnsForRole(request?.requesterRole, { financeAuthorized: request?.financeAuthorized === true });
+  const allowlist = exportColumnsForRole(request?.requesterRole, {
+    financeAuthorized: request?.financeAuthorized === true,
+    exportType: request?.exportType,
+  });
   if (!allowlist) throw new DataExchangeContractError('EXPORT_ROLE_FORBIDDEN', 'Requester role has no export permission.');
   if (request.mode === 'FULL_AUTHORIZED_MASTER' && !['MANAGEMENT', 'DATA_ADMIN'].includes(request.requesterRole)) {
     throw new DataExchangeContractError('FULL_EXPORT_FORBIDDEN', 'Role may not request the full master export.');

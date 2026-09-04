@@ -12,6 +12,19 @@ export const PHASE9_REAL_OPPORTUNITY_MIGRATION_KEY = '029_phase9_real_opportunit
 export const PHASE10_CATEGORY_SCOPE_MIGRATION_KEY = '030_phase10_category_scope_and_auto_evidence.sql';
 export const PHASE10_AUDIT_HARDENING_MIGRATION_KEY = '031_phase10_controlled_evidence_audit_hardening.sql';
 export const PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY = '032_phase10_category_level_product_opportunity.sql';
+export const PHASE10_ORCHESTRATOR_DIAGNOSTICS_MIGRATION_KEY = '033_phase10_orchestrator_heartbeat_and_dispatch_diagnostics.sql';
+export const PHASE10_RESEARCH_DIRECT_QUEUE_MIGRATION_KEY = '034_phase10_research_direct_queue_outbox.sql';
+export const PHASE10_PROVIDER_USAGE_PROJECTION_MIGRATION_KEY = '035_phase10_provider_usage_projection.sql';
+export const PHASE10_PROVIDER_USAGE_EXPORT_MIGRATION_KEY = '036_phase10_provider_usage_export_contract.sql';
+export const PHASE10_AUTO_EVIDENCE_STRATEGY_MIGRATION_KEY = '037_phase10_auto_evidence_strategy_attempts.sql';
+export const PHASE10_AUTO_EVIDENCE_CHECKPOINT_MIGRATION_KEY = '038_phase10_auto_evidence_checkpoint_replay.sql';
+export const PHASE10_TAVILY_FAIR_BUDGET_MIGRATION_KEY = '039_phase10_tavily_fair_budget.sql';
+export const PHASE10_COMMERCIAL_PRODUCT_FIT_MIGRATION_KEY = '040_phase10_commercial_product_fit.sql';
+export const PHASE10_MANUAL_OFFICIAL_ROUTE_MIGRATION_KEY = '041_phase10_manual_official_route_queue.sql';
+export const PHASE10_GMAIL_API_PROVIDER_MIGRATION_KEY = '042_phase10_gmail_api_provider.sql';
+export const PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY = '043_phase10_budget_resume_continuation.sql';
+export const PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY = '044_phase10_tavily_provider_account_only.sql';
+export const PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY = '045_phase10_provider_account_state.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -22,6 +35,19 @@ const realOpportunityPath = path.resolve(projectRoot, 'database/migrations', PHA
 const categoryScopePath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_SCOPE_MIGRATION_KEY);
 const phase10AuditPath = path.resolve(projectRoot, 'database/migrations', PHASE10_AUDIT_HARDENING_MIGRATION_KEY);
 const phase10CategoryOpportunityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY);
+const phase10OrchestratorDiagnosticsPath = path.resolve(projectRoot, 'database/migrations', PHASE10_ORCHESTRATOR_DIAGNOSTICS_MIGRATION_KEY);
+const phase10ResearchDirectQueuePath = path.resolve(projectRoot, 'database/migrations', PHASE10_RESEARCH_DIRECT_QUEUE_MIGRATION_KEY);
+const phase10ProviderUsageProjectionPath = path.resolve(projectRoot, 'database/migrations', PHASE10_PROVIDER_USAGE_PROJECTION_MIGRATION_KEY);
+const phase10ProviderUsageExportPath = path.resolve(projectRoot, 'database/migrations', PHASE10_PROVIDER_USAGE_EXPORT_MIGRATION_KEY);
+const phase10AutoEvidenceStrategyPath = path.resolve(projectRoot, 'database/migrations', PHASE10_AUTO_EVIDENCE_STRATEGY_MIGRATION_KEY);
+const phase10AutoEvidenceCheckpointPath = path.resolve(projectRoot, 'database/migrations', PHASE10_AUTO_EVIDENCE_CHECKPOINT_MIGRATION_KEY);
+const phase10TavilyFairBudgetPath = path.resolve(projectRoot, 'database/migrations', PHASE10_TAVILY_FAIR_BUDGET_MIGRATION_KEY);
+const phase10CommercialProductFitPath = path.resolve(projectRoot, 'database/migrations', PHASE10_COMMERCIAL_PRODUCT_FIT_MIGRATION_KEY);
+const phase10ManualOfficialRoutePath = path.resolve(projectRoot, 'database/migrations', PHASE10_MANUAL_OFFICIAL_ROUTE_MIGRATION_KEY);
+const phase10GmailApiProviderPath = path.resolve(projectRoot, 'database/migrations', PHASE10_GMAIL_API_PROVIDER_MIGRATION_KEY);
+const phase10BudgetResumeContinuationPath = path.resolve(projectRoot, 'database/migrations', PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY);
+const phase10TavilyProviderAccountOnlyPath = path.resolve(projectRoot, 'database/migrations', PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY);
+const phase10ProviderAccountStatePath = path.resolve(projectRoot, 'database/migrations', PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -259,6 +285,210 @@ export async function verifyPhase10CategoryOpportunityMigration(client) {
   return {phase10_category_opportunity_status_verified:true,phase10_category_only_contract_verified:true};
 }
 
+export async function verifyPhase10OrchestratorDiagnosticsMigration(client) {
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.orchestrator_heartbeats') IS NOT NULL heartbeat_table,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='research_jobs'
+      AND column_name IN('dispatch_state','blocked_reason','last_dispatch_attempt_at','next_dispatch_attempt_at','dispatch_execution_key')) diagnostic_columns,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.research_jobs'::regclass
+      AND conname='research_jobs_dispatch_state_check') dispatch_constraint`);
+  const verification={heartbeat_table:result.rows[0]?.heartbeat_table===true,
+    diagnostic_columns:Number(result.rows[0]?.diagnostic_columns),dispatch_constraint:result.rows[0]?.dispatch_constraint===true};
+  if(!verification.heartbeat_table||verification.diagnostic_columns!==5||!verification.dispatch_constraint){
+    throw new Error(`Phase 10 orchestrator diagnostics migration verification failed: ${JSON.stringify(verification)}`);
+  }
+  return {phase10_orchestrator_heartbeat_verified:true,phase10_dispatch_diagnostics_verified:true};
+}
+
+export async function verifyPhase10ResearchDirectQueueMigration(client) {
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.research_job_dispatch_outbox') IS NOT NULL outbox_table,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.research_job_dispatch_outbox'::regclass
+      AND contype='u' AND pg_get_constraintdef(oid) LIKE '%research_job_id%') job_unique,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen' AND tablename='research_job_dispatch_outbox'
+      AND indexdef LIKE '%dispatch_state%') reconcile_index`);
+  const verification={outbox_table:result.rows[0]?.outbox_table===true,job_unique:result.rows[0]?.job_unique===true,
+    reconcile_index:result.rows[0]?.reconcile_index===true};
+  if(!verification.outbox_table||!verification.job_unique||!verification.reconcile_index){
+    throw new Error(`Phase 10 research direct queue migration verification failed: ${JSON.stringify(verification)}`);
+  }
+  return {phase10_research_direct_outbox_verified:true,phase10_research_direct_singleton_verified:true};
+}
+
+export async function verifyPhase10ProviderUsageProjectionMigration(client) {
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='provider_usage_events' AND column_name='released_units') released_units_column,
+    to_regclass('leadgen.provider_usage_projection_reconciliation_runs') IS NOT NULL reconciliation_table,
+    (SELECT count(*)::int FROM information_schema.views WHERE table_schema='leadgen'
+      AND table_name IN('research_job_provider_usage_summary','research_job_company_provider_usage_summary')) projection_views,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_provider_usage_events_job_company_provider') job_company_index`);
+  const verification={released_units_column:result.rows[0]?.released_units_column===true,
+    reconciliation_table:result.rows[0]?.reconciliation_table===true,
+    projection_views:Number(result.rows[0]?.projection_views),job_company_index:result.rows[0]?.job_company_index===true};
+  if(!verification.released_units_column||!verification.reconciliation_table
+    ||verification.projection_views!==2||!verification.job_company_index){
+    throw new Error(`Phase 10 provider usage projection migration verification failed: ${JSON.stringify(verification)}`);
+  }
+  return {phase10_provider_released_units_verified:true,phase10_provider_usage_views_verified:2,
+    phase10_provider_reconciliation_verified:true};
+}
+
+export async function verifyPhase10ProviderUsageExportMigration(client) {
+  const result=await client.query(`SELECT EXISTS(SELECT 1 FROM pg_constraint
+    WHERE conrelid='leadgen.data_export_jobs'::regclass
+      AND conname='data_export_jobs_export_type_check'
+      AND pg_get_constraintdef(oid) LIKE '%RESEARCH_JOB_PROVIDER_USAGE%') provider_usage_export_type`);
+  if(result.rows[0]?.provider_usage_export_type!==true){
+    throw new Error('Phase 10 provider usage export contract migration verification failed');
+  }
+  return {phase10_provider_usage_export_type_verified:true};
+}
+
+export async function verifyPhase10AutoEvidenceStrategyMigration(client) {
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name='strategy_attempt_count') task_strategy_counter,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_task_attempts' AND column_name='query_fingerprint') attempt_fingerprint,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='uq_auto_evidence_attempts_strategy_event') strategy_event_index,
+    NOT EXISTS(SELECT 1 FROM leadgen.auto_evidence_tasks
+      WHERE strategy_attempt_count>max_attempts OR provider_retry_count<0 OR worker_retry_count<0) counters_valid`);
+  const row=result.rows[0]||{};
+  if(!row.task_strategy_counter||!row.attempt_fingerprint||!row.strategy_event_index||!row.counters_valid){
+    throw new Error('Phase 10 auto-evidence strategy migration verification failed');
+  }
+  return {phase10_auto_evidence_strategy_verified:true};
+}
+
+export async function verifyPhase10AutoEvidenceCheckpointMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name='checkpoint_replay_count') task_checkpoint,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_task_attempts' AND column_name='checkpoint_replay_count') attempt_checkpoint,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen' AND indexname='uq_auto_evidence_attempts_strategy_event'
+      AND indexdef LIKE '%checkpoint_replay_count%') replay_unique`);
+  const row=result.rows[0]||{};
+  if(!row.task_checkpoint||!row.attempt_checkpoint||!row.replay_unique){
+    throw new Error('Phase 10 auto-evidence checkpoint migration verification failed');
+  }
+  return{phase10_auto_evidence_checkpoint_verified:true};
+}
+
+export async function verifyPhase10TavilyFairBudgetMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='provider_usage_events' AND column_name=ANY(ARRAY['budget_pool','product_profile'])) usage_columns,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name=ANY(ARRAY[
+        'fairness_round_number','last_strategy_started_at','strategy_duplicate_prevented_count'])) fairness_columns,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_provider_usage_tavily_daily_pool') budget_index,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_auto_evidence_fair_dispatch') fairness_index`);
+  const row=result.rows[0]||{};
+  if(Number(row.usage_columns)!==2||Number(row.fairness_columns)!==3||!row.budget_index||!row.fairness_index){
+    throw new Error('Phase 10 Tavily fair-budget migration verification failed');
+  }
+  return{phase10_tavily_fair_budget_verified:true};
+}
+
+export async function verifyPhase10CommercialProductFitMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.tables WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+      'commercial_product_fit_results','commercial_product_fit_dimensions','commercial_product_fit_evidence'])) fit_tables,
+    to_regclass('leadgen.commercial_product_fit_current') IS NOT NULL current_view,
+    (SELECT count(*)::int FROM pg_trigger WHERE NOT tgisinternal AND tgname=ANY(ARRAY[
+      'trg_commercial_product_fit_results_immutable','trg_commercial_product_fit_dimensions_immutable',
+      'trg_commercial_product_fit_evidence_immutable'])) immutable_triggers,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen' AND indexname='idx_commercial_product_fit_ranking') ranking_index`);
+  const row=result.rows[0]||{};
+  if(Number(row.fit_tables)!==3||!row.current_view||Number(row.immutable_triggers)!==3||!row.ranking_index){
+    throw new Error('Phase 10 Commercial Product Fit migration verification failed');
+  }
+  return{phase10_commercial_product_fit_tables_verified:3,phase10_commercial_product_fit_append_only_verified:true};
+}
+
+export async function verifyPhase10ManualOfficialRouteMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.official_route_manual_tasks') IS NOT NULL task_table,
+    to_regclass('leadgen.official_route_manual_task_current') IS NOT NULL current_view,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE NOT tgisinternal
+      AND tgname='trg_official_route_manual_tasks_immutable') immutable_trigger,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_official_route_manual_tasks_queue') queue_index,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.official_route_manual_tasks'::regclass
+      AND pg_get_constraintdef(oid) LIKE '%MANUAL_OFFICIAL_ROUTE_READY%') task_type_contract`);
+  const row=result.rows[0]||{};
+  if(!row.task_table||!row.current_view||!row.immutable_trigger||!row.queue_index||!row.task_type_contract){
+    throw new Error('Phase 10 manual official route migration verification failed');
+  }
+  return{phase10_manual_official_route_queue_verified:true,phase10_manual_official_route_append_only_verified:true};
+}
+
+export async function verifyPhase10GmailApiProviderMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.gmail_mailbox_checkpoints') checkpoint_table,
+    to_regclass('leadgen.gmail_ambiguous_send_events') ambiguous_table,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='outbound_messages' AND column_name='rfc_message_id') rfc_message_id,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.outbound_messages'::regclass
+      AND conname='outbound_messages_provider_check' AND pg_get_constraintdef(oid) LIKE '%GMAIL_API%') gmail_provider,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE NOT tgisinternal
+      AND tgname='trg_gmail_ambiguous_send_events_immutable') immutable_trigger`);
+  const row=result.rows[0]||{};
+  if(!row.checkpoint_table||!row.ambiguous_table||!row.rfc_message_id||!row.gmail_provider||!row.immutable_trigger){
+    throw new Error('Phase 10 Gmail API provider migration verification failed');
+  }
+  return{phase10_gmail_provider_verified:true,phase10_gmail_ambiguous_audit_verified:true};
+}
+
+export async function verifyPhase10BudgetResumeContinuationMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='research_jobs' AND column_name=ANY(ARRAY[
+        'resumed_from_research_job_id','resume_execution_key','resume_checkpoint_replay_count','resume_stage'])) lineage_columns,
+    to_regclass('leadgen.auto_evidence_resume_outbox') outbox_table,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='research_jobs_resume_execution_key_uidx') resume_singleton,
+    EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='leadgen'
+      AND indexname='idx_auto_evidence_resume_outbox_pending') pending_index`);
+  const row=result.rows[0]||{};
+  if(Number(row.lineage_columns)!==4||!row.outbox_table||!row.resume_singleton||!row.pending_index){
+    throw new Error('Phase 10 budget-resume continuation migration verification failed');
+  }
+  return{phase10_budget_resume_lineage_verified:true,phase10_budget_resume_outbox_verified:true};
+}
+
+export async function verifyPhase10TavilyProviderAccountOnlyMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='provider_credit_ledger' AND column_name='credit_limit_units' AND is_nullable='YES') nullable_limit,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.provider_credit_ledger'::regclass
+      AND conname='provider_credit_ledger_balance_check'
+      AND pg_get_constraintdef(oid) LIKE '%credit_limit_units IS NULL%') unlimited_balance_check`);
+  const row=result.rows[0]||{};
+  if(!row.nullable_limit||!row.unlimited_balance_check){
+    throw new Error('Phase 10 Tavily provider-account-only migration verification failed');
+  }
+  return{phase10_tavily_provider_account_only_verified:true};
+}
+
+export async function verifyPhase10ProviderAccountStateMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.provider_account_states') state_table,
+    to_regclass('leadgen.provider_account_state_events') event_table,
+    to_regclass('leadgen.auto_evidence_ownership_repair_events') ownership_event_table,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE NOT tgisinternal
+      AND tgname='trg_provider_account_state_events_immutable') immutable_event`);
+  const row=result.rows[0]||{};
+  if(!row.state_table||!row.event_table||!row.ownership_event_table||!row.immutable_event)throw new Error('Phase 10 provider account state migration verification failed');
+  return{phase10_provider_account_state_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -276,9 +506,51 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10CategoryOpportunity=await applyPhase7Migration({...options,
     migrationPath:options.phase10CategoryOpportunityMigrationPath||phase10CategoryOpportunityPath,
     appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10OrchestratorDiagnostics=await applyPhase7Migration({...options,
+    migrationPath:options.phase10OrchestratorDiagnosticsMigrationPath||phase10OrchestratorDiagnosticsPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10ResearchDirectQueue=await applyPhase7Migration({...options,
+    migrationPath:options.phase10ResearchDirectQueueMigrationPath||phase10ResearchDirectQueuePath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10ProviderUsageProjection=await applyPhase7Migration({...options,
+    migrationPath:options.phase10ProviderUsageProjectionMigrationPath||phase10ProviderUsageProjectionPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10ProviderUsageExport=await applyPhase7Migration({...options,
+    migrationPath:options.phase10ProviderUsageExportMigrationPath||phase10ProviderUsageExportPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10AutoEvidenceStrategy=await applyPhase7Migration({...options,
+    migrationPath:options.phase10AutoEvidenceStrategyMigrationPath||phase10AutoEvidenceStrategyPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10AutoEvidenceCheckpoint=await applyPhase7Migration({...options,
+    migrationPath:options.phase10AutoEvidenceCheckpointMigrationPath||phase10AutoEvidenceCheckpointPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10TavilyFairBudget=await applyPhase7Migration({...options,
+    migrationPath:options.phase10TavilyFairBudgetMigrationPath||phase10TavilyFairBudgetPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10CommercialProductFit=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CommercialProductFitMigrationPath||phase10CommercialProductFitPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10ManualOfficialRoute=await applyPhase7Migration({...options,
+    migrationPath:options.phase10ManualOfficialRouteMigrationPath||phase10ManualOfficialRoutePath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10GmailApiProvider=await applyPhase7Migration({...options,
+    migrationPath:options.phase10GmailApiProviderMigrationPath||phase10GmailApiProviderPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10BudgetResumeContinuation=await applyPhase7Migration({...options,
+    migrationPath:options.phase10BudgetResumeContinuationMigrationPath||phase10BudgetResumeContinuationPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10TavilyProviderAccountOnly=await applyPhase7Migration({...options,
+    migrationPath:options.phase10TavilyProviderAccountOnlyMigrationPath||phase10TavilyProviderAccountOnlyPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10ProviderAccountState=await applyPhase7Migration({...options,
+    migrationPath:options.phase10ProviderAccountStateMigrationPath||phase10ProviderAccountStatePath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
-    status:phase10CategoryOpportunity.status,database:phase10CategoryOpportunity.database};
+    phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
+    phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
+    phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
+    phase10ProviderAccountState,status:phase10ProviderAccountState.status,database:phase10ProviderAccountState.database};
 }
 
 export async function applyPhase7Migration({
@@ -334,7 +606,33 @@ export async function applyPhase7Migration({
                 :migrationKey===PHASE10_AUDIT_HARDENING_MIGRATION_KEY
                   ?await verifyPhase10AuditHardeningMigration(client)
                   :migrationKey===PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY
-                    ?await verifyPhase10CategoryOpportunityMigration(client):await verifyPhase7Migration(client);
+                    ?await verifyPhase10CategoryOpportunityMigration(client)
+                    :migrationKey===PHASE10_ORCHESTRATOR_DIAGNOSTICS_MIGRATION_KEY
+                      ?await verifyPhase10OrchestratorDiagnosticsMigration(client)
+                      :migrationKey===PHASE10_RESEARCH_DIRECT_QUEUE_MIGRATION_KEY
+                        ?await verifyPhase10ResearchDirectQueueMigration(client)
+                        :migrationKey===PHASE10_PROVIDER_USAGE_PROJECTION_MIGRATION_KEY
+                          ?await verifyPhase10ProviderUsageProjectionMigration(client)
+                          :migrationKey===PHASE10_PROVIDER_USAGE_EXPORT_MIGRATION_KEY
+                            ?await verifyPhase10ProviderUsageExportMigration(client)
+                            :migrationKey===PHASE10_AUTO_EVIDENCE_STRATEGY_MIGRATION_KEY
+                              ?await verifyPhase10AutoEvidenceStrategyMigration(client)
+                              :migrationKey===PHASE10_AUTO_EVIDENCE_CHECKPOINT_MIGRATION_KEY
+                                ?await verifyPhase10AutoEvidenceCheckpointMigration(client)
+                                :migrationKey===PHASE10_TAVILY_FAIR_BUDGET_MIGRATION_KEY
+                                  ?await verifyPhase10TavilyFairBudgetMigration(client)
+                                  :migrationKey===PHASE10_COMMERCIAL_PRODUCT_FIT_MIGRATION_KEY
+                                ?await verifyPhase10CommercialProductFitMigration(client)
+                                :migrationKey===PHASE10_MANUAL_OFFICIAL_ROUTE_MIGRATION_KEY
+                                  ?await verifyPhase10ManualOfficialRouteMigration(client)
+                                  :migrationKey===PHASE10_GMAIL_API_PROVIDER_MIGRATION_KEY
+                                    ?await verifyPhase10GmailApiProviderMigration(client)
+                                    :migrationKey===PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY
+                                      ?await verifyPhase10BudgetResumeContinuationMigration(client)
+                                      :migrationKey===PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY
+                                        ?await verifyPhase10TavilyProviderAccountOnlyMigration(client)
+                                        :migrationKey===PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY
+                                          ?await verifyPhase10ProviderAccountStateMigration(client):await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
         migration_key: migrationKey,
@@ -363,7 +661,33 @@ export async function applyPhase7Migration({
               :migrationKey===PHASE10_AUDIT_HARDENING_MIGRATION_KEY
                 ?await verifyPhase10AuditHardeningMigration(client)
                 :migrationKey===PHASE10_CATEGORY_OPPORTUNITY_MIGRATION_KEY
-                  ?await verifyPhase10CategoryOpportunityMigration(client):await verifyPhase7Migration(client);
+                  ?await verifyPhase10CategoryOpportunityMigration(client)
+                  :migrationKey===PHASE10_ORCHESTRATOR_DIAGNOSTICS_MIGRATION_KEY
+                    ?await verifyPhase10OrchestratorDiagnosticsMigration(client)
+                    :migrationKey===PHASE10_RESEARCH_DIRECT_QUEUE_MIGRATION_KEY
+                      ?await verifyPhase10ResearchDirectQueueMigration(client)
+                      :migrationKey===PHASE10_PROVIDER_USAGE_PROJECTION_MIGRATION_KEY
+                        ?await verifyPhase10ProviderUsageProjectionMigration(client)
+                        :migrationKey===PHASE10_PROVIDER_USAGE_EXPORT_MIGRATION_KEY
+                          ?await verifyPhase10ProviderUsageExportMigration(client)
+                          :migrationKey===PHASE10_AUTO_EVIDENCE_STRATEGY_MIGRATION_KEY
+                            ?await verifyPhase10AutoEvidenceStrategyMigration(client)
+                            :migrationKey===PHASE10_AUTO_EVIDENCE_CHECKPOINT_MIGRATION_KEY
+                              ?await verifyPhase10AutoEvidenceCheckpointMigration(client)
+                              :migrationKey===PHASE10_TAVILY_FAIR_BUDGET_MIGRATION_KEY
+                                ?await verifyPhase10TavilyFairBudgetMigration(client)
+                                :migrationKey===PHASE10_COMMERCIAL_PRODUCT_FIT_MIGRATION_KEY
+                                  ?await verifyPhase10CommercialProductFitMigration(client)
+                                  :migrationKey===PHASE10_MANUAL_OFFICIAL_ROUTE_MIGRATION_KEY
+                                    ?await verifyPhase10ManualOfficialRouteMigration(client)
+                                    :migrationKey===PHASE10_GMAIL_API_PROVIDER_MIGRATION_KEY
+                                      ?await verifyPhase10GmailApiProviderMigration(client)
+                                      :migrationKey===PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY
+                                        ?await verifyPhase10BudgetResumeContinuationMigration(client)
+                                        :migrationKey===PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY
+                                          ?await verifyPhase10TavilyProviderAccountOnlyMigration(client)
+                                          :migrationKey===PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY
+                                            ?await verifyPhase10ProviderAccountStateMigration(client):await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

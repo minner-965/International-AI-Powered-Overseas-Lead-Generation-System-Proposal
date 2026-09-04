@@ -24,7 +24,7 @@ test('verified direct buyer and exact category match becomes recommended', () =>
   assert.equal(result.business_fit_status, 'FIT');
   assert.equal(result.contact_readiness, 'READY');
   assert.equal(result.display_opportunity_status, 'RECOMMENDED');
-  assert.equal(result.rule_version, 'business-opportunity-decision-v3');
+  assert.equal(result.rule_version, 'business-opportunity-decision-v4');
   assert.match(result.input_digest, /^[a-f0-9]{64}$/);
 });
 
@@ -82,7 +82,22 @@ test('contact evidence is required before a business-fit opportunity can be reco
   ]) {
     const emailRequired=deriveOpportunityDecision(eligible(emailFacts));
     assert.equal(emailRequired.system_recommendation_status,'EVIDENCE_REQUIRED');
-    assert.ok(emailRequired.reason_codes.includes('EVIDENCE_REQUIRED_EMAIL'));
+    assert.ok(emailRequired.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT_ROUTE'));
+  }
+});
+
+test('verified company email, phone or public WhatsApp can make a fit company a business opportunity without a named buyer',()=>{
+  for(const contactType of ['BUSINESS_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP']){
+    const result=deriveOpportunityDecision(eligible({
+      cooperation:{opportunity_readiness:'NEEDS_DECISION_MAKER',verified_decision_maker_count:0},
+      profile_relevant_buyer_count:0,verified_buyer_role_count:0,active_valid_email_route_count:0,
+      active_company_contact_route_count:1,company_contact_route_types:[contactType]
+    }));
+    assert.equal(result.business_fit_status,'FIT');
+    assert.equal(result.contact_readiness,'READY');
+    assert.equal(result.system_recommendation_status,'RECOMMENDED');
+    assert.ok(result.reason_codes.includes('COMPANY_CONTACT_ROUTE_AVAILABLE'));
+    assert.ok(!result.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT'));
   }
 });
 

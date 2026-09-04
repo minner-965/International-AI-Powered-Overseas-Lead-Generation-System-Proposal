@@ -25,6 +25,8 @@ export const PHASE5_QUEUES = Object.freeze({
   SEND_OUTREACH_EMAIL: 'send-outreach-email',
   PROCESS_EMAIL_PROVIDER_EVENT: 'process-email-provider-event',
   PROCESS_INBOUND_MESSAGE: 'process-inbound-message',
+  GMAIL_INBOUND_SYNC: 'gmail-inbound-sync',
+  RECONCILE_GMAIL_AMBIGUOUS_SEND: 'reconcile-gmail-ambiguous-send',
   CLASSIFY_INBOUND_REPLY: 'classify-inbound-reply',
   CREATE_SALES_FOLLOWUP: 'create-sales-followup',
   SYNC_OUTREACH_TO_CRM: 'sync-outreach-to-crm',
@@ -40,7 +42,8 @@ export const PHASE5_QUEUES = Object.freeze({
   FIND_PROFILE_BUYER: 'find-profile-buyer',
   VERIFY_PROFILE_BUYER_EMAIL: 'verify-profile-buyer-email',
   REFRESH_BUSINESS_OPPORTUNITY_V3: 'refresh-business-opportunity-v3',
-  REFRESH_AUTO_EVIDENCE_EXCEPTION: 'refresh-auto-evidence-exception'
+  REFRESH_AUTO_EVIDENCE_EXCEPTION: 'refresh-auto-evidence-exception',
+  EXECUTE_RESEARCH_JOB: 'execute-research-job'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -64,6 +67,8 @@ function queuePolicy(name) {
       PHASE5_QUEUES.SEND_OUTREACH_EMAIL,
       PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT,
       PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE,
+      PHASE5_QUEUES.GMAIL_INBOUND_SYNC,
+      PHASE5_QUEUES.RECONCILE_GMAIL_AMBIGUOUS_SEND,
       PHASE5_QUEUES.PARSE_REFERENCE_IMPORT,
       PHASE5_QUEUES.COMMIT_REFERENCE_IMPORT,
       PHASE5_QUEUES.EXPORT_BUSINESS_DATA,
@@ -75,7 +80,8 @@ function queuePolicy(name) {
       PHASE5_QUEUES.FIND_PROFILE_BUYER,
       PHASE5_QUEUES.VERIFY_PROFILE_BUYER_EMAIL,
       PHASE5_QUEUES.REFRESH_BUSINESS_OPPORTUNITY_V3,
-      PHASE5_QUEUES.REFRESH_AUTO_EVIDENCE_EXCEPTION
+      PHASE5_QUEUES.REFRESH_AUTO_EVIDENCE_EXCEPTION,
+      PHASE5_QUEUES.EXECUTE_RESEARCH_JOB
     ].includes(name) ? 900 : 300,
     heartbeatSeconds: 60,
     deleteAfterSeconds: 86400,
@@ -186,6 +192,10 @@ export function createPhase5Queue({
         boss.on('error', error => audit('phase5_queue_error', { message: String(error?.message || error).slice(0, 240) }));
         await boss.start();
         for (const name of PHASE5_QUEUE_NAMES) await registerQueue(name);
+        if (booleanEnv(env.GMAIL_INBOUND_SYNC_ENABLED, false) && typeof boss.schedule === 'function') {
+          const minutes=Math.max(1,Math.min(59,Number(env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
+          await boss.schedule(PHASE5_QUEUES.GMAIL_INBOUND_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });
+        }
         for (const name of workerQueueNames) {
           if (!processJobs) continue;
           if (!handlers[name]) continue;

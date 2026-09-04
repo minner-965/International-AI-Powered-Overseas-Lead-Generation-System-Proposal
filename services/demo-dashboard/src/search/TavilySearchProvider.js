@@ -63,11 +63,14 @@ export class TavilySearchProvider extends SearchProvider {
     try { payload = await response.json(); }
     catch { throw new SearchProviderError('Tavily returned invalid JSON', { code: 'INVALID_RESPONSE', status: response.status }); }
     if (!response.ok) {
-      const code = response.status === 401 || response.status === 403 ? 'AUTHENTICATION_FAILED'
-        : response.status === 429 || response.status === 432 ? 'CREDIT_OR_RATE_LIMIT'
-          : 'HTTP_ERROR';
+      const code = response.status === 401 || response.status === 403 ? 'AUTH_ERROR'
+        : response.status === 429 ? 'RATE_LIMITED'
+          : response.status === 432 ? 'CREDIT_EXHAUSTED'
+            : response.status >= 500 ? 'TEMPORARY_ERROR' : 'BAD_REQUEST';
+      const retryAfterSeconds=response.status===429
+        ?Math.max(1,Math.min(86400,Number(response.headers?.get?.('retry-after'))||60)):null;
       throw new SearchProviderError(safeProviderMessage(payload, `Tavily returned HTTP ${response.status}`), {
-        code, status: response.status
+        code, status: response.status,retryable:response.status===429||response.status>=500,retryAfterSeconds
       });
     }
     if (!Array.isArray(payload?.results)) {

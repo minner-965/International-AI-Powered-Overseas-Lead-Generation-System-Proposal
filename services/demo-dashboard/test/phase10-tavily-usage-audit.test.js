@@ -100,6 +100,23 @@ test('Tavily per-run and billing-period caps stop new calls before provider usag
   assert.equal(billingProvider.calls.length,1);
 });
 
+test('provider-account-only mode bypasses every DPV Tavily cap while retaining usage audit and deduplication',async()=>{
+  const provider=providerFixture();
+  const audit=new TavilyUsageAudit({provider,internalLimitsEnabled:false,runCapUnits:1,dailyCapUnits:1,
+    discoveryDailyCapUnits:0,evidenceDailyCapUnits:0,companyProfileCycleCapUnits:1,billingPeriodCapUnits:1});
+  for(let index=0;index<3;index++){
+    const result=await audit.search({researchJobId:jobA,companyId,productProfile:'WOMENSWEAR',
+      purpose:'CATEGORY_BUYER_EVIDENCE',request:{...request,query:`unlimited query ${index}`}});
+    assert.equal(result.usage_event.status,'COMPLETED');
+    assert.equal(result.usage_event.credits_after_units,null);
+  }
+  assert.equal(provider.calls.length,3);
+  const replay=await audit.search({researchJobId:jobA,companyId,productProfile:'WOMENSWEAR',
+    purpose:'CATEGORY_BUYER_EVIDENCE',request:{...request,query:'unlimited query 2'}});
+  assert.equal(replay.replay,true);
+  assert.equal(provider.calls.length,3);
+});
+
 test('Tavily UTC-day cap is independent from per-run and billing-period headroom',async()=>{
   const provider=providerFixture();
   const budget=new TavilyCreditBudget({runCapUnits:5,dailyCapUnits:1,billingPeriodCapUnits:10,

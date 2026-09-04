@@ -68,6 +68,8 @@ test('filter classifies social results and rejects consumer marketplaces and noi
   assert.deepEqual([social.candidate_type,social.candidate_status], ['SOCIAL_PROFILE','REVIEW']);
   const marketplace = classifySearchResult({root_domain:'amazon.ae',normalized_url:'https://amazon.ae/product/123',title:'Product',snippet:''});
   assert.deepEqual([marketplace.candidate_type,marketplace.candidate_status], ['MARKETPLACE','REJECTED']);
+  const b2bMarketplace = classifySearchResult({root_domain:'trade.example',normalized_url:'https://trade.example/product-category/women',title:'Wholesale B2B Market',snippet:'Buy and sell products'});
+  assert.deepEqual([b2bMarketplace.candidate_type,b2bMarketplace.candidate_status], ['MARKETPLACE','REJECTED']);
   const noise = classifySearchResult({root_domain:'wikipedia.org',normalized_url:'https://wikipedia.org/wiki/Cosmetics',title:'Cosmetics',snippet:''});
   assert.equal(noise.candidate_status, 'REJECTED');
   const datedArticle = classifySearchResult({root_domain:'supplier.com',normalized_url:'https://supplier.com/2025/12/29/cosmetic-supplier-in-dubai',title:'Cosmetic supplier in Dubai',snippet:''});
@@ -76,6 +78,8 @@ test('filter classifies social results and rejects consumer marketplaces and noi
   assert.deepEqual([listicle.candidate_type,listicle.candidate_status], ['ARTICLE','REJECTED']);
   const aggregateDirectory = classifySearchResult({root_domain:'atninfo.com',normalized_url:'https://atninfo.com/brand-description/uae/all/cosmetics-7003',title:'Cosmetics In UAE | Top Dealers & Suppliers',snippet:''});
   assert.deepEqual([aggregateDirectory.candidate_type,aggregateDirectory.candidate_status], ['DIRECTORY_PROFILE','REVIEW']);
+  const hostedCompanyProfile = classifySearchResult({root_domain:'kompass.com',normalized_url:'https://ae.kompass.com/c/example/ae123',title:'Example Trading LLC - Kompass',snippet:'General trading company'});
+  assert.deepEqual([hostedCompanyProfile.candidate_type,hostedCompanyProfile.candidate_status], ['DIRECTORY_PROFILE','NEW']);
 });
 
 test('duplicate merging retains query associations and enforces max_results', () => {
@@ -132,10 +136,12 @@ test('Tavily provider rejects missing key, non-basic depth, 401, 403, credit lim
   await assert.rejects(()=>new TavilySearchProvider({apiKey:'x',searchDepth:'advanced'}).search({query:'test'}),error=>error.code==='INVALID_SEARCH_DEPTH');
   for (const status of [401,403]) {
     const provider=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({detail:'invalid key'}),{status})});
-    await assert.rejects(()=>provider.search({query:'test'}),error=>error.code==='AUTHENTICATION_FAILED');
+    await assert.rejects(()=>provider.search({query:'test'}),error=>error.code==='AUTH_ERROR');
   }
-  const limited=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({detail:'limit reached'}),{status:429})});
-  await assert.rejects(()=>limited.search({query:'test'}),error=>error.code==='CREDIT_OR_RATE_LIMIT');
+  const limited=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({detail:'rate limited'}),{status:429,headers:{'retry-after':'60'}})});
+  await assert.rejects(()=>limited.search({query:'test'}),error=>error.code==='RATE_LIMITED'&&error.retryAfterSeconds===60);
+  const exhausted=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({detail:"This request exceeds your plan's set usage limit."}),{status:432})});
+  await assert.rejects(()=>exhausted.search({query:'test'}),error=>error.code==='CREDIT_EXHAUSTED');
   const timedOut=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>{throw new DOMException('timeout','TimeoutError')}});
   await assert.rejects(()=>timedOut.search({query:'test'}),error=>error.code==='TIMEOUT');
 });

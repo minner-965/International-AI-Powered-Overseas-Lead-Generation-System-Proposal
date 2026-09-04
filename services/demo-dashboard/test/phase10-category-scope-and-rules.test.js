@@ -74,7 +74,7 @@ test('category match plus zero SKU is category-only and still requires named cur
   assert.equal(business.business_fit_status,'FIT');
   assert.equal(business.system_recommendation_status,'EVIDENCE_REQUIRED');
   assert.ok(business.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT'));
-  assert.ok(business.reason_codes.includes('EVIDENCE_REQUIRED_EMAIL'));
+  assert.ok(business.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT_ROUTE'));
 });
 
 test('Hunter UNKNOWN, history and suppression remain hard recommendation gates; Supplier Access UNKNOWN is not',()=>{

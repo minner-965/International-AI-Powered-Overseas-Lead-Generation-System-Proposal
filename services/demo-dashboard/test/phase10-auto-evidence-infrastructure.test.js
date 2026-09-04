@@ -5,9 +5,12 @@ import { readFile } from 'node:fs/promises';
 const root = new URL('../../../', import.meta.url);
 const workflow = JSON.parse(await readFile(new URL('workflows/03-phase10-auto-evidence-reconciliation.json', root), 'utf8'));
 const compose = await readFile(new URL('compose.yaml', root), 'utf8');
+const envExample = await readFile(new URL('.env.example', root), 'utf8');
+const operationsGuide = await readFile(new URL('docs/OPERATIONS_EXPAND_VERIFIED_COMPANY_POOL.md', root), 'utf8');
 const queueSource = await readFile(new URL('services/demo-dashboard/src/jobs/phase5Queue.js', root), 'utf8');
 const migration = await readFile(new URL('database/migrations/030_phase10_category_scope_and_auto_evidence.sql', root), 'utf8');
 const serverSource = await readFile(new URL('services/demo-dashboard/src/server.js', root), 'utf8');
+const autoEvidenceSource = await readFile(new URL('services/demo-dashboard/src/autoEvidence/AutoEvidenceOrchestrator.js', root), 'utf8');
 const categoryServiceSource = await readFile(new URL('services/demo-dashboard/src/categoryProcurement/CategoryProcurementService.js', root), 'utf8');
 
 test('Phase 10 reconciliation workflow is inactive-first and hard-gated by environment', () => {
@@ -22,6 +25,38 @@ test('Phase 10 reconciliation workflow is inactive-first and hard-gated by envir
   assert.match(request.parameters.url, /\/api\/internal\/auto-evidence\/reconcile/);
   assert.match(request.parameters.headerParameters.parameters[0].value, /INTERNAL_API_TOKEN/);
   assert.doesNotMatch(JSON.stringify(workflow), /api[_-]?key\s*[:=]\s*[A-Za-z0-9_-]{16,}/i);
+  for(const nodeName of ['03A Record Start Heartbeat','08 Record End Heartbeat','09 Record Failed Heartbeat']){
+    const node=workflow.nodes.find(item=>item.name===nodeName);
+    assert.equal(node.onError,'continueRegularOutput');
+    assert.doesNotMatch(node.parameters.body,/\$execution\.id/);
+  }
+});
+
+test('deployment defaults use provider-account-only Tavily usage and remain credential-free', () => {
+  for (const expected of [
+    'AUTO_EVIDENCE_ENABLED=false',
+    'AUTO_EVIDENCE_RECONCILE_MINUTES=30',
+    'TAVILY_USAGE_POLICY=PROVIDER_ACCOUNT_ONLY',
+    'TAVILY_INTERNAL_LIMITS_ENABLED=false',
+    'MAX_TAVILY_CREDITS_PER_DAY_UNITS=25',
+    'MAX_TAVILY_CREDITS_PER_RUN_UNITS=5'
+  ]) assert.match(envExample, new RegExp(expected));
+  assert.match(compose, /TAVILY_USAGE_POLICY:-PROVIDER_ACCOUNT_ONLY/);
+  assert.doesNotMatch(compose, /MAX_TAVILY_CREDITS_PER_RUN_UNITS/);
+  assert.doesNotMatch(compose, /AUTO_EVIDENCE_MAX_ATTEMPTS/);
+  for (const stage of ['Discovery', 'Identity verification', 'Category evidence', 'Buyer evidence']) {
+    assert.match(operationsGuide, new RegExp(stage));
+  }
+  assert.match(operationsGuide, /Tavily 账户自身/);
+  assert.match(operationsGuide, /\/api\/research\/jobs/);
+  assert.match(operationsGuide, /\/api\/category-procurement\/jobs/);
+  assert.match(operationsGuide, /\/api\/auto-evidence\/controlled-batch/);
+  assert.doesNotMatch(operationsGuide, /[A-Z]:\\/);
+  assert.doesNotMatch(operationsGuide, /(API_KEY|PASSWORD|CLIENT_SECRET|REFRESH_TOKEN)=[^<\s][^\s]*/);
+});
+
+test('non-search workers without a Tavily credential cannot overwrite shared provider state', () => {
+  assert.match(serverSource,/if\(httpListenEnabled\|\|searchConfig\.tavilyApiKey\)[\s\S]{0,300}refreshUsage\(\{source:'STARTUP_PROBE'\}\)/);
 });
 
 test('worker image uses complete built source instead of two-file bind mount drift', () => {
@@ -47,8 +82,9 @@ test('queue topology includes all bounded Phase 10 queues and delayed retry supp
   ]) assert.ok(categoryAllowlist.split(',').includes(queue), `${queue} missing from category worker allowlist`);
 });
 
-test('controlled batches cross the authenticated management and CSRF boundary only', () => {
-  assert.match(serverSource,/app\.post\('\/api\/auto-evidence\/controlled-batch',managementAuth\.authenticate,managementAuth\.requireCsrf/);
+test('controlled batches keep role attribution without a browser token challenge', () => {
+  assert.match(serverSource,/app\.post\('\/api\/auto-evidence\/controlled-batch',managementAuth\.authenticate/);
+  assert.doesNotMatch(serverSource,/controlled-batch',managementAuth\.authenticate,managementAuth\.requireCsrf/);
   assert.match(serverSource,/managementAuth\.requireRoles\('MANAGEMENT','DATA_ADMIN'\)/);
   assert.match(serverSource,/trusted_management:true/);
   assert.match(serverSource,/operator_identity:req\.managementUser\.identity/);
@@ -61,6 +97,21 @@ test('completion and category approval events carry resolvable lineage instead o
   assert.match(serverSource,/research_job_id:job\.id,batch_size:10/);
   assert.match(serverSource,/category-scope-approved:\$\{result\.id\}[\s\S]{0,180}category_scope_revision_id:result\.id/);
   assert.doesNotMatch(serverSource,/research-job-completed:\$\{job\.id\}`,batch_size:10\s*\}/);
+});
+
+test('post-discovery automation is idempotent and terminal provider failures cannot leave a category job running',()=>{
+  assert.match(serverSource,/post-discovery-category:\$\{jobId\}/);
+  assert.match(serverSource,/route:'CATEGORY_GATE_FIRST'/);
+  assert.doesNotMatch(serverSource,/post-discovery-enrichment:\$\{jobId\}/);
+  assert.match(serverSource,/idempotencyKey:categoryIdempotencyKey,productProfiles/);
+  assert.match(serverSource,/cardinality\(requested_company_ids\)\*cardinality\(product_profiles\) expected/);
+  assert.match(serverSource,/POST_DISCOVERY_AUTOMATION_SCHEDULED/);
+  assert.match(serverSource,/const terminal=complete\|\|Boolean\(error\)/);
+  assert.match(serverSource,/category-procurement-completed:\$\{payload\.job_id\}/);
+});
+
+test('an active company-profile task blocks duplicate event scheduling',()=>{
+  assert.match(autoEvidenceSource,/prior\.task_status IN \('QUEUED','RUNNING','IN_PROGRESS','RETRY_SCHEDULED'\)/);
 });
 
 test('new category calculations return the persisted match id, not a spread buyer id', () => {

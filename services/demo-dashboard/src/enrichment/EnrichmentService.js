@@ -212,18 +212,21 @@ export class EnrichmentService {
     return result.rows[0];
   }
 
-  async runSearchQueries(job,company,{tavilyEnabled=true}={}) {
+  async runSearchQueries(job,company,{tavilyEnabled=true,strategy=null}={}) {
     if(!tavilyEnabled&&String(this.provider.name||'').toLowerCase()==='tavily') {
       return {queries:0,results:[],failures:0,search_skipped:true};
     }
-    const queries = generateDecisionMakerQueries(company,{ maxQueries:this.maxQueriesPerCompany });
+    const queries = strategy?.query_text?[{query_text:strategy.query_text,query_type:strategy.query_type||'auto_evidence_strategy'}]
+      :generateDecisionMakerQueries(company,{ maxQueries:this.maxQueriesPerCompany });
     const results = [];
     let failures = 0;
     for (const query of queries) {
       const stored = await this.persistQuery(job,company,query);
       await this.pool.query(`UPDATE leadgen.research_search_queries SET status='RUNNING',error_message=NULL WHERE id=$1`,[stored.id]);
       try {
-        const response = await this.searchAudit.search({ researchJobId:job.id,companyId:company.id,purpose:'DECISION_MAKER_DISCOVERY',
+        const response = await this.searchAudit.search({ researchJobId:job.id,companyId:company.id,
+          productProfile:company.active_product_profiles?.length===1?company.active_product_profiles[0]:null,
+          purpose:'DECISION_MAKER_DISCOVERY',
           request:{ query:stored.query_text,count:5,country:company.country_code,countryName:company.country_name },
           persistResults:async results=>{const referenceIds=[];for(const item of results){const discovered=this.linkedIn.discoverReference({url:item.url,title:item.title,snippet:item.snippet,provider:this.provider.name,capturedAt:new Date()});const saved=await this.persistReference(job.id,company.id,discovered?{...discovered,discovered_via:`TAVILY_QUERY:${stored.id}`}:{platform:'PUBLIC_WEB',profile_url:item.url,profile_kind:'SEARCH_RESULT',title_hint:item.title,snippet_hint:item.snippet,discovered_via:`TAVILY_QUERY:${stored.id}`,verification_status:'REVIEW',evidence_strength:'DISCOVERY_HINT',content_fetched:false,captured_at:new Date()});if(saved?.id)referenceIds.push(saved.id);}return{referenceIds};},
           loadPersistedResults:async({referenceIds})=>{const params=[job.id,company.id];let filter='AND discovered_via=$3';if(referenceIds.length){params.push(referenceIds);filter='AND id=ANY($3::uuid[])';}else params.push(`TAVILY_QUERY:${stored.id}`);const found=await this.pool.query(`SELECT id,profile_url,title_hint,snippet_hint FROM leadgen.enrichment_public_references WHERE research_job_id=$1 AND company_id=$2 ${filter} ORDER BY captured_at,id`,params);return found.rows.map((row,index)=>({title:row.title_hint||'',url:row.profile_url,snippet:row.snippet_hint||'',provider_score:null,rank:index+1}));}
@@ -231,7 +234,7 @@ export class EnrichmentService {
         await this.pool.query(`UPDATE leadgen.research_search_queries SET status='COMPLETED',result_count=$2,executed_at=now() WHERE id=$1`,[stored.id,response.result_count??response.results.length]);
         results.push(...response.results.map(item=>({ ...item,query_id:stored.id,query_type:stored.query_type,provider:response.provider || this.provider.name })));
       } catch (error) {
-        if(error?.code==='TAVILY_CREDIT_CAP'||error?.retryable===true)throw error;
+        if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR'].includes(error?.code)||error?.retryable===true)throw error;
         failures += 1;
         await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',result_count=0,error_message=$2,executed_at=now() WHERE id=$1`,[stored.id,clean(error.message,500)]);
       }
@@ -696,13 +699,13 @@ export class EnrichmentService {
     return inserted;
   }
 
-  async enrichCompany(job,company,{tavilyEnabled=true,hunterEnabled=true}={}) {
+  async enrichCompany(job,company,{tavilyEnabled=true,hunterEnabled=true,strategy=null}={}) {
     await this.pool.query(`INSERT INTO leadgen.enrichment_job_companies(research_job_id,company_id,market_code,product_profiles,attempt_status,started_at)
       VALUES ($1,$2,$3,$4,'DISCOVERING',now()) ON CONFLICT (research_job_id,company_id) DO UPDATE SET attempt_status='DISCOVERING',started_at=coalesce(leadgen.enrichment_job_companies.started_at,now()),updated_at=now()`,[
       job.id,company.id,company.country_code,company.active_product_profiles
     ]);
     try {
-      const search = await this.runSearchQueries(job,company,{tavilyEnabled});
+      const search = await this.runSearchQueries(job,company,{tavilyEnabled,strategy});
       for (const result of String(this.provider.name||'').toLowerCase()==='tavily'?[]:search.results) {
         const linkedIn = this.linkedIn.discoverReference({ url:result.url,title:result.title,snippet:result.snippet,provider:result.provider,capturedAt:new Date() });
         if (linkedIn) await this.persistReference(job.id,company.id,linkedIn);
@@ -727,13 +730,13 @@ export class EnrichmentService {
       await this.pool.query(`UPDATE leadgen.enrichment_job_companies SET attempt_status='FAILED',last_error=$3,completed_at=now(),updated_at=now() WHERE research_job_id=$1 AND company_id=$2`,[
         job.id,company.id,clean(error.message,500)
       ]);
-      if(error?.code==='TAVILY_CREDIT_CAP')return {company_id:company.id,status:'PARTIAL',
-        stop_reason:'TAVILY_CREDIT_CAP',error:clean(error.message,500)};
+      if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED'].includes(error?.code))return {company_id:company.id,status:'PARTIAL',
+        stop_reason:error.code,error:clean(error.message,500)};
       return { company_id:company.id,status:'FAILED',error:clean(error.message,500) };
     }
   }
 
-  async runJob(jobId,{tavilyEnabled=true,hunterEnabled=true}={}) {
+  async runJob(jobId,{tavilyEnabled=true,hunterEnabled=true,strategy=null}={}) {
     const claimed = await this.pool.query(`UPDATE leadgen.research_jobs
       SET status='DISCOVERING',started_at=coalesce(started_at,now()),completed_at=NULL,last_error=NULL
       WHERE id=$1 AND job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
@@ -756,7 +759,7 @@ export class EnrichmentService {
       let stopReason = null;
       let consecutiveProviderTemporaryErrors = 0;
       for (const company of companies) {
-        const result = await this.enrichCompany(job,company,{tavilyEnabled,hunterEnabled});
+        const result = await this.enrichCompany(job,company,{tavilyEnabled,hunterEnabled,strategy});
         results.push(result);
         if (result.hunter?.temporary_error === true) consecutiveProviderTemporaryErrors += 1;
         else consecutiveProviderTemporaryErrors = 0;

@@ -9,6 +9,7 @@ const MANAGEMENT_APPROVER_ROLES = Object.freeze(['MANAGEMENT','MANAGEMENT_APPROV
 const OUTREACH_APPROVER_ROLES = Object.freeze(['MANAGEMENT','OUTREACH_APPROVER']);
 const SENDER_ROLES = Object.freeze(['MANAGEMENT','SENDER_OPERATOR']);
 const DATA_ROLES = Object.freeze(['DATA_ADMIN','MANAGEMENT']);
+const MANUAL_ROUTE_ROLES = Object.freeze(['SALES','DATA_ADMIN','MANAGEMENT']);
 const EXPORT_ROLES = Object.freeze(['SALES','MANAGEMENT','FINANCE']);
 
 function asyncRoute(handler) {
@@ -31,14 +32,16 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   const router = express.Router();
   const auth = managementAuth || createManagementAuth(env);
   const read = [auth.authenticate];
-  const draftWrite = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...DRAFT_ROLES)];
-  const managementApprove = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...MANAGEMENT_APPROVER_ROLES)];
-  const outreachApprove = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...OUTREACH_APPROVER_ROLES)];
-  const send = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...SENDER_ROLES)];
-  const dataWrite = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...DATA_ROLES)];
-  const exportWrite = [auth.authenticate,auth.requireCsrf,auth.requireRoles(...EXPORT_ROLES)];
+  const draftWrite = [auth.authenticate,auth.requireRoles(...DRAFT_ROLES)];
+  const managementApprove = [auth.authenticate,auth.requireRoles(...MANAGEMENT_APPROVER_ROLES)];
+  const outreachApprove = [auth.authenticate,auth.requireRoles(...OUTREACH_APPROVER_ROLES)];
+  const send = [auth.authenticate,auth.requireRoles(...SENDER_ROLES)];
+  const dataWrite = [auth.authenticate,auth.requireRoles(...DATA_ROLES)];
+  const manualRouteWrite = [auth.authenticate,auth.requireRoles(...MANUAL_ROUTE_ROLES)];
+  const exportWrite = [auth.authenticate,auth.requireRoles(...EXPORT_ROLES)];
 
-  router.get('/api/management/session', ...read, auth.session);
+  router.get('/api/workspace/contact-queue', asyncRoute(async(req,res)=>res.json(await service.listWorkspaceContactQueue(req.query))));
+  router.get('/api/workspace/manual-official-routes', asyncRoute(async(req,res)=>res.json(await service.listWorkspaceManualOfficialRoutes(req.query))));
 
   router.get('/api/opportunities/:id/decision-history', ...read, asyncRoute(async(req,res)=>res.json(await service.opportunityDecisionHistory(req.params.id))));
   router.post('/api/opportunities/:id/management-approve', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.manageOpportunity(req.params.id,'MANAGEMENT_APPROVED',req.body,req.managementUser))));
@@ -46,8 +49,19 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   router.post('/api/opportunities/:id/request-evidence', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.manageOpportunity(req.params.id,'REQUEST_EVIDENCE',req.body,req.managementUser))));
   router.post('/api/opportunities/:id/reopen', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.manageOpportunity(req.params.id,'REOPEN',req.body,req.managementUser))));
   router.get('/api/contact-queue', ...read, asyncRoute(async(req,res)=>res.json(await service.listContactQueue(req.query))));
+  router.get('/api/manual-official-routes', ...read, asyncRoute(async(req,res)=>res.json(await service.listManualOfficialRoutes(req.query))));
+  router.post('/api/manual-official-routes/reconcile', ...dataWrite,
+    asyncRoute(async(req,res)=>res.status(201).json(await service.reconcileManualOfficialRoutes(req.managementUser))));
+  router.post('/api/manual-official-routes/:id/actions', ...manualRouteWrite,
+    asyncRoute(async(req,res)=>res.status(201).json(await service.recordManualOfficialRouteAction(req.params.id,req.body,req.managementUser))));
 
   router.get('/api/outreach/marketing-context', ...read, asyncRoute(async(_req,res)=>res.json(await service.getMarketingContext())));
+  router.get('/api/outreach/gmail/health', ...read, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth())));
+  router.post('/api/outreach/gmail/health-check', ...dataWrite, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth({verify_oauth:true}))));
+  router.post('/api/outreach/gmail/inbound-sync', ...dataWrite, asyncRoute(async(_req,res)=>{
+    const queueJobId=await queue.enqueue(PHASE5_QUEUES.GMAIL_INBOUND_SYNC,{}, {singletonKey:'phase10:gmail-inbound:manual'});
+    res.status(202).json({status:'QUEUED',queue_job_id:queueJobId});
+  }));
   router.post('/api/outreach/marketing-context/versions', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.createMarketingContext(req.body,req.managementUser))));
   router.post('/api/outreach/marketing-context/:id/approve', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.approveMarketingContext(req.params.id,req.body,req.managementUser))));
 

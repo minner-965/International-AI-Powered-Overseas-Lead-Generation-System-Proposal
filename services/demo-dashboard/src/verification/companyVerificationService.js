@@ -146,19 +146,42 @@ async function persistSocialAccounts(client, candidate, companyId, accounts) {
     const key = account.normalized_profile_url;
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const { rowCount } = await client.query(`
-      INSERT INTO leadgen.company_social_accounts AS existing
+    if(companyId){
+      const existingCompanyAccount=await client.query(`UPDATE leadgen.company_social_accounts SET
+        profile_url=$3,verification_status=$4,source_url=$5,source_type=$6,captured_at=$7
+        WHERE company_id=$1 AND normalized_profile_url=$2 RETURNING id`,[companyId,key,
+        account.profile_url,account.verification_status,account.source_url,account.source_type,account.captured_at]);
+      if(existingCompanyAccount.rowCount){
+        await client.query(`DELETE FROM leadgen.company_social_accounts
+          WHERE research_candidate_id=$1 AND normalized_profile_url=$2 AND id<>$3`,[
+          candidate.id,key,existingCompanyAccount.rows[0].id]);
+        count+=existingCompanyAccount.rowCount;continue;
+      }
+    }
+    const updated=await client.query(`UPDATE leadgen.company_social_accounts SET
+      company_id=coalesce(company_id,$1),profile_url=$3,verification_status=$5,
+      source_url=$6,source_type=$7,captured_at=$8
+      WHERE research_candidate_id=$2 AND normalized_profile_url=$4`,[
+      companyId,candidate.id,account.profile_url,account.normalized_profile_url,
+      account.verification_status,account.source_url,account.source_type,account.captured_at
+    ]);
+    if(updated.rowCount){count+=updated.rowCount;continue;}
+    const inserted=await client.query(`
+      INSERT INTO leadgen.company_social_accounts
         (company_id,research_candidate_id,platform,profile_url,normalized_profile_url,account_type,
          verification_status,source_url,source_type,captured_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      ON CONFLICT (research_candidate_id,normalized_profile_url) DO UPDATE SET
-        company_id=coalesce(existing.company_id,EXCLUDED.company_id),
-        profile_url=EXCLUDED.profile_url,verification_status=EXCLUDED.verification_status,
-        source_url=EXCLUDED.source_url,source_type=EXCLUDED.source_type,captured_at=EXCLUDED.captured_at`, [
+      ON CONFLICT DO NOTHING`, [
       companyId, candidate.id, account.platform, account.profile_url, account.normalized_profile_url,
       account.account_type, account.verification_status, account.source_url, account.source_type, account.captured_at
     ]);
-    count += rowCount;
+    if(!inserted.rowCount&&companyId){
+      await client.query(`UPDATE leadgen.company_social_accounts SET
+        profile_url=$3,verification_status=$4,source_url=$5,source_type=$6,captured_at=$7
+        WHERE company_id=$1 AND normalized_profile_url=$2`,[companyId,account.normalized_profile_url,
+        account.profile_url,account.verification_status,account.source_url,account.source_type,account.captured_at]);
+    }
+    count += inserted.rowCount;
   }
   return count;
 }

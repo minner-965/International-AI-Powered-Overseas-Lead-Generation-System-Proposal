@@ -49,8 +49,8 @@ export function resolveReadinessV3(input={}){
   const rawStatus=upper(input.category_procurement_match_status||'NEEDS_PRODUCT_EVIDENCE');
   const status=rawStatus==='NEEDS_INTERNAL_CATALOG_EVIDENCE'?'CATEGORY_PROCUREMENT_MATCH':rawStatus;
   if(status!=='CATEGORY_PROCUREMENT_MATCH')blockers.push(status);else if(input.category_procurement_match_score==null||Number(input.category_procurement_match_score)<60)blockers.push('WEAK_CATEGORY_MATCH');else if(Number(input.category_procurement_coverage||0)<70)blockers.push('NEEDS_PRODUCT_EVIDENCE');
-  if(input.has_verified_decision_route!==true)blockers.push('NEEDS_DECISION_MAKER');
-  if(input.has_current_valid_contact_route!==true)blockers.push('NEEDS_CONTACT_ROUTE');
+  if(input.has_verified_decision_route!==true&&input.has_current_valid_company_route!==true)blockers.push('NEEDS_DECISION_MAKER');
+  if(input.has_current_valid_contact_route!==true&&input.has_current_valid_company_route!==true)blockers.push('NEEDS_CONTACT_ROUTE');
   const verifiedActive=input.company_verified_active===true||(upper(input.company_verification_status)==='VERIFIED'&&upper(input.company_lifecycle_status)==='ACTIVE');
   if(input.has_traceable_evidence!==true||!verifiedActive||input.eligible_target_organization!==true)blockers.push('NEEDS_VERIFICATION');
   if(upper(input.cooperation_feasibility_band)==='LOW'||upper(input.supplier_access_band)==='LOW')blockers.push('STRATEGIC_LONG_SHOT');

@@ -67,7 +67,7 @@ export function deriveResearchTaskType(row = {}) {
   if (profileBuyers > 0 && verifiedRoles <= 0) return 'VERIFY_BUYER_ROLE';
   if (freshValid <= 0 && emailRoutes > 0 && verifiedRoles > 0) return 'VERIFY_EMAIL';
   if (freshValid <= 0 && profileBuyers > 0 && verifiedRoles > 0) return 'FIND_BUSINESS_EMAIL';
-  if (hasAny(reasons,['EVIDENCE_REQUIRED_EMAIL'])) return emailRoutes > 0 ? 'VERIFY_EMAIL' : 'FIND_BUSINESS_EMAIL';
+  if (hasAny(reasons,['EVIDENCE_REQUIRED_EMAIL','EVIDENCE_REQUIRED_CONTACT_ROUTE'])) return emailRoutes > 0 ? 'VERIFY_EMAIL' : 'FIND_BUSINESS_EMAIL';
   return 'COLLECT_CATEGORY_EVIDENCE';
 }
 

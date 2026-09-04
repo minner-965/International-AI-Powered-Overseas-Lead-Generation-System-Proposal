@@ -10,6 +10,7 @@ const articleSignals = /\/news\/|\/article\/|\/blog\/|\/20\d{2}\/\d{1,2}\/\d{1,2
 const supplierProfileSignals = /supplier|company|manufacturer|seller|business/i;
 const listicleSignals = /^(?:\s*\d+\s+(?:top|best)\b)|\btop\s+\d+\b|\bbest\s+.{0,45}\b(?:distributors?|suppliers?|wholesalers?)\b/i;
 const manufacturingOnlyTerms = ['manufacturer', 'manufacturing', 'private label', 'oem'];
+const marketplaceTextSignals = /\b(?:b2b\s+market(?:place)?|online\s+marketplace|wholesale\s+marketplace)\b/i;
 
 function textOf(candidate) {
   return `${candidate?.title || ''} ${candidate?.snippet || ''} ${candidate?.normalized_url || ''}`.toLocaleLowerCase('en');
@@ -75,7 +76,7 @@ export function classifySearchResult(candidate, options = {}) {
   if ((profile.newsDomains || []).includes(domain) || articleSignals.test(normalizedUrl) || listicleSignals.test(candidate.title || '')) {
     return { candidate_type: 'ARTICLE', candidate_status: 'REJECTED', rejection_reason: 'article_or_job' };
   }
-  if (isMarketplaceDomain(domain, profile)) {
+  if (isMarketplaceDomain(domain, profile) || marketplaceTextSignals.test(combined)) {
     const businessProfile = supplierProfileSignals.test(normalizedUrl) && !/product|item|dp\//i.test(normalizedUrl);
     return {
       candidate_type: 'MARKETPLACE',

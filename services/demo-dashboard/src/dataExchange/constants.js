@@ -149,6 +149,7 @@ export const EXPORT_TYPES = Object.freeze([
   'PRODUCT_CATALOG_INTERNAL',
   'CUSTOMER_DEAL_HISTORY',
   'IMPORT_ERROR_REPORT',
+  'RESEARCH_JOB_PROVIDER_USAGE',
 ]);
 
 export const EXPORT_MODES = Object.freeze([
