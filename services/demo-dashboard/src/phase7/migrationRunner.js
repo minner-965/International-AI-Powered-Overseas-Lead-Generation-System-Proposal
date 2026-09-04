@@ -30,6 +30,7 @@ export const PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY = '047_pha
 export const PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY = '048_phase10_category_driven_context.sql';
 export const PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY = '049_phase10_1_category_contact_simplification.sql';
 export const PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY = '050_phase10_1_category_status_compatibility.sql';
+export const PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY = '051_phase10_2_category_readiness_compatibility.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -58,6 +59,7 @@ const phase10RetireInternalTavilyEnforcementPath = path.resolve(projectRoot, 'da
 const phase10CategoryDrivenContextPath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY);
 const phase10CategoryContactSimplificationPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY);
 const phase10CategoryStatusCompatibilityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY);
+const phase10CategoryReadinessCompatibilityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -573,6 +575,20 @@ export async function verifyPhase10CategoryStatusCompatibilityMigration(client){
   return{phase10_1_category_status_compatibility_verified:true};
 }
 
+export async function verifyPhase10CategoryReadinessCompatibilityMigration(client){
+  const result=await client.query(`SELECT EXISTS(
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid='leadgen.cooperation_feasibility_results'::regclass
+      AND conname='cooperation_feasibility_results_opportunity_readiness_check'
+      AND pg_get_constraintdef(oid) LIKE '%CATEGORY_CONFIRMATION_REQUIRED%'
+      AND pg_get_constraintdef(oid) LIKE '%CATEGORY_MISMATCH%'
+      AND pg_get_constraintdef(oid) LIKE '%CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE%'
+  ) readiness_compatibility`);
+  if(!result.rows[0]?.readiness_compatibility)
+    throw new Error('Phase 10.2 category readiness compatibility migration verification failed');
+  return{phase10_2_category_readiness_compatibility_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -644,14 +660,17 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10CategoryStatusCompatibility=await applyPhase7Migration({...options,
     migrationPath:options.phase10CategoryStatusCompatibilityMigrationPath||phase10CategoryStatusCompatibilityPath,
     appliedBy:options.appliedBy||'dpv-phase10.1-explicit-migration-runner'});
+  const phase10CategoryReadinessCompatibility=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CategoryReadinessCompatibilityMigrationPath||phase10CategoryReadinessCompatibilityPath,
+    appliedBy:options.appliedBy||'dpv-phase10.2-explicit-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
     phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,phase10CategoryDrivenContext,
-    phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,
-    status:phase10CategoryStatusCompatibility.status,database:phase10CategoryStatusCompatibility.database};
+    phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,phase10CategoryReadinessCompatibility,
+    status:phase10CategoryReadinessCompatibility.status,database:phase10CategoryReadinessCompatibility.database};
 }
 
 export async function applyPhase7Migration({
@@ -744,6 +763,8 @@ export async function applyPhase7Migration({
                                                   ?await verifyPhase10CategoryContactSimplificationMigration(client)
                                                   :migrationKey===PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY
                                                     ?await verifyPhase10CategoryStatusCompatibilityMigration(client)
+                                                    :migrationKey===PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY
+                                                      ?await verifyPhase10CategoryReadinessCompatibilityMigration(client)
                                                     :await verifyPhase7Migration(client);
       await client.query('COMMIT');
       return {
@@ -810,6 +831,8 @@ export async function applyPhase7Migration({
                                                     ?await verifyPhase10CategoryContactSimplificationMigration(client)
                                                     :migrationKey===PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY
                                                       ?await verifyPhase10CategoryStatusCompatibilityMigration(client)
+                                                      :migrationKey===PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY
+                                                        ?await verifyPhase10CategoryReadinessCompatibilityMigration(client)
                                                       :await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {

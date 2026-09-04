@@ -18,7 +18,8 @@ import {applyPhase7Migration,PHASE10_CATEGORY_SCOPE_MIGRATION_KEY,
   PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY,
   PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,
   PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,
-  PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+  PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY,
+  PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 
 const root=process.env.DPV_PROJECT_ROOT
   ? path.resolve(process.env.DPV_PROJECT_ROOT)
@@ -70,7 +71,7 @@ test('030 persists automatic evidence lifecycle, dual ResearchJob lineage and im
   assert.match(sql,/UNIQUE \(task_id,attempt_number,stage,event_type\)/);
 });
 
-test('explicit migration runner applies Phase 10 migrations in order through category-status compatibility',()=>{
+test('explicit migration runner applies Phase 10 migrations in order through category-readiness compatibility',()=>{
   assert.match(runner,/030_phase10_category_scope_and_auto_evidence\.sql/);
   assert.equal(PHASE10_AUDIT_HARDENING_MIGRATION_KEY,'031_phase10_controlled_evidence_audit_hardening.sql');
   assert.match(runner,/verifyPhase10CategoryScopeMigration/);
@@ -83,12 +84,14 @@ test('explicit migration runner applies Phase 10 migrations in order through cat
   assert.equal(PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,'048_phase10_category_driven_context.sql');
   assert.equal(PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,'049_phase10_1_category_contact_simplification.sql');
   assert.equal(PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY,'050_phase10_1_category_status_compatibility.sql');
+  assert.equal(PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY,'051_phase10_2_category_readiness_compatibility.sql');
   assert.ok(runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration')>runner.indexOf('phase10ProviderAccountState=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration')>runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration')>runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration')>runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryStatusCompatibility=await applyPhase7Migration')>runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration'));
-  assert.match(runner,/status:phase10CategoryStatusCompatibility\.status/);
+  assert.ok(runner.indexOf('phase10CategoryReadinessCompatibility=await applyPhase7Migration')>runner.indexOf('phase10CategoryStatusCompatibility=await applyPhase7Migration'));
+  assert.match(runner,/status:phase10CategoryReadinessCompatibility\.status/);
 });
 
 test('048 moves automatic evidence identity to target category scope while preserving legacy profile metadata',()=>{
@@ -118,6 +121,15 @@ test('050 permits new category/contact statuses while preserving historical stat
     'CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','NEEDS_PRODUCT_EVIDENCE'])assert.match(migration,new RegExp(status));
   assert.match(migration,/canonical_route_key/);
   assert.match(migration,/uq_decision_maker_contacts_company_route/);
+  assert.doesNotMatch(migration,/DELETE\s+FROM|TRUNCATE|DROP\s+TABLE/i);
+});
+
+test('051 admits category-first readiness while preserving every historical readiness value',()=>{
+  const migration=fs.readFileSync(path.join(root,'database/migrations',PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY),'utf8');
+  assert.match(migration,/^BEGIN;/);
+  assert.match(migration,/COMMIT;\s*$/);
+  for(const status of ['CATEGORY_CONFIRMATION_REQUIRED','CATEGORY_MISMATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE','SALES_READY','NEEDS_CONTACT_ROUTE'])
+    assert.match(migration,new RegExp(`'${status}'`));
   assert.doesNotMatch(migration,/DELETE\s+FROM|TRUNCATE|DROP\s+TABLE/i);
 });
 
