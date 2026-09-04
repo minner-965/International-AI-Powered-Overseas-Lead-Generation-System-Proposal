@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
+import { buildStrategyQuery,selectNextUnusedStrategy,strategyNextStage,strategyStartStage } from './strategyCatalog.js';
 
 const PRODUCT_PROFILES = new Set(['WOMENSWEAR', 'GENERAL_MERCHANDISE']);
 const SCHEDULE_SOURCES = new Set(['EVENT', 'RECONCILIATION', 'MANUAL_RETRY', 'IMPORT']);
@@ -8,7 +9,7 @@ const TERMINAL_TASK_STATES = new Set([
 ]);
 const SETTLED_OUTCOMES = new Set([
   'COMPLETED', 'RETRYABLE_ERROR', 'PERMANENT_ERROR', 'EVIDENCE_EXHAUSTED',
-  'BUDGET_PAUSED', 'HUMAN_REVIEW_REQUIRED'
+  'BUDGET_PAUSED', 'HUMAN_REVIEW_REQUIRED', 'NEW_EVIDENCE_FOUND', 'NO_NEW_EVIDENCE', 'TEMPORARY_ERROR'
 ]);
 
 export const AUTO_EVIDENCE_STAGES = Object.freeze([
@@ -77,6 +78,29 @@ function booleanEnv(value, fallback = false) {
   return /^(1|true|yes|on)$/i.test(String(value));
 }
 
+function configurationError(key) {
+  return Object.assign(new Error(`Invalid configuration: ${key}`), {
+    code: 'INVALID_CONFIGURATION',
+    configKey: key
+  });
+}
+
+function strictBooleanEnv(env, key, fallback) {
+  const value = env[key];
+  if (value === undefined || value === null || value === '') return fallback;
+  if (/^(1|true|yes|on)$/i.test(String(value))) return true;
+  if (/^(0|false|no|off)$/i.test(String(value))) return false;
+  throw configurationError(key);
+}
+
+function strictIntEnv(env, key, { min, max = Number.MAX_SAFE_INTEGER, fallback }) {
+  const value = env[key];
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) throw configurationError(key);
+  return parsed;
+}
+
 function boundedInt(value, { min = 0, max = 100, fallback = 0 } = {}) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.trunc(parsed))) : fallback;
@@ -113,19 +137,50 @@ function referenceValues(result = {}) {
 }
 
 export function autoEvidenceConfig(env = process.env) {
+  const tavilyUsagePolicy=upper(env.TAVILY_USAGE_POLICY||'PROVIDER_ACCOUNT_ONLY');
+  if(tavilyUsagePolicy!=='PROVIDER_ACCOUNT_ONLY')throw configurationError('TAVILY_USAGE_POLICY');
+  const tavilyInternalLimitsEnabled=false;
+  const tavilyDailyCapUnits=tavilyInternalLimitsEnabled?strictIntEnv(env,'MAX_TAVILY_CREDITS_PER_DAY_UNITS',{
+    min:1,fallback:25
+  }):null;
+  const tavilyRunCapUnits=tavilyInternalLimitsEnabled?strictIntEnv(env,'MAX_TAVILY_CREDITS_PER_RUN_UNITS',{
+    min:1,max:tavilyDailyCapUnits,fallback:5
+  }):null;
+  const tavilyTaskRunCapUnits=tavilyInternalLimitsEnabled?strictIntEnv(env,'MAX_TAVILY_UNITS_PER_TASK_RUN',{
+    min:1,max:tavilyDailyCapUnits,fallback:tavilyRunCapUnits
+  }):null;
+  const defaultDiscoveryUnits=tavilyInternalLimitsEnabled?Math.min(15,Math.ceil(tavilyDailyCapUnits*0.6)):null;
+  const tavilyDiscoveryDailyUnits=tavilyInternalLimitsEnabled?strictIntEnv(env,'TAVILY_DISCOVERY_DAILY_UNITS',{
+    min:0,max:tavilyDailyCapUnits,fallback:defaultDiscoveryUnits
+  }):null;
+  const tavilyEvidenceDailyUnits=tavilyInternalLimitsEnabled?strictIntEnv(env,'TAVILY_EVIDENCE_DAILY_UNITS',{
+    min:0,max:tavilyDailyCapUnits,fallback:tavilyDailyCapUnits-tavilyDiscoveryDailyUnits
+  }):null;
+  if(tavilyInternalLimitsEnabled&&tavilyDiscoveryDailyUnits+tavilyEvidenceDailyUnits>tavilyDailyCapUnits){
+    throw new Error('Tavily discovery and evidence daily units exceed the global daily units');
+  }
   return Object.freeze({
-    enabled: booleanEnv(env.AUTO_EVIDENCE_ENABLED, false),
-    reconcileMinutes: boundedInt(env.AUTO_EVIDENCE_RECONCILE_MINUTES, { min: 5, max: 1440, fallback: 30 }),
+    enabled: strictBooleanEnv(env, 'AUTO_EVIDENCE_ENABLED', false),
+    reconcileMinutes: strictIntEnv(env, 'AUTO_EVIDENCE_RECONCILE_MINUTES', { min: 5, max: 1440, fallback: 30 }),
     batchSize: boundedInt(env.AUTO_EVIDENCE_BATCH_SIZE, { min: 1, max: 100, fallback: 10 }),
-    cooldownHours: boundedInt(env.AUTO_EVIDENCE_COMPANY_COOLDOWN_HOURS, { min: 1, max: 8760, fallback: 168 }),
-    maxAttempts: boundedInt(env.AUTO_EVIDENCE_MAX_ATTEMPTS, { min: 1, max: 20, fallback: 3 }),
+    cooldownHours: null,
+    maxAttempts: 10,
     sourceTtlDays: boundedInt(env.AUTO_EVIDENCE_SOURCE_TTL_DAYS, { min: 1, max: 3650, fallback: 90 }),
     stageLeaseMinutes: boundedInt(env.AUTO_EVIDENCE_STAGE_LEASE_MINUTES, { min: 1, max: 1440, fallback: 15 }),
     retryBaseSeconds: boundedInt(env.AUTO_EVIDENCE_RETRY_BASE_SECONDS, { min: 5, max: 86400, fallback: 300 }),
     runBudgetCapUnits: boundedInt(env.MAX_HUNTER_CREDITS_PER_RUN_UNITS, { min: 0, max: 1000000000, fallback: 20000 }),
     hunterEnabled: booleanEnv(env.AUTO_EVIDENCE_HUNTER_ENABLED, true),
     tavilyEnabled: booleanEnv(env.AUTO_EVIDENCE_TAVILY_ENABLED, true),
-    operatorOverrideEnabled: booleanEnv(env.AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED, false)
+    tavilyUsagePolicy,
+    tavilyInternalLimitsEnabled,
+    operatorOverrideEnabled: booleanEnv(env.AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED, false),
+    tavilyRunCapUnits:tavilyTaskRunCapUnits,
+    tavilyDailyCapUnits,
+    tavilyDiscoveryDailyUnits,
+    tavilyEvidenceDailyUnits,
+    tavilyCompanyProfileCycleUnits:tavilyInternalLimitsEnabled?strictIntEnv(env,'MAX_TAVILY_UNITS_PER_COMPANY_PROFILE_CYCLE',{
+      min:1,max:2,fallback:2
+    }):null
   });
 }
 
@@ -145,14 +200,15 @@ export class AutoEvidenceRepository {
         CASE
           WHEN cpm.match_status IS DISTINCT FROM 'CATEGORY_PROCUREMENT_MATCH' THEN 'CATEGORY_EVIDENCE'
           WHEN bbm.buyer_model NOT IN ('DIRECT_END_BUYER','DISTRIBUTION_BUYER') THEN 'BUYER_MODEL_EVIDENCE'
-          WHEN coalesce(dm.named_relevant_buyers,0)=0 THEN 'NAMED_BUYER_EVIDENCE'
-          WHEN coalesce(dm.valid_email_routes,0)=0 THEN 'VERIFIED_EMAIL_EVIDENCE'
+          WHEN coalesce(dm.named_relevant_buyers,0)=0 AND coalesce(dm.company_contact_routes,0)=0 THEN 'NAMED_BUYER_EVIDENCE'
+          WHEN coalesce(dm.company_contact_routes,0)=0 THEN 'VERIFIED_EMAIL_EVIDENCE'
           ELSE 'DECISION_REFRESH'
         END business_blocker,
         (coalesce(src.source_count,0)+coalesce(dm.evidence_count,0)+coalesce(decision_count.snapshot_count,0))::int evidence_revision,
         CASE
-          WHEN cpm.match_status='CATEGORY_PROCUREMENT_MATCH' AND coalesce(dm.named_relevant_buyers,0)=0 THEN 1
-          WHEN coalesce(dm.named_relevant_buyers,0)>0 AND coalesce(dm.valid_email_routes,0)=0 THEN 2
+          WHEN cpm.match_status='CATEGORY_PROCUREMENT_MATCH' AND coalesce(dm.named_relevant_buyers,0)=0
+            AND coalesce(dm.company_contact_routes,0)=0 THEN 1
+          WHEN coalesce(dm.company_contact_routes,0)=0 THEN 2
           WHEN bbm.buyer_model NOT IN ('DIRECT_END_BUYER','DISTRIBUTION_BUYER') THEN 3
           WHEN cpm.match_status IS DISTINCT FROM 'CATEGORY_PROCUREMENT_MATCH' THEN 4
           ELSE 5
@@ -168,6 +224,12 @@ export class AutoEvidenceRepository {
           count(DISTINCT dc.id) FILTER (
             WHERE d.person_name IS NOT NULL AND d.verification_status='VERIFIED' AND d.lifecycle_status='ACTIVE'
               AND pr.relevance IN ('HIGH','MEDIUM') AND dc.verification_status='VALID')::int valid_email_routes,
+          count(DISTINCT dc.id) FILTER (WHERE d.lifecycle_status='ACTIVE' AND dc.source_url IS NOT NULL
+            AND dc.last_verified_at>=now()-($4::int*interval '1 day')
+            AND ((dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+                  AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
+              OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
+              OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))))::int company_contact_routes,
           (count(DISTINCT d.id)+count(DISTINCT dc.id)+count(DISTINCT cv.id))::int evidence_count
         FROM leadgen.decision_makers d
         LEFT JOIN leadgen.decision_maker_product_relevance pr
@@ -210,11 +272,11 @@ export class AutoEvidenceRepository {
             AND prior.business_blocker=(CASE
               WHEN cpm.match_status IS DISTINCT FROM 'CATEGORY_PROCUREMENT_MATCH' THEN 'CATEGORY_EVIDENCE'
               WHEN bbm.buyer_model NOT IN ('DIRECT_END_BUYER','DISTRIBUTION_BUYER') THEN 'BUYER_MODEL_EVIDENCE'
-              WHEN coalesce(dm.named_relevant_buyers,0)=0 THEN 'NAMED_BUYER_EVIDENCE'
-              WHEN coalesce(dm.valid_email_routes,0)=0 THEN 'VERIFIED_EMAIL_EVIDENCE'
+              WHEN coalesce(dm.named_relevant_buyers,0)=0 AND coalesce(dm.company_contact_routes,0)=0 THEN 'NAMED_BUYER_EVIDENCE'
+              WHEN coalesce(dm.company_contact_routes,0)=0 THEN 'VERIFIED_EMAIL_EVIDENCE'
               ELSE 'DECISION_REFRESH' END)
             AND (
-              prior.cooldown_until>now()
+              prior.task_status IN ('QUEUED','RUNNING','IN_PROGRESS','RETRY_SCHEDULED')
               OR prior.task_status IN ('HUMAN_REVIEW_REQUIRED','BUDGET_PAUSED')
               OR (
                 prior.evidence_revision=(coalesce(src.source_count,0)+coalesce(dm.evidence_count,0)+coalesce(decision_count.snapshot_count,0))::int
@@ -223,9 +285,52 @@ export class AutoEvidenceRepository {
             )
         )
     )
-    SELECT * FROM candidates ORDER BY priority,company_id,product_profile LIMIT $1`, [
+    SELECT candidates.* FROM candidates
+    LEFT JOIN LATERAL (
+      SELECT last_strategy_started_at FROM leadgen.auto_evidence_tasks t
+      WHERE t.company_id=candidates.company_id AND t.product_profile=candidates.product_profile
+      ORDER BY t.created_at DESC,t.id DESC LIMIT 1
+    ) fairness ON true
+    ORDER BY priority,fairness.last_strategy_started_at NULLS FIRST,company_id,product_profile LIMIT $1`, [
       limit, markets, profiles, boundedInt(sourceTtlDays,{min:1,max:3650,fallback:90}),companies
     ]);
+    return result.rows;
+  }
+
+  async selectDueFairnessRetries({ limit, marketCodes = [], productProfiles = [], companyIds = [] } = {}) {
+    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
+    const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
+      .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
+    const result=await this.pool.query(`SELECT t.*,c.company_name,c.country_code,c.official_root_domain,c.normalized_domain
+      FROM leadgen.auto_evidence_tasks t
+      JOIN leadgen.companies c ON c.id=t.company_id
+      WHERE t.task_status='RETRY_SCHEDULED' AND t.retry_at<=now()
+        AND t.current_stage IS NULL AND t.current_strategy_code IS NULL
+        AND t.strategy_state IN ('READY','NEW_EVIDENCE_FOUND','NO_NEW_EVIDENCE')
+        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND ($3::text[]='{}' OR t.product_profile=ANY($3::text[]))
+        AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
+      ORDER BY t.retry_at,t.last_strategy_started_at NULLS FIRST,t.created_at,t.id
+      LIMIT $1`,[limit,markets,profiles,companies]);
+    return result.rows;
+  }
+
+  async selectDueBudgetResumes({ limit, marketCodes = [], productProfiles = [], companyIds = [], allowCurrentWindow=false } = {}) {
+    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
+    const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
+      .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
+    const result=await this.pool.query(`SELECT t.*,c.company_name,c.country_code,c.official_root_domain,c.normalized_domain
+      FROM leadgen.auto_evidence_tasks t
+      JOIN leadgen.companies c ON c.id=t.company_id
+      WHERE t.task_status='BUDGET_PAUSED'
+        AND t.current_stage IS NOT NULL AND t.current_strategy_code IS NOT NULL
+        AND ($5::boolean OR t.updated_at<date_trunc('day',now()))
+        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND ($3::text[]='{}' OR t.product_profile=ANY($3::text[]))
+        AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
+      ORDER BY t.updated_at,t.created_at,t.id LIMIT $1`,[limit,markets,profiles,companies,allowCurrentWindow===true]);
     return result.rows;
   }
 
@@ -239,6 +344,11 @@ export class AutoEvidenceRepository {
       SELECT company_id FROM leadgen.research_job_cohort_items WHERE research_job_id=$1
       UNION ALL
       SELECT company_id FROM leadgen.enrichment_job_companies WHERE research_job_id=$1
+      UNION ALL
+      SELECT id company_id FROM leadgen.companies WHERE research_job_id=$1
+      UNION ALL
+      SELECT company_id FROM leadgen.research_candidate_verifications
+      WHERE research_job_id=$1 AND company_id IS NOT NULL
     ) affected WHERE company_id IS NOT NULL ORDER BY company_id`,[id]);
     return result.rows.map(row=>row.company_id);
   }
@@ -299,23 +409,6 @@ export class AutoEvidenceRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const cooling = await client.query(`SELECT * FROM leadgen.auto_evidence_tasks
-        WHERE company_id=$1 AND product_profile=$2 AND cooldown_until>now()
-        ORDER BY cooldown_until DESC,created_at DESC,id DESC LIMIT 1 FOR SHARE`, [
-        candidate.company_id, candidate.product_profile
-      ]);
-      if (cooling.rowCount) {
-        const task = cooling.rows[0];
-        const event = await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
-          (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
-           outcome,input_digest,operator_identity,operator_role,approval_reference,occurred_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,'SKIPPED_COOLDOWN',$8,$9,$10,$11,now())
-          ON CONFLICT (schedule_key) DO NOTHING RETURNING id`, [source, scheduleKey, task.id,
-          candidate.company_id, candidate.product_profile, candidate.business_blocker,
-          candidate.evidence_revision, inputDigest,operatorIdentity,operatorRole,approvalReference]);
-        await client.query('COMMIT');
-        return { task, outcome: 'SKIPPED_COOLDOWN', replay: !event.rowCount, dispatch_required: false };
-      }
       const executionKey = `auto-evidence:v1:${digest({
         company_id: candidate.company_id,
         product_profile: candidate.product_profile,
@@ -335,8 +428,7 @@ export class AutoEvidenceRepository {
         candidate.company_id, candidate.product_profile, candidate.business_blocker, candidate.evidence_revision
       ])).rows[0];
       let outcome = inserted.rowCount ? 'SCHEDULED' : 'DEDUPLICATED';
-      if (!inserted.rowCount && task?.cooldown_until && new Date(task.cooldown_until) > new Date()) outcome = 'SKIPPED_COOLDOWN';
-      else if (task?.task_status === 'BUDGET_PAUSED') outcome = 'BUDGET_PAUSED';
+      if (task?.task_status === 'BUDGET_PAUSED') outcome = 'BUDGET_PAUSED';
       else if (task?.task_status === 'HUMAN_REVIEW_REQUIRED') outcome = 'HUMAN_REVIEW_REQUIRED';
       const event = await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
         (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
@@ -351,7 +443,7 @@ export class AutoEvidenceRepository {
         outcome,
         replay: !event.rowCount,
         dispatch_required: outcome === 'SCHEDULED'
-          || (outcome === 'DEDUPLICATED' && task?.task_status === 'QUEUED' && Number(task?.attempt_count || 0) === 0)
+          || (outcome === 'DEDUPLICATED' && ['QUEUED','RETRY_SCHEDULED'].includes(task?.task_status))
       };
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch {}
@@ -362,8 +454,153 @@ export class AutoEvidenceRepository {
   }
 
   async getTask(taskId) {
-    const result = await this.pool.query('SELECT * FROM leadgen.auto_evidence_tasks WHERE id=$1', [taskId]);
+    const result = await this.pool.query(`SELECT t.*,c.company_name,c.country_code,c.official_root_domain,c.normalized_domain,
+      coalesce(dm.named_buyer_candidate_count,0)::int named_buyer_candidate_count,
+      coalesce(dm.named_relevant_buyer_count,0)::int named_relevant_buyer_count,
+      coalesce(dm.valid_contact_count,0)::int valid_contact_count,dm.candidate_buyer_name
+      FROM leadgen.auto_evidence_tasks t JOIN leadgen.companies c ON c.id=t.company_id
+      LEFT JOIN LATERAL (
+        SELECT count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') named_buyer_candidate_count,
+          count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
+            AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')) named_relevant_buyer_count,
+          count(DISTINCT dc.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
+            AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')
+            AND dc.verification_status='VALID') valid_contact_count,
+          max(d.person_name) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') candidate_buyer_name
+        FROM leadgen.decision_makers d
+        LEFT JOIN leadgen.decision_maker_product_relevance pr
+          ON pr.decision_maker_id=d.id AND pr.product_profile=t.product_profile
+        LEFT JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=d.id
+        WHERE d.company_id=t.company_id
+      ) dm ON true WHERE t.id=$1`, [taskId]);
     return result.rows[0] || null;
+  }
+
+  async blockerState(taskId) {
+    const result=await this.pool.query(`SELECT t.id,t.business_blocker,o.display_opportunity_status,
+      bbm.buyer_model,cpm.match_status,
+      coalesce(dm.candidates,0)::int named_buyer_candidate_count,
+      coalesce(dm.relevant,0)::int named_relevant_buyer_count,
+      coalesce(dm.valid_contacts,0)::int valid_contact_count,
+      EXISTS(SELECT 1 FROM leadgen.company_suppressions s WHERE s.company_id=t.company_id AND s.lifted_at IS NULL)
+        OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions s WHERE s.company_id=t.company_id AND s.lifted_at IS NULL) suppressed,
+      EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l
+        JOIN leadgen.historical_customers h ON h.id=l.historical_customer_id
+        WHERE l.company_id=t.company_id AND l.link_status='CONFIRMED'
+          AND h.customer_role='INTERNAL_EXISTING_CUSTOMER') historical_customer
+      FROM leadgen.auto_evidence_tasks t
+      JOIN leadgen.companies c ON c.id=t.company_id
+      LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=t.company_id AND o.product_profile=t.product_profile
+      LEFT JOIN leadgen.buyer_business_model_results bbm ON bbm.id=o.buyer_business_model_result_id
+      LEFT JOIN leadgen.category_procurement_match_results cpm ON cpm.id=o.category_procurement_match_result_id
+      LEFT JOIN LATERAL (SELECT
+        count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') candidates,
+        count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
+          AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')) relevant,
+        count(DISTINCT dc.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
+          AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')
+          AND dc.verification_status='VALID') valid_contacts
+        FROM leadgen.decision_makers d
+        LEFT JOIN leadgen.decision_maker_product_relevance pr
+          ON pr.decision_maker_id=d.id AND pr.product_profile=t.product_profile
+        LEFT JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=d.id
+        WHERE d.company_id=t.company_id) dm ON true
+      WHERE t.id=$1`,[taskId]);
+    const row=result.rows[0];
+    if(!row)return {hard_stop:true,reason:'TASK_NOT_FOUND'};
+    if(row.suppressed)return {...row,hard_stop:true,reason:'SUPPRESSED'};
+    if(row.historical_customer)return {...row,hard_stop:true,reason:'HISTORICAL_CUSTOMER'};
+    const blocker=upper(row.business_blocker);
+    const resolved=blocker==='CATEGORY_EVIDENCE'?row.match_status==='CATEGORY_PROCUREMENT_MATCH'
+      :blocker==='BUYER_MODEL_EVIDENCE'?['DIRECT_END_BUYER','DISTRIBUTION_BUYER'].includes(row.buyer_model)
+        :blocker==='NAMED_BUYER_EVIDENCE'?Number(row.named_relevant_buyer_count)>0
+          :blocker==='VERIFIED_EMAIL_EVIDENCE'?Number(row.valid_contact_count)>0
+            :blocker==='DECISION_REFRESH'?row.display_opportunity_status!=='EVIDENCE_REQUIRED':false;
+    const responsibilityConflict=['NAMED_BUYER_EVIDENCE','VERIFIED_EMAIL_EVIDENCE'].includes(blocker)
+      && Number(row.named_buyer_candidate_count)>0 && Number(row.named_relevant_buyer_count)===0;
+    return {...row,resolved,responsibility_conflict:responsibilityConflict,hard_stop:false};
+  }
+
+  async prepareNextStrategy(taskId) {
+    const client=await this.pool.connect();
+    try{
+      await client.query('BEGIN');
+      const locked=await client.query('SELECT * FROM leadgen.auto_evidence_tasks WHERE id=$1 FOR UPDATE',[taskId]);
+      const base=locked.rows[0];
+      if(!base){await client.query('COMMIT');return null;}
+      const meta=(await client.query(`SELECT c.company_name,c.country_code,c.official_root_domain,c.normalized_domain,
+        coalesce(dm.candidates,0)::int named_buyer_candidate_count,dm.candidate_buyer_name
+        FROM leadgen.companies c
+        LEFT JOIN LATERAL (SELECT count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL
+          AND d.lifecycle_status='ACTIVE') candidates,max(d.person_name) FILTER (WHERE d.person_name IS NOT NULL
+          AND d.lifecycle_status='ACTIVE') candidate_buyer_name FROM leadgen.decision_makers d WHERE d.company_id=c.id) dm ON true
+        WHERE c.id=$1`,[base.company_id])).rows[0]||{};
+      const task={...base,...meta};
+      if(task.current_strategy_code){
+        const query=buildStrategyQuery(task.current_strategy_code,task);
+        await client.query('COMMIT');
+        return query?{...task,strategy:query}:task;
+      }
+      const history=await client.query(`SELECT DISTINCT strategy_code,query_fingerprint
+        FROM leadgen.auto_evidence_task_attempts WHERE task_id=$1 AND strategy_attempt_number IS NOT NULL`,[taskId]);
+      const oldQueries=await client.query(`SELECT DISTINCT q.query_text FROM leadgen.research_search_queries q
+        WHERE q.company_id=$1 AND q.research_job_id IN ($2,$3)`,[
+        task.company_id,task.category_research_job_id,task.contact_research_job_id
+      ]);
+      const usedCodes=history.rows.map(row=>row.strategy_code).filter(Boolean);
+      const usedFingerprints=[...history.rows.map(row=>row.query_fingerprint).filter(Boolean),
+        ...oldQueries.rows.map(row=>createHash('sha256').update(String(row.query_text||'').trim().toLowerCase()).digest('hex'))];
+      const selection=selectNextUnusedStrategy(task,usedCodes,usedFingerprints);
+      const strategy=selection.strategy;
+      const nextNumber=Number(task.strategy_attempt_count||0)+1;
+      if(!strategy){
+        if(selection.duplicate_prevented_count)await client.query(`UPDATE leadgen.auto_evidence_tasks SET
+          strategy_duplicate_prevented_count=strategy_duplicate_prevented_count+$2,updated_at=now() WHERE id=$1`,
+          [taskId,selection.duplicate_prevented_count]);
+        await client.query('COMMIT');
+        return {...task,strategy:null,strategies_exhausted:true};
+      }
+      const startStage=strategyStartStage(strategy,task);
+      const updated=(await client.query(`UPDATE leadgen.auto_evidence_tasks SET
+        strategy_attempt_count=$2,attempt_count=$2,current_strategy_code=$3,strategy_version=$4,
+        current_query_fingerprint=$5,current_strategy_locale=$6,current_source_class=$7,
+        provider_retry_count=0,worker_retry_count=0,checkpoint_replay_count=0,strategy_state='STRATEGY_RUNNING',
+        fairness_round_number=fairness_round_number+1,last_strategy_started_at=now(),
+        strategy_duplicate_prevented_count=strategy_duplicate_prevented_count+$9,
+        task_status='RUNNING',current_stage=$8,retry_at=NULL,technical_blocker=NULL,updated_at=now()
+        WHERE id=$1 RETURNING *`,[taskId,nextNumber,strategy.code,strategy.version,strategy.query_fingerprint,
+        strategy.locale,strategy.source_class,startStage,selection.duplicate_prevented_count])).rows[0];
+      await client.query('COMMIT');
+      return {...updated,...meta,strategy};
+    }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
+  }
+
+  async closeCurrentStrategy(taskId,{state='NO_NEW_EVIDENCE'}={}) {
+    const result=await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET strategy_state=$2,
+      current_strategy_code=NULL,strategy_version=NULL,current_query_fingerprint=NULL,
+      current_strategy_locale=NULL,current_source_class=NULL,provider_retry_count=0,worker_retry_count=0,
+      checkpoint_replay_count=0,
+      current_stage=NULL,task_status='RETRY_SCHEDULED',retry_at=now(),updated_at=now()
+      WHERE id=$1 RETURNING *`,[taskId,state]);
+    return result.rows[0]||null;
+  }
+
+  async incrementProviderRetry(taskId) {
+    return (await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET provider_retry_count=provider_retry_count+1,
+      strategy_state='TEMPORARY_ERROR',updated_at=now() WHERE id=$1 RETURNING *`,[taskId])).rows[0]||null;
+  }
+
+  async markExhausted(taskId,cooldownUntil) {
+    return (await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET task_status='EVIDENCE_EXHAUSTED',
+      strategy_state='EXHAUSTED',current_stage='REFRESHING_DECISION',technical_blocker=NULL,retry_at=NULL,
+      budget_state='NOT_REQUIRED',cooldown_until=$2,completed_at=now(),updated_at=now()
+      WHERE id=$1 RETURNING *`,[taskId,cooldownUntil])).rows[0]||null;
+  }
+
+  async stopIneligible(taskId,reason) {
+    return (await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET task_status='CANCELLED',
+      strategy_state='STOPPED_INELIGIBLE',technical_blocker=$2,retry_at=NULL,completed_at=now(),updated_at=now()
+      WHERE id=$1 RETURNING *`,[taskId,cleanCode(reason,'INELIGIBLE')])).rows[0]||null;
   }
 
   async hasControlledOverride(taskId) {
@@ -377,6 +614,148 @@ export class AutoEvidenceRepository {
     return result.rows[0]?.allowed === true;
   }
 
+  async createBudgetResumeContinuation(client,resumedTask,originalTask=resumedTask){
+    const categoryStage=['DISCOVERING_SOURCES','CRAWLING','EXTRACTING','NORMALIZING_CATEGORY','VALIDATING_EVIDENCE']
+      .includes(resumedTask.current_stage);
+    const column=categoryStage?'category_research_job_id':'contact_research_job_id';
+    const originalResearchJobId=resumedTask[column];
+    if(!originalResearchJobId)throw Object.assign(new Error('Budget resume requires a persisted ResearchJob checkpoint'),{
+      code:'AUTO_EVIDENCE_RESUME_RESEARCH_JOB_REQUIRED',status:409
+    });
+    const original=(await client.query(`SELECT * FROM leadgen.research_jobs WHERE id=$1 FOR SHARE`,[
+      originalResearchJobId
+    ])).rows[0];
+    const immutableBudgetStop=/(?:CREDIT.*CAP|BUDGET.*(?:CAP|PAUSED))/i.test(original?.stop_reason_code||'');
+    const legacyTaskCheckpoint=!original?.stop_reason_code&&originalTask?.task_status==='BUDGET_PAUSED'
+      &&originalTask?.technical_blocker==='PROVIDER_BUDGET_PAUSED'
+      &&['PARTIAL','COMPLETE','COMPLETED','FAILED'].includes(original?.status);
+    if(!immutableBudgetStop&&!legacyTaskCheckpoint){
+      throw Object.assign(new Error('Budget resume requires an immutable provider budget stop reason'),{
+        code:'AUTO_EVIDENCE_RESUME_STOP_REASON_REQUIRED',status:409
+      });
+    }
+    const resumeExecutionKey=`auto-evidence-resume:${original.id}:${resumedTask.current_stage}:r${resumedTask.checkpoint_replay_count}`;
+    const requestDigest=digest({resume_execution_key:resumeExecutionKey,task_id:resumedTask.id,
+      company_id:resumedTask.company_id,product_profile:resumedTask.product_profile,
+      strategy_attempt_number:resumedTask.strategy_attempt_count,stage:resumedTask.current_stage});
+    const continuation=(await client.query(`INSERT INTO leadgen.research_jobs
+      (country,city,product_category,buyer_types,max_results,country_code,country_name,region,
+       preferred_language,market_profile,product_profile,job_type,market_codes,product_profiles,
+       requested_company_ids,idempotency_key,request_digest,created_by_identity,created_by_role,
+       research_wave,run_budget_cap_units,resumed_from_research_job_id,resume_execution_key,
+       resume_checkpoint_replay_count,resume_stage)
+      SELECT country,city,product_category,buyer_types,max_results,country_code,country_name,region,
+       preferred_language,market_profile,product_profile,job_type,market_codes,product_profiles,
+       requested_company_ids,$2,$3,'phase10-budget-resume','SYSTEM',research_wave,run_budget_cap_units,
+       id,$2,$4,$5 FROM leadgen.research_jobs WHERE id=$1
+      ON CONFLICT (resume_execution_key) WHERE resume_execution_key IS NOT NULL
+      DO UPDATE SET resume_execution_key=EXCLUDED.resume_execution_key RETURNING *`,[
+      original.id,resumeExecutionKey,requestDigest,resumedTask.checkpoint_replay_count,resumedTask.current_stage
+    ])).rows[0];
+    const linked=(await client.query(`UPDATE leadgen.auto_evidence_tasks SET ${column}=$2,updated_at=now()
+      WHERE id=$1 RETURNING *`,[resumedTask.id,continuation.id])).rows[0];
+    const outbox=(await client.query(`INSERT INTO leadgen.auto_evidence_resume_outbox
+      (task_id,original_research_job_id,continuation_research_job_id,execution_key,
+       checkpoint_replay_count,resume_stage)
+      VALUES($1,$2,$3,$4,$5,$6)
+      ON CONFLICT(execution_key) DO UPDATE SET execution_key=EXCLUDED.execution_key RETURNING *`,[
+      resumedTask.id,original.id,continuation.id,resumeExecutionKey,
+      resumedTask.checkpoint_replay_count,resumedTask.current_stage
+    ])).rows[0];
+    return{task:linked,original_research_job_id:original.id,continuation_research_job_id:continuation.id,
+      resume_execution_key:resumeExecutionKey,resume_outbox_id:outbox.id};
+  }
+
+  async findReusableBudgetContinuation(client,task){
+    const categoryStage=['DISCOVERING_SOURCES','CRAWLING','EXTRACTING','NORMALIZING_CATEGORY','VALIDATING_EVIDENCE']
+      .includes(task.current_stage);
+    const researchJobId=task[categoryStage?'category_research_job_id':'contact_research_job_id'];
+    if(!researchJobId)return null;
+    const continuation=(await client.query(`SELECT * FROM leadgen.research_jobs
+      WHERE id=$1 AND resumed_from_research_job_id IS NOT NULL AND resume_execution_key IS NOT NULL
+        AND resume_stage=$2
+        AND status IN ('QUEUED','CRAWLING','QUALIFYING','SCORING') FOR SHARE`,[
+      researchJobId,task.current_stage
+    ])).rows[0];
+    if(!continuation)return null;
+    const outbox=(await client.query(`INSERT INTO leadgen.auto_evidence_resume_outbox
+      (task_id,original_research_job_id,continuation_research_job_id,execution_key,
+       checkpoint_replay_count,resume_stage)
+      VALUES($1,$2,$3,$4,$5,$6)
+      ON CONFLICT(execution_key) DO UPDATE SET execution_key=EXCLUDED.execution_key RETURNING *`,[
+      task.id,continuation.resumed_from_research_job_id,continuation.id,continuation.resume_execution_key,
+      continuation.resume_checkpoint_replay_count,continuation.resume_stage
+    ])).rows[0];
+    return{task,original_research_job_id:continuation.resumed_from_research_job_id,
+      continuation_research_job_id:continuation.id,resume_execution_key:continuation.resume_execution_key,
+      resume_outbox_id:outbox.id,reused_continuation:true};
+  }
+
+  async budgetResumeEligibility(client,task,{ignoreInternalTavilyLimit=false}={}){
+    const categoryStage=['DISCOVERING_SOURCES','CRAWLING','EXTRACTING','NORMALIZING_CATEGORY','VALIDATING_EVIDENCE']
+      .includes(task.current_stage);
+    const researchJobId=categoryStage?task.category_research_job_id:task.contact_research_job_id;
+    if(!researchJobId)return{eligible:false,reason:'CHECKPOINT_RESEARCH_JOB_MISSING'};
+    const gate=(await client.query(`SELECT
+      EXISTS(SELECT 1 FROM leadgen.company_suppressions s WHERE s.company_id=$1 AND s.lifted_at IS NULL)
+        OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions s WHERE s.company_id=$1 AND s.lifted_at IS NULL) suppressed,
+      EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l
+        JOIN leadgen.historical_customers h ON h.id=l.historical_customer_id
+        WHERE l.company_id=$1 AND l.link_status='CONFIRMED'
+          AND h.customer_role='INTERNAL_EXISTING_CUSTOMER') historical_customer`,[task.company_id])).rows[0];
+    if(gate?.suppressed)return{eligible:false,reason:'SUPPRESSED'};
+    if(gate?.historical_customer)return{eligible:false,reason:'HISTORICAL_CUSTOMER'};
+    const original=(await client.query(`SELECT stop_reason_code FROM leadgen.research_jobs WHERE id=$1`,[
+      researchJobId
+    ])).rows[0];
+    const provider=String(original?.stop_reason_code||'').startsWith('HUNTER')?'HUNTER':'TAVILY';
+    if(provider==='TAVILY'){
+      const state=(await client.query(`SELECT status,retry_after_at FROM leadgen.provider_account_states
+        WHERE provider_code='TAVILY'`)).rows[0];
+      if(state?.status==='CREDIT_EXHAUSTED')return{eligible:false,reason:'BUDGET_STILL_EXHAUSTED',provider};
+      if(state?.status==='AUTH_ERROR')return{eligible:false,reason:'PROVIDER_AUTH_ERROR',provider};
+      if(state?.status==='RATE_LIMITED'&&state.retry_after_at&&new Date(state.retry_after_at)>new Date())
+        return{eligible:false,reason:'PROVIDER_RATE_LIMITED',provider};
+      return{eligible:true,provider};
+    }
+    const ledger=(await client.query(`SELECT credit_limit_units,reserved_units,used_units
+      FROM leadgen.provider_credit_ledger WHERE provider=$1
+        AND billing_period=to_char(now() AT TIME ZONE 'UTC','YYYY-MM')`,[provider])).rows[0];
+    if(ledger&&ledger.credit_limit_units!==null
+      &&Number(ledger.reserved_units)+Number(ledger.used_units)>=Number(ledger.credit_limit_units))
+      return{eligible:false,reason:'BUDGET_STILL_EXHAUSTED',provider};
+    return{eligible:true,provider};
+  }
+
+  async claimPendingResumeDispatches(limit=10){
+    const result=await this.pool.query(`WITH selected AS (
+      SELECT id FROM leadgen.auto_evidence_resume_outbox
+      WHERE dispatch_state IN ('PENDING','RETRY_PENDING') AND (next_attempt_at IS NULL OR next_attempt_at<=now())
+      ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1
+    ) UPDATE leadgen.auto_evidence_resume_outbox o SET dispatch_state='PROCESSING',
+      dispatch_attempt_count=dispatch_attempt_count+1,next_attempt_at=now()+interval '2 minutes',updated_at=now()
+      FROM selected s WHERE o.id=s.id RETURNING o.*`,[Math.max(1,Math.min(100,Number(limit)||10))]);
+    const rows=[];
+    for(const outbox of result.rows){
+      const task=await this.getTask(outbox.task_id);
+      rows.push({...outbox,task});
+    }
+    return rows;
+  }
+
+  async markResumeDispatched(outboxId,queueJobId){
+    await this.pool.query(`UPDATE leadgen.auto_evidence_resume_outbox SET dispatch_state='DISPATCHED',
+      queue_job_id=$2,next_attempt_at=NULL,last_error_code=NULL,dispatched_at=coalesce(dispatched_at,now()),updated_at=now()
+      WHERE id=$1`,[outboxId,String(queueJobId||'')||null]);
+  }
+
+  async markResumeDispatchRetry(outboxId,errorCode){
+    await this.pool.query(`UPDATE leadgen.auto_evidence_resume_outbox SET dispatch_state='RETRY_PENDING',
+      last_error_code=$2,next_attempt_at=now()+interval '30 seconds',updated_at=now() WHERE id=$1`,[
+      outboxId,cleanCode(errorCode||'QUEUE_UNAVAILABLE')
+    ]);
+  }
+
   async resumeBudgetPaused(taskId,{scheduleKey,operatorIdentity,operatorRole,approvalReference}={}) {
     const client = await this.pool.connect();
     try {
@@ -388,17 +767,21 @@ export class AutoEvidenceRepository {
         await client.query('COMMIT');
         return { task, resumed: false };
       }
-      if (Number(task.attempt_count || 0) >= Number(task.max_attempts || 0)) {
-        const error = new Error('Auto-evidence attempts are exhausted');
-        error.code = 'AUTO_EVIDENCE_ATTEMPTS_EXHAUSTED';
-        error.status = 409;
-        throw error;
+      const eligibility=await this.budgetResumeEligibility(client,task);
+      if(!eligibility.eligible){
+        await client.query('COMMIT');
+        return{task,resumed:false,still_budget_paused:eligibility.reason==='BUDGET_STILL_EXHAUSTED',
+          blocked_by_business_gate:['SUPPRESSED','HISTORICAL_CUSTOMER'].includes(eligibility.reason),
+          reason:eligibility.reason};
       }
+      const reusable=await this.findReusableBudgetContinuation(client,task);
       const updated = await client.query(`UPDATE leadgen.auto_evidence_tasks
         SET task_status='RETRY_SCHEDULED',budget_state='AVAILABLE',technical_blocker=NULL,retry_at=now(),
-          attempt_count=attempt_count+1,updated_at=now()
+          strategy_state='STRATEGY_RUNNING',checkpoint_replay_count=greatest(checkpoint_replay_count+1,
+            coalesce((SELECT max(a.checkpoint_replay_count)+1 FROM leadgen.auto_evidence_task_attempts a
+              WHERE a.task_id=leadgen.auto_evidence_tasks.id),1)),updated_at=now()
         WHERE id=$1 RETURNING *`, [taskId]);
-      const resumedTask=updated.rows[0];
+      let resumedTask=updated.rows[0];
       const event=await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
         (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
          outcome,input_digest,operator_identity,operator_role,approval_reference,occurred_at)
@@ -410,15 +793,11 @@ export class AutoEvidenceRepository {
       if(!event.rowCount)throw Object.assign(new Error('Controlled budget resume audit was not appended'),{
         code:'AUTO_EVIDENCE_CONTROLLED_AUDIT_REQUIRED',status:409
       });
-      const researchJobId=['DISCOVERING_SOURCES','CRAWLING','EXTRACTING','NORMALIZING_CATEGORY','VALIDATING_EVIDENCE']
-        .includes(resumedTask.current_stage) ? resumedTask.category_research_job_id : resumedTask.contact_research_job_id;
-      if(researchJobId){
-        await client.query(`UPDATE leadgen.research_jobs SET status='FAILED',completed_at=now(),
-          last_error='Budget resume requested from the persisted auto-evidence checkpoint',stop_reason_code=NULL
-          WHERE id=$1 AND status IN ('PARTIAL','COMPLETE','COMPLETED','PERSISTING','FAILED')`,[researchJobId]);
-      }
+      const continuation=reusable?{...reusable,task:resumedTask}
+        :await this.createBudgetResumeContinuation(client,resumedTask,task);
+      resumedTask=continuation.task;
       await client.query('COMMIT');
-      return { task: resumedTask, resumed: true, schedule_event_id:event.rows[0].id };
+      return { task: resumedTask, resumed: true, schedule_event_id:event.rows[0].id,...continuation };
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch {}
       throw error;
@@ -427,17 +806,93 @@ export class AutoEvidenceRepository {
     }
   }
 
+  async autoResumeBudgetPaused(taskId,{scheduleKey,ignoreInternalTavilyLimit=false}={}) {
+    const client=await this.pool.connect();
+    try{
+      await client.query('BEGIN');
+      const locked=await client.query(`SELECT * FROM leadgen.auto_evidence_tasks WHERE id=$1 FOR UPDATE`,[taskId]);
+      const task=locked.rows[0];
+      if(!task)throw Object.assign(new Error('Auto-evidence task not found'),{code:'AUTO_EVIDENCE_TASK_NOT_FOUND'});
+      if(task.task_status!=='BUDGET_PAUSED'){
+        await client.query('COMMIT');
+        return{task,resumed:false};
+      }
+      const eligibility=await this.budgetResumeEligibility(client,task,{ignoreInternalTavilyLimit});
+      if(!eligibility.eligible){
+        await client.query('COMMIT');
+        return{task,resumed:false,still_budget_paused:eligibility.reason==='BUDGET_STILL_EXHAUSTED',
+          blocked_by_business_gate:['SUPPRESSED','HISTORICAL_CUSTOMER'].includes(eligibility.reason),
+          reason:eligibility.reason};
+      }
+      const reusable=await this.findReusableBudgetContinuation(client,task);
+      const updated=await client.query(`UPDATE leadgen.auto_evidence_tasks
+        SET task_status='RETRY_SCHEDULED',budget_state='AVAILABLE',technical_blocker=NULL,retry_at=now(),
+          strategy_state='STRATEGY_RUNNING',checkpoint_replay_count=greatest(checkpoint_replay_count+1,
+            coalesce((SELECT max(a.checkpoint_replay_count)+1 FROM leadgen.auto_evidence_task_attempts a
+              WHERE a.task_id=leadgen.auto_evidence_tasks.id),1)),updated_at=now()
+        WHERE id=$1 AND task_status='BUDGET_PAUSED'
+          AND ($2::boolean OR updated_at<date_trunc('day',now())) RETURNING *`,[
+        taskId,ignoreInternalTavilyLimit===true]);
+      if(!updated.rowCount){
+        await client.query('COMMIT');
+        return{task,resumed:false};
+      }
+      let resumedTask=updated.rows[0];
+      const event=await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
+        (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
+         outcome,input_digest,occurred_at)
+        VALUES ('RECONCILIATION',$1,$2,$3,$4,$5,$6,'SCHEDULED',$7,now())
+        ON CONFLICT (schedule_key) DO NOTHING RETURNING id`,[
+        scheduleKey,resumedTask.id,resumedTask.company_id,resumedTask.product_profile,resumedTask.business_blocker,
+        resumedTask.evidence_revision,resumedTask.input_digest
+      ]);
+      if(!event.rowCount)throw Object.assign(new Error('Automatic budget resume audit was not appended'),{
+        code:'AUTO_EVIDENCE_AUTO_RESUME_AUDIT_REQUIRED',status:409
+      });
+      const continuation=reusable?{...reusable,task:resumedTask}
+        :await this.createBudgetResumeContinuation(client,resumedTask,task);
+      resumedTask=continuation.task;
+      await client.query('COMMIT');
+      return{task:resumedTask,resumed:true,schedule_event_id:event.rows[0].id,...continuation};
+    }catch(error){
+      try{await client.query('ROLLBACK');}catch{}
+      throw error;
+    }finally{client.release();}
+  }
+
   async ensureResearchJob(task, kind, { runBudgetCapUnits = 0 } = {}) {
     const normalizedKind = upper(kind);
     const column = normalizedKind === 'CATEGORY' ? 'category_research_job_id' : 'contact_research_job_id';
     const jobType = normalizedKind === 'CATEGORY' ? 'CATEGORY_PROCUREMENT_ENRICHMENT' : 'DECISION_MAKER_ENRICHMENT';
-    if (task[column]) return { id: task[column], job_type: jobType, replay: true };
-    const idempotencyKey = `auto-evidence:${task.execution_key}:${normalizedKind.toLowerCase()}`.slice(0, 200);
+    const strategyAttempt=Math.max(1,Number(task.strategy_attempt_count??task.attempt_count??0));
+    if(task[column]){
+      const canonical=await this.pool.query(`SELECT * FROM leadgen.research_jobs WHERE id=$1`,[task[column]]);
+      const canonicalJob=canonical.rows[0]||null;
+      if(canonicalJob?.resumed_from_research_job_id&&(
+        ['QUEUED','RUNNING','DISCOVERING','CRAWLING','EXTRACTING','QUALIFYING','SCORING'].includes(canonicalJob.status)
+        || (['COMPLETED','EVIDENCE_EXHAUSTED'].includes(task.task_status)&&canonicalJob.status==='COMPLETED')
+      ))return{...canonicalJob,job_type:jobType,replay:true,checkpoint_continuation:true};
+      if(Number(task.checkpoint_replay_count||0)>0){
+        const continuation=await this.pool.query(`SELECT * FROM leadgen.research_jobs
+          WHERE id=$1 AND resume_checkpoint_replay_count=$2 AND resume_stage=$3
+            AND resumed_from_research_job_id IS NOT NULL`,[
+          task[column],Number(task.checkpoint_replay_count),task.current_stage
+        ]);
+        if(continuation.rowCount)return{...continuation.rows[0],job_type:jobType,replay:true,checkpoint_continuation:true};
+      }
+      const linked=await this.pool.query(`SELECT 1 FROM leadgen.auto_evidence_task_attempts
+        WHERE task_id=$1 AND strategy_attempt_number=$2 AND research_job_id=$3
+          AND event_type='SETTLED' LIMIT 1`,[task.id,strategyAttempt,task[column]]);
+      if(linked.rowCount)return{id:task[column],job_type:jobType,replay:true};
+    }
+    const idempotencyKey = `auto-evidence:${task.execution_key}:${normalizedKind.toLowerCase()}:strategy:${strategyAttempt}`.slice(0, 200);
     const requestDigest = digest({
       task_id: task.id,
       company_id: task.company_id,
       product_profile: task.product_profile,
       evidence_revision: task.evidence_revision,
+      strategy_attempt_number:strategyAttempt,
+      strategy_code:task.current_strategy_code||null,
       job_type: jobType
     });
     const result = await this.pool.query(`INSERT INTO leadgen.research_jobs
@@ -458,13 +913,15 @@ export class AutoEvidenceRepository {
     const job = result.rows[0];
     if (!job) throw Object.assign(new Error('Auto-evidence research job could not be created'), { code: 'AUTO_EVIDENCE_RESEARCH_JOB_CREATE_FAILED' });
     await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET ${column}=$2,updated_at=now()
-      WHERE id=$1 AND (${column} IS NULL OR ${column}=$2)`, [task.id, job.id]);
+      WHERE id=$1`, [task.id, job.id]);
     return { ...job, replay: false };
   }
 
-  async getSettledAttempt(taskId, attemptNumber, stage) {
+  async getSettledAttempt(taskId,attemptNumber,stage,providerRetryCount=0,workerRetryCount=0,checkpointReplayCount=0) {
     const result = await this.pool.query(`SELECT * FROM leadgen.auto_evidence_task_attempts
-      WHERE task_id=$1 AND attempt_number=$2 AND stage=$3 AND event_type='SETTLED'`, [taskId, attemptNumber, stage]);
+      WHERE task_id=$1 AND strategy_attempt_number=$2 AND stage=$3 AND provider_retry_count=$4
+        AND worker_retry_count=$5 AND checkpoint_replay_count=$6 AND event_type='SETTLED'`,
+      [taskId,attemptNumber,stage,providerRetryCount,workerRetryCount,checkpointReplayCount]);
     return result.rows[0] || null;
   }
 
@@ -479,10 +936,15 @@ export class AutoEvidenceRepository {
         await client.query('COMMIT');
         return { task: current, started: false };
       }
-      const attemptNumber = Math.max(1, Number(current.attempt_count || 0));
+      const attemptNumber = Math.max(1, Number(current.strategy_attempt_count || 0));
+      let providerRetry=Number(current.provider_retry_count||0);
+      let workerRetry=Number(current.worker_retry_count||0);
+      const checkpointReplay=Number(current.checkpoint_replay_count||0);
       const events = await client.query(`SELECT event_type,occurred_at FROM leadgen.auto_evidence_task_attempts
-        WHERE task_id=$1 AND attempt_number=$2 AND stage=$3 AND event_type IN ('STARTED','SETTLED')
-        ORDER BY occurred_at DESC`, [current.id, attemptNumber, stage]);
+        WHERE task_id=$1 AND strategy_attempt_number=$2 AND stage=$3 AND provider_retry_count=$4
+          AND worker_retry_count=$5 AND checkpoint_replay_count=$6
+          AND event_type IN ('STARTED','SETTLED') ORDER BY occurred_at DESC`,
+        [current.id,attemptNumber,stage,providerRetry,workerRetry,checkpointReplay]);
       if (events.rows.some(row => row.event_type === 'SETTLED')) {
         await client.query('COMMIT');
         return { task: current, started: false, settled: true };
@@ -495,16 +957,23 @@ export class AutoEvidenceRepository {
         await client.query('COMMIT');
         return { task: current, started: false, retryAt: leaseUntil };
       }
-      if (!started) {
-        await client.query(`INSERT INTO leadgen.auto_evidence_task_attempts
-          (task_id,company_id,attempt_number,stage,event_type,outcome_status,input_digest,idempotency_key,occurred_at)
-          VALUES ($1,$2,$3,$4,'STARTED',NULL,$5,$6,now())`, [
-          current.id, current.company_id, attemptNumber, stage, inputDigest,
-          `auto-evidence:${current.id}:${attemptNumber}:${stage}:started`
-        ]);
+      if(started){
+        workerRetry+=1;
+        current=(await client.query(`UPDATE leadgen.auto_evidence_tasks SET worker_retry_count=$2,
+          updated_at=now() WHERE id=$1 RETURNING *`,[current.id,workerRetry])).rows[0];
       }
+      await client.query(`INSERT INTO leadgen.auto_evidence_task_attempts
+        (task_id,company_id,attempt_number,strategy_code,strategy_version,strategy_attempt_number,
+         query_fingerprint,locale,source_class,provider_retry_count,worker_retry_count,checkpoint_replay_count,stage,event_type,
+         outcome_status,input_digest,idempotency_key,started_at,occurred_at)
+        VALUES ($1,$2,$3,$4,$5,$3,$6,$7,$8,$9,$10,$11,$12,'STARTED',NULL,$13,$14,now(),now())`, [
+        current.id,current.company_id,attemptNumber,current.current_strategy_code,current.strategy_version,
+        current.current_query_fingerprint,current.current_strategy_locale,current.current_source_class,
+        providerRetry,workerRetry,checkpointReplay,stage,inputDigest,
+        `auto-evidence:${current.id}:${attemptNumber}:${current.current_strategy_code}:${stage}:p${providerRetry}:w${workerRetry}:r${checkpointReplay}:started`
+      ]);
       const updated = await client.query(`UPDATE leadgen.auto_evidence_tasks SET
-        task_status='RUNNING',current_stage=$2,attempt_count=greatest(attempt_count,1),
+        task_status='RUNNING',current_stage=$2,attempt_count=strategy_attempt_count,
         technical_blocker=NULL,retry_at=NULL,updated_at=now() WHERE id=$1 RETURNING *`, [current.id, stage]);
       current = updated.rows[0];
       await client.query('COMMIT');
@@ -525,25 +994,39 @@ export class AutoEvidenceRepository {
        category_procurement_match_result_id,product_opportunity_result_id,cooperation_feasibility_result_id,
        decision_maker_id,decision_maker_contact_id,contact_verification_event_id,
        business_opportunity_decision_snapshot_id,technical_blocker,retry_at,input_digest,output_digest,
-       idempotency_key,occurred_at)
-      VALUES ($1,$2,$3,$4,'SETTLED',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,now())
+       idempotency_key,strategy_code,strategy_version,strategy_attempt_number,query_fingerprint,locale,source_class,
+       new_url_count,usable_evidence_count,named_buyer_candidate_count,valid_contact_count,provider_retry_count,
+       worker_retry_count,checkpoint_replay_count,started_at,finished_at,terminal_reason,occurred_at)
+      VALUES ($1,$2,$3,$4,'SETTLED',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+        $23,$24,$3,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,now(),now(),$35,now())
       ON CONFLICT (idempotency_key) DO NOTHING`, [
-      task.id, task.company_id, task.attempt_count, stage, outcome, result.research_job_id || null,
+      task.id,task.company_id,task.strategy_attempt_count,stage,outcome,result.research_job_id||null,
       refs.provider_usage_event_id, refs.prospect_category_source_id, refs.prospect_category_observation_id,
       refs.buyer_business_model_result_id, refs.category_procurement_match_result_id,
       refs.product_opportunity_result_id, refs.cooperation_feasibility_result_id,
       refs.decision_maker_id, refs.decision_maker_contact_id, refs.contact_verification_event_id,
       refs.business_opportunity_decision_snapshot_id, technicalBlocker, retryAt, inputDigest, outputDigest,
-      `auto-evidence:${task.id}:${task.attempt_count}:${stage}:settled`
+      `auto-evidence:${task.id}:${task.strategy_attempt_count}:${task.current_strategy_code}:${stage}:p${task.provider_retry_count||0}:w${task.worker_retry_count||0}:r${task.checkpoint_replay_count||0}:settled`,
+      task.current_strategy_code,task.strategy_version,task.current_query_fingerprint,task.current_strategy_locale,
+      task.current_source_class,Number(result.new_url_count||0),Number(result.usable_evidence_count||0),
+      Number(result.named_buyer_candidate_count||0),Number(result.valid_contact_count||0),
+      Number(task.provider_retry_count||0),Number(task.worker_retry_count||0),Number(task.checkpoint_replay_count||0),
+      technicalBlocker||outcome
     ]);
   }
 
   async recordBundledStage(task, stage, result, inputDigest, outputDigest) {
-    const startedKey = `auto-evidence:${task.id}:${task.attempt_count}:${stage}:started`;
+    const startedKey = `auto-evidence:${task.id}:${task.strategy_attempt_count}:${task.current_strategy_code}:${stage}:p${task.provider_retry_count||0}:w${task.worker_retry_count||0}:r${task.checkpoint_replay_count||0}:started`;
     await this.pool.query(`INSERT INTO leadgen.auto_evidence_task_attempts
-      (task_id,company_id,attempt_number,stage,event_type,outcome_status,input_digest,idempotency_key,occurred_at)
-      VALUES ($1,$2,$3,$4,'STARTED',NULL,$5,$6,now()) ON CONFLICT (idempotency_key) DO NOTHING`, [
-      task.id, task.company_id, task.attempt_count, stage, inputDigest, startedKey
+      (task_id,company_id,attempt_number,strategy_code,strategy_version,strategy_attempt_number,query_fingerprint,
+       locale,source_class,provider_retry_count,worker_retry_count,checkpoint_replay_count,stage,event_type,outcome_status,input_digest,
+       idempotency_key,started_at,occurred_at)
+      VALUES ($1,$2,$3,$4,$5,$3,$6,$7,$8,$9,$10,$11,$12,'STARTED',NULL,$13,$14,now(),now())
+      ON CONFLICT (idempotency_key) DO NOTHING`, [
+      task.id,task.company_id,task.strategy_attempt_count,task.current_strategy_code,task.strategy_version,
+      task.current_query_fingerprint,task.current_strategy_locale,task.current_source_class,
+      Number(task.provider_retry_count||0),Number(task.worker_retry_count||0),Number(task.checkpoint_replay_count||0),
+      stage,inputDigest,startedKey
     ]);
     await this.settleStage(task, stage, 'COMPLETED', result, inputDigest, outputDigest);
   }
@@ -551,7 +1034,7 @@ export class AutoEvidenceRepository {
   async completeTask(taskId, cooldownUntil) {
     const result = await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET task_status='COMPLETED',
       current_stage='REFRESHING_DECISION',technical_blocker=NULL,retry_at=NULL,cooldown_until=$2,
-      completed_at=now(),updated_at=now() WHERE id=$1 RETURNING *`, [taskId, cooldownUntil]);
+      strategy_state='RESOLVED',completed_at=now(),updated_at=now() WHERE id=$1 RETURNING *`, [taskId, cooldownUntil]);
     return result.rows[0];
   }
 
@@ -559,7 +1042,10 @@ export class AutoEvidenceRepository {
     budgetState = 'AVAILABLE', cooldownUntil = null, completed = false } = {}) {
     const result = await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET task_status=$2,
       technical_blocker=$3,retry_at=$4,budget_state=$5,
-      attempt_count=CASE WHEN $2='RETRY_SCHEDULED' THEN least(max_attempts,attempt_count+1) ELSE attempt_count END,
+      attempt_count=strategy_attempt_count,
+      strategy_state=CASE WHEN $2='BUDGET_PAUSED' THEN 'BUDGET_PAUSED'
+        WHEN $2='RETRY_SCHEDULED' AND $3='TEMPORARY_PROVIDER_ERROR' THEN 'TEMPORARY_ERROR'
+        ELSE strategy_state END,
       cooldown_until=coalesce($6,cooldown_until),completed_at=CASE WHEN $7 THEN now() ELSE NULL END,updated_at=now()
       WHERE id=$1 RETURNING *`, [
       taskId, status, technicalBlocker, retryAt, budgetState, cooldownUntil, completed
@@ -569,7 +1055,7 @@ export class AutoEvidenceRepository {
 
   async openException(task, { exceptionType, technicalBlocker, inputDigest } = {}) {
     const exceptionKey = `auto-evidence:exception:${task.id}:${exceptionType}`;
-    const idempotencyKey = `${exceptionKey}:opened:${task.attempt_count}`;
+    const idempotencyKey = `${exceptionKey}:opened:${task.strategy_attempt_count??task.attempt_count}`;
     const result = await this.pool.query(`INSERT INTO leadgen.human_evidence_exceptions
       (task_id,company_id,product_profile,exception_key,event_type,exception_type,business_blocker,
        input_digest,idempotency_key,occurred_at)
@@ -578,7 +1064,7 @@ export class AutoEvidenceRepository {
       task.business_blocker, inputDigest, idempotencyKey
     ]);
     await this.pool.query(`UPDATE leadgen.auto_evidence_tasks SET task_status='HUMAN_REVIEW_REQUIRED',
-      technical_blocker=$2,retry_at=NULL,updated_at=now() WHERE id=$1`, [task.id, technicalBlocker]);
+      strategy_state='HUMAN_REVIEW_REQUIRED',technical_blocker=$2,retry_at=NULL,updated_at=now() WHERE id=$1`, [task.id, technicalBlocker]);
     return result.rows[0] || null;
   }
 
@@ -593,10 +1079,46 @@ export class AutoEvidenceRepository {
     return { task_statuses: tasks.rows, active_stages: stages.rows, latest_schedule: schedule.rows[0] || null };
   }
 
+  async tavilyMetrics() {
+    const result=await this.pool.query(`WITH day_events AS (
+      SELECT * FROM leadgen.provider_usage_events WHERE provider='TAVILY'
+        AND created_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+    ), attempt_metrics AS (
+      SELECT coalesce(sum(usable_evidence_count),0)::int usable,
+        coalesce(sum(named_buyer_candidate_count),0)::int buyers,
+        coalesce(sum(valid_contact_count),0)::int contacts
+      FROM leadgen.auto_evidence_task_attempts WHERE event_type='SETTLED'
+        AND occurred_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+    ) SELECT coalesce(sum(e.used_units),0)::int units_used_today,
+      coalesce(sum(e.used_units) FILTER(WHERE e.budget_pool='DISCOVERY'),0)::int discovery_units_used_today,
+      coalesce(sum(e.used_units) FILTER(WHERE e.budget_pool='EVIDENCE'),0)::int evidence_units_used_today,
+      count(DISTINCT e.company_id)::int companies_attempted_today,
+      (SELECT count(*)::int FROM leadgen.auto_evidence_task_attempts a WHERE a.event_type='STARTED'
+        AND a.strategy_attempt_number IS NOT NULL
+        AND a.occurred_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') strategies_attempted_today,
+      (SELECT usable FROM attempt_metrics) new_usable_evidence_today,
+      (SELECT buyers FROM attempt_metrics) named_buyer_candidates_today,
+      (SELECT contacts FROM attempt_metrics) valid_contacts_today,
+      (SELECT count(*)::int FROM leadgen.auto_evidence_tasks t WHERE t.task_status='EVIDENCE_EXHAUSTED'
+        AND t.completed_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') companies_exhausted,
+      (SELECT count(*)::int FROM leadgen.auto_evidence_tasks t WHERE t.cooldown_until>now()) cooldown_count,
+      (SELECT coalesce(sum(strategy_duplicate_prevented_count),0)::int FROM leadgen.auto_evidence_tasks)
+        strategy_duplicate_prevented_count
+    FROM day_events e`);
+    const row=result.rows[0]||{};
+    const evidenceUnits=Number(row.evidence_units_used_today||0);
+    const ratio=value=>Number(value)>0?Number((evidenceUnits/Number(value)).toFixed(2)):null;
+    return {...row,units_per_usable_evidence:ratio(row.new_usable_evidence_today),
+      units_per_named_buyer_candidate:ratio(row.named_buyer_candidates_today),
+      units_per_valid_contact:ratio(row.valid_contacts_today)};
+  }
+
   async listTasks({ limit = 50 } = {}) {
     const result = await this.pool.query(`SELECT t.id,t.company_id,c.company_name,c.country_code market,t.product_profile,
       t.business_blocker,t.evidence_revision,t.task_status,t.current_stage,t.automation_owner,t.human_owner,
-      t.technical_blocker,t.attempt_count,t.max_attempts,t.budget_state,t.retry_at,t.cooldown_until,
+      t.technical_blocker,t.attempt_count,t.strategy_attempt_count,t.max_attempts,t.current_strategy_code,
+      t.strategy_version,t.strategy_state,t.provider_retry_count,t.worker_retry_count,t.checkpoint_replay_count,
+      t.budget_state,t.retry_at,t.cooldown_until,
       t.category_research_job_id,t.contact_research_job_id,t.created_at,t.updated_at,t.completed_at,
       CASE WHEN t.task_status='HUMAN_REVIEW_REQUIRED' THEN 'HUMAN_REVIEW' ELSE 'AUTO_ENRICHMENT' END task_class,
       (t.task_status='HUMAN_REVIEW_REQUIRED') human_review_required
@@ -633,15 +1155,40 @@ export class AutoEvidenceOrchestrator {
     return { enabled: this.config.enabled, activation_required: !this.config.enabled, outbound_allowed: false, ...this.config };
   }
 
-  async dispatchTask(task, stage = 'DISCOVERING_SOURCES', { startAfter = null, singletonSuffix = '' } = {}) {
+  async dispatchBudgetResume(resume){
+    try{
+      const dispatch=await this.dispatchTask(resume.task,resume.task.current_stage);
+      if(typeof this.repository.markResumeDispatched==='function')
+        await this.repository.markResumeDispatched(resume.resume_outbox_id||resume.id,dispatch.queue_job_id);
+      return{dispatch,error:null};
+    }catch(error){
+      if(typeof this.repository.markResumeDispatchRetry==='function')
+        await this.repository.markResumeDispatchRetry(resume.resume_outbox_id||resume.id,error?.code||'QUEUE_UNAVAILABLE');
+      return{dispatch:null,error:{code:cleanCode(error?.code||'QUEUE_UNAVAILABLE')}};
+    }
+  }
+
+  async dispatchTask(task, stage = 'DISCOVERING_SOURCES', {
+    startAfter = null, singletonSuffix = '', attemptNumberOverride = null
+  } = {}) {
     const queueName = STAGE_QUEUE[stage];
     if (!queueName) throw Object.assign(new Error(`No auto-evidence queue for stage ${stage}`), { code: 'AUTO_EVIDENCE_STAGE_INVALID' });
-    const attemptNumber = Math.max(1, Number(task.attempt_count || 0));
-    const singletonKey = `auto-evidence:${task.execution_key}:${attemptNumber}:${stage}${singletonSuffix?`:${singletonSuffix}`:''}`;
+    const attemptNumber = attemptNumberOverride == null
+      ?Math.max(1,Number(task.strategy_attempt_count??task.attempt_count??0))
+      :Math.max(1,Number(attemptNumberOverride));
+    const providerRetry=Number(task.provider_retry_count||0);
+    const workerRetry=Number(task.worker_retry_count||0);
+    const checkpointReplay=Number(task.checkpoint_replay_count||0);
+    const singletonKey = `auto-evidence:${task.execution_key}:${attemptNumber}:${task.current_strategy_code||'ready'}:${stage}:p${providerRetry}:w${workerRetry}:r${checkpointReplay}${singletonSuffix?`:${singletonSuffix}`:''}`;
     const queueJobId = await this.queue.enqueue(queueName, {
       task_id: task.id,
       execution_key: task.execution_key,
       attempt_number: attemptNumber,
+      strategy_attempt_number:attemptNumber,
+      strategy_code:task.current_strategy_code||null,
+      provider_retry_number:providerRetry,
+      worker_retry_number:workerRetry,
+      checkpoint_replay_number:checkpointReplay,
       stage
     }, { singletonKey, startAfter });
     return { queue: queueName, queue_job_id: queueJobId };
@@ -713,15 +1260,60 @@ export class AutoEvidenceOrchestrator {
       return {status:'RECONCILED',enabled:true,selected:0,targeted_companies:0,scheduled:0,
         deduplicated:0,skipped_cooldown:0,target_resolution:'EMPTY',results:[]};
     }
-    const candidates = await this.repository.selectCandidates({
-      limit,
+    const selectionOptions={
       marketCodes: Array.isArray(input.market_codes) ? input.market_codes : [],
       productProfiles: Array.isArray(input.product_profiles) ? input.product_profiles : [],
       companyIds,
       sourceTtlDays:this.config.sourceTtlDays
-    });
+    };
     const bucket = String(input.reconcile_bucket || Math.floor(this.now().getTime() / (this.config.reconcileMinutes * 60000)));
+    const pendingResumeDispatches=typeof this.repository.claimPendingResumeDispatches==='function'
+      ?await this.repository.claimPendingResumeDispatches(limit):[];
     const results = [];
+    for(const pending of pendingResumeDispatches){
+      const outcome=await this.dispatchBudgetResume({...pending,resume_outbox_id:pending.id});
+      results.push({status:outcome.dispatch?'BUDGET_RESUME_REDISPATCHED':'BUDGET_RESUME_DISPATCH_RETRY',
+        task_id:pending.task_id,dispatch:outcome.dispatch,error:outcome.error});
+    }
+    const remainingAfterOutbox=Math.max(0,limit-pendingResumeDispatches.length);
+    const dueBudgetResumes=typeof this.repository.selectDueBudgetResumes==='function'
+      ?await this.repository.selectDueBudgetResumes({...selectionOptions,limit:remainingAfterOutbox,
+        allowCurrentWindow:!this.config.tavilyInternalLimitsEnabled}):[];
+    for(const task of dueBudgetResumes){
+      try{
+        const resumed=await this.repository.autoResumeBudgetPaused(task.id,{
+          scheduleKey:`auto-evidence:budget-auto-resume:${task.id}:${bucket}`,
+          ignoreInternalTavilyLimit:!this.config.tavilyInternalLimitsEnabled
+        });
+        const outcome=resumed.resumed?await this.dispatchBudgetResume(resumed):{dispatch:null,error:null};
+        this.audit('AUTO_EVIDENCE_BUDGET_AUTO_RESUMED',{
+          task_id:task.id,company_id:task.company_id,product_profile:task.product_profile,resumed:resumed.resumed
+        });
+        results.push({status:outcome.dispatch?'BUDGET_AUTO_RESUMED':outcome.error?'BUDGET_RESUME_DISPATCH_RETRY':resumed.task.task_status,
+          task_id:task.id,continuation_research_job_id:resumed.continuation_research_job_id||null,
+          resume_outbox_id:resumed.resume_outbox_id||null,dispatch:outcome.dispatch,error:outcome.error});
+      }catch(error){
+        results.push({status:'BUDGET_RESUME_ERROR',task_id:task.id,
+          error:{code:cleanCode(error?.code||'AUTO_EVIDENCE_BUDGET_RESUME_FAILED')}});
+      }
+    }
+    const remainingAfterBudget=Math.max(0,remainingAfterOutbox-dueBudgetResumes.length);
+    const dueRetries=typeof this.repository.selectDueFairnessRetries==='function'
+      ?await this.repository.selectDueFairnessRetries({...selectionOptions,limit:remainingAfterBudget}):[];
+    for(const task of dueRetries){
+      const nextAttemptNumber=Number(task.strategy_attempt_count||0)+1;
+      const dispatch=await this.dispatchTask(task,'DISCOVERING_SOURCES',{
+        singletonSuffix:`fairness:${bucket}`,attemptNumberOverride:nextAttemptNumber
+      });
+      this.audit('AUTO_EVIDENCE_FAIRNESS_RESUMED',{
+        task_id:task.id,company_id:task.company_id,product_profile:task.product_profile,
+        strategy_attempt_number:nextAttemptNumber
+      });
+      results.push({status:'FAIRNESS_RESUMED',task_id:task.id,dispatch});
+    }
+    const candidates = await this.repository.selectCandidates({
+      ...selectionOptions,limit:Math.max(0,remainingAfterBudget-dueRetries.length)
+    });
     for (const candidate of candidates) {
       results.push(await this.scheduleEvent({
         ...candidate,
@@ -730,9 +1322,14 @@ export class AutoEvidenceOrchestrator {
       }));
     }
     return {
-      status: 'RECONCILED', enabled: true, selected: candidates.length,
+      status: results.some(item=>item.status==='BUDGET_RESUME_ERROR')?'PARTIAL':'RECONCILED', enabled: true,
+      selected: candidates.length+dueRetries.length+dueBudgetResumes.length+pendingResumeDispatches.length,
       targeted_companies:companyIds.length,
       scheduled: results.filter(item => item.status === 'SCHEDULED').length,
+      budget_auto_resumed:results.filter(item=>item.status==='BUDGET_AUTO_RESUMED').length,
+      budget_resume_redispatched:results.filter(item=>item.status==='BUDGET_RESUME_REDISPATCHED').length,
+      budget_resume_errors:results.filter(item=>item.status==='BUDGET_RESUME_ERROR').length,
+      fairness_resumed:results.filter(item=>item.status==='FAIRNESS_RESUMED').length,
       deduplicated: results.filter(item => item.status === 'DEDUPLICATED').length,
       skipped_cooldown: results.filter(item => item.status === 'SKIPPED_COOLDOWN').length,
       results
@@ -759,9 +1356,10 @@ export class AutoEvidenceOrchestrator {
         operatorIdentity,operatorRole,approvalReference
       });
       const persistedOverride=resumed.resumed||await this.repository.hasControlledOverride(resumed.task.id);
-      const dispatch = persistedOverride&&resumed.task.task_status==='RETRY_SCHEDULED'
-        ? await this.dispatchTask(resumed.task, resumed.task.current_stage)
-        : null;
+      const outcome = persistedOverride&&resumed.task.task_status==='RETRY_SCHEDULED'
+        ? await this.dispatchBudgetResume(resumed)
+        : {dispatch:null,error:null};
+      const dispatch=outcome.dispatch;
       this.audit('AUTO_EVIDENCE_BUDGET_RESUME', {
         operator_identity: operatorIdentity, operator_role: operatorRole,
         approval_reference: approvalReference, task_id: resumed.task.id, resumed: resumed.resumed
@@ -769,9 +1367,11 @@ export class AutoEvidenceOrchestrator {
       return {
         status: dispatch ? 'BUDGET_RESUME_QUEUED' : resumed.task.task_status,
         enabled: this.config.enabled, operator_override: true,
-        task_id: resumed.task.id, stage: resumed.task.current_stage, attempt_number: resumed.task.attempt_count,
+        task_id: resumed.task.id, stage: resumed.task.current_stage,
+        attempt_number: resumed.task.strategy_attempt_count??resumed.task.attempt_count,
         schedule_event_id:resumed.schedule_event_id||null,
-        dispatch
+        continuation_research_job_id:resumed.continuation_research_job_id||null,
+        resume_outbox_id:resumed.resume_outbox_id||null,dispatch,error:outcome.error
       };
     }
     const limit = boundedInt(input.batch_size, { min: 1, max: this.config.batchSize, fallback: this.config.batchSize });
@@ -805,25 +1405,35 @@ export class AutoEvidenceOrchestrator {
   }
 
   async advance(task, stage, outcome, { retryAt = null } = {}) {
-    if (outcome === 'COMPLETED') {
-      const nextStage = STAGE_NEXT[stage];
-      if (!nextStage) {
-        const cooldownUntil = new Date(this.now().getTime() + this.config.cooldownHours * 3600000);
-        const completed = await this.repository.completeTask(task.id, cooldownUntil);
-        return { status: 'COMPLETED', task: completed, dispatch: null };
+    if (['COMPLETED','NEW_EVIDENCE_FOUND','NO_NEW_EVIDENCE','EVIDENCE_EXHAUSTED'].includes(outcome)) {
+      const nextStage=task.current_strategy_code?strategyNextStage(task.current_strategy_code,stage,task):STAGE_NEXT[stage];
+      if(nextStage)return {status:'RUNNING',task,dispatch:await this.dispatchTask(task,nextStage)};
+      if(typeof this.repository.blockerState!=='function'){
+        const completed=await this.repository.completeTask(task.id,null);
+        return {status:'COMPLETED',task:completed,dispatch:null};
       }
-      return { status: 'RUNNING', task, dispatch: await this.dispatchTask(task, nextStage) };
+      const blocker=await this.repository.blockerState(task.id);
+      if(blocker.hard_stop){
+        const stopped=await this.repository.stopIneligible(task.id,blocker.reason);
+        return {status:'CANCELLED',task:stopped,dispatch:null};
+      }
+      if(blocker.responsibility_conflict){
+        await this.repository.openException(task,{exceptionType:'BUYER_RESPONSIBILITY_CONFLICT',
+          technicalBlocker:'BUYER_RESPONSIBILITY_CONFLICT',inputDigest:task.input_digest});
+        return {status:'HUMAN_REVIEW_REQUIRED',task:await this.repository.getTask(task.id),dispatch:null};
+      }
+      if(blocker.resolved){
+        const completed=await this.repository.completeTask(task.id,null);
+        return {status:'COMPLETED',task:completed,dispatch:null};
+      }
+      const yielded=await this.repository.closeCurrentStrategy(task.id,{
+        state:outcome==='NEW_EVIDENCE_FOUND'?'NEW_EVIDENCE_FOUND':'NO_NEW_EVIDENCE'
+      });
+      return {status:'FAIRNESS_YIELDED',task:yielded,dispatch:null};
     }
     if (outcome === 'BUDGET_PAUSED') {
       return { status: 'BUDGET_PAUSED', task: await this.repository.updateTaskOutcome(task.id, {
         status: 'BUDGET_PAUSED', technicalBlocker: 'PROVIDER_BUDGET_PAUSED', budgetState: 'PAUSED'
-      }), dispatch: null };
-    }
-    if (outcome === 'EVIDENCE_EXHAUSTED') {
-      const cooldownUntil = new Date(this.now().getTime() + this.config.cooldownHours * 3600000);
-      return { status: 'EVIDENCE_EXHAUSTED', task: await this.repository.updateTaskOutcome(task.id, {
-        status: 'EVIDENCE_EXHAUSTED', technicalBlocker: null, budgetState: 'NOT_REQUIRED',
-        cooldownUntil, completed: true
       }), dispatch: null };
     }
     if (outcome === 'HUMAN_REVIEW_REQUIRED' || outcome === 'PERMANENT_ERROR') {
@@ -835,17 +1445,10 @@ export class AutoEvidenceOrchestrator {
       });
       return { status: 'HUMAN_REVIEW_REQUIRED', task: await this.repository.getTask(task.id), dispatch: null };
     }
-    const nextAttempt = Number(task.attempt_count || 1) + 1;
-    if (nextAttempt > Number(task.max_attempts || this.config.maxAttempts)) {
-      await this.repository.openException(task, {
-        exceptionType: 'AUTOMATIC_RETRIES_EXHAUSTED',
-        technicalBlocker: 'AUTOMATIC_RETRIES_EXHAUSTED',
-        inputDigest: task.input_digest
-      });
-      return { status: 'HUMAN_REVIEW_REQUIRED', task: await this.repository.getTask(task.id), dispatch: null };
-    }
-    const delaySeconds = Math.min(86400, this.config.retryBaseSeconds * (2 ** Math.max(0, nextAttempt - 2)));
+    const providerRetry=Number(task.provider_retry_count||0)+1;
+    const delaySeconds = Math.min(86400, this.config.retryBaseSeconds * (2 ** Math.max(0, providerRetry - 1)));
     const due = retryAt || new Date(this.now().getTime() + delaySeconds * 1000);
+    if(typeof this.repository.incrementProviderRetry==='function')await this.repository.incrementProviderRetry(task.id);
     const updated = await this.repository.updateTaskOutcome(task.id, {
       status: 'RETRY_SCHEDULED', technicalBlocker: 'TEMPORARY_PROVIDER_ERROR', retryAt: due, budgetState: task.budget_state
     });
@@ -856,7 +1459,7 @@ export class AutoEvidenceOrchestrator {
     if (!AUTO_EVIDENCE_STAGES.includes(stage) || !STAGE_EXECUTOR[stage]) {
       throw Object.assign(new Error('Invalid auto-evidence stage'), { code: 'AUTO_EVIDENCE_STAGE_INVALID' });
     }
-    const task = await this.repository.getTask(payload.task_id);
+    let task = await this.repository.getTask(payload.task_id);
     if (!task) throw Object.assign(new Error('Auto-evidence task not found'), { code: 'AUTO_EVIDENCE_TASK_NOT_FOUND' });
     if (!this.config.enabled && !(await this.repository.hasControlledOverride(task.id))) {
       return { status: 'DISABLED', enabled: false };
@@ -865,7 +1468,39 @@ export class AutoEvidenceOrchestrator {
       throw Object.assign(new Error('Auto-evidence execution key mismatch'), { code: 'AUTO_EVIDENCE_EXECUTION_MISMATCH' });
     }
     if (TERMINAL_TASK_STATES.has(task.task_status)) return { status: task.task_status, idempotent_replay: true, task_id: task.id };
-    const attemptNumber = Math.max(1, Number(task.attempt_count || 0));
+    if(typeof this.repository.blockerState==='function'){
+      const blocker=await this.repository.blockerState(task.id);
+      if(blocker.hard_stop){
+        const stopped=await this.repository.stopIneligible(task.id,blocker.reason);
+        return {status:'CANCELLED',task:stopped,task_id:task.id};
+      }
+      if(blocker.resolved){
+        const completed=await this.repository.completeTask(task.id,null);
+        return {status:'COMPLETED',task:completed,task_id:task.id};
+      }
+      if(blocker.responsibility_conflict){
+        await this.repository.openException(task,{exceptionType:'BUYER_RESPONSIBILITY_CONFLICT',
+          technicalBlocker:'BUYER_RESPONSIBILITY_CONFLICT',inputDigest:task.input_digest});
+        return {status:'HUMAN_REVIEW_REQUIRED',task_id:task.id};
+      }
+    }
+    if(typeof this.repository.prepareNextStrategy==='function'){
+      task=await this.repository.prepareNextStrategy(task.id);
+      if(task?.strategies_exhausted){
+        const exhausted=await this.repository.markExhausted(task.id,null);
+        return {status:'EVIDENCE_EXHAUSTED',task:exhausted,task_id:task.id};
+      }
+      const expectedStage=strategyStartStage(task.strategy||task.current_strategy_code,task);
+      if(expectedStage&&task.current_stage===expectedStage&&stage!==expectedStage){
+        const expectedSettled=await this.repository.getSettledAttempt(task.id,
+          Math.max(1,Number(task.strategy_attempt_count??task.attempt_count??0)),expectedStage,
+          Number(task.provider_retry_count||0),Number(task.worker_retry_count||0),
+          Number(task.checkpoint_replay_count||0));
+        if(!expectedSettled)return {status:'STRATEGY_REDIRECTED',task_id:task.id,deferred:true,
+          dispatch:await this.dispatchTask(task,expectedStage)};
+      }
+    }
+    const attemptNumber = Math.max(1, Number(task.strategy_attempt_count ?? task.attempt_count ?? 0));
     const dispatchedAttempt = payload.attempt_number == null
       ? attemptNumber
       : Math.max(1, Number(payload.attempt_number || 0));
@@ -875,13 +1510,20 @@ export class AutoEvidenceOrchestrator {
     if (dispatchedAttempt > attemptNumber) {
       return { status: task.task_status, task_id: task.id, deferred: true };
     }
-    const settled = await this.repository.getSettledAttempt(task.id, attemptNumber, stage);
+    if(payload.strategy_code&&task.current_strategy_code&&payload.strategy_code!==task.current_strategy_code){
+      return {status:'STALE_STRATEGY',idempotent_replay:true,task_id:task.id};
+    }
+    const settled = await this.repository.getSettledAttempt(task.id,attemptNumber,stage,
+      Number(task.provider_retry_count||0),Number(task.worker_retry_count||0),Number(task.checkpoint_replay_count||0));
     if (settled) {
       const advanced = await this.advance(task, stage, settled.outcome_status, { retryAt: settled.retry_at });
       return { ...advanced, idempotent_replay: true, task_id: task.id };
     }
     const inputDigest = digest({
-      task_id: task.id, execution_key: task.execution_key, attempt_number: attemptNumber,
+      task_id: task.id, execution_key: task.execution_key, strategy_attempt_number: attemptNumber,
+      strategy_code:task.current_strategy_code,query_fingerprint:task.current_query_fingerprint,
+      provider_retry_number:Number(task.provider_retry_count||0),worker_retry_number:Number(task.worker_retry_count||0),
+      checkpoint_replay_number:Number(task.checkpoint_replay_count||0),
       stage, evidence_revision: task.evidence_revision
     });
     const begun = await this.repository.beginStage(task, stage, inputDigest, { leaseMinutes:this.config.stageLeaseMinutes });
@@ -895,7 +1537,10 @@ export class AutoEvidenceOrchestrator {
       return { status: begun.task?.task_status || 'NOT_RUNNABLE', task_id: task.id, deferred: true };
     }
     const current = begun.task;
-    const researchKind = STAGE_RESEARCH_KIND[stage];
+    const strategyStart=task.current_strategy_code?strategyStartStage(task.current_strategy_code,task):null;
+    const researchKind=stage==='REFRESHING_DECISION'&&strategyStart
+      ?(strategyStart==='DISCOVERING_SOURCES'?'CATEGORY':'CONTACT')
+      :STAGE_RESEARCH_KIND[stage];
     const researchJob = await this.repository.ensureResearchJob(current, researchKind, {
       runBudgetCapUnits: this.config.runBudgetCapUnits
     });
@@ -916,7 +1561,8 @@ export class AutoEvidenceOrchestrator {
       result = await executor({
         task: taskWithLineage,
         stage,
-        attempt_number: taskWithLineage.attempt_count,
+        attempt_number: taskWithLineage.strategy_attempt_count??taskWithLineage.attempt_count,
+        strategy:buildStrategyQuery(taskWithLineage.current_strategy_code,taskWithLineage),
         research_job_id: researchJob.id,
         research_job_type: researchJob.job_type,
         config: this.config
@@ -928,7 +1574,9 @@ export class AutoEvidenceOrchestrator {
     } catch (error) {
       result = { error_code: safeTechnicalBlocker(error), research_job_id: researchJob.id };
       blocker = safeTechnicalBlocker(error);
-      outcome = retryableError(error) ? 'RETRYABLE_ERROR' : 'PERMANENT_ERROR';
+      if(error?.code==='PROVIDER_CREDIT_EXHAUSTED')outcome='BUDGET_PAUSED';
+      else outcome = retryableError(error) ? 'TEMPORARY_ERROR' : 'PERMANENT_ERROR';
+      if(error?.retryAfterAt)result.retry_at=error.retryAfterAt;
     }
     const outputDigest = digest({ outcome, blocker, research_job_id: result.research_job_id || null, ...referenceValues(result) });
     if (!result.research_job_id) {
@@ -936,7 +1584,7 @@ export class AutoEvidenceOrchestrator {
       blocker = 'RESEARCH_JOB_LINEAGE_REQUIRED';
     }
     await this.repository.settleStage(taskWithLineage, stage, outcome, result, inputDigest, outputDigest, blocker, result?.retry_at || null);
-    if (stage === 'DISCOVERING_SOURCES' && outcome === 'COMPLETED') {
+    if (stage === 'DISCOVERING_SOURCES' && ['COMPLETED','NEW_EVIDENCE_FOUND','NO_NEW_EVIDENCE'].includes(outcome)) {
       await this.repository.recordBundledStage(taskWithLineage, 'CRAWLING', result, inputDigest, outputDigest);
       await this.repository.recordBundledStage(taskWithLineage, 'EXTRACTING', result, inputDigest, outputDigest);
     }
@@ -947,7 +1595,10 @@ export class AutoEvidenceOrchestrator {
       product_profile: current.product_profile,
       stage,
       outcome,
-      attempt_number: current.attempt_count
+      strategy_attempt_number: current.strategy_attempt_count??current.attempt_count,
+      provider_retry_number:current.provider_retry_count||0,
+      worker_retry_number:current.worker_retry_count||0,
+      strategy_code:current.current_strategy_code||null
     });
     return { ...advanced, task_id: current.id, stage, outcome };
   }
@@ -965,7 +1616,12 @@ export class AutoEvidenceOrchestrator {
     return { status: 'HUMAN_REVIEW_REQUIRED', exception_id: exception?.id || null };
   }
 
-  async summary() { return { ...this.status(), ...(await this.repository.summary()) }; }
+  async summary() {
+    const [summary,tavily_metrics]=await Promise.all([
+      this.repository.summary(),this.repository.tavilyMetrics?.()||Promise.resolve(null)
+    ]);
+    return { ...this.status(), ...summary,tavily_metrics };
+  }
   async listTasks(query = {}) { return this.repository.listTasks(query); }
   async listExceptions(query = {}) { return this.repository.listExceptions(query); }
 }
