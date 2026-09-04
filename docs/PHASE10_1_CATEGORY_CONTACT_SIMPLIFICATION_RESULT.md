@@ -43,4 +43,5 @@ The active flow is:
 
 - Functional regression before documentation finalization: 775 tests, 722 passed, 52 conditionally skipped; the sole pending check was the deliberately stale current-status snapshot owned by WP-B11.
 - Browser checks passed for Company Category Evidence detail, one-row-per-company Contact-ready Companies, Opportunity official-channel display, absence of Start review, and absence of Dispatch Pending on terminal business state.
-- The final clean-tree full-suite result is recorded in `CURRENT_PROJECT_STATUS.md` and `VERSION_CHANGELOG.md`.
+- Final clean-tree suite: 775 tests, 723 passed, 52 conditionally skipped, 0 failed.
+- Current-project status verifier: PASS.

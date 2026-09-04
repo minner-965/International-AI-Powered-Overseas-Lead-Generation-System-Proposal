@@ -144,7 +144,11 @@ This file is the single source of truth for current execution state. Historical 
     "stale_dispatch_pending": 0,
     "active_legacy_buying_status": 0,
     "active_product_supplier_procurement_blockers": 0,
-    "email_crm_delta": 0
+    "email_crm_delta": 0,
+    "tests_total": 775,
+    "tests_passed": 723,
+    "tests_skipped": 52,
+    "tests_failed": 0
   },
   "current_blockers": [],
   "next_allowed_work_package": "POST_PHASE10_EMAIL_CONFIGURATION",

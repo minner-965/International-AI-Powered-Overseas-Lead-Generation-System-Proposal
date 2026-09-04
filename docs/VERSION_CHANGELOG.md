@@ -22,7 +22,7 @@
 ### Verification
 
 - Migrations 025–050 replayed with checksum verification; 049 and 050 returned `SKIPPED_ALREADY_APPLIED`.
-- Final clean-tree suite result is recorded after the release documentation commit.
+- Final clean-tree suite: 775 tests, 723 passed, 52 conditionally skipped, 0 failed; current-project status verification and `git diff --check` passed.
 
 ## phase10 — 2026-09-04 — pre-email category-driven automation accepted
 
