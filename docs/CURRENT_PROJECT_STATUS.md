@@ -5,10 +5,10 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T21:10:25+08:00",
+  "generated_updated_at": "2026-09-04T21:31:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "735286ba6d8ad177e20e513b0168269927ea06a5",
+  "commit": "c79b81dd2da78e9166af1800de9f813041573e8d",
   "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 10 (Pre-email)",
   "current_active_phase": "Phase 10",
@@ -42,6 +42,8 @@ This file is the single source of truth for current execution state. Historical 
     "Bilingual live job stage and progress indicators verified",
     "Research progress now names the active business step instead of repeating RUNNING",
     "Phase 10.3 real browser stage canary completed with zero processing errors",
+    "Phase 10.4 multi-category research and verified-company directory admission passed",
+    "Opportunities require a confirmed category and at least one current public contact route",
     "Migration 051 category-readiness compatibility applied and replayed",
     "Phase 10.2 repair canary completed with zero processing errors"
   ],
@@ -78,13 +80,13 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"051_phase10_2_category_readiness_compatibility.sql","sha256":"e7769fd806f2f16a004288d1fa10d55cb3cd3215cdf681624e33031fb7cec2fc"}
   ],
   "current_real_data_counts": {
-    "companies": 119,
-    "sources": 297,
-    "contacts": 77,
+    "companies": 120,
+    "sources": 302,
+    "contacts": 92,
     "lead_reviews": 93,
     "collection_runs": 13,
-    "research_jobs": 370,
-    "current_opportunities": 21,
+    "research_jobs": 376,
+    "current_opportunities": 23,
     "evidence_required": 17,
     "not_suitable": 3,
     "recommended": 1,
@@ -93,8 +95,8 @@ This file is the single source of truth for current execution state. Historical 
     "decision_maker_contacts": 83,
     "valid_contact_routes": 0,
     "company_contact_routes": 83,
-    "auto_evidence_tasks": 95,
-    "provider_usage_events": 490,
+    "auto_evidence_tasks": 96,
+    "provider_usage_events": 505,
     "commercial_fit_results": 254,
     "official_route_manual_task_revisions": 10,
     "official_route_manual_tasks_active": 0,
@@ -203,6 +205,25 @@ This file is the single source of truth for current execution state. Historical 
     "tests_skipped": 52,
     "tests_failed": 0
   },
+  "phase10_4_acceptance": {
+    "multi_category_womenswear_job_id": "3cdec740-31ec-4992-b81c-c8fc9ccf6424",
+    "multi_category_general_merchandise_job_id": "9c7e26ed-52ef-4f29-be9f-b715054c5ad1",
+    "jobs_created_from_one_action": 2,
+    "jobs_completed": 2,
+    "processing_errors": 0,
+    "new_verified_company_id": "cb4132ab-53ba-468d-a032-486fc468fc89",
+    "formal_companies": 22,
+    "formal_companies_without_category_result": 3,
+    "formal_opportunities": 2,
+    "opportunities_without_contact_route": 0,
+    "opportunities_without_confirmed_category": 0,
+    "outbound_messages": 0,
+    "outbound_attempts": 0,
+    "tests_total": 784,
+    "tests_passed": 732,
+    "tests_skipped": 52,
+    "tests_failed": 0
+  },
   "current_blockers": [],
   "next_allowed_work_package": "POST_PHASE10_EMAIL_CONFIGURATION",
   "explicit_stop_boundary": "STOP after WP-A16 and WP-B11; Phase 10.1 category-contact automation is accepted"
@@ -217,6 +238,8 @@ This file is the single source of truth for current execution state. Historical 
 - WP-U00–U14, WP-A05–A16 and WP-B00–B11 are complete. Provider-only research, canonical continuation, category-driven Opportunity decisions, company-level contact deduplication, event-driven scheduling, management UI, XLSX export, zero-send safety, stuck-task convergence and final release verification passed.
 - WP06 provides trustworthy workflow health and QUEUED recovery. WP07 adds the transactional ResearchJob outbox and direct pg-boss execution path while retaining n8n compatibility. WP08 makes `provider_usage_events` the canonical ResearchJob provider-usage source. WP09 separates business strategy attempts, Provider retries and worker recoveries. WP10's historical fair scheduling remains, while WP-A04.2 removes every application-enforced Tavily quantity budget and relies on confirmed Provider account credit state. WP11 expands and validates the verified-company pool. WP12 adds append-only Commercial Product Fit as a non-blocking ranking layer with an independent evidence coverage value. WP13 adds an append-only manual queue for verified official supplier, vendor, procurement and contact routes without granting send or approval permission. WP14 adds an executable GoRules native dependency health check. WP15 adds a gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, historyId polling, structured DSN handling and existing Phase 7 inbound/CRM reuse.
 - Contact qualification prefers a verified named Buyer but accepts an official company email, business phone, public WhatsApp, or ordinary company contact page as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
+- Companies now contains every verified, active, non-excluded company even when category evidence is not yet confirmed. Opportunities remains narrower: a current confirmed category result and at least one current public contact route are both mandatory.
+- The Research dialog supports one or multiple target categories plus Select all. One action creates one independently traceable ResearchJob per selected category, and the maximum-result field applies per category.
 
 ## Execution boundary
 

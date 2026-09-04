@@ -1,5 +1,22 @@
 # Version Changelog
 
+## phase10.4 — 2026-09-04 — broad company intake, multi-category research and contact-ready opportunities
+
+### Changed
+
+- Companies now admits every verified, active, non-excluded company; an unconfirmed or missing category result no longer hides a valid company record.
+- Company records expose all latest evaluated product profiles so management can see which target categories were checked, including an unconfirmed result.
+- Opportunities keeps the category-confirmed gate and now explicitly requires at least one current public company contact route: work email, phone, WhatsApp or qualifying Contact page.
+- The New Research Job dialog supports multi-select target categories and Select all. A single action creates one independently auditable job per selected category; city and region remain optional country-wide filters, and the result limit applies per category.
+
+### Real acceptance
+
+- Browser reverse validation blocked continuation when no category was selected and displayed a bilingual inline correction.
+- Browser positive validation created Women's Apparel job `3cdec740-31ec-4992-b81c-c8fc9ccf6424` and General Merchandise job `9c7e26ed-52ef-4f29-be9f-b715054c5ad1` from one action; both completed with 0 processing errors.
+- The General Merchandise job added verified company `FMCG Goods Wholesaler` to Companies even though its category evidence exhausted without confirmation. It did not enter Opportunities.
+- Live APIs returned 22 Companies, including 3 with no current category result, and 2 Opportunities. Every visible Opportunity had a confirmed category and at least one current public contact route.
+- Outbound messages and outbound attempts remained 0. Dependency audit reported 0 vulnerabilities.
+
 ## phase10.3 — 2026-09-04 — concrete research stages and LAN trial readiness
 
 ### Changed
