@@ -5,10 +5,10 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T21:31:00+08:00",
+  "generated_updated_at": "2026-09-04T21:37:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "c79b81dd2da78e9166af1800de9f813041573e8d",
+  "commit": "bcd8500dd3432943482ee6250e47e3b2aca1901e",
   "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 10 (Pre-email)",
   "current_active_phase": "Phase 10",
@@ -44,6 +44,7 @@ This file is the single source of truth for current execution state. Historical 
     "Phase 10.3 real browser stage canary completed with zero processing errors",
     "Phase 10.4 multi-category research and verified-company directory admission passed",
     "Opportunities require a confirmed category and at least one current public contact route",
+    "Confirmed Opportunity categories display the matching confirmed label",
     "Migration 051 category-readiness compatibility applied and replayed",
     "Phase 10.2 repair canary completed with zero processing errors"
   ],

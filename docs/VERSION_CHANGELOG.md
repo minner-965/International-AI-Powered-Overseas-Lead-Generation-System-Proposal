@@ -7,6 +7,7 @@
 - Companies now admits every verified, active, non-excluded company; an unconfirmed or missing category result no longer hides a valid company record.
 - Company records expose all latest evaluated product profiles so management can see which target categories were checked, including an unconfirmed result.
 - Opportunities keeps the category-confirmed gate and now explicitly requires at least one current public company contact route: work email, phone, WhatsApp or qualifying Contact page.
+- Corrected the Opportunity table status mapping so `CATEGORY_MATCH_CONFIRMED` displays `类目已确认 / Category confirmed` instead of the unknown-category fallback.
 - The New Research Job dialog supports multi-select target categories and Select all. A single action creates one independently auditable job per selected category; city and region remain optional country-wide filters, and the result limit applies per category.
 
 ### Real acceptance
