@@ -2329,7 +2329,7 @@ app.get('/api/leads', async (req, res, next) => {
         c.verification_status,c.lifecycle_status,c.last_verified_at,c.verification_source_count,
         c.verification_freshness,c.explicit_exclusion_reason,${confirmedCategoryProfilesSql('c')} AS product_profiles,
         r.lead_score, r.tier, r.approval_status, r.send_status, r.next_action
-      FROM leadgen.companies c JOIN leadgen.lead_reviews r ON r.company_id = c.id
+      FROM leadgen.companies c LEFT JOIN leadgen.lead_reviews r ON r.company_id = c.id
       WHERE ${clauses.join(' AND ')} ORDER BY r.lead_score DESC, c.company_name`, params);
     res.json(rows);
   } catch (e) { next(e); }
@@ -2351,7 +2351,7 @@ app.get('/api/export/leads', managementAuth.authenticate,
         ct.verification_method,ct.verification_detail,ct.verification_checked_at,
         coalesce(src.sources,'[]'::json) AS sources
       FROM leadgen.companies c
-      JOIN leadgen.lead_reviews r ON r.company_id=c.id
+      LEFT JOIN leadgen.lead_reviews r ON r.company_id=c.id
       LEFT JOIN LATERAL (
         SELECT business_email,business_phone,email_verification_status,verification_method,
           verification_detail,verification_checked_at
@@ -2382,7 +2382,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
         ${confirmedCategoryProfilesSql('c')} AS product_profiles,
         coalesce(src.sources,'[]'::json) AS sources
       FROM leadgen.companies c
-      JOIN leadgen.lead_reviews r ON r.company_id = c.id
+      LEFT JOIN leadgen.lead_reviews r ON r.company_id = c.id
       LEFT JOIN LATERAL (
         SELECT full_name,job_title,business_email,business_phone,email_verification_status,
           verification_method,verification_detail,verification_checked_at,

@@ -24,6 +24,9 @@ test('Companies and company export expose only category-admitted records and con
   const server=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   assert.ok((server.match(/companyCategoryAdmittedSql\('c'\)/g)||[]).length>=4);
   assert.ok((server.match(/confirmedCategoryProfilesSql\('c'\)/g)||[]).length>=3);
+  const companyList=server.slice(server.indexOf("app.get('/api/leads'"),server.indexOf("app.get('/api/export/leads'"));
+  assert.match(companyList,/LEFT JOIN leadgen\.lead_reviews r ON r\.company_id = c\.id/);
+  assert.doesNotMatch(companyList,/FROM leadgen\.companies c JOIN leadgen\.lead_reviews/);
 });
 
 test('Opportunities contain only category-confirmed contact-ready business records',async()=>{
@@ -37,4 +40,3 @@ test('Opportunities contain only category-confirmed contact-ready business recor
   assert.match(sql,/bod\.display_opportunity_status IN\('RECOMMENDED','MANAGEMENT_APPROVED','HOLD'\)/);
   assert.doesNotMatch(sql,/bod\.display_opportunity_status IN\([^)]*EVIDENCE_REQUIRED/);
 });
-
