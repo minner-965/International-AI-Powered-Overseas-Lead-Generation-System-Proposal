@@ -38,7 +38,7 @@
 - 商品资料与客户成交资料继续通过共享文件夹导入数据库，仅用于 approved category/profile、历史 ICP 和客户评分基线；新客户机会、详情页和普通导出均不生成或展示具体商品候选。
 - 明确 `OUT_OF_SCOPE`、不符合 Buyer model、身份冲突、历史客户和 suppression 等门槛继续保留。
 - Supplier Access 未知只影响排序；明确关闭合作路径仍为 `HOLD`。
-- `business-opportunity-decision-v3` 仍要求实名相关 Buyer 与当前 VALID 路径后才能 Recommended。
+- 原始验收使用 `business-opportunity-decision-v3`，当时要求实名相关 Buyer 与当前 VALID 路径后才能 Recommended。后续管理规则已由 `business-opportunity-decision-v4` 取代：实名 Buyer 优先，但官网公司邮箱、业务电话或公开 WhatsApp 也可构成公司级业务机会；发送控制仍独立执行。
 
 ## Dry-run 与数据保护
 

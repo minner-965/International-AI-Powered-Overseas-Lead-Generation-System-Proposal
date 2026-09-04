@@ -28,7 +28,7 @@
         {"contains":{"const":"Phase 1–9 complete"}},
         {"contains":{"const":"Phase 10 code/migration/UI/automation verified"}},
         {"contains":{"const":"Phase 10 final acceptance incomplete"}},
-        {"contains":{"const":"Work Packages 11–14 complete"}}
+        {"contains":{"const":"WP-U00–U14 complete"}}
       ]
     },
     "final_acceptance_state": {"const":"INCOMPLETE"},
@@ -55,7 +55,7 @@
     },
     "provider_configuration":{"type":"object"},
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"const":"Work Package 15"},
+    "next_allowed_work_package":{"const":"Gmail controlled acceptance"},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   }
 }

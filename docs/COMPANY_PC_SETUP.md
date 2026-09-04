@@ -42,6 +42,12 @@ docker compose up -d --build
 docker compose ps
 ```
 
+Research capacity is Provider-account-only. Do not add local daily, per-run,
+per-job, purpose-pool or company/profile Tavily ceilings. Keep
+`TAVILY_USAGE_POLICY=PROVIDER_ACCOUNT_ONLY`; preserve the usage ledger and query
+fingerprint deduplication. Treat 429 as a rate-limit retry and confirmed account
+credit exhaustion as the only credit-based ResearchJob creation block.
+
 Then open `http://localhost:3000` for the demonstration dashboard. Open
 `http://localhost:5678` for n8n and create the local owner account if prompted.
 Keep legacy n8n integration credentials in n8n's credential manager. Phase 7
@@ -61,24 +67,19 @@ RESEND_USE_CASE=DISABLED
 HUNTER_MODE=DISABLED
 ```
 
-Create the management token, management CSRF secret and internal worker token as separate local secrets:
+Set the workspace audit identity and keep the internal worker token server-side:
 
 ```ini
-DPV_MANAGEMENT_API_TOKEN=<local management token>
-DPV_MANAGEMENT_API_ACTOR=<server-bound local actor>
-DPV_MANAGEMENT_API_ROLE=MANAGEMENT
-DPV_MANAGEMENT_CSRF_SECRET=<separate local CSRF secret>
+DPV_WORKSPACE_ACTOR=dpv-workspace
+DPV_WORKSPACE_ROLE=MANAGEMENT
 INTERNAL_API_TOKEN=<local internal worker token>
 ```
 
-The management token identifies authenticated browser operations. The CSRF
-secret signs management-state changes and must be different from the management
-token. The internal token is only for n8n/worker-to-Express calls and does not
-represent a human approval. Do not expose any of these values in browser
-bundles or hard-coded JavaScript, workflow exports, screenshots or logs. The
-management token is entered at runtime by an authorized operator and retained
-only in that browser tab's session storage; the CSRF secret and internal token
-remain server-side.
+The browser does not request, store or transmit a management token. The workspace
+identity is used for audit attribution. The internal token remains limited to
+n8n/worker-to-Express calls and must stay out of browser bundles, workflow
+exports, screenshots and logs. Before Internet deployment, connect the company
+account login to the existing role matrix instead of adding a shared token box.
 
 The Phase 7 workflow is:
 

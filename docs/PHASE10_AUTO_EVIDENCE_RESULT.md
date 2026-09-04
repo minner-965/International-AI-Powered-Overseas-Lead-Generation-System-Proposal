@@ -19,14 +19,15 @@ Phase 10 在现有 pg-boss、ResearchJob、Tavily、Hunter、Phase 7 append-only
 - 自动任务与人工例外的明确分流；
 - inactive-first n8n 对账工作流 `workflows/03-phase10-auto-evidence-reconciliation.json`。
 
-部署默认保持：
+当前演示/验收部署状态：
 
 ```text
-AUTO_EVIDENCE_ENABLED=false
+AUTO_EVIDENCE_ENABLED=true
 AUTO_EVIDENCE_OPERATOR_OVERRIDE_ENABLED=false
+TAVILY_USAGE_POLICY=PROVIDER_ACCOUNT_ONLY
 ```
 
-所以本次通过受控管理入口执行验证，没有把周期工作流擅自切为生产自动运行。
+研究任务通过 transactional outbox 直接进入 pg-boss；n8n 每 30 分钟执行故障对账和公平轮次推进。应用层不再设置每日、单公司、单任务或用途池搜索额度，也不使用固定 10 次或 7 天冷却阻断。相同 query fingerprint 仍严格去重，Tavily 429 按 `Retry-After` 重试，只有账户明确返回 credits exhausted 才阻止新建 ResearchJob。
 
 ## 真实任务结果
 

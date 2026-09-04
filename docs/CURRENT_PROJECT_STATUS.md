@@ -5,21 +5,23 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T11:07:00+08:00",
+  "generated_updated_at": "2026-09-04T14:02:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "branch": "phase10-recovery-rc1",
-  "commit": "9e4aae3c2c3c5f73402ed5896bf21bbfdb5a37f5",
-  "dirty_at_snapshot": true,
+  "branch": "phase10-remove-internal-limits-20260904-112916",
+  "commit": "96fd8a508cb773326b087656b38f01691c723fe2",
+  "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 9",
   "current_active_phase": "Phase 10",
   "phase_state": [
     "Phase 1–9 complete",
     "Phase 10 code/migration/UI/automation verified",
     "Phase 10 final acceptance incomplete",
-    "Work Packages 11–14 complete",
+    "WP-U00–U14 complete",
     "Work Package 15 implementation verified; controlled-address E2E pending",
     "Work Package 16 read-only inspection blocked by missing SPF, unknown DKIM selector and rejected Google sign-in",
-    "WP-A04.2 provider-only unlimited research and continuation recovery passed"
+    "WP-A04.2 provider-only research and continuation recovery passed",
+    "WP-U13 real browser positive and reverse canaries passed",
+    "WP-U14 implementation snapshot, documentation and release handoff complete"
   ],
   "final_acceptance_state": "INCOMPLETE",
   "business_result_state": "NO",
@@ -45,29 +47,31 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"042_phase10_gmail_api_provider.sql","sha256":"dd603f4c5dc7e43b57a017424670811053f99c63cd5450470d713663a508aa8e"},
     {"migration_key":"043_phase10_budget_resume_continuation.sql","sha256":"11a2bff129196b36ec04c32b6b4c593000e4bc955ece3d6af13a70b4cd130d14"},
     {"migration_key":"044_phase10_tavily_provider_account_only.sql","sha256":"ea05a88571852f63e96be9e8ea60b1e9366f4d283e0ebc743cfe665fee463a34"},
-    {"migration_key":"045_phase10_provider_account_state.sql","sha256":"ec0d626b2b5599a9af4076dae2ecb19a0da0b0a8a5d3bb84a44e2a2e511bde80"}
+    {"migration_key":"045_phase10_provider_account_state.sql","sha256":"ec0d626b2b5599a9af4076dae2ecb19a0da0b0a8a5d3bb84a44e2a2e511bde80"},
+    {"migration_key":"046_phase10_empty_research_job_purge_audit.sql","sha256":"d2c4ade50d1e76fbfb7a95608263660f078dbc9d1178e61aef26da7bfe6bb87c"},
+    {"migration_key":"047_phase10_retire_internal_tavily_enforcement.sql","sha256":"63ec5e44937d068c83d73f57cd0aa7434a6ec653dfbce12acb0f523285bcd92c"}
   ],
   "current_real_data_counts": {
-    "companies": 108,
-    "sources": 215,
-    "contacts": 61,
+    "companies": 110,
+    "sources": 231,
+    "contacts": 62,
     "lead_reviews": 93,
     "collection_runs": 13,
-    "research_jobs": 120,
-    "current_opportunities": 14,
-    "evidence_required": 11,
-    "not_suitable": 2,
+    "research_jobs": 144,
+    "current_opportunities": 17,
+    "evidence_required": 13,
+    "not_suitable": 3,
     "recommended": 1,
     "management_approved": 0,
     "decision_makers": 12,
-    "decision_maker_contacts": 82,
+    "decision_maker_contacts": 83,
     "valid_contact_routes": 0,
-    "company_contact_routes": 55,
-    "auto_evidence_tasks": 23,
-    "provider_usage_events": 89,
-    "commercial_fit_results": 26,
-    "official_route_manual_task_revisions": 46,
-    "official_route_manual_tasks_active": 44,
+    "company_contact_routes": 83,
+    "auto_evidence_tasks": 31,
+    "provider_usage_events": 204,
+    "commercial_fit_results": 61,
+    "official_route_manual_task_revisions": 50,
+    "official_route_manual_tasks_active": 50,
     "outreach_drafts": 0,
     "outbound_messages": 0,
     "inbound_messages": 0,
@@ -93,14 +97,14 @@ This file is the single source of truth for current execution state. Historical 
     "gmail_controlled_test_mode": true
   },
   "required_n8n_workflow_status": [
-    {"workflow_key":"dpvPhase1TwoWeekDemo","purpose":"research_discovery","active":true},
+    {"workflow_key":"dpvPhase1TwoWeekDemo","purpose":"retired_research_webhook","active":false},
     {"workflow_key":"dpvPhase6Enrichment","purpose":"buyer_enrichment","active":true},
     {"workflow_key":"dpvPhase61CategoryProcurement","purpose":"category_procurement","active":true},
     {"workflow_key":"dpvPhase10AutoEvidenceReconciliation","purpose":"auto_evidence_reconciliation","active":true}
   ],
   "last_reconciliation_heartbeat": {
     "status": "ACTIVE",
-    "observed_at": "2026-09-04T11:00:16.380+08:00"
+    "observed_at": "2026-09-04T14:00:18.356+08:00"
   },
   "provider_configuration": {
     "search_provider": "tavily",
@@ -120,8 +124,8 @@ This file is the single source of truth for current execution state. Historical 
     "Controlled recipient is configured, but receipt/reply verification has not run",
     "No Management Approved opportunity; real prospect sending remains independently gated"
   ],
-  "next_allowed_work_package": "Work Package 15",
-  "explicit_stop_boundary": "STOP after Work Package 15 implementation verification; controlled-address E2E waits for sender, Reply-To, OAuth and controlled recipient details"
+  "next_allowed_work_package": "Gmail controlled acceptance",
+  "explicit_stop_boundary": "STOP after WP-U14; Gmail controlled-address E2E waits for OAuth, SPF and DKIM readiness"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
@@ -131,10 +135,10 @@ This file is the single source of truth for current execution state. Historical 
 - Phase 1–9 are complete.
 - Phase 10 code, migrations, UI and automation contracts are verified.
 - Phase 10 final acceptance remains incomplete and the business-result state remains NO.
-- Work Packages 11–14 are complete. WP15 implementation, migration, local tests and deployed disabled-state verification are complete; its real controlled-address send/reply/CRM E2E is pending required mailbox configuration.
+- WP-U00–U14 are complete. The provider-only research policy, canonical continuation, historical compatibility, live browser canary and release handoff have passed. WP15 implementation, migration, local tests and deployed disabled-state verification are complete; its real controlled-address send/reply/CRM E2E remains pending mailbox configuration.
 - WP06 provides trustworthy workflow health and QUEUED recovery. WP07 adds the transactional ResearchJob outbox and direct pg-boss execution path while retaining n8n compatibility. WP08 makes `provider_usage_events` the canonical ResearchJob provider-usage source. WP09 separates business strategy attempts, Provider retries and worker recoveries. WP10's historical fair scheduling remains, while WP-A04.2 removes every application-enforced Tavily quantity budget and relies on confirmed Provider account credit state. WP11 expands and validates the verified-company pool. WP12 adds append-only Commercial Product Fit as a non-blocking ranking layer with an independent evidence coverage value. WP13 adds an append-only manual queue for verified official supplier, vendor, procurement and contact routes without granting send or approval permission. WP14 adds an executable GoRules native dependency health check. WP15 adds a gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, historyId polling, structured DSN handling and existing Phase 7 inbound/CRM reuse.
 - Contact qualification now prefers a verified named Buyer but accepts an official company email, business phone or public WhatsApp as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
 
 ## Execution boundary
 
-The next permitted action is WP16 DNS remediation/revalidation plus the remaining WP15 controlled-address E2E. SPF and DKIM must pass and Google sign-in/OAuth must complete before any controlled send. Do not start prospect sending.
+The next permitted action is the remaining Gmail controlled-address acceptance. SPF and DKIM must pass and Google sign-in/OAuth must complete before any controlled send. Prospect sending remains off.

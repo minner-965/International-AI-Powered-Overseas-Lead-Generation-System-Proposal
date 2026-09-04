@@ -1,10 +1,10 @@
 # DPV Phase 10 Current Master Handoff
 
-Generated: 2026-09-03
+Generated: 2026-09-04
 
 ## Package boundary
 
-This package contains the current DPV overseas lead-generation system source, database migrations 000–042, workflows, tests, configuration examples and implementation reports through the WP16 inspection.
+This repository contains the current DPV overseas lead-generation system source, database migrations 000–047, workflows, tests, configuration examples and implementation reports through WP-U14.
 
 It excludes Git internals, installed dependencies, runtime data, exports, staging files and all real `.env` files. OAuth credentials, passwords, API keys and refresh tokens are not included.
 
@@ -17,19 +17,20 @@ It excludes Git internals, installed dependencies, runtime data, exports, stagin
 - WP16 read-only DNS inspection: completed, but acceptance is blocked by missing SPF, unverified DKIM and rejected Google sign-in.
 - Phase 10 final acceptance: incomplete.
 - Business-result status: NO. No result has been fabricated from test data.
+- WP-U00–U14 provider-only research cleanup and real pre-email canary: complete.
 
 ## Source baseline
 
 | Item | Current value |
 |---|---|
 | Source root | `D:\codex\International-AI-Powered-Overseas-Lead-Generation-System-Proposal` |
-| Branch | `phase10-recovery-rc1` |
-| Current HEAD | `54ce996345c41777c9c5e0d50e6ed170aa66723d` |
+| Branch | `phase10-remove-internal-limits-20260904-112916` |
+| Implementation snapshot | `96fd8a508cb773326b087656b38f01691c723fe2` |
 | Latest released phase | Phase 9 |
 | Active phase | Phase 10 |
-| Latest migration | `042_phase10_gmail_api_provider.sql` |
+| Latest migration | `047_phase10_retire_internal_tavily_enforcement.sql` |
 
-The current Phase 10 implementation remains in a dirty working tree after the WP03 implementation snapshot. No later package has been represented as a Git commit or remote release.
+The WP-U14 release is represented by reviewable implementation and documentation commits. The final commit, remote branch and tag are recorded in `PHASE10_REMOVE_INTERNAL_LIMITS_AND_LEGACY_CLEANUP_RESULT.md`.
 
 ## Work Package summary
 
@@ -53,6 +54,9 @@ The current Phase 10 implementation remains in a dirty working tree after the WP
 | 15 | IMPLEMENTATION PASS | Added the gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, polling and structured inbound handling. Real E2E remains pending. |
 | 16 | BLOCKED | MX and DMARC were observed; SPF is absent, DKIM is not verified and Google sign-in was rejected. No DNS change or email send occurred. |
 | A04.2 | PASS | Removed all application-enforced Research/Tavily quantity budgets, added Provider account state, repaired continuation replay ownership and completed real positive/reverse validation. |
+| U00–U12 | PASS | Removed internal research quantity enforcement, retained Provider ledger/idempotency/history, validated migration 047 and the full fault matrix. |
+| U13 | PASS | Ran real browser positive and reverse canaries; fixed product-scope and decision-before-scheduling defects found by the real run. |
+| U14 | PASS | Updated authoritative operations documentation and completed the Git release handoff. |
 
 ## Current application capability
 
@@ -72,6 +76,7 @@ The current Phase 10 implementation remains in a dirty working tree after the WP
 - Ten evidence strategies are versioned and deduplicated by query fingerprint.
 - Provider retries and stale-worker recovery do not consume additional business strategy attempts.
 - Tavily usage is audited without application-enforced daily, per-run, per-job, purpose-pool, company/profile or global quantity budgets. Only confirmed provider-account credit exhaustion blocks creation; 429 waits and retries.
+- Research creation writes a transactional outbox and dispatches directly to pg-boss. The old n8n ResearchJob webhook is inactive and removed from the source workflow set; n8n remains active for periodic reconciliation and supported non-ResearchJob orchestration.
 - Hunter runs only when its exact named-Buyer/email gate applies.
 
 ### Scoring and customer fit
@@ -105,7 +110,7 @@ The current Phase 10 implementation remains in a dirty working tree after the WP
 
 ## Database migrations
 
-Migrations 000–042 are retained. Phase 10 additions are:
+Migrations 000–047 are retained. Phase 10 additions include:
 
 | Migration | Purpose |
 |---|---|
@@ -125,31 +130,33 @@ Migrations 000–042 are retained. Phase 10 additions are:
 | 043 | Immutable budget-resume continuation lineage and outbox |
 | 044 | Provider-account-only Tavily ledger policy |
 | 045 | Provider account state and append-only state transition audit |
+| 046 | Empty failed ResearchJob purge classification and audit |
+| 047 | Retire internal Tavily enforcement while preserving historical structures |
 
-Migrations 042–045 were applied to the live PostgreSQL database and replayed successfully as `SKIPPED_ALREADY_APPLIED`.
+Migrations 042–047 were applied to the live PostgreSQL database and replayed successfully as `SKIPPED_ALREADY_APPLIED`.
 
 ## Current real-data snapshot
 
 | Record | Count |
 |---|---:|
-| Companies | 108 |
-| Sources | 215 |
-| Contacts | 61 |
+| Companies | 110 |
+| Sources | 231 |
+| Contacts | 62 |
 | Lead reviews | 93 |
 | Collection runs | 13 |
-| Research jobs | 120 |
-| Current opportunities | 14 |
-| Evidence Required | 11 |
-| Not Suitable | 2 |
+| Research jobs | 144 |
+| Current opportunities | 17 |
+| Evidence Required | 13 |
+| Not Suitable | 3 |
 | Recommended | 1 |
 | Management Approved | 0 |
 | Decision makers | 12 |
-| Decision-maker contacts | 82 |
-| Company contact routes | 55 |
-| Auto-evidence tasks | 23 |
-| Provider-usage events | 89 |
-| Commercial-fit results | 26 |
-| Active official-route tasks | 44 |
+| Decision-maker contacts | 83 |
+| Company contact routes | 83 |
+| Auto-evidence tasks | 31 |
+| Provider-usage events | 204 |
+| Commercial-fit results | 61 |
+| Active official-route tasks | 50 |
 | Outreach drafts | 0 |
 | Outbound messages | 0 |
 | Inbound messages | 0 |
@@ -164,7 +171,7 @@ These are factual database counts at the last status snapshot. The single `RECOM
 | Full local suite | 681 total; 666 passed; 0 failed; 15 environment-scoped skips |
 | Isolated continuation PostgreSQL | 7/7 passed |
 | Provider-only 100-task stub queue | 100 accepted; 0 local quota rejection |
-| Real Research canary | COMPLETED; 5 audited Tavily units; no local budget pause |
+| Real Research canary | Positive and reverse browser paths completed; four companies reached category processing and two entered distinct-strategy auto evidence |
 | Continuation recovery | 4 old paused tasks recovered; 0 old stop-reason mutation |
 | Worker restart | 0 duplicate Provider request fingerprints |
 | WP15 Gmail tests | 10/10 passed locally and in the deployed image |

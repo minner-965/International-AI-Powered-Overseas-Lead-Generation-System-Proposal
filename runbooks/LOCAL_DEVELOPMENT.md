@@ -5,8 +5,8 @@
 1. Start Docker Desktop and wait until its engine is running.
 2. From the repository root, run `docker compose up -d --build`.
 3. Open <http://localhost:3000> for the lead-review dashboard.
-4. Open <http://localhost:5678> and create the local n8n owner account if n8n
-   requests first-time setup. The workflow is named `DPV Phase 1 - Live Public Data Demo`.
+4. Open <http://localhost:5678> only when reviewing the periodic reconciliation
+   or other non-ResearchJob workflows.
 5. Create provider credentials in n8n's credential manager. Do not paste
    secrets into workflow nodes or commit them to Git.
 
@@ -29,11 +29,15 @@ counts can change, but requires at least ten real records, multiple
 providers, 100% source traceability and zero send-enabled records. Click
 **抓取最新真实数据** in the dashboard to append or update the live dataset.
 
-If the workflow export must be imported again, run:
+ResearchJob creation does not require an n8n webhook; it writes the dispatch
+outbox in the same transaction and queues the job through pg-boss.
 
-```powershell
-docker compose exec -T n8n n8n import:workflow --input=/files/workflows/01-two-week-demo.json
-```
+The application does not enforce Tavily daily, per-run, per-job, purpose-pool or
+company/profile quantity limits. `provider_usage_events` remains the canonical
+audit ledger and query fingerprints prevent duplicate calls. A 429 response is
+rate limiting and follows `Retry-After`; only confirmed Provider account credit
+exhaustion closes the create-job gate. n8n reconciliation is a recovery and fair
+strategy-progression mechanism, not a research quota.
 
 ## Stop
 

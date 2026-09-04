@@ -1,0 +1,14 @@
+{
+  "snapshot_time": "2026-09-04T11:30:05.730441+08:00",
+  "database": "leadgen",
+  "mode": "READ_ONLY_BASELINE",
+  "outreach_drafts": 0,
+  "outreach_approvals": 0,
+  "outbound_messages": 0,
+  "outbound_message_attempts": 0,
+  "email_webhook_inbox": 0,
+  "inbound_messages": 0,
+  "crm_sync_outbox": 0,
+  "gmail_ambiguous_send_events": 0,
+  "management_approved_opportunities": 0
+}

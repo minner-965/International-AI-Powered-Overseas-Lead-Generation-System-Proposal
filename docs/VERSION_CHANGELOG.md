@@ -4,6 +4,9 @@
 
 ### Added and changed
 
+- Completed WP-U13 with real browser-driven positive and reverse ResearchJob canaries. The positive run promoted four verified companies, completed category procurement, refreshed current opportunity decisions before auto-evidence scheduling and advanced two tasks through two distinct strategies via the live n8n reconciliation; all email and CRM tables remained at zero.
+- Fixed two defects exposed only by the real canary: direct research scoring now carries the selected product profile into Customer Match, and terminal category processing now refreshes initial decisions before scheduling automatic evidence.
+- Completed WP-U14 with migrations through 047, provider-account-only capacity control, canonical direct pg-boss dispatch, retained immutable history, updated operational handoff and a reviewable multi-commit release snapshot.
 - Completed WP-A04.2 and removed application-enforced Tavily daily, per-run, per-job, purpose-pool, company/profile, global and billing-window credit caps from the active runtime path.
 - Research task creation is no longer limited by local numeric quotas. Confirmed Tavily account credit exhaustion is the only credit-based creation blocker; 429 rate limiting follows `Retry-After` and remains queueable.
 - Preserved Provider usage auditing, request/query fingerprint idempotency, singleton dispatch, bounded worker concurrency, immutable historical stop reasons, checkpoint continuation and all email gates.
