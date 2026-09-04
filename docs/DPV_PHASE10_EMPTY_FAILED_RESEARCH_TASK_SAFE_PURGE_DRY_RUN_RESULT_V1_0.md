@@ -1,7 +1,7 @@
 # DPV Phase 10 — 空任务/失败任务安全清理 Dry-run 执行结果 V1.0
 
-执行日期：2026-09-04  
-执行范围：分类器、隔离 PostgreSQL 测试、主库 dry-run  
+执行日期：2026-09-04
+执行范围：分类器、隔离 PostgreSQL 测试、主库 dry-run
 最终状态：PASS（未执行 apply）
 
 ## 1. 本轮交付
