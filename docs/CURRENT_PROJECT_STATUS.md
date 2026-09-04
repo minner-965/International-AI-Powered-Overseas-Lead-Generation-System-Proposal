@@ -5,10 +5,10 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-04T17:28:00+08:00",
+  "generated_updated_at": "2026-09-04T19:37:18+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "ea75a69533ee4b640180d3d9af2396e4d8373254",
+  "commit": "34461d8f4e96863fda91766ba31211fb6f201abb",
   "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 10 (Pre-email)",
   "current_active_phase": "Phase 10",
@@ -32,7 +32,11 @@ This file is the single source of truth for current execution state. Historical 
     "WP-A16 final release validation passed",
     "WP-A04.2 provider-only research and continuation recovery passed",
     "WP-U13 real browser positive and reverse canaries passed",
-    "WP-U14 implementation snapshot, documentation and release handoff complete"
+    "WP-U14 implementation snapshot, documentation and release handoff complete",
+    "WP-B00–B08 category/contact simplification and cleanup passed",
+    "WP-B09 additive migrations and historical compatibility passed",
+    "WP-B10 full regression, real UI canary and zero-email verification passed",
+    "WP-B11 result documentation and release handoff complete"
   ],
   "final_acceptance_state": "PASS",
   "business_result_state": "YES",
@@ -61,17 +65,19 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"045_phase10_provider_account_state.sql","sha256":"ec0d626b2b5599a9af4076dae2ecb19a0da0b0a8a5d3bb84a44e2a2e511bde80"},
     {"migration_key":"046_phase10_empty_research_job_purge_audit.sql","sha256":"d2c4ade50d1e76fbfb7a95608263660f078dbc9d1178e61aef26da7bfe6bb87c"},
     {"migration_key":"047_phase10_retire_internal_tavily_enforcement.sql","sha256":"63ec5e44937d068c83d73f57cd0aa7434a6ec653dfbce12acb0f523285bcd92c"},
-    {"migration_key":"048_phase10_category_driven_context.sql","sha256":"d205d84825e1a7a3fb76e0c556773504c007961ee70555b30b7623736af3b891"}
+    {"migration_key":"048_phase10_category_driven_context.sql","sha256":"d205d84825e1a7a3fb76e0c556773504c007961ee70555b30b7623736af3b891"},
+    {"migration_key":"049_phase10_1_category_contact_simplification.sql","sha256":"e16c236f371a3d03872e5a2ade235e81004646f67fd85b7db07460f473b68081"},
+    {"migration_key":"050_phase10_1_category_status_compatibility.sql","sha256":"18a9c4568c4168cd83ca4206b589752a99952c3c577784b1a9f83f075ddf2e5d"}
   ],
   "current_real_data_counts": {
-    "companies": 115,
-    "sources": 270,
-    "contacts": 73,
+    "companies": 117,
+    "sources": 279,
+    "contacts": 75,
     "lead_reviews": 93,
     "collection_runs": 13,
-    "research_jobs": 239,
-    "current_opportunities": 20,
-    "evidence_required": 16,
+    "research_jobs": 341,
+    "current_opportunities": 21,
+    "evidence_required": 17,
     "not_suitable": 3,
     "recommended": 1,
     "management_approved": 0,
@@ -79,11 +85,11 @@ This file is the single source of truth for current execution state. Historical 
     "decision_maker_contacts": 83,
     "valid_contact_routes": 0,
     "company_contact_routes": 83,
-    "auto_evidence_tasks": 60,
-    "provider_usage_events": 321,
-    "commercial_fit_results": 107,
-    "official_route_manual_task_revisions": 50,
-    "official_route_manual_tasks_active": 50,
+    "auto_evidence_tasks": 89,
+    "provider_usage_events": 411,
+    "commercial_fit_results": 242,
+    "official_route_manual_task_revisions": 10,
+    "official_route_manual_tasks_active": 0,
     "outreach_drafts": 0,
     "outbound_messages": 0,
     "inbound_messages": 0,
@@ -128,9 +134,21 @@ This file is the single source of truth for current execution state. Historical 
     "inbound_email_provider": "NONE",
     "gmail_configured": false
   },
+  "phase10_1_acceptance": {
+    "real_canary_id": "9a97cff3-712c-416e-9b0b-de2a056ca172",
+    "opportunity_result": "EVIDENCE_REQUIRED",
+    "canary_lineage_provider_units": 18,
+    "company_contact_routes": 83,
+    "duplicate_company_contact_routes": 0,
+    "visible_contact_queue_companies": 1,
+    "stale_dispatch_pending": 0,
+    "active_legacy_buying_status": 0,
+    "active_product_supplier_procurement_blockers": 0,
+    "email_crm_delta": 0
+  },
   "current_blockers": [],
   "next_allowed_work_package": "POST_PHASE10_EMAIL_CONFIGURATION",
-  "explicit_stop_boundary": "STOP after WP-A16; Phase 10 pre-email category-driven automation is accepted"
+  "explicit_stop_boundary": "STOP after WP-A16 and WP-B11; Phase 10.1 category-contact automation is accepted"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
@@ -139,10 +157,10 @@ This file is the single source of truth for current execution state. Historical 
 
 - Phase 1–9 are complete.
 - Phase 10 pre-email category-driven automation is accepted with a real business result.
-- WP-U00–U14 and WP-A05–A16 are complete. Provider-only research, canonical continuation, category-driven Opportunity decisions, management UI, XLSX export, zero-send safety, stuck-task convergence and final release verification passed.
+- WP-U00–U14, WP-A05–A16 and WP-B00–B11 are complete. Provider-only research, canonical continuation, category-driven Opportunity decisions, company-level contact deduplication, event-driven scheduling, management UI, XLSX export, zero-send safety, stuck-task convergence and final release verification passed.
 - WP06 provides trustworthy workflow health and QUEUED recovery. WP07 adds the transactional ResearchJob outbox and direct pg-boss execution path while retaining n8n compatibility. WP08 makes `provider_usage_events` the canonical ResearchJob provider-usage source. WP09 separates business strategy attempts, Provider retries and worker recoveries. WP10's historical fair scheduling remains, while WP-A04.2 removes every application-enforced Tavily quantity budget and relies on confirmed Provider account credit state. WP11 expands and validates the verified-company pool. WP12 adds append-only Commercial Product Fit as a non-blocking ranking layer with an independent evidence coverage value. WP13 adds an append-only manual queue for verified official supplier, vendor, procurement and contact routes without granting send or approval permission. WP14 adds an executable GoRules native dependency health check. WP15 adds a gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, historyId polling, structured DSN handling and existing Phase 7 inbound/CRM reuse.
-- Contact qualification now prefers a verified named Buyer but accepts an official company email, business phone or public WhatsApp as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
+- Contact qualification prefers a verified named Buyer but accepts an official company email, business phone, public WhatsApp, or ordinary company contact page as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
 
 ## Execution boundary
 
-STOP after WP-A16. Gmail controlled-address configuration and any future outbound activation are separate post-Phase10 work; prospect sending remains off in this accepted release.
+STOP after WP-B11. Gmail controlled-address configuration and any future outbound activation are separate post-Phase10 work; prospect sending remains off in this accepted release.

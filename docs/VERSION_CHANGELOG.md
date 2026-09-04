@@ -1,5 +1,29 @@
 # Version Changelog
 
+## phase10.1 — 2026-09-04 — category/contact flow accepted
+
+### Changed
+
+- Simplified the active business path to target category, verified company, company-category evidence, public contact routes, and Opportunity decision.
+- Removed procurement, buying, supplier-portal, exact-SKU, and required-product-profile gates from new decisions while preserving historical values through compatibility projection.
+- Added migrations 049 and 050 for company-level canonical routes, retired manual-route writes, new category statuses, and additive history compatibility.
+- Retired the manual official-route queue and its mutation/UI paths; retained 10 historical revisions across 3 closed task keys.
+- Made direct pg-boss continuation the normal path and retained n8n reconciliation as a recovery fallback.
+- Unified active UI/API/export wording and removed the final visible category-procurement relationship label during browser acceptance.
+
+### Real acceptance
+
+- UI-created canary `9a97cff3-712c-416e-9b0b-de2a056ca172` completed company discovery without manual stage intervention, promoted 3 companies, produced 3 category results, 12 public company routes across the promoted set, and 1 accepted `EVIDENCE_REQUIRED` Opportunity.
+- The category-confirmed company exhausted seven contact strategies without a qualifying route; this correctly ended as `CONTACT_ROUTE_REQUIRED`, not a procurement or supplier blocker.
+- Canary lineage used 18 provider units. All measured email, outbound-attempt, draft, inbound, ambiguous-send, and CRM deltas remained 0.
+- Final runtime checks recorded 0 active manual-route tasks, 0 duplicate company routes, 0 duplicate Opportunities, 0 stale Dispatch Pending, 0 new legacy buying statuses, and 0 active PRODUCT/SUPPLIER/PROCUREMENT blockers.
+- Browser acceptance passed for Company Category Evidence, company-deduplicated Contact-ready Companies, Opportunities with official channels, no Start review, and no terminal Dispatch Pending.
+
+### Verification
+
+- Migrations 025–050 replayed with checksum verification; 049 and 050 returned `SKIPPED_ALREADY_APPLIED`.
+- Final clean-tree suite result is recorded after the release documentation commit.
+
 ## phase10 — 2026-09-04 — pre-email category-driven automation accepted
 
 ### Added and changed
