@@ -135,7 +135,7 @@ test('active profile lookup is constrained by product scope and market', async (
     const selected = await service.selectActiveProfile({ productScope: 'GENERAL_MERCHANDISE', marketCode: 'MX' });
     assert.equal(selected.version, 'general-merchandise-baseline-v1');
     assert.deepEqual(calls[0].params, ['GENERAL_MERCHANDISE','MX']);
-    await assert.rejects(() => service.selectActiveProfile(), error => error.code === 'PRODUCT_SCOPE_REQUIRED');
+    await assert.rejects(() => service.selectActiveProfile(), error => error.code === 'TARGET_CATEGORY_REQUIRED');
   } finally { service.engine.dispose(); }
 });
 

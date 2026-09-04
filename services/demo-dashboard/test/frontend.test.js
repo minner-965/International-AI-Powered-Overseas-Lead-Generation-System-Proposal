@@ -294,7 +294,7 @@ test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps 
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
   for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-product-access-matrix','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
-  for (const column of ['op-col-company','op-col-market-product','op-col-status','op-col-buyer-model','op-col-product-match','op-col-contact','op-col-supplier-action']) assert.match(html,new RegExp(column));
+  for (const column of ['op-col-company','op-col-market','op-col-product-match','op-col-verification','op-col-buyer-model','op-col-contact','op-col-status','op-col-action']) assert.match(html,new RegExp(column));
   for (const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
   assert.match(html,/id="start-enrichment"/);
   assert.match(html,/id="enrichment-job-status"[^>]*role="status"[^>]*aria-live="polite"/);
@@ -312,7 +312,7 @@ test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps 
   assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table thead\s*\{\s*display:\s*none/);
   assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table,[\s\S]*display:\s*block/);
   assert.match(css,/\.crm-opportunity-table \.op-col-company/);
-  assert.match(css,/\.crm-opportunity-table \.op-col-market-product/);
+  assert.match(css,/\.crm-opportunity-table \.op-col-market/);
   assert.match(css,/\.crm-opportunity-table \.op-col-status/);
   assert.match(css,/\.crm-opportunity-table td::before\s*\{[^}]*content:\s*attr\(data-label\)/);
   assert.match(css,/table-layout:\s*fixed/);
@@ -344,7 +344,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&product_access_matrix=DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS&sort=category_procurement_desc&limit=100');
 });
 
-test('Phase 6.1 V3 capabilities remain available behind the seven-column Phase 8 decision surface', async () => {
+test('Phase 6.1 V3 capabilities remain available behind the eight-column category-driven decision surface', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const phase7Ui = await readFile(new URL('../public/phase7-ui.js', import.meta.url), 'utf8');
@@ -353,11 +353,11 @@ test('Phase 6.1 V3 capabilities remain available behind the seven-column Phase 8
   const productEnd = app.indexOf('const crmBusinessText',productStart);
   assert.ok(productStart >= 0 && productEnd > productStart);
   const productSegment = app.slice(productStart,productEnd);
-  for (const label of ['Buyer Model / Role','Product Category Score','Buyer / VALID Contact','Supplier Access / Action']) assert.match(html,new RegExp(label));
+  for (const label of ['Target Category Match','Company Verification','Buyer Model','Named Buyer / Official Route','Opportunity Status','Next Action']) assert.match(html,new RegExp(label));
   const productCapabilitySurface = `${html}\n${app}\n${phase7Ui}`;
   for (const preserved of ['Category opportunity basis','Category Access Matrix','opportunitySecondaryScores','Readiness']) assert.match(productCapabilitySurface,new RegExp(preserved));
   for(const removed of ['Top Product Opportunity','Product candidates','Shared Product Data \(Reference\)'])assert.doesNotMatch(productCapabilitySurface,new RegExp(removed));
-  assert.match(html,/id="opportunity-table"[\s\S]*colspan="7"/);
+  assert.match(html,/id="opportunity-table"[\s\S]*colspan="8"/);
   assert.match(app,/const PRODUCT_MATCH_PROFILES = Object\.freeze\(\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\)/);
   assert.match(app,/id="detail-section-nav"/);
   assert.match(app,/\['product-match','商品类目评分','Product Category Score'\]/);

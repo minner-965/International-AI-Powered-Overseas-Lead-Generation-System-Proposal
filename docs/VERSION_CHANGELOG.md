@@ -1,8 +1,12 @@
 # Version Changelog
 
-## phase10 — 2026-09-01 — implementation complete, final acceptance incomplete
+## phase10 — 2026-09-04 — pre-email category-driven automation accepted
 
 ### Added and changed
+
+- Completed WP-A14 through WP-A16: zero-send proof, eight-state stuck-work monitoring, automatic stale ResearchJob projection convergence, final live canary, isolated PostgreSQL apply/replay, browser positive/reverse acceptance and release handoff.
+- Reconciled four historical category ResearchJob projections that had remained active without queue owners. Their existing `NOT_SUITABLE` / `EVIDENCE_REQUIRED` outcomes and evidence were retained; future equivalent drift closes through normal reconciliation.
+- Final verification covers 753 tests: 701 passed, 0 failed and 52 environment-scoped skips. The final canary used five real Tavily units and produced zero email/CRM delta.
 
 - Completed WP-U13 with real browser-driven positive and reverse ResearchJob canaries. The positive run promoted four verified companies, completed category procurement, refreshed current opportunity decisions before auto-evidence scheduling and advanced two tasks through two distinct strategies via the live n8n reconciliation; all email and CRM tables remained at zero.
 - Fixed two defects exposed only by the real canary: direct research scoring now carries the selected product profile into Customer Match, and terminal category processing now refreshes initial decisions before scheduling automatic evidence.

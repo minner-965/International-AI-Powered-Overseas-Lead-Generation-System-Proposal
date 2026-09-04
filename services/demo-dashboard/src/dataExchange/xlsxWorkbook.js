@@ -164,11 +164,13 @@ export async function parseXlsxImportBuffer(buffer, { importType, sheetName = 'I
 }
 
 function styleHeaderRow(row) {
-  row.font = { bold: true };
+  row.height = 30;
+  row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173F75' } };
   row.eachCell((cell) => {
     cell.value = String(cell.value ?? '');
     cell.protection = { locked: true };
-    cell.alignment = { vertical: 'middle' };
+    cell.alignment = { vertical: 'middle', wrapText: true };
   });
 }
 
@@ -178,6 +180,7 @@ function styleDataCells(worksheet, rowNumber, headers) {
     cell.numFmt = '@';
     if (cell.value == null) cell.value = '';
     else cell.value = String(cell.value);
+    cell.alignment = { vertical: 'top', wrapText: true };
   }
 }
 
@@ -233,14 +236,17 @@ export async function buildXlsxExportBuffer({ worksheetName = 'Export', headers,
   worksheet.columns = headers.map((header) => ({
     header,
     key: header,
-    width: Math.max(18, Math.min(40, String(header).length + 4)),
+    width: /url|route|evidence|categories|blocker|next_action/.test(String(header))
+      ? 36 : header === 'company_name' ? 28 : Math.max(18, Math.min(30, String(header).length + 4)),
     style: { numFmt: '@' },
   }));
   styleHeaderRow(worksheet.getRow(1));
   for (const row of rows) {
     const nextRow = worksheet.addRow(Object.fromEntries(headers.map((header) => [header, escapeFormulaCell(row?.[header] ?? '')])));
+    nextRow.height = 36;
     styleDataCells(worksheet, nextRow.number, headers);
   }
+  worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1,rows.length+1), column: headers.length } };
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }

@@ -15,7 +15,8 @@ import {applyPhase7Migration,PHASE10_CATEGORY_SCOPE_MIGRATION_KEY,
   PHASE10_BUDGET_RESUME_CONTINUATION_MIGRATION_KEY,
   PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY,
   PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY,PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY,
-  PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+  PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY,
+  PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 
 const root=process.env.DPV_PROJECT_ROOT
   ? path.resolve(process.env.DPV_PROJECT_ROOT)
@@ -67,7 +68,7 @@ test('030 persists automatic evidence lifecycle, dual ResearchJob lineage and im
   assert.match(sql,/UNIQUE \(task_id,attempt_number,stage,event_type\)/);
 });
 
-test('explicit migration runner applies Phase 10 migrations in order through internal-limit retirement',()=>{
+test('explicit migration runner applies Phase 10 migrations in order through category-driven context',()=>{
   assert.match(runner,/030_phase10_category_scope_and_auto_evidence\.sql/);
   assert.equal(PHASE10_AUDIT_HARDENING_MIGRATION_KEY,'031_phase10_controlled_evidence_audit_hardening.sql');
   assert.match(runner,/verifyPhase10CategoryScopeMigration/);
@@ -77,9 +78,20 @@ test('explicit migration runner applies Phase 10 migrations in order through int
   assert.ok(runner.indexOf('phase10Audit=await applyPhase7Migration')>runner.indexOf('categoryScope=await applyPhase7Migration'));
   assert.equal(PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY,'046_phase10_empty_research_job_purge_audit.sql');
   assert.equal(PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY,'047_phase10_retire_internal_tavily_enforcement.sql');
+  assert.equal(PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,'048_phase10_category_driven_context.sql');
   assert.ok(runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration')>runner.indexOf('phase10ProviderAccountState=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration')>runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration'));
-  assert.match(runner,/status:phase10RetireInternalTavilyEnforcement\.status/);
+  assert.ok(runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration')>runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration'));
+  assert.match(runner,/status:phase10CategoryDrivenContext\.status/);
+});
+
+test('048 moves automatic evidence identity to target category scope while preserving legacy profile metadata',()=>{
+  const migration=fs.readFileSync(path.join(root,'database/migrations',PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY),'utf8');
+  assert.match(migration,/target_category_scope_key/);
+  assert.match(migration,/target_category_code/);
+  assert.match(migration,/UNIQUE \(company_id,target_category_scope_key,business_blocker,evidence_revision\)/);
+  assert.match(migration,/ALTER COLUMN product_profile DROP NOT NULL/);
+  assert.doesNotMatch(migration,/DELETE FROM|TRUNCATE|DROP TABLE/i);
 });
 
 test('033 adds heartbeat and dispatch diagnostics after 032 without business-status expansion',()=>{

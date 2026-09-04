@@ -107,6 +107,10 @@ export async function queryCategoryProcurementOpportunities({
     dm.last_verified_at decision_maker_last_verified_at,
     bc.contact_type best_contact_type,bc.contact_value_raw best_contact,bc.verification_status contact_verification,
     bc.source_url contact_source_url,portal.contact_type supplier_route_type,portal.contact_value_raw supplier_portal_url,
+    coalesce(routes.route_types,'{}'::text[]) official_route_types,
+    routes.official_email_route,routes.official_phone_route,routes.official_whatsapp_route,
+    routes.official_form_route,routes.supplier_vendor_route,routes.latest_route_verified_at,
+    category_evidence.evidence_url category_evidence_url,category_evidence.latest_evidence_time,
     auto_task.id auto_evidence_task_id,auto_task.task_status auto_evidence_status,
     auto_task.current_stage auto_evidence_stage,auto_task.category_research_job_id auto_category_research_job_id,
     auto_task.contact_research_job_id auto_contact_research_job_id,
@@ -157,6 +161,21 @@ export async function queryCategoryProcurementOpportunities({
     LEFT JOIN LATERAL(SELECT px.* FROM leadgen.decision_maker_contacts px JOIN leadgen.decision_makers pd ON pd.id=px.decision_maker_id
       WHERE pd.company_id=c.id AND px.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
       ORDER BY px.updated_at DESC LIMIT 1)portal ON true
+    LEFT JOIN LATERAL(SELECT
+      array_agg(DISTINCT cx.contact_type) route_types,
+      max(cx.contact_value_raw) FILTER(WHERE cx.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) official_email_route,
+      max(cx.contact_value_raw) FILTER(WHERE cx.contact_type='BUSINESS_PHONE') official_phone_route,
+      max(cx.contact_value_raw) FILTER(WHERE cx.contact_type='BUSINESS_WHATSAPP') official_whatsapp_route,
+      max(cx.contact_value_raw) FILTER(WHERE cx.contact_type='CONTACT_FORM') official_form_route,
+      max(cx.contact_value_raw) FILTER(WHERE cx.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')) supplier_vendor_route,
+      max(cx.last_verified_at) latest_route_verified_at
+      FROM leadgen.decision_maker_contacts cx JOIN leadgen.decision_makers owner ON owner.id=cx.decision_maker_id
+      WHERE owner.company_id=c.id AND owner.lifecycle_status='ACTIVE' AND cx.source_url IS NOT NULL
+        AND cx.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED','FORMAT_VALID','BUSINESS_WHATSAPP_OBSERVED')
+        AND (cx.contact_type<>'CONTACT_FORM' OR cx.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)'))routes ON true
+    LEFT JOIN LATERAL(SELECT max(s.source_url) evidence_url,max(o.captured_at) latest_evidence_time
+      FROM leadgen.prospect_category_observations o JOIN leadgen.prospect_category_sources s ON s.id=o.source_id
+      WHERE o.id=ANY(cpm.observed_customer_category_ids))category_evidence ON true
     LEFT JOIN LATERAL(SELECT t.* FROM leadgen.auto_evidence_tasks t
       WHERE t.company_id=c.id AND t.product_profile=cpm.product_profile
       ORDER BY t.created_at DESC,t.id DESC LIMIT 1)auto_task ON true

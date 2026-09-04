@@ -80,11 +80,11 @@ test('new-customer product scoring is visibly category-level in filters, tables,
     readPublic('app.js'),
     readPublic('ui/workspace-system.css')
   ]);
-  assert.match(html,/<span lang="zh-CN">商品类目评分<\/span><span lang="en">Product Category Score<\/span>/);
+  assert.match(html,/<span lang="zh-CN">目标类目匹配<\/span><span lang="en">Target Category Match<\/span>/);
   assert.match(html,/商品类目评分 \/ Product Category Score/);
   assert.match(app,/p8-evidence-score/);
   assert.match(app,/商品类目评分','Product Category Score/);
-  assert.match(app,/data-label="商品类目评分 \/ Product Category Score"/);
+  assert.match(app,/data-label="目标类目匹配 \/ Target Category Match"/);
   assert.match(app,/类目供货机会','Category supply opportunity/);
   assert.match(app,/客户采购类目/);
   assert.match(app,/DPV 可供货批准类目/);

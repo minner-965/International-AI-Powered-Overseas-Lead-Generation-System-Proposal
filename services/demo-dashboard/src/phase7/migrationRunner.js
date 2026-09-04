@@ -27,6 +27,7 @@ export const PHASE10_TAVILY_PROVIDER_ACCOUNT_ONLY_MIGRATION_KEY = '044_phase10_t
 export const PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY = '045_phase10_provider_account_state.sql';
 export const PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY = '046_phase10_empty_research_job_purge_audit.sql';
 export const PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY = '047_phase10_retire_internal_tavily_enforcement.sql';
+export const PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY = '048_phase10_category_driven_context.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -52,6 +53,7 @@ const phase10TavilyProviderAccountOnlyPath = path.resolve(projectRoot, 'database
 const phase10ProviderAccountStatePath = path.resolve(projectRoot, 'database/migrations', PHASE10_PROVIDER_ACCOUNT_STATE_MIGRATION_KEY);
 const phase10EmptyResearchPurgeAuditPath = path.resolve(projectRoot, 'database/migrations', PHASE10_EMPTY_RESEARCH_PURGE_AUDIT_MIGRATION_KEY);
 const phase10RetireInternalTavilyEnforcementPath = path.resolve(projectRoot, 'database/migrations', PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY);
+const phase10CategoryDrivenContextPath = path.resolve(projectRoot, 'database/migrations', PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -517,6 +519,24 @@ export async function verifyPhase10RetireInternalTavilyEnforcementMigration(clie
   return{phase10_internal_tavily_enforcement_retired:true};
 }
 
+export async function verifyPhase10CategoryDrivenContextMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name='target_category_scope_key' AND is_nullable='NO') task_scope_key,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name='target_category_code' AND is_nullable='NO') task_category_code,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_tasks' AND column_name='product_profile' AND is_nullable='YES') optional_task_profile,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='auto_evidence_schedule_events' AND column_name='target_category_scope_key') event_scope_key,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.auto_evidence_tasks'::regclass
+      AND conname='auto_evidence_tasks_category_scope_identity_key') category_identity`);
+  const row=result.rows[0]||{};
+  if(!row.task_scope_key||!row.task_category_code||!row.optional_task_profile||!row.event_scope_key||!row.category_identity)
+    throw new Error('Phase 10 category-driven context migration verification failed');
+  return{phase10_category_driven_context_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -579,13 +599,16 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10RetireInternalTavilyEnforcement=await applyPhase7Migration({...options,
     migrationPath:options.phase10RetireInternalTavilyEnforcementMigrationPath||phase10RetireInternalTavilyEnforcementPath,
     appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
+  const phase10CategoryDrivenContext=await applyPhase7Migration({...options,
+    migrationPath:options.phase10CategoryDrivenContextMigrationPath||phase10CategoryDrivenContextPath,
+    appliedBy:options.appliedBy||'dpv-phase10-explicit-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
-    phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,
-    status:phase10RetireInternalTavilyEnforcement.status,database:phase10RetireInternalTavilyEnforcement.database};
+    phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,phase10CategoryDrivenContext,
+    status:phase10CategoryDrivenContext.status,database:phase10CategoryDrivenContext.database};
 }
 
 export async function applyPhase7Migration({
@@ -727,7 +750,9 @@ export async function applyPhase7Migration({
                                               ?await verifyPhase10EmptyResearchPurgeAuditMigration(client)
                                               :migrationKey===PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY
                                                 ?await verifyPhase10RetireInternalTavilyEnforcementMigration(client)
-                                                :await verifyPhase7Migration(client);
+                                                :migrationKey===PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY
+                                                  ?await verifyPhase10CategoryDrivenContextMigration(client)
+                                                  :await verifyPhase7Migration(client);
     await client.query('COMMIT');
     return {
       migration_key: migrationKey,

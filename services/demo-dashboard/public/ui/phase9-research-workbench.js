@@ -765,12 +765,14 @@ function renderScopeReview() {
   const host = $('#research-scope-review');
   const country = $('#research-country');
   const category = $('#research-category');
+  const productProfile=$('#research-product-profile');
   const buyerTypes = $$('input[name="buyer_type"]:checked').map(input=>input.value);
   if (!host || !country || !category) return;
   const provider = providerState(state.summary || {});
   const values = [
     ['市场','Market',country.selectedOptions[0]?.textContent || country.value],
-    ['产品画像','Product profile',category.selectedOptions[0]?.textContent || category.value],
+    ['目标商品类目','Target category',category.selectedOptions[0]?.textContent || category.value],
+    ['产品画像','Product profile',productProfile?.selectedOptions[0]?.textContent || '按目标类目确定 / Resolve from target category'],
     ['目标客户类型','Buyer types',buyerTypes.join(', ') || '-'],
     ['最大结果数','Maximum results',$('#research-limit')?.value || '-'],
     ['网络调用范围','Network call scope','按所选结果范围 / Selected result scope'],
@@ -782,7 +784,7 @@ function renderScopeReview() {
 }
 
 function setDialogStep(step,{ focus = true } = {}) {
-  const resolved = Math.max(1,Math.min(3,Number(step) || 1));
+  const resolved = Math.max(1,Math.min(4,Number(step) || 1));
   state.dialogStep = resolved;
   $$('.p9-dialog-step[data-research-step]').forEach(panel=>{ panel.hidden = Number(panel.dataset.researchStep) !== resolved; });
   $$('#research-job-steps li').forEach((item,index)=>{
@@ -792,9 +794,9 @@ function setDialogStep(step,{ focus = true } = {}) {
   const next = $('#research-step-next');
   const submit = $('#start-research');
   if (back) back.hidden = resolved === 1;
-  if (next) next.hidden = resolved === 3;
-  if (submit) submit.hidden = resolved !== 3;
-  if (resolved === 3) renderScopeReview();
+  if (next) next.hidden = resolved === 4;
+  if (submit) submit.hidden = resolved !== 4;
+  if (resolved === 4) renderScopeReview();
   if (focus) requestAnimationFrame(()=>{
     const panel = $(`.p9-dialog-step[data-research-step="${resolved}"]`);
     panel?.querySelector('select,input,button')?.focus({ preventScroll:true });
@@ -821,7 +823,7 @@ function validateDialogStep() {
   const status = $('#research-create-status');
   if (status) status.textContent = '';
   if (state.dialogStep === 1) {
-    for (const control of [$('#research-country'),$('#research-limit')]) {
+    for (const control of [$('#research-country'),$('#research-category')]) {
       if (control && !control.checkValidity()) {
         control.reportValidity();
         control.focus();
@@ -833,6 +835,9 @@ function validateDialogStep() {
     if (status) status.innerHTML = bi('至少选择一种目标客户类型。','Select at least one buyer type.');
     $('input[name="buyer_type"]')?.focus();
     return false;
+  }
+  if (state.dialogStep === 3 && $('#research-limit') && !$('#research-limit').checkValidity()) {
+    $('#research-limit').reportValidity();$('#research-limit').focus();return false;
   }
   return true;
 }
@@ -856,8 +861,9 @@ function initializeDialog() {
   });
   $('#research-step-next')?.addEventListener('click',()=>{ if (validateDialogStep()) setDialogStep(state.dialogStep + 1); });
   $('#research-step-back')?.addEventListener('click',()=>setDialogStep(state.dialogStep - 1));
-  $('#research-category')?.addEventListener('change',()=>{ renderCatalogSummary(); if (state.dialogStep === 3) renderScopeReview(); });
-  form.addEventListener('change',()=>{ if (state.dialogStep === 3) renderScopeReview(); });
+  $('#research-category')?.addEventListener('change',()=>{ renderCatalogSummary(); if (state.dialogStep === 4) renderScopeReview(); });
+  $('#research-product-profile')?.addEventListener('change',()=>{ if (state.dialogStep === 4) renderScopeReview(); });
+  form.addEventListener('change',()=>{ if (state.dialogStep === 4) renderScopeReview(); });
   form.addEventListener('submit',()=>{
     const status = $('#research-create-status');
     if (status) status.innerHTML = bi('正在校验并建立任务。','Validating and creating the job.');
@@ -869,7 +875,7 @@ function initializeDialog() {
   document.addEventListener('phase9:research-job-create-failed',()=>{
     const status = $('#research-create-status');
     if (status) status.innerHTML = bi('研究任务建立失败，请检查连接后重试。','The research job could not be created. Check the connection and retry.');
-    setDialogStep(3,{ focus:false });
+    setDialogStep(4,{ focus:false });
     $('#start-research')?.focus({ preventScroll:true });
   });
   document.addEventListener('phase9:research-job-terminal',event=>{

@@ -7,7 +7,6 @@ import { persistGeneratedQueries, discoverResearchCandidates } from './search/di
 import { checkResearchCandidateContacts } from './contact/researchContactService.js';
 import { verifyResearchCandidates } from './verification/companyVerificationService.js';
 import { getMarketProfile, listConfiguredMarkets } from './market/marketProfiles.js';
-import { productScopeForCategory } from './market/productProfiles.js';
 import { normalizeManagementProductScope } from './matching/managementIcpProfiles.js';
 import { createTelemetryService, instrumentPgPool } from './observability/telemetry.js';
 import { createPhase5Queue, PHASE5_QUEUES } from './jobs/phase5Queue.js';
@@ -22,6 +21,7 @@ import { EnrichmentService } from './enrichment/EnrichmentService.js';
 import { CategoryEvidenceService } from './categoryProcurement/CategoryEvidenceService.js';
 import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './categoryProcurement/CategoryProcurementService.js';
 import { CategoryScopeService } from './categoryProcurement/CategoryScopeService.js';
+import { resolveTargetCategoryContext,resolveTargetCategoryContextFromDatabase } from './categoryProcurement/targetCategoryContext.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
 import { AutoEvidenceOrchestrator,autoEvidenceConfig,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
@@ -59,6 +59,7 @@ const telemetry = createTelemetryService({
   serviceName: 'dpv-leadgen-dashboard'
 });
 const effectivePhase10Config = autoEvidenceConfig(process.env);
+const researchCreationMaintenance=/^(1|true|yes|on)$/i.test(process.env.RESEARCH_CREATION_MAINTENANCE||'false');
 
 function canonicalDigest(value) {
   const canonical = Object.fromEntries(Object.entries(value || {}).sort(([left],[right])=>left.localeCompare(right)));
@@ -238,7 +239,14 @@ async function schedulePostDiscoveryAutomation(jobId) {
     ORDER BY v.company_id`,[jobId]);
   const companyIds=promoted.rows.map(row=>row.company_id);
   if(!companyIds.length)return {companies:0,category_job_id:null,enrichment_job_id:null};
-  const productProfiles=[String(sourceJob.product_profile||'WOMENSWEAR').toUpperCase()];
+  const compatibleScope=resolveTargetCategoryContext(sourceJob).productProfile;
+  if(!compatibleScope){
+    audit('POST_DISCOVERY_AUXILIARY_PROFILE_SKIPPED',{job_id:jobId,companies:companyIds.length,
+      reason:'NO_COMPATIBLE_ICP_SCOPE'});
+    return{companies:companyIds.length,category_job_id:null,enrichment_job_id:null,
+      auxiliary_profile_status:'NOT_APPLICABLE'};
+  }
+  const productProfiles=[compatibleScope];
 
   const categoryIdempotencyKey=`post-discovery-category:${jobId}`;
   let categoryJob=(await pool.query(`SELECT * FROM leadgen.research_jobs WHERE idempotency_key=$1`,[categoryIdempotencyKey])).rows[0];
@@ -461,11 +469,15 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
   verify:jobId=>verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true}),
   score:async(jobId,executionKey)=>{
-    const jobResult=await pool.query('SELECT product_profile FROM leadgen.research_jobs WHERE id=$1',[jobId]);
+    const jobResult=await pool.query('SELECT product_profile,product_category FROM leadgen.research_jobs WHERE id=$1',[jobId]);
     if(!jobResult.rowCount)throw Object.assign(new Error('Research job not found'),{code:'RESEARCH_JOB_NOT_FOUND'});
-    const productScope=jobResult.rows[0].product_profile;
+    const productScope=resolveTargetCategoryContext(jobResult.rows[0]).productProfile;
     await scoreCompanySet({research_job_id:jobId},{id:`${executionKey}:score`});
-    await matchCompanySet({research_job_id:jobId,product_scope:productScope},{id:`${executionKey}:match`});
+    if(productScope){
+      await matchCompanySet({research_job_id:jobId,product_scope:productScope},{id:`${executionKey}:match`});
+    }else{
+      audit('CUSTOMER_MATCH_AUXILIARY_SKIPPED',{job_id:jobId,reason:'NO_COMPATIBLE_ICP_SCOPE'});
+    }
   },
   completed:async jobId=>{
     const downstream=await schedulePostDiscoveryAutomation(jobId);
@@ -1225,6 +1237,9 @@ app.post('/api/research/provider-status/refresh',managementAuth.authenticate,
 app.post('/api/research/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
+    if(researchCreationMaintenance){
+      return res.status(503).json({error:'Research maintenance window',code:'RESEARCH_CREATION_MAINTENANCE',retryable:true});
+    }
     const requestedCountryName = clean(req.body?.country_name || req.body?.country);
     let requestedCountryCode = clean(req.body?.country_code).toUpperCase();
     if (!requestedCountryCode) {
@@ -1238,30 +1253,24 @@ app.post('/api/research/jobs', managementAuth.authenticate,
     const city = clean(req.body?.city);
     const region = clean(req.body?.region);
     const preferredLanguage = clean(req.body?.preferred_language) || marketProfile.defaultLanguage;
-    const productCategory = clean(req.body?.product_category);
-    const explicitProductProfile = clean(req.body?.product_profile).toUpperCase();
-    const mappedProductProfile = productScopeForCategory(productCategory);
-    const productProfile = explicitProductProfile || mappedProductProfile;
+    const categoryContext=await resolveTargetCategoryContextFromDatabase(pool,req.body||{});
+    const productCategory=categoryContext.targetCategory;
+    const productProfile=categoryContext.productProfile;
     const buyerTypes = Array.isArray(req.body?.buyer_types)
       ? [...new Set(req.body.buyer_types.map(clean).filter(Boolean))]
       : [];
     const maxResults = Number(req.body?.max_results ?? 20);
-    if (!country || !productCategory || !productProfile || !buyerTypes.length || !Number.isInteger(maxResults) || maxResults < 1 || maxResults > 100) {
+    if (!country || !buyerTypes.length || !Number.isInteger(maxResults) || maxResults < 1 || maxResults > 100) {
       return res.status(400).json({
         error: 'Invalid research job',
-        detail: 'country, supported product_category/product_profile, buyer_types and max_results (1-100) are required'
+        detail: 'country, buyer_types and max_results (1-100) are required'
       });
-    }
-    if (!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(productProfile)) {
-      return res.status(400).json({ error: 'Invalid research job', detail: 'product_profile must be WOMENSWEAR or GENERAL_MERCHANDISE' });
-    }
-    if (explicitProductProfile && mappedProductProfile && explicitProductProfile !== mappedProductProfile) {
-      return res.status(400).json({ error: 'Invalid research job', detail: 'product_profile does not match product_category' });
     }
     await tavilyProviderAccountState.ensureCanCreate();
     const requestPayload = {
       country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
       preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
+      target_category_scope_key:categoryContext.targetCategoryScopeKey,
       buyer_types:buyerTypes,max_results:maxResults
     };
     const requestDigest = canonicalDigest(requestPayload);

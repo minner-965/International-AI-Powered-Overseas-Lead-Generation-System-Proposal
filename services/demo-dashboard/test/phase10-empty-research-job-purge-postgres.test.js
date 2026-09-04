@@ -77,6 +77,13 @@ test('03 worker start before provider side effect is eligible',{skip:!pool},()=>
 test('04 duplicate empty job is identified',{skip:!pool},()=>transaction(async client=>{
   const key=crypto.randomUUID();await job(client,{digestKey:key});const duplicate=await job(client,{digestKey:key});assert.equal((await classify(client,duplicate)).classification,'DUPLICATE_EMPTY_TASK');
 }));
+test('04a stale queued orphan without output or live execution is hard-delete eligible',{skip:!pool},()=>transaction(async client=>{
+  const row=await job(client,{status:'QUEUED'});
+  const stale=(await client.query(`UPDATE leadgen.research_jobs SET created_at=now()-interval '2 hours' WHERE id=$1 RETURNING *`,[row.id])).rows[0];
+  const result=await classify(client,stale);
+  assert.equal(result.classification,'EMPTY_STALE_ORPHAN');
+  assert.equal(result.hard_delete_eligible,true);
+}));
 test('05 provider usage event blocks hard delete',{skip:!pool},()=>transaction(async client=>{
   const row=await job(client);await providerEvent(client,row);const result=await classify(client,row);assert.equal(result.classification,'PROVIDER_USED_NO_BUSINESS_RESULT');assert.equal(result.hard_delete_eligible,false);
 }));

@@ -278,11 +278,23 @@ export class Phase7Repository {
   async listContactQueue({ limit = 200 } = {}) {
     const result = await this.pool.query(`SELECT q.id queue_id,q.queue_status,q.owner_identity,q.reason_codes,
       q.created_at queue_created_at,q.updated_at queue_updated_at,c.company_name,c.country_code,c.website_url,
-      o.*,e.actor_identity approved_by,e.created_at approved_at
+      o.*,e.actor_identity approved_by,e.created_at approved_at,
+      route.named_buyer_ready,route.official_email_route,route.official_phone_route,
+      route.official_whatsapp_route,route.official_form_route,route.supplier_vendor_route
       FROM leadgen.contact_work_queue q JOIN leadgen.business_opportunity_current o
         ON o.id=q.decision_snapshot_id AND o.company_id=q.company_id AND o.product_profile=q.product_profile
       JOIN leadgen.business_opportunity_management_events e ON e.id=q.management_event_id
-      JOIN leadgen.companies c ON c.id=q.company_id WHERE q.queue_status='ACTIVE'
+      JOIN leadgen.companies c ON c.id=q.company_id
+      LEFT JOIN LATERAL(SELECT
+        bool_or(dm.person_name IS NOT NULL AND dm.verification_status='VERIFIED') named_buyer_ready,
+        bool_or(dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) official_email_route,
+        bool_or(dc.contact_type='BUSINESS_PHONE') official_phone_route,
+        bool_or(dc.contact_type='BUSINESS_WHATSAPP') official_whatsapp_route,
+        bool_or(dc.contact_type='CONTACT_FORM') official_form_route,
+        bool_or(dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')) supplier_vendor_route
+        FROM leadgen.decision_makers dm LEFT JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=dm.id
+        WHERE dm.company_id=q.company_id AND dm.lifecycle_status='ACTIVE')route ON true
+      WHERE q.queue_status='ACTIVE'
       ORDER BY q.created_at DESC LIMIT $1`, [Math.max(1,Math.min(500,Number(limit)||200))]);
     return result.rows;
   }
@@ -321,7 +333,8 @@ export class Phase7Repository {
         AND src.captured_at>=now()-($2::int*interval '1 day')
         AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID','NOT_VERIFIED')
         AND (
-          dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION','CONTACT_FORM')
+          dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
+          OR (dc.contact_type='CONTACT_FORM' AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)')
           OR (dc.contact_type='DEPARTMENT_EMAIL' AND dm.normalized_role IN('BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT'))
           OR (dc.contact_type='BUSINESS_PHONE' AND dm.normalized_role IN('BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT'))
         )
@@ -379,6 +392,7 @@ export class Phase7Repository {
           AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
           AND c.explicit_exclusion_reason IS NULL AND c.replaced_by_company_id IS NULL
           AND t.verified_at>=now()-(30*interval '1 day') AND t.captured_at>=now()-(90*interval '1 day')
+          AND (t.route_type<>'CONTACT_FORM' OR t.official_url~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)')
           AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions sx
             WHERE sx.company_id=t.company_id AND sx.lifted_at IS NULL)
           AND NOT EXISTS(SELECT 1 FROM leadgen.historical_customer_company_links l
@@ -489,7 +503,11 @@ export class Phase7Repository {
             AND ((dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
                   AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
-              OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED')))
+              OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))
+              OR (dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
+                  AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
+              OR (dc.contact_type='CONTACT_FORM' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED')
+                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)'))
             AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
               AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
                 sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) active_company_contact_route_count,
@@ -500,7 +518,11 @@ export class Phase7Repository {
             AND ((dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
                   AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
               OR (dc.contact_type='BUSINESS_PHONE' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','FORMAT_VALID'))
-              OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED')))) company_contact_route_types,
+              OR (dc.contact_type='BUSINESS_WHATSAPP' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','BUSINESS_WHATSAPP_OBSERVED'))
+              OR (dc.contact_type IN('SUPPLIER_PORTAL','VENDOR_REGISTRATION')
+                  AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED'))
+              OR (dc.contact_type='CONTACT_FORM' AND dc.verification_status IN('VALID','PUBLICLY_OBSERVED','NOT_VERIFIED')
+                  AND dc.contact_value_normalized~*'/(contact([-_]?us)?|support|enquiry|inquiry|supplier|vendor|procurement|register|apply)(/|[?#]|$)'))) company_contact_route_types,
         (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
             AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')

@@ -1,6 +1,15 @@
 import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
 
 const safeCode=error=>String(error?.code||'QUEUE_UNAVAILABLE').toUpperCase().replace(/[^A-Z0-9_]+/g,'_').slice(0,80);
+const NON_RETRYABLE_INPUT_CODES=new Set([
+  'TARGET_CATEGORY_REQUIRED','TARGET_CATEGORY_PROFILE_INVALID','TARGET_CATEGORY_PROFILE_CONFLICT'
+]);
+
+export function isNonRetryableResearchInputError(error){
+  const code=safeCode(error);
+  return error?.retryable===false||error?.classification==='NON_RETRYABLE_INPUT_ERROR'
+    ||NON_RETRYABLE_INPUT_CODES.has(code);
+}
 
 export class ResearchDirectDispatchService {
   constructor({pool,queue,executor=null,audit=()=>{}}={}) {
@@ -96,8 +105,17 @@ export class ResearchJobDirectExecutor {
   async execute({research_job_id:jobId,execution_key:executionKey}={}) {
     const claimed=await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='PROCESSING',
       attempt_count=attempt_count+1,updated_at=now() WHERE research_job_id=$1 AND execution_key=$2
+      AND dispatch_state NOT IN('COMPLETED','FAILED')
       RETURNING checkpoint,dispatch_state`,[jobId,executionKey]);
-    if(!claimed.rowCount)throw Object.assign(new Error('Research direct outbox row not found'),{code:'RESEARCH_DIRECT_OUTBOX_MISSING'});
+    if(!claimed.rowCount){
+      const replay=await this.pool.query(`SELECT dispatch_state,checkpoint,last_error_code
+        FROM leadgen.research_job_dispatch_outbox WHERE research_job_id=$1 AND execution_key=$2`,[jobId,executionKey]);
+      if(replay.rows[0]&&['COMPLETED','FAILED'].includes(replay.rows[0].dispatch_state))return{
+        research_job_id:jobId,status:replay.rows[0].dispatch_state,checkpoint:replay.rows[0].checkpoint,
+        error_code:replay.rows[0].last_error_code||null,idempotent_replay:true
+      };
+      throw Object.assign(new Error('Research direct outbox row not found'),{code:'RESEARCH_DIRECT_OUTBOX_MISSING'});
+    }
     let checkpoint=claimed.rows[0].checkpoint;
     const order=['CREATED','QUERIES_GENERATED','DISCOVERY_COMPLETED','CONTACTS_CHECKED','COMPANIES_VERIFIED','SCORING_COMPLETED','COMPLETED'];
     const done=name=>order.indexOf(checkpoint)>=order.indexOf(name);
@@ -108,11 +126,23 @@ export class ResearchJobDirectExecutor {
       if(!done('COMPANIES_VERIFIED')){await this.setStatus(jobId,'CRAWLING');await this.stages.verify?.(jobId);await this.setStatus(jobId,'QUALIFYING');await this.checkpoint(jobId,'COMPANIES_VERIFIED');checkpoint='COMPANIES_VERIFIED';}
       if(!done('SCORING_COMPLETED')){await this.setStatus(jobId,'SCORING');await this.stages.score?.(jobId,executionKey);await this.checkpoint(jobId,'SCORING_COMPLETED');checkpoint='SCORING_COMPLETED';}
       await this.setStatus(jobId,'COMPLETED',{terminal:true});await this.checkpoint(jobId,'COMPLETED');
-      await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='COMPLETED',completed_at=now(),updated_at=now() WHERE research_job_id=$1`,[jobId]);
+      await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='COMPLETED',completed_at=now(),
+        last_error_code=NULL,next_attempt_at=NULL,updated_at=now() WHERE research_job_id=$1`,[jobId]);
       await this.stages.completed?.(jobId);
       this.audit('RESEARCH_DIRECT_QUEUE_COMPLETED',{job_id:jobId});
       return {research_job_id:jobId,status:'COMPLETED',checkpoint:'COMPLETED'};
     }catch(error){
+      if(isNonRetryableResearchInputError(error)){
+        const code=safeCode(error);
+        await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='FAILED',
+          last_error_code=$2,next_attempt_at=NULL,completed_at=coalesce(completed_at,now()),updated_at=now()
+          WHERE research_job_id=$1`,[jobId,code]);
+        await this.pool.query(`UPDATE leadgen.research_jobs SET status='FAILED',completed_at=coalesce(completed_at,now()),
+          last_error=$2,dispatch_state='FAILED',blocked_reason='NON_RETRYABLE_INPUT_ERROR',next_dispatch_attempt_at=NULL
+          WHERE id=$1`,[jobId,code]);
+        this.audit('RESEARCH_DIRECT_INPUT_REJECTED',{job_id:jobId,code,classification:'NON_RETRYABLE_INPUT_ERROR'});
+        return{research_job_id:jobId,status:'FAILED',checkpoint,error_code:code,retryable:false};
+      }
       await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='RETRY_PENDING',last_error_code=$2,
         next_attempt_at=now()+interval '30 seconds',updated_at=now() WHERE research_job_id=$1`,[jobId,safeCode(error)]);
       throw error;

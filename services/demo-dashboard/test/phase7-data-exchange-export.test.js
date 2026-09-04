@@ -131,6 +131,10 @@ test('sales opportunity export uses approved category scope and omits SKU/catalo
   assert.equal(row.customer_procurement_categories,'DRESSES; TOPS');
   assert.equal(row.dpv_supply_categories,'WOMENSWEAR');
   assert.equal(row.category_opportunity_basis,'PROFILE_SCOPE');
+  assert.equal(row.target_category,'WOMENSWEAR');
+  assert.equal(row.category_match_status,'CATEGORY_PROCUREMENT_MATCH');
+  assert.equal(row.category_evidence,'DRESSES; TOPS');
+  assert.equal(row.company_verification,undefined);
 });
 
 test('default sales-opportunity export exposes category score context without exact-product fields',()=>{
@@ -139,7 +143,10 @@ test('default sales-opportunity export exposes category score context without ex
     requesterRole:'MANAGEMENT',requesterIdentity:'manager@example.com'
   });
   for(const field of ['product_profile','product_category_score','product_category_score_band',
-    'customer_procurement_categories','dpv_supply_categories','category_opportunity_basis']) {
+    'customer_procurement_categories','dpv_supply_categories','category_opportunity_basis','target_category',
+    'category_match_status','category_evidence','company_verification','buyer_model','named_buyer_readiness',
+    'official_email_route','official_phone_whatsapp_form','supplier_vendor_route','opportunity_status',
+    'primary_blocker','next_action','latest_evidence_time','evidence_url']) {
     assert.ok(request.columns.includes(field),`missing category export field ${field}`);
   }
   for(const removed of ['product_opportunity_status','product_opportunity_count','top_product_opportunity',

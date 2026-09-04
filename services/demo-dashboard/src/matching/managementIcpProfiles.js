@@ -65,7 +65,7 @@ export function classifyManagementOrganization({ productScope, organizationType 
   const context = `${organizationType} ${description}`.trim();
   const exclusion = MANAGEMENT_EXCLUSIONS.find(rule => rule.pattern.test(context));
   if (exclusion) return { eligible: false, product_scope: scope, organization_type: type || null, reason_code: exclusion.reason_code };
-  if (!scope) return { eligible: false, product_scope: null, organization_type: type || null, reason_code: 'PRODUCT_SCOPE_REQUIRED' };
+  if (!scope) return { eligible: false, product_scope: null, organization_type: type || null, reason_code: 'TARGET_CATEGORY_REQUIRED' };
   const preferred = PREFERRED_ORGANIZATION_TYPES[scope] || [];
   if (preferred.includes(type)) return { eligible: true, product_scope: scope, organization_type: type, reason_code: 'PREFERRED_ORGANIZATION_TYPE' };
   return { eligible: false, product_scope: scope, organization_type: type || null, reason_code: 'ORGANIZATION_TYPE_NOT_PREFERRED' };

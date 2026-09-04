@@ -17,6 +17,8 @@ function taskFixture(overrides = {}) {
   return {
     id: '22222222-2222-4222-8222-222222222222',
     company_id: companyId,
+    target_category_scope_key:'PROFILE:WOMENSWEAR',
+    target_category_code:'WOMENSWEAR',
     product_profile: 'WOMENSWEAR',
     business_blocker: 'NAMED_BUYER_EVIDENCE',
     evidence_revision: 4,
@@ -47,6 +49,7 @@ class FakeRepository {
     this.schedules = [];
     this.resolvedEventCompanyIds = null;
     this.dueFairnessRetries = [];
+    this.staleRunningTasks = [];
     this.capacityWaits = [];
     this.researchKinds = [];
   }
@@ -56,6 +59,11 @@ class FakeRepository {
   async selectDueFairnessRetries(options) {
     this.lastDueRetryOptions=options;
     return this.dueFairnessRetries.slice(0,options.limit);
+  }
+
+  async selectStaleRunningTasks(options) {
+    this.lastStaleRunningOptions=options;
+    return this.staleRunningTasks.slice(0,options.limit);
   }
 
   async selectProviderCapacityWaits(options) {
@@ -251,6 +259,29 @@ test('event scheduling uses the stable execution unit and dispatches source disc
   assert.match(queue.calls[0].options.singletonKey, /^auto-evidence:/);
 });
 
+test('an event replay for a due fairness retry dispatches the next strategy attempt number', async () => {
+  const repository = new FakeRepository();
+  repository.task=taskFixture({
+    task_status:'RETRY_SCHEDULED',attempt_count:2,strategy_attempt_count:2,
+    current_stage:null,current_strategy_code:null,retry_at:new Date(0)
+  });
+  repository.schedule=async(candidate,options)=>{
+    repository.schedules.push({candidate,options});
+    return{task:repository.task,outcome:'DEDUPLICATED',replay:false,dispatch_required:true};
+  };
+  const queue=queueFixture();
+  const service=new AutoEvidenceOrchestrator({repository,queue,
+    env:{AUTO_EVIDENCE_ENABLED:'true'}});
+  const result=await service.scheduleEvent({
+    company_id:companyId,product_profile:'WOMENSWEAR',
+    business_blocker:'CATEGORY_EVIDENCE',evidence_revision:4,event_id:'retry-event'
+  });
+  assert.equal(result.status,'DEDUPLICATED');
+  assert.equal(queue.calls.length,1);
+  assert.equal(queue.calls[0].data.attempt_number,3);
+  assert.equal(queue.calls[0].data.strategy_attempt_number,3);
+});
+
 test('reconciliation respects the configured batch cap and records no duplicate provider work itself', async () => {
   const candidates = Array.from({ length: 5 }, (_, index) => ({
     company_id: `${index + 1}`.padStart(8, '0') + '-1111-4111-8111-111111111111',
@@ -267,6 +298,24 @@ test('reconciliation respects the configured batch cap and records no duplicate 
   assert.equal(result.scheduled, 2);
   assert.equal(repository.schedules.length, 2);
   assert.equal(queue.calls.length, 2);
+});
+
+test('reconciliation redispatches an expired running stage through the normal lease recovery path', async () => {
+  const repository=new FakeRepository();
+  repository.staleRunningTasks=[taskFixture({
+    task_status:'RUNNING',current_stage:'DISCOVERING_SOURCES',current_strategy_code:'S05_OFFICIAL_PRESS_PDF',
+    strategy_attempt_count:5,attempt_count:5
+  })];
+  const queue=queueFixture();
+  const service=new AutoEvidenceOrchestrator({repository,queue,
+    env:{AUTO_EVIDENCE_ENABLED:'true',AUTO_EVIDENCE_STAGE_LEASE_MINUTES:'15'}});
+  const result=await service.reconcile({reconcile_bucket:'stale-recovery-window'});
+  assert.equal(result.stale_stage_redispatched,1);
+  assert.equal(result.selected,1);
+  assert.equal(queue.calls.length,1);
+  assert.equal(queue.calls[0].name,PHASE5_QUEUES.DISCOVER_OPPORTUNITY_EVIDENCE);
+  assert.equal(queue.calls[0].data.stage,'DISCOVERING_SOURCES');
+  assert.match(queue.calls[0].options.singletonKey,/stale-recovery:stale-recovery-window$/);
 });
 
 test('provider-only policy accepts one hundred unique tasks without a local daily quota gate', async () => {
@@ -779,7 +828,7 @@ test('provider capacity recovery appends an attributed MANUAL_RETRY event in the
   assert.ok(queries.some(item=>item.sql.startsWith('UPDATE leadgen.auto_evidence_tasks')&&/retry_at=now\(\)/.test(item.sql)));
   assert.ok(queries.some(item=>/checkpoint_replay_count=greatest\(checkpoint_replay_count\+1/.test(item.sql)));
   const auditInsert=queries.find(item=>item.sql.startsWith('INSERT INTO leadgen.auto_evidence_schedule_events'));
-  assert.ok(auditInsert);assert.match(auditInsert.sql,/VALUES \(\$11/);
+  assert.ok(auditInsert);assert.match(auditInsert.sql,/VALUES \(\$13/);
   assert.deepEqual(auditInsert.params.slice(-4),['owner.fixture','MANAGEMENT','provider-restored-fixture','MANUAL_RETRY']);
   assert.ok(queries.some(item=>item.sql==='COMMIT'));
 });

@@ -62,7 +62,9 @@ export function buildStrategyQuery(strategyCode,task={}){
   const name=clean(task.company_name||'');
   const domain=clean(task.official_root_domain||task.normalized_domain||'').toLowerCase();
   const country=upper(task.country_code||task.market);
-  const profile=upper(task.product_profile).replaceAll('_',' ').toLowerCase();
+  const category=upper(task.target_category_code||task.target_category
+    ||String(task.target_category_scope_key||'').replace(/^CATEGORY:/i,'')
+    ||task.product_profile).replaceAll('_',' ').toLowerCase();
   const subject=domain?`site:${domain}`:quote(name);
   const mxRoles=MEXICO_BUYER_ROLE_TERMS.map(quote).join(' OR ');
   const aeRoles=['buyer','procurement manager','purchasing manager','category manager','sourcing manager','مدير المشتريات','مسؤول المشتريات'].map(quote).join(' OR ');
@@ -70,19 +72,19 @@ export function buildStrategyQuery(strategyCode,task={}){
   const locale=country==='MX'?'es-MX':country==='AE'?'en-ar-AE':'en';
   const candidate=clean(task.candidate_buyer_name||'');
   const queryByCode={
-    S01_OFFICIAL_CATEGORY:`${subject} (${quote(profile)} OR category OR products OR marcas)`,
-    S02_OFFICIAL_ASSORTMENT:`${subject} (collection OR assortment OR department OR catalog OR catálogo) ${quote(profile)}`,
+    S01_OFFICIAL_CATEGORY:`${subject} (${quote(category)} OR category OR products OR marcas)`,
+    S02_OFFICIAL_ASSORTMENT:`${subject} (collection OR assortment OR department OR catalog OR catálogo) ${quote(category)}`,
     S03_OFFICIAL_SUPPLIER_ROUTE:`${subject} (supplier OR vendor OR procurement OR tender OR registration OR proveedores OR compras)`,
     S04_OFFICIAL_LEADERSHIP:`${subject} (team OR leadership OR management OR equipo OR dirección) (${roles})`,
-    S05_OFFICIAL_PRESS_PDF:`${subject} (press OR news OR annual report OR informe OR filetype:pdf) (${quote('procurement')} OR ${quote('compras')} OR ${quote(profile)})`,
+    S05_OFFICIAL_PRESS_PDF:`${subject} (press OR news OR annual report OR informe OR filetype:pdf) (${quote('procurement')} OR ${quote('compras')} OR ${quote(category)})`,
     S06_LOCAL_LANGUAGE_ROLES:`${quote(name)} (${roles})`,
-    S07_INDUSTRY_DIRECTORY:`${quote(name)} (${quote('industry directory')} OR association OR exhibitor OR exposición OR directorio) ${quote(profile)}`,
+    S07_INDUSTRY_DIRECTORY:`${quote(name)} (${quote('industry directory')} OR association OR exhibitor OR exposición OR directorio) ${quote(category)}`,
     S08_PUBLIC_PRO_REFERENCE:`site:linkedin.com/in ${quote(name)} (${roles})`,
     S09_PERSON_CORROBORATION:`${quote(candidate)} ${quote(name)} (${roles})`,
     S10_ALTERNATIVE_OFFICIAL_ROUTE:`${subject} (${quote('buying department')} OR ${quote('department email')} OR contact OR supplier portal OR teléfono OR formulario)`
   };
   const queryText=clean(queryByCode[strategy.code]);
-  if(!queryText||queryText.includes('""')||(strategy.requires_candidate&&!candidate))return null;
+  if(!category||!queryText||queryText.includes('""')||(strategy.requires_candidate&&!candidate))return null;
   return Object.freeze({...strategy,locale,query_text:queryText,query_type:`auto_${strategy.code.toLowerCase()}`,
     query_fingerprint:sha(queryText.toLowerCase())});
 }

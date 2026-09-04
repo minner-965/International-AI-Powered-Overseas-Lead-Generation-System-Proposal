@@ -34,11 +34,16 @@ function emptyState() {
 
 function render(items) {
   if (!host) return;
+  const readiness=item=>[
+    item.named_buyer_ready&&bi('具名买手','Named buyer'),item.official_email_route&&bi('官方邮箱','Official email'),
+    item.official_phone_route&&bi('人工电话','Manual phone'),item.official_whatsapp_route&&bi('人工 WhatsApp','Manual WhatsApp'),
+    item.official_form_route&&bi('人工表单','Manual form'),item.supplier_vendor_route&&bi('供应商入口','Supplier route')
+  ].filter(Boolean).join(' · ')||bi('路径待补充','Route required');
   host.innerHTML = items.length ? items.map(item => `<article class="crm-contact-queue-row">
     <div><strong>${esc(item.company_name || '-')}</strong><span class="crm-row-secondary">${esc(item.country_code || '-')} / ${esc(item.product_profile || '-')}</span></div>
     <div><small>${bi('队列状态', 'Queue status')}</small>${phase8StatusMarkup(item.queue_status || 'ACTIVE')}</div>
     <div><small>${bi('负责人', 'Owner')}</small><span>${esc(item.owner_identity || '-')}</span></div>
-    <div><small>${bi('确认记录', 'Management approval')}</small><span>${esc(item.approved_by || '-')}</span><span class="crm-row-secondary">${esc(date(item.approved_at))}</span></div>
+    <div><small>${bi('可用联系路径', 'Available route')}</small><span>${readiness(item)}</span><span class="crm-row-secondary">${bi('各种路径分别显示，不等同于已核验买手','Routes are separate; only a named buyer is labelled as such')}</span></div>
     <div><small>${bi('下一步', 'Next action')}</small><button class="btn btn-outline-primary" type="button" data-open-view="companies">${bi('查看客户主档', 'View company')}</button></div>
   </article>`).join('') : emptyState();
   host.querySelectorAll('[data-open-view]').forEach(button => button.addEventListener('click', () => document.querySelector(`[data-app-nav="${button.dataset.openView}"]`)?.click()));

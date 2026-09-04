@@ -113,6 +113,22 @@ test('website checker records timeout, response size limit and non-HTML response
   assert.equal((await binary.fetchPage('https://company.test/file')).fetch_status, 'NON_HTML');
 });
 
+test('website checker aborts bounded requests and closes rejected response streams', async () => {
+  let aborted=false;
+  const timeout=new WebsiteReachabilityChecker({timeoutMs:5,lookupImpl:publicLookup,fetchImpl:async(_url,{signal})=>
+    new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>{
+      aborted=true;reject(new DOMException('aborted','AbortError'));
+    },{once:true}))});
+  assert.equal((await timeout.fetchPage('https://company.test/slow')).fetch_status,'TIMEOUT');
+  assert.equal(aborted,true);
+  let cancelled=false;
+  const stream=new ReadableStream({pull(){},cancel(){cancelled=true;}});
+  const binary=new WebsiteReachabilityChecker({lookupImpl:publicLookup,
+    fetchImpl:async()=>new Response(stream,{status:200,headers:{'content-type':'application/pdf'}})});
+  assert.equal((await binary.fetchPage('https://company.test/file.pdf')).fetch_status,'NON_HTML');
+  assert.equal(cancelled,true);
+});
+
 test('website checker rejects private-network targets', async () => {
   const checker = new WebsiteReachabilityChecker({fetchImpl:async()=>new Response('ok')});
   const result = await checker.fetchPage('http://127.0.0.1/private');

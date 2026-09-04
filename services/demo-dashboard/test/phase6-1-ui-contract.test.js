@@ -13,13 +13,13 @@ const opportunities=read('opportunity-ui.js');
 const productMatch=read('product-match-ui.js');
 const css=read('phase5.css');
 
-test('desktop Opportunities exposes the seven Phase 8 decision columns and preserves V3 detail capabilities',()=>{
+test('desktop Opportunities exposes the eight category-driven decision columns and preserves V3 detail capabilities',()=>{
   for(const className of [
-    'op-col-company','op-col-market-product','op-col-status','op-col-buyer-model','op-col-product-match','op-col-contact','op-col-supplier-action'
+    'op-col-company','op-col-market','op-col-product-match','op-col-verification','op-col-buyer-model','op-col-contact','op-col-status','op-col-action'
   ]) assert.match(html,new RegExp(`class=["'][^"']*${className}`));
-  for(const label of ['Buyer Model / Role','Product Category Score','Buyer / VALID Contact','Supplier Access / Action']) assert.match(html,new RegExp(label,'i'));
+  for(const label of ['Target Category Match','Company Verification','Buyer Model','Named Buyer / Official Route','Opportunity Status','Next Action']) assert.match(html,new RegExp(label,'i'));
   for(const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
-  assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']7["']/);
+  assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']8["']/);
 });
 
 test('V3 Opportunities exposes buyer/category/matrix filters with stable IDs',()=>{

@@ -24,6 +24,18 @@ const EXCLUDED_LIFECYCLES = new Set(['DUPLICATE', 'SUPERSEDED', 'INVALID', 'ARCH
 const DEAD_WEBSITE_STATES = new Set(['DEAD', 'INVALID', 'UNREACHABLE', 'UNSUPPORTED']);
 const ELIGIBLE_BUYERS = new Set(['DIRECT_END_BUYER', 'DISTRIBUTION_BUYER']);
 
+export function deriveChannelReadiness({ namedBuyerRouteReady = false, companyContactRouteTypes = [] } = {}) {
+  const types = new Set((companyContactRouteTypes || []).map(upper));
+  const channels = [];
+  if (namedBuyerRouteReady) channels.push('NAMED_BUYER_READY');
+  if (['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL'].some(type => types.has(type))) channels.push('EMAIL_ROUTE_READY');
+  if (types.has('BUSINESS_PHONE')) channels.push('MANUAL_PHONE_READY');
+  if (types.has('BUSINESS_WHATSAPP')) channels.push('MANUAL_WHATSAPP_READY');
+  if (types.has('CONTACT_FORM')) channels.push('MANUAL_FORM_READY');
+  if (['SUPPLIER_PORTAL','VENDOR_REGISTRATION'].some(type => types.has(type))) channels.push('SUPPLIER_PORTAL_READY');
+  return channels;
+}
+
 function upper(value) { return String(value ?? '').trim().toUpperCase(); }
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -130,6 +142,11 @@ export function deriveOpportunityDecision(input = {}) {
   const companyRouteReady = activeCompanyRouteCount > 0;
   const routeCanCompleteReadiness = cooperationReadiness === 'SALES_READY'
     || (companyRouteReady && ['NEEDS_DECISION_MAKER','NEEDS_CONTACT_ROUTE'].includes(cooperationReadiness));
+  const officialEmailRouteReady=companyRouteReady&&companyContactRouteTypes.some(type=>
+    ['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL'].includes(type));
+  const officialManualRouteReady=companyRouteReady&&companyContactRouteTypes.some(type=>
+    ['BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION'].includes(type));
+  const channelReadiness=deriveChannelReadiness({namedBuyerRouteReady,companyContactRouteTypes});
   let contactReadiness = 'EVIDENCE_REQUIRED';
   if (businessFitStatus === 'NOT_SUITABLE' || policyHold) contactReadiness = 'BLOCKED';
   else if ((namedBuyerRouteReady || companyRouteReady) && routeCanCompleteReadiness) {
@@ -152,6 +169,12 @@ export function deriveOpportunityDecision(input = {}) {
     business_fit_status: businessFitStatus,
     system_recommendation_status: systemStatus,
     contact_readiness: contactReadiness,
+    contact_route_readiness: contactReadiness!=='READY'
+      ?(contactReadiness==='BLOCKED'?'NO_VALID_ROUTE':'CONTACT_EVIDENCE_REQUIRED')
+      :namedBuyerRouteReady?'NAMED_BUYER_READY'
+        :officialEmailRouteReady?'OFFICIAL_EMAIL_ROUTE_READY'
+          :officialManualRouteReady?'OFFICIAL_MANUAL_ROUTE_READY':'CONTACT_EVIDENCE_REQUIRED',
+    channel_readiness: channelReadiness,
     policy_contact_status: policyHold ? 'HOLD' : 'OPEN',
     relationship_status: normalizedRelationship,
     reason_codes: reasonCodes,
@@ -174,6 +197,7 @@ export function deriveOpportunityDecision(input = {}) {
       active_valid_email_route_count: freshValidRouteCount,
       active_company_contact_route_count: activeCompanyRouteCount,
       company_contact_route_types: companyContactRouteTypes,
+      channel_readiness: channelReadiness,
       business_email_route_count: businessEmailRouteCount,
       expired_valid_email_route_count: expiredValidRouteCount,
       email_route_statuses: emailRouteStatuses,

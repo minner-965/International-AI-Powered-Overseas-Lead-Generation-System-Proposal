@@ -56,7 +56,7 @@ test('irrelevant verified category is PRODUCT_MISMATCH and no approved scope is 
   assert.equal(unapproved.match_status,'NEEDS_DPV_CATEGORY_SCOPE_APPROVAL');
 });
 
-test('category match plus zero SKU is category-only and still requires named current VALID contact',()=>{
+test('category match plus zero SKU is category-only and requires a named or official contact route',()=>{
   const category=match();
   const opportunity=calculateProductOpportunity({category_procurement_match:{...category,id:'00000000-0000-4000-8000-000000001010',product_profile:'WOMENSWEAR'},products:[{
     id:'00000000-0000-4000-8000-000000001011',product_profile:'WOMENSWEAR',normalized_category:'DRESSES',

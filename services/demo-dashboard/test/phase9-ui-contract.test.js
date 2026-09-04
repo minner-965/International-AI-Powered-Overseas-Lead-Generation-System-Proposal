@@ -15,13 +15,14 @@ test('Research Workbench keeps four real metrics and at most three priority task
   assert.match(ui,/\/api\/research\/jobs\?view=inbox&limit=6&sort=updated_desc/);
 });
 
-test('new research job remains a native three-step dialog with explicit close and focus restoration',async()=>{
+test('new research job is a native four-step category-driven dialog with explicit close and focus restoration',async()=>{
   const [html,ui]=await Promise.all([
     readPublic('index.html'),
     readPublic('ui/phase9-research-workbench.js')
   ]);
   assert.match(html,/<dialog id="research-job-dialog"/);
-  assert.equal((html.match(/class="p9-dialog-step"/g)||[]).length,3);
+  assert.equal((html.match(/class="p9-dialog-step"/g)||[]).length,4);
+  assert.match(html,/Optional Product Profile and Advanced Filters/);
   assert.match(html,/data-research-dialog-close/);
   assert.match(ui,/dialog\.showModal\(\)/);
   assert.match(ui,/dialogOpener\.focus\(\{ preventScroll:true \}\)/);

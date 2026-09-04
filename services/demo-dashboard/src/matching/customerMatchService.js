@@ -47,7 +47,7 @@ export class CustomerMatchService {
   async selectActiveProfile({ productScope, marketCode = null } = {}) {
     const scope = requestedProductScope(productScope);
     if (!scope) {
-      throw Object.assign(new Error('Customer Match requires WOMENSWEAR or GENERAL_MERCHANDISE'), { code: 'PRODUCT_SCOPE_REQUIRED' });
+      throw Object.assign(new Error('Customer Match needs a compatible target category'), { code: 'TARGET_CATEGORY_REQUIRED',status:422,retryable:false });
     }
     const result = await this.pool.query(`
       SELECT id FROM leadgen.icp_profiles
@@ -63,7 +63,7 @@ export class CustomerMatchService {
   async selectActiveProfiles({ productScope, marketCode = null } = {}) {
     const scope = requestedProductScope(productScope);
     if (!scope) {
-      throw Object.assign(new Error('Customer Match requires WOMENSWEAR or GENERAL_MERCHANDISE'), { code: 'PRODUCT_SCOPE_REQUIRED' });
+      throw Object.assign(new Error('Customer Match needs a compatible target category'), { code: 'TARGET_CATEGORY_REQUIRED',status:422,retryable:false });
     }
     const market = marketCode ? String(marketCode).trim().toUpperCase() : null;
     const result = await this.pool.query(`SELECT id,profile_type FROM leadgen.icp_profiles
@@ -128,7 +128,7 @@ export class CustomerMatchService {
     const facts = companyFacts || await this.loadCompanyFacts(companyId);
     const scope = requestedProductScope(productScope) || inferredProductScope(facts);
     if (!scope) {
-      throw Object.assign(new Error('Customer Match requires an explicit or deterministically mapped product scope'), { code: 'PRODUCT_SCOPE_REQUIRED' });
+      throw Object.assign(new Error('Customer Match needs a compatible target category'), { code: 'TARGET_CATEGORY_REQUIRED',status:422,retryable:false });
     }
     const marketCode = facts.markets?.values?.[0] || null;
     const profile = profileId ? await this.getProfile(profileId) : await this.selectActiveProfile({ productScope: scope, marketCode });
@@ -181,7 +181,7 @@ export class CustomerMatchService {
     const facts = options.companyFacts || await this.loadCompanyFacts(options.companyId);
     const scope = requestedProductScope(options.productScope) || inferredProductScope(facts);
     if (!scope) {
-      throw Object.assign(new Error('Customer Match requires an explicit or deterministically mapped product scope'), { code: 'PRODUCT_SCOPE_REQUIRED' });
+      throw Object.assign(new Error('Customer Match needs a compatible target category'), { code: 'TARGET_CATEGORY_REQUIRED',status:422,retryable:false });
     }
     const profiles = await this.selectActiveProfiles({ productScope: scope, marketCode: facts.markets?.values?.[0] || null });
     const result = { management_baseline: null, mx_historical_reference: null };

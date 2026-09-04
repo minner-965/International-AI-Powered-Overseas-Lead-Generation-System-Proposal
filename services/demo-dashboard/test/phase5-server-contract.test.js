@@ -63,9 +63,13 @@ test('transactional outbox and direct pg-boss are the only ResearchJob dispatch 
   assert.match(server, /SCORING: new Set\(\['COMPLETED',\s*'FAILED'\]\)/);
 });
 
-test('direct research scoring carries the selected product profile into Customer Match', () => {
-  assert.match(server, /SELECT product_profile FROM leadgen\.research_jobs WHERE id=\$1/);
+test('direct research scoring treats Customer Match as optional auxiliary ranking', () => {
+  assert.match(server, /SELECT product_profile,product_category FROM leadgen\.research_jobs WHERE id=\$1/);
+  assert.match(server, /normalizeManagementProductScope/);
   assert.match(server, /matchCompanySet\(\{research_job_id:jobId,product_scope:productScope\}/);
+  assert.match(server, /CUSTOMER_MATCH_AUXILIARY_SKIPPED/);
+  assert.match(server, /POST_DISCOVERY_AUXILIARY_PROFILE_SKIPPED/);
+  assert.doesNotMatch(server, /sourceJob\.product_profile\|\|'WOMENSWEAR'/);
 });
 
 test('completed category procurement refreshes decisions before scheduling auto evidence', () => {

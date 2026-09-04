@@ -23,6 +23,7 @@ test('verified direct buyer and exact category match becomes recommended', () =>
   assert.equal(result.system_recommendation_status, 'RECOMMENDED');
   assert.equal(result.business_fit_status, 'FIT');
   assert.equal(result.contact_readiness, 'READY');
+  assert.equal(result.contact_route_readiness,'NAMED_BUYER_READY');
   assert.equal(result.display_opportunity_status, 'RECOMMENDED');
   assert.equal(result.rule_version, 'business-opportunity-decision-v4');
   assert.match(result.input_digest, /^[a-f0-9]{64}$/);
@@ -86,8 +87,8 @@ test('contact evidence is required before a business-fit opportunity can be reco
   }
 });
 
-test('verified company email, phone or public WhatsApp can make a fit company a business opportunity without a named buyer',()=>{
-  for(const contactType of ['BUSINESS_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP']){
+test('verified official company routes can make a fit company a business opportunity without a named buyer',()=>{
+  for(const contactType of ['BUSINESS_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM','SUPPLIER_PORTAL','VENDOR_REGISTRATION']){
     const result=deriveOpportunityDecision(eligible({
       cooperation:{opportunity_readiness:'NEEDS_DECISION_MAKER',verified_decision_maker_count:0},
       profile_relevant_buyer_count:0,verified_buyer_role_count:0,active_valid_email_route_count:0,
@@ -98,7 +99,23 @@ test('verified company email, phone or public WhatsApp can make a fit company a 
     assert.equal(result.system_recommendation_status,'RECOMMENDED');
     assert.ok(result.reason_codes.includes('COMPANY_CONTACT_ROUTE_AVAILABLE'));
     assert.ok(!result.reason_codes.includes('EVIDENCE_REQUIRED_CONTACT'));
+    assert.equal(result.contact_route_readiness,contactType==='BUSINESS_EMAIL'
+      ?'OFFICIAL_EMAIL_ROUTE_READY':'OFFICIAL_MANUAL_ROUTE_READY');
+    const expectedChannel=({BUSINESS_EMAIL:'EMAIL_ROUTE_READY',BUSINESS_PHONE:'MANUAL_PHONE_READY',
+      BUSINESS_WHATSAPP:'MANUAL_WHATSAPP_READY',CONTACT_FORM:'MANUAL_FORM_READY',
+      SUPPLIER_PORTAL:'SUPPLIER_PORTAL_READY',VENDOR_REGISTRATION:'SUPPLIER_PORTAL_READY'})[contactType];
+    assert.deepEqual(result.channel_readiness,[expectedChannel]);
   }
+});
+
+test('an official company route never presents itself as a named buyer',()=>{
+  const result=deriveOpportunityDecision(eligible({
+    cooperation:{opportunity_readiness:'NEEDS_DECISION_MAKER',verified_decision_maker_count:0},
+    profile_relevant_buyer_count:0,verified_buyer_role_count:0,active_valid_email_route_count:0,
+    active_company_contact_route_count:1,company_contact_route_types:['CONTACT_FORM']
+  }));
+  assert.equal(result.contact_route_readiness,'OFFICIAL_MANUAL_ROUTE_READY');
+  assert.notEqual(result.contact_route_readiness,'NAMED_BUYER_READY');
 });
 
 test('contact readiness never compensates failed product or business gates', () => {

@@ -8,6 +8,7 @@ const pg=require('pg');
 const ACTIVE_JOB_STATUSES=new Set(['QUEUED','RUNNING','DISCOVERING','CRAWLING','EXTRACTING','QUALIFYING','SCORING']);
 const ACTIVE_TASK_STATUSES=new Set(['QUEUED','RUNNING','RETRY_SCHEDULED','TEMPORARY_PROVIDER_ERROR','BUDGET_PAUSED']);
 const LIVE_QUEUE_STATES=['created','retry','active'];
+const STALE_ORPHAN_MINUTES=60;
 const BUSINESS_JOB_TABLES=[
   'business_opportunity_current','business_opportunity_decision_snapshots','buyer_business_model_results','category_procurement_match_results',
   'commercial_product_fit_current','commercial_product_fit_results','companies','company_facts_snapshots','company_score_runs',
@@ -151,10 +152,6 @@ export class ResearchJobPurgeClassifier{
     const providerUsedUnits=Number(counts.provider_used_units);
     const providerRequestIdCount=Number(counts.provider_request_id_count);
     const legacyProviderCalls=Number(job.search_api_requests||0)+Number(job.social_search_api_requests||0)+Number(job.hunter_calls||0);
-    const isActive=ACTIVE_JOB_STATUSES.has(String(job.status||'').toUpperCase())||currentBoundTasks.some(row=>
-      ACTIVE_TASK_STATUSES.has(String(row.task_status||'').toUpperCase()));
-    const hasActiveLease=currentBoundTasks.some(row=>String(row.task_status||'').toUpperCase()==='RUNNING')
-      ||String(job.status||'').toUpperCase()==='RUNNING';
     const emailCounts=companyIds.length?(await client.query(`SELECT
       (SELECT count(*) FROM leadgen.outreach_drafts WHERE company_id=ANY($1::uuid[]))+
       (SELECT count(*) FROM leadgen.outreach_approvals WHERE company_id=ANY($1::uuid[]))+
@@ -162,12 +159,23 @@ export class ResearchJobPurgeClassifier{
     const crmCounts=taskIds.length?(await client.query(`SELECT count(*)::int count FROM leadgen.crm_sync_outbox WHERE task_id=ANY($1::uuid[])`,[taskIds])).rows[0]:{count:0};
     const emailSideEffectCount=Number(emailCounts.count);
     const crmSideEffectCount=Number(crmCounts.count);
+    const createdAtMs=new Date(job.created_at||0).getTime();
+    const staleOrphan=String(job.status||'').toUpperCase()==='QUEUED'&&!job.started_at
+      &&Number.isFinite(createdAtMs)&&Date.now()-createdAtMs>=STALE_ORPHAN_MINUTES*60000
+      &&recordedClaims===0&&pendingOutboxCount===0&&liveQueueJobCount===0&&continuationCount===0&&checkpointCount===0
+      &&providerUsageEventCount===0&&providerUsedUnits===0&&providerRequestIdCount===0&&legacyProviderCalls===0
+      &&businessOutputReferenceCount===0&&emailSideEffectCount===0&&crmSideEffectCount===0&&ambiguousReferenceCount===0;
+    const isActive=(!staleOrphan&&ACTIVE_JOB_STATUSES.has(String(job.status||'').toUpperCase()))||currentBoundTasks.some(row=>
+      ACTIVE_TASK_STATUSES.has(String(row.task_status||'').toUpperCase()));
+    const hasActiveLease=currentBoundTasks.some(row=>String(row.task_status||'').toUpperCase()==='RUNNING')
+      ||String(job.status||'').toUpperCase()==='RUNNING';
     const duplicate=(await client.query(`SELECT count(*)::int count FROM leadgen.research_jobs other WHERE other.id<>$1 AND
       (($2::text IS NOT NULL AND other.idempotency_key=$2) OR ($3::text IS NOT NULL AND other.request_digest=$3))`,[
       job.id,job.idempotency_key||null,job.request_digest||null
     ])).rows[0].count>0;
     let classification;
-    if(isActive||hasActiveLease||pendingOutboxCount>0||liveQueueJobCount>0||continuationCount>0||checkpointCount>0){
+    if(staleOrphan){classification='EMPTY_STALE_ORPHAN';
+    }else if(isActive||hasActiveLease||pendingOutboxCount>0||liveQueueJobCount>0||continuationCount>0||checkpointCount>0){
       classification='ACTIVE_OR_RECOVERABLE';
     }else if(ambiguousReferenceCount>0){classification='AMBIGUOUS_REFERENCE';
     }else if(businessOutputReferenceCount>0){classification='BUSINESS_OUTPUT_PRESENT';
@@ -176,7 +184,7 @@ export class ResearchJobPurgeClassifier{
     }else if(duplicate){classification='DUPLICATE_EMPTY_TASK';
     }else if(workerClaimCount===0&&!job.started_at){classification='EMPTY_NEVER_STARTED';
     }else{classification='EMPTY_FAILED_BEFORE_SIDE_EFFECT';}
-    const eligibleClass=['EMPTY_NEVER_STARTED','EMPTY_FAILED_BEFORE_SIDE_EFFECT','DUPLICATE_EMPTY_TASK'].includes(classification);
+    const eligibleClass=['EMPTY_STALE_ORPHAN','EMPTY_NEVER_STARTED','EMPTY_FAILED_BEFORE_SIDE_EFFECT','DUPLICATE_EMPTY_TASK'].includes(classification);
     const hardDeleteEligible=eligibleClass&&!isActive&&!hasActiveLease&&pendingOutboxCount===0&&liveQueueJobCount===0
       &&continuationCount===0&&checkpointCount===0&&providerUsageEventCount===0&&providerRequestIdCount===0
       &&providerUsedUnits===0&&legacyProviderCalls===0&&businessOutputReferenceCount===0&&emailSideEffectCount===0
@@ -201,7 +209,7 @@ export class ResearchJobPurgeClassifier{
     const jobs=await this.listJobs(filters);
     const items=[];
     for(const job of jobs)items.push(await this.classifyJob(job,{unknownColumns:unknown}));
-    const classes=['EMPTY_NEVER_STARTED','EMPTY_FAILED_BEFORE_SIDE_EFFECT','DUPLICATE_EMPTY_TASK',
+    const classes=['EMPTY_STALE_ORPHAN','EMPTY_NEVER_STARTED','EMPTY_FAILED_BEFORE_SIDE_EFFECT','DUPLICATE_EMPTY_TASK',
       'PROVIDER_USED_NO_BUSINESS_RESULT','BUSINESS_OUTPUT_PRESENT','ACTIVE_OR_RECOVERABLE','AMBIGUOUS_REFERENCE'];
     const summary=Object.fromEntries(classes.map(name=>[name,items.filter(item=>item.classification===name).length]));
     summary.HARD_DELETE_ELIGIBLE=items.filter(item=>item.hard_delete_eligible).length;
@@ -237,10 +245,11 @@ export class ResearchJobPurgeClassifier{
           WHERE category_research_job_id=$1 OR contact_research_job_id=$1 RETURNING id`,[locked.id]);
         childCounts.tasks=tasks.rowCount;
         await client.query(`DELETE FROM leadgen.research_jobs WHERE id=$1`,[locked.id]);
+        const auditClassification=current.classification==='EMPTY_STALE_ORPHAN'?'EMPTY_NEVER_STARTED':current.classification;
         await client.query(`INSERT INTO leadgen.research_job_purge_items
           (purge_run_id,deleted_research_job_id,deleted_task_id,classification,deleted_child_counts,
            eligibility_snapshot_hash,actor,reason) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,[
-          run.rows[0].id,locked.id,tasks.rows[0]?.id||null,current.classification,JSON.stringify(childCounts),
+          run.rows[0].id,locked.id,tasks.rows[0]?.id||null,auditClassification,JSON.stringify(childCounts),
           hash(current),actor,reason
         ]);
         await client.query('COMMIT');results.push({research_job_id:locked.id,status:'DELETED',child_counts:childCounts});

@@ -242,7 +242,10 @@ export class Phase7Service {
     const rows=await this.repository.listContactQueue({limit:query.limit});
     return rows.map(row=>({queue_id:row.queue_id,queue_status:row.queue_status,owner_identity:row.owner_identity,
       company_name:row.company_name,country_code:row.country_code,product_profile:row.product_profile,
-      approved_by:row.approved_by,approved_at:row.approved_at}));
+      approved_by:row.approved_by,approved_at:row.approved_at,named_buyer_ready:row.named_buyer_ready,
+      official_email_route:row.official_email_route,official_phone_route:row.official_phone_route,
+      official_whatsapp_route:row.official_whatsapp_route,official_form_route:row.official_form_route,
+      supplier_vendor_route:row.supplier_vendor_route}));
   }
   async listManualOfficialRoutes(query = {}) {
     return this.repository.listManualOfficialRoutes({status:query.status,limit:query.limit});
@@ -984,7 +987,24 @@ export class Phase7Service {
           product_opportunity_status:_productOpportunityStatus,product_opportunity_count:_productOpportunityCount,
           top_product_opportunity:_topProductOpportunity,...businessRow}=row;
         return {
-        ...businessRow,market:row.country_code,buyer_business_model:row.buyer_business_model,
+        ...businessRow,market:row.country_code,
+        target_category:exportBusinessList(row.matched_scopes),
+        category_match_status:row.category_procurement_match_status,
+        category_evidence:exportBusinessList(row.observed_customer_categories||row.observed_categories),
+        company_verification:row.verification_status,
+        buyer_model:row.buyer_business_model,
+        named_buyer_readiness:row.decision_maker_status==='VERIFIED'&&row.buyer_name?'NAMED_BUYER_READY':'NOT_AVAILABLE',
+        official_email_route:row.official_email_route||'',
+        official_phone_whatsapp_form:exportBusinessList([row.official_phone_route,row.official_whatsapp_route,row.official_form_route].filter(Boolean)),
+        supplier_vendor_route:row.supplier_vendor_route||row.supplier_portal_url||'',
+        opportunity_status:row.display_opportunity_status||row.system_recommendation_status,
+        primary_blocker:(row.opportunity_decision_reason_codes||[])[0]||'',
+        next_action:['RECOMMENDED','MANAGEMENT_APPROVED'].includes(row.display_opportunity_status||row.system_recommendation_status)
+          ?'PREPARE_MANUAL_CONTACT':(row.display_opportunity_status||row.system_recommendation_status)==='NOT_SUITABLE'
+            ?'NO_FOLLOW_UP':'COMPLETE_PRIMARY_EVIDENCE',
+        latest_evidence_time:row.latest_evidence_time||row.latest_route_verified_at||row.last_verified_at,
+        evidence_url:row.category_evidence_url||row.contact_source_url||'',
+        buyer_business_model:row.buyer_business_model,
         product_profile:row.product_profile,product_category_score:row.category_procurement_match_score,
         product_category_score_band:row.category_procurement_match_band,
         category_procurement_match:row.category_procurement_match_status,

@@ -73,6 +73,11 @@ async function readLimitedBody(response, maxBytes) {
   return new TextDecoder().decode(bytes);
 }
 
+async function cancelResponseBody(response) {
+  if (!response?.body || response.body.locked) return;
+  try { await response.body.cancel(); } catch {}
+}
+
 function fetchStatusFromError(error) {
   if (error?.code === 'POLICY_BLOCKED') return 'POLICY_BLOCKED';
   if (error?.code === 'INVALID_URL') return 'INVALID_URL';
@@ -96,16 +101,23 @@ export class WebsiteReachabilityChecker {
     const capturedAt = new Date();
     let current = requestedUrl;
     let response;
+    let timeoutId = null;
+    let controller = null;
     try {
       for (let redirects = 0; redirects <= this.maxRedirects; redirects += 1) {
         await assertPublicUrl(current, this.lookupImpl, this.blockedDomains);
+        controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
         response = await this.fetchImpl(current, {
           method: 'GET', redirect: 'manual',
           headers: { accept: 'text/html,application/xhtml+xml,text/plain;q=0.5', 'user-agent': this.userAgent },
-          signal: AbortSignal.timeout(this.timeoutMs)
+          signal: controller.signal
         });
         if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.get('location')) {
+          await cancelResponseBody(response);
           if (redirects === this.maxRedirects) throw Object.assign(new Error('Redirect limit exceeded'), { code: 'NETWORK_ERROR' });
+          clearTimeout(timeoutId);
+          timeoutId = null;
           current = new URL(response.headers.get('location'), current).href;
           continue;
         }
@@ -116,8 +128,12 @@ export class WebsiteReachabilityChecker {
         requested_url: requestedUrl, final_url: response.url || current, http_status: response.status,
         content_type: contentType || null, robots_allowed: robotsAllowed, captured_at: capturedAt
       };
-      if (!response.ok) return { ...base, reachable: false, fetch_status: 'HTTP_ERROR', error_message: `HTTP ${response.status}`, page_title: null, html: null };
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        return { ...base, reachable: false, fetch_status: 'HTTP_ERROR', error_message: `HTTP ${response.status}`, page_title: null, html: null };
+      }
       if (contentType && !acceptedTypes.some(type => contentType === type || contentType.startsWith(`${type};`))) {
+        await cancelResponseBody(response);
         return { ...base, reachable: false, fetch_status: 'NON_HTML', error_message: `Unsupported content type: ${contentType}`, page_title: null, html: null };
       }
       const html = await readLimitedBody(response, this.maxResponseBytes);
@@ -129,6 +145,8 @@ export class WebsiteReachabilityChecker {
         page_title: null, robots_allowed: robotsAllowed, fetch_status: fetchStatusFromError(error),
         error_message: String(error.message || 'Page check failed').replace(/\s+/g, ' ').slice(0, 500), captured_at: capturedAt, html: null
       };
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 

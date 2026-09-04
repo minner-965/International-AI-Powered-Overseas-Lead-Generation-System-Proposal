@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
 import { buildStrategyQuery,eligibleStrategies,selectNextUnusedStrategy,strategyNextStage,strategyStartStage } from './strategyCatalog.js';
+import { resolveTargetCategoryContext } from '../categoryProcurement/targetCategoryContext.js';
 
 const PRODUCT_PROFILES = new Set(['WOMENSWEAR', 'GENERAL_MERCHANDISE']);
 const SCHEDULE_SOURCES = new Set(['EVENT', 'RECONCILIATION', 'MANUAL_RETRY', 'IMPORT']);
@@ -182,7 +183,8 @@ export class AutoEvidenceRepository {
     const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
       .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
     const result = await this.pool.query(`WITH candidates AS (
-      SELECT o.company_id,o.product_profile,c.country_code,
+      SELECT o.company_id,o.product_profile,c.country_code,('PROFILE:'||o.product_profile) target_category_scope_key,
+        o.product_profile target_category_code,
         CASE
           WHEN cpm.match_status IS DISTINCT FROM 'CATEGORY_PROCUREMENT_MATCH' THEN 'CATEGORY_EVIDENCE'
           WHEN bbm.buyer_model NOT IN ('DIRECT_END_BUYER','DISTRIBUTION_BUYER') THEN 'BUYER_MODEL_EVIDENCE'
@@ -254,7 +256,7 @@ export class AutoEvidenceRepository {
         AND NOT EXISTS (
           SELECT 1 FROM leadgen.auto_evidence_tasks prior
           WHERE prior.company_id=o.company_id
-            AND prior.product_profile=o.product_profile
+            AND prior.target_category_scope_key=('PROFILE:'||o.product_profile)
             AND prior.business_blocker=(CASE
               WHEN cpm.match_status IS DISTINCT FROM 'CATEGORY_PROCUREMENT_MATCH' THEN 'CATEGORY_EVIDENCE'
               WHEN bbm.buyer_model NOT IN ('DIRECT_END_BUYER','DISTRIBUTION_BUYER') THEN 'BUYER_MODEL_EVIDENCE'
@@ -274,10 +276,11 @@ export class AutoEvidenceRepository {
     SELECT candidates.* FROM candidates
     LEFT JOIN LATERAL (
       SELECT last_strategy_started_at FROM leadgen.auto_evidence_tasks t
-      WHERE t.company_id=candidates.company_id AND t.product_profile=candidates.product_profile
+      WHERE t.company_id=candidates.company_id
+        AND t.target_category_scope_key=candidates.target_category_scope_key
       ORDER BY t.created_at DESC,t.id DESC LIMIT 1
     ) fairness ON true
-    ORDER BY priority,fairness.last_strategy_started_at NULLS FIRST,company_id,product_profile LIMIT $1`, [
+    ORDER BY priority,fairness.last_strategy_started_at NULLS FIRST,company_id,target_category_code LIMIT $1`, [
       limit, markets, profiles, boundedInt(sourceTtlDays,{min:1,max:3650,fallback:90}),companies
     ]);
     return result.rows;
@@ -295,10 +298,69 @@ export class AutoEvidenceRepository {
         AND t.current_stage IS NULL AND t.current_strategy_code IS NULL
         AND t.strategy_state IN ('READY','NEW_EVIDENCE_FOUND','NO_NEW_EVIDENCE')
         AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
-        AND ($3::text[]='{}' OR t.product_profile=ANY($3::text[]))
+        AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
         AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
       ORDER BY t.retry_at,t.last_strategy_started_at NULLS FIRST,t.created_at,t.id
       LIMIT $1`,[limit,markets,profiles,companies]);
+    return result.rows;
+  }
+
+  async selectStaleRunningTasks({ limit, marketCodes = [], productProfiles = [], companyIds = [], leaseMinutes = 15 } = {}) {
+    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
+    const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
+      .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
+    const lease=Math.max(1,Math.min(1440,Number(leaseMinutes)||15));
+    const result=await this.pool.query(`SELECT t.*,c.company_name,c.country_code,c.official_root_domain,c.normalized_domain
+      FROM leadgen.auto_evidence_tasks t
+      JOIN leadgen.companies c ON c.id=t.company_id
+      WHERE t.task_status='RUNNING' AND t.current_stage IS NOT NULL AND t.current_strategy_code IS NOT NULL
+        AND t.updated_at<now()-($5::int*interval '1 minute')
+        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
+        AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
+      ORDER BY t.updated_at,t.created_at,t.id LIMIT $1`,[limit,markets,profiles,companies,lease]);
+    return result.rows;
+  }
+
+  async reconcileStaleResearchJobProjections({limit=25,leaseMinutes=15}={}){
+    const boundedLimit=Math.max(1,Math.min(100,Number(limit)||25));
+    const lease=Math.max(1,Math.min(1440,Number(leaseMinutes)||15));
+    const result=await this.pool.query(`WITH candidates AS (
+      SELECT j.id,t.task_status
+      FROM leadgen.research_jobs j
+      LEFT JOIN LATERAL (
+        SELECT task.task_status,task.id
+        FROM leadgen.auto_evidence_tasks task
+        LEFT JOIN leadgen.auto_evidence_task_attempts attempt ON attempt.task_id=task.id
+        WHERE task.category_research_job_id=j.id OR task.contact_research_job_id=j.id OR attempt.research_job_id=j.id
+        ORDER BY task.updated_at DESC,task.id DESC LIMIT 1
+      ) t ON true
+      WHERE j.job_type='CATEGORY_PROCUREMENT_ENRICHMENT'
+        AND j.status IN('DISCOVERING','CRAWLING','QUALIFYING','SCORING')
+        AND coalesce(j.started_at,j.created_at)<now()-($1::int*interval '1 minute')
+        AND NOT EXISTS (
+          SELECT 1 FROM pgboss.job queue_job
+          WHERE queue_job.state::text IN('created','retry','active')
+            AND (queue_job.data->>'research_job_id'=j.id::text
+              OR (t.id IS NOT NULL AND queue_job.data->>'task_id'=t.id::text))
+        )
+        AND (
+          t.task_status IN('COMPLETED','CANCELLED','EVIDENCE_EXHAUSTED','HUMAN_REVIEW_REQUIRED')
+          OR (t.id IS NULL AND j.last_error IS NOT NULL
+            AND (j.category_sources_found>0 OR j.category_observations_found>0 OR j.category_procurement_errors>0))
+        )
+      ORDER BY coalesce(j.started_at,j.created_at),j.id
+      FOR UPDATE OF j SKIP LOCKED LIMIT $2
+    )
+    UPDATE leadgen.research_jobs j SET status='PARTIAL',completed_at=coalesce(j.completed_at,now()),
+      stop_reason_code=CASE candidates.task_status
+        WHEN 'EVIDENCE_EXHAUSTED' THEN 'EVIDENCE_EXHAUSTED'
+        WHEN 'CANCELLED' THEN 'DUPLICATE_TASK_PROJECTION_RECONCILED'
+        ELSE 'STALE_JOB_PROJECTION_RECONCILED' END,
+      last_error=coalesce(j.last_error,'Terminal task state reconciled into ResearchJob projection')
+    FROM candidates WHERE j.id=candidates.id
+    RETURNING j.id,j.status,j.stop_reason_code`,[lease,boundedLimit]);
     return result.rows;
   }
 
@@ -313,7 +375,7 @@ export class AutoEvidenceRepository {
       WHERE t.task_status='PROVIDER_CAPACITY_WAIT'
         AND t.current_stage IS NOT NULL AND t.current_strategy_code IS NOT NULL
         AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
-        AND ($3::text[]='{}' OR t.product_profile=ANY($3::text[]))
+        AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
         AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
       ORDER BY t.updated_at,t.created_at,t.id LIMIT $1`,[limit,markets,profiles,companies]);
     return result.rows;
@@ -394,34 +456,42 @@ export class AutoEvidenceRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const executionKey = `auto-evidence:v1:${digest({
+      const categoryInput=candidate.target_category_scope_key?{
+        ...candidate,target_category:undefined,product_category:undefined,
+        current_target_category:candidate.target_category_code||candidate.target_category
+      }:candidate;
+      const categoryContext=resolveTargetCategoryContext(categoryInput);
+      const executionKey = `auto-evidence:v2:${digest({
         company_id: candidate.company_id,
-        product_profile: candidate.product_profile,
+        target_category_scope_key: categoryContext.targetCategoryScopeKey,
         business_blocker: candidate.business_blocker,
         evidence_revision: candidate.evidence_revision
       })}`;
       const inserted = await client.query(`INSERT INTO leadgen.auto_evidence_tasks
-        (company_id,product_profile,business_blocker,evidence_revision,execution_key,task_status,
+        (company_id,target_category_scope_key,target_category_code,product_profile,business_blocker,evidence_revision,execution_key,task_status,
          automation_owner,max_attempts,budget_state,last_evidence_revision,input_digest)
-        VALUES ($1,$2,$3,$4,$5,'QUEUED','SYSTEM',$6,'AVAILABLE',$4,$7)
-        ON CONFLICT (company_id,product_profile,business_blocker,evidence_revision) DO NOTHING RETURNING *`, [
-        candidate.company_id, candidate.product_profile, candidate.business_blocker,
-        candidate.evidence_revision, executionKey, Math.max(1,eligibleStrategies(candidate).length), inputDigest
+        VALUES ($1,$2,$3,$4,$5,$6,$7,'QUEUED','SYSTEM',$8,'AVAILABLE',$6,$9)
+        ON CONFLICT (company_id,target_category_scope_key,business_blocker,evidence_revision) DO NOTHING RETURNING *`, [
+        candidate.company_id,categoryContext.targetCategoryScopeKey,categoryContext.targetCategoryCode,
+        categoryContext.productProfile,candidate.business_blocker,candidate.evidence_revision,executionKey,
+        Math.max(1,eligibleStrategies({...candidate,target_category_code:categoryContext.targetCategoryCode,
+          product_profile:categoryContext.productProfile}).length),inputDigest
       ]);
       const task = inserted.rows[0] || (await client.query(`SELECT * FROM leadgen.auto_evidence_tasks
-        WHERE company_id=$1 AND product_profile=$2 AND business_blocker=$3 AND evidence_revision=$4`, [
-        candidate.company_id, candidate.product_profile, candidate.business_blocker, candidate.evidence_revision
+        WHERE company_id=$1 AND target_category_scope_key=$2 AND business_blocker=$3 AND evidence_revision=$4`, [
+        candidate.company_id, categoryContext.targetCategoryScopeKey, candidate.business_blocker, candidate.evidence_revision
       ])).rows[0];
       let outcome = inserted.rowCount ? 'SCHEDULED' : 'DEDUPLICATED';
       if (task?.task_status === 'PROVIDER_CAPACITY_WAIT') outcome = 'PROVIDER_CAPACITY_WAIT';
       else if (task?.task_status === 'HUMAN_REVIEW_REQUIRED') outcome = 'HUMAN_REVIEW_REQUIRED';
       const event = await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
-        (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
+        (schedule_source,schedule_key,task_id,company_id,target_category_scope_key,target_category_code,product_profile,business_blocker,evidence_revision,
          outcome,input_digest,operator_identity,operator_role,approval_reference,occurred_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
         ON CONFLICT (schedule_key) DO NOTHING RETURNING id`, [source, scheduleKey, task?.id || null,
-        candidate.company_id, candidate.product_profile, candidate.business_blocker,
-        candidate.evidence_revision, outcome, inputDigest,operatorIdentity,operatorRole,approvalReference]);
+        candidate.company_id,categoryContext.targetCategoryScopeKey,categoryContext.targetCategoryCode,
+        categoryContext.productProfile,candidate.business_blocker,candidate.evidence_revision,outcome,inputDigest,
+        operatorIdentity,operatorRole,approvalReference]);
       await client.query('COMMIT');
       return {
         task,
@@ -447,9 +517,11 @@ export class AutoEvidenceRepository {
       LEFT JOIN LATERAL (
         SELECT count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') named_buyer_candidate_count,
           count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
-            AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')) named_relevant_buyer_count,
+            AND d.verification_status='VERIFIED'
+            AND (t.product_profile IS NULL OR pr.relevance IN ('HIGH','MEDIUM'))) named_relevant_buyer_count,
           count(DISTINCT dc.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
-            AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')
+            AND d.verification_status='VERIFIED'
+            AND (t.product_profile IS NULL OR pr.relevance IN ('HIGH','MEDIUM'))
             AND dc.verification_status='VALID') valid_contact_count,
           max(d.person_name) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') candidate_buyer_name
         FROM leadgen.decision_makers d
@@ -481,9 +553,11 @@ export class AutoEvidenceRepository {
       LEFT JOIN LATERAL (SELECT
         count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE') candidates,
         count(DISTINCT d.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
-          AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')) relevant,
+          AND d.verification_status='VERIFIED'
+          AND (t.product_profile IS NULL OR pr.relevance IN ('HIGH','MEDIUM'))) relevant,
         count(DISTINCT dc.id) FILTER (WHERE d.person_name IS NOT NULL AND d.lifecycle_status='ACTIVE'
-          AND d.verification_status='VERIFIED' AND pr.relevance IN ('HIGH','MEDIUM')
+          AND d.verification_status='VERIFIED'
+          AND (t.product_profile IS NULL OR pr.relevance IN ('HIGH','MEDIUM'))
           AND dc.verification_status='VALID') valid_contacts
         FROM leadgen.decision_makers d
         LEFT JOIN leadgen.decision_maker_product_relevance pr
@@ -754,11 +828,12 @@ export class AutoEvidenceRepository {
         WHERE id=$1 RETURNING *`, [taskId]);
       let resumedTask=updated.rows[0];
       const event=await client.query(`INSERT INTO leadgen.auto_evidence_schedule_events
-        (schedule_source,schedule_key,task_id,company_id,product_profile,business_blocker,evidence_revision,
-         outcome,input_digest,operator_identity,operator_role,approval_reference,occurred_at)
-        VALUES ($11,$1,$2,$3,$4,$5,$6,'SCHEDULED',$7,$8,$9,$10,now())
+        (schedule_source,schedule_key,task_id,company_id,target_category_scope_key,target_category_code,product_profile,
+         business_blocker,evidence_revision,outcome,input_digest,operator_identity,operator_role,approval_reference,occurred_at)
+        VALUES ($13,$1,$2,$3,$4,$5,$6,$7,$8,'SCHEDULED',$9,$10,$11,$12,now())
         ON CONFLICT (schedule_key) DO NOTHING RETURNING id`,[
-        scheduleKey,resumedTask.id,resumedTask.company_id,resumedTask.product_profile,resumedTask.business_blocker,
+        scheduleKey,resumedTask.id,resumedTask.company_id,resumedTask.target_category_scope_key,
+        resumedTask.target_category_code,resumedTask.product_profile,resumedTask.business_blocker,
         resumedTask.evidence_revision,resumedTask.input_digest,operatorIdentity,operatorRole,approvalReference,scheduleSource
       ]);
       if(!event.rowCount)throw Object.assign(new Error('Provider capacity recovery audit was not appended'),{
@@ -829,6 +904,8 @@ export class AutoEvidenceRepository {
       const requestDigest = digest({
         task_id: currentTask.id,
         company_id: currentTask.company_id,
+        target_category_code:currentTask.target_category_code,
+        target_category_scope_key:currentTask.target_category_scope_key,
         product_profile: currentTask.product_profile,
         evidence_revision: currentTask.evidence_revision,
         strategy_attempt_number:strategyAttempt,
@@ -840,9 +917,9 @@ export class AutoEvidenceRepository {
          buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
          idempotency_key,request_digest,created_by_identity,created_by_role)
         SELECT c.country_code,c.country_code,c.country_code,'en','AUTO_EVIDENCE',
-          'Opportunity evidence',t.product_profile,
+          t.target_category_code,t.product_profile,
           ARRAY['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing']::text[],
-          1,'QUEUED',$2,ARRAY[c.country_code]::text[],ARRAY[t.product_profile]::text[],ARRAY[t.company_id]::uuid[],
+          1,'QUEUED',$2,ARRAY[c.country_code]::text[],array_remove(ARRAY[t.product_profile]::text[],NULL),ARRAY[t.company_id]::uuid[],
           $3,$4,'phase10-auto-evidence','SYSTEM'
         FROM leadgen.auto_evidence_tasks t JOIN leadgen.companies c ON c.id=t.company_id
         WHERE t.id=$1
@@ -1145,11 +1222,13 @@ export class AutoEvidenceOrchestrator {
     if (!this.config.enabled) return { status: 'DISABLED', enabled: false, scheduled: 0 };
     const source = upper(input.schedule_source || 'EVENT');
     if (!SCHEDULE_SOURCES.has(source)) throw Object.assign(new Error('Invalid auto-evidence schedule source'), { code: 'AUTO_EVIDENCE_SOURCE_INVALID' });
-    const productProfile = upper(input.product_profile);
-    if (!PRODUCT_PROFILES.has(productProfile)) throw Object.assign(new Error('Invalid auto-evidence product profile'), { code: 'AUTO_EVIDENCE_PROFILE_INVALID' });
+    const categoryContext=resolveTargetCategoryContext(input);
     const candidate = {
       company_id: String(input.company_id || '').trim(),
-      product_profile: productProfile,
+      target_category_scope_key:categoryContext.targetCategoryScopeKey,
+      target_category_code:categoryContext.targetCategoryCode,
+      target_category:categoryContext.targetCategory,
+      product_profile:categoryContext.productProfile,
       business_blocker: cleanCode(input.business_blocker),
       evidence_revision: boundedInt(input.evidence_revision, { min: 0, max: 2147483647, fallback: 0 })
     };
@@ -1162,11 +1241,19 @@ export class AutoEvidenceOrchestrator {
       inputDigest
     });
     let dispatch = null;
-    if (scheduled.dispatch_required) dispatch = await this.dispatchTask(scheduled.task);
+    if (scheduled.dispatch_required) {
+      const retryAttemptNumber=scheduled.task?.task_status==='RETRY_SCHEDULED'
+        ?Number(scheduled.task.strategy_attempt_count||0)+1
+        :undefined;
+      dispatch = await this.dispatchTask(scheduled.task,'DISCOVERING_SOURCES',{
+        attemptNumberOverride:retryAttemptNumber
+      });
+    }
     this.audit('AUTO_EVIDENCE_SCHEDULED', {
       task_id: scheduled.task?.id || null,
       company_id: candidate.company_id,
       product_profile: candidate.product_profile,
+      target_category_scope_key:candidate.target_category_scope_key,
       outcome: scheduled.outcome,
       schedule_source: source
     });
@@ -1212,6 +1299,8 @@ export class AutoEvidenceOrchestrator {
       sourceTtlDays:this.config.sourceTtlDays
     };
     const bucket = String(input.reconcile_bucket || Math.floor(this.now().getTime() / (this.config.reconcileMinutes * 60000)));
+    const projectionRepairs=typeof this.repository.reconcileStaleResearchJobProjections==='function'
+      ?await this.repository.reconcileStaleResearchJobProjections({limit,leaseMinutes:this.config.stageLeaseMinutes}):[];
     const pendingResumeDispatches=typeof this.repository.claimPendingResumeDispatches==='function'
       ?await this.repository.claimPendingResumeDispatches(limit):[];
     const results = [];
@@ -1243,8 +1332,20 @@ export class AutoEvidenceOrchestrator {
       }
     }
     const remainingAfterCapacity=Math.max(0,remainingAfterOutbox-capacityWaits.length);
+    const staleRunning=typeof this.repository.selectStaleRunningTasks==='function'
+      ?await this.repository.selectStaleRunningTasks({...selectionOptions,limit:remainingAfterCapacity,
+        leaseMinutes:this.config.stageLeaseMinutes}):[];
+    for(const task of staleRunning){
+      const dispatch=await this.dispatchTask(task,task.current_stage,{singletonSuffix:`stale-recovery:${bucket}`});
+      this.audit('AUTO_EVIDENCE_STALE_STAGE_REDISPATCHED',{
+        task_id:task.id,company_id:task.company_id,product_profile:task.product_profile,
+        stage:task.current_stage,strategy_attempt_number:task.strategy_attempt_count
+      });
+      results.push({status:'STALE_STAGE_REDISPATCHED',task_id:task.id,dispatch});
+    }
+    const remainingAfterStale=Math.max(0,remainingAfterCapacity-staleRunning.length);
     const dueRetries=typeof this.repository.selectDueFairnessRetries==='function'
-      ?await this.repository.selectDueFairnessRetries({...selectionOptions,limit:remainingAfterCapacity}):[];
+      ?await this.repository.selectDueFairnessRetries({...selectionOptions,limit:remainingAfterStale}):[];
     for(const task of dueRetries){
       const nextAttemptNumber=Number(task.strategy_attempt_count||0)+1;
       const dispatch=await this.dispatchTask(task,'DISCOVERING_SOURCES',{
@@ -1257,7 +1358,7 @@ export class AutoEvidenceOrchestrator {
       results.push({status:'FAIRNESS_RESUMED',task_id:task.id,dispatch});
     }
     const candidates = await this.repository.selectCandidates({
-      ...selectionOptions,limit:Math.max(0,remainingAfterCapacity-dueRetries.length)
+      ...selectionOptions,limit:Math.max(0,remainingAfterStale-dueRetries.length)
     });
     for (const candidate of candidates) {
       results.push(await this.scheduleEvent({
@@ -1268,16 +1369,19 @@ export class AutoEvidenceOrchestrator {
     }
     return {
       status: results.some(item=>item.status==='CAPACITY_RECOVERY_ERROR')?'PARTIAL':'COMPLETED', enabled: true,
-      scanned:candidates.length+dueRetries.length+capacityWaits.length+pendingResumeDispatches.length,
+      scanned:candidates.length+dueRetries.length+staleRunning.length+capacityWaits.length+pendingResumeDispatches.length,
       repaired:pendingResumeDispatches.length,resumed:results.filter(item=>item.status==='CAPACITY_RECOVERED').length,
       errors:results.filter(item=>item.status==='CAPACITY_RECOVERY_ERROR').length,
-      selected: candidates.length+dueRetries.length+capacityWaits.length+pendingResumeDispatches.length,
+      selected: candidates.length+dueRetries.length+staleRunning.length+capacityWaits.length+pendingResumeDispatches.length,
       targeted_companies:companyIds.length,
       scheduled: results.filter(item => item.status === 'SCHEDULED').length,
       provider_capacity_resumed:results.filter(item=>item.status==='CAPACITY_RECOVERED').length,
       capacity_recovery_redispatched:results.filter(item=>item.status==='CAPACITY_RECOVERY_REDISPATCHED').length,
       capacity_recovery_errors:results.filter(item=>item.status==='CAPACITY_RECOVERY_ERROR').length,
       fairness_resumed:results.filter(item=>item.status==='FAIRNESS_RESUMED').length,
+      stale_stage_redispatched:results.filter(item=>item.status==='STALE_STAGE_REDISPATCHED').length,
+      projection_rebuilt:projectionRepairs.length,
+      projection_repairs:projectionRepairs,
       deduplicated: results.filter(item => item.status === 'DEDUPLICATED').length,
       results
     };

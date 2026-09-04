@@ -22,18 +22,30 @@ function assert(condition, message) {
 
 for (const key of schema.required) assert(Object.hasOwn(status, key), `Missing current status field: ${key}`);
 assert(/^[0-9a-f]{40}$/.test(status.commit), 'Current status commit is invalid');
-assert(status.latest_released_phase === 'Phase 9', 'Latest released phase must be Phase 9');
+assert(status.latest_released_phase === 'Phase 10 (Pre-email)', 'Latest released phase must be Phase 10 (Pre-email)');
 assert(status.current_active_phase === 'Phase 10', 'Current active phase must be Phase 10');
-assert(status.final_acceptance_state === 'INCOMPLETE', 'Phase 10 final acceptance must remain incomplete');
-assert(status.business_result_state === 'NO', 'Business result state must remain NO');
-assert(status.next_allowed_work_package === 'Gmail controlled acceptance', 'Next boundary must be Gmail controlled acceptance');
+assert(status.final_acceptance_state === 'PASS', 'Phase 10 pre-email final acceptance must pass');
+assert(status.business_result_state === 'YES', 'Phase 10 pre-email business result must be YES');
+assert(status.next_allowed_work_package === 'POST_PHASE10_EMAIL_CONFIGURATION', 'Next boundary must be post-Phase10 email configuration');
 assert(status.explicit_stop_boundary.includes('STOP'), 'Explicit STOP boundary is missing');
-assert(status.explicit_stop_boundary.includes('Gmail'), 'STOP boundary must record the Gmail acceptance boundary');
+assert(status.explicit_stop_boundary.includes('WP-A16'), 'STOP boundary must record completion through WP-A16');
 for (const expected of [
   'Phase 1–9 complete',
   'Phase 10 code/migration/UI/automation verified',
-  'Phase 10 final acceptance incomplete',
-  'WP-U00–U14 complete'
+  'Phase 10 pre-email final acceptance passed',
+  'WP-U00–U14 complete',
+  'WP-A05 category-driven pre-email acceptance Runner passed',
+  'WP-A06 real one-action approved-category canary passed',
+  'WP-A07 event scheduling, dedupe and periodic reconciliation passed',
+  'WP-A08 repeated Create, execution and Provider deduplication passed',
+  'WP-A09 worker restart, stale lease and S05 checkpoint recovery passed',
+  'WP-A10 Provider-account-only capacity and distinct-strategy exhaustion passed',
+  'WP-A11 category evidence, route readiness and Opportunity decision passed',
+  'WP-A12 management UI positive and reverse browser paths passed',
+  'WP-A13 acceptance XLSX generated and verified',
+  'WP-A14 zero-send and reverse safety passed',
+  'WP-A15 stuck-task monitoring and automatic convergence passed',
+  'WP-A16 final release validation passed'
 ]) assert(status.phase_state.includes(expected), `Missing phase state: ${expected}`);
 
 assert(/^## phase10\b/m.test(changelog), 'VERSION_CHANGELOG.md has no phase10 entry');

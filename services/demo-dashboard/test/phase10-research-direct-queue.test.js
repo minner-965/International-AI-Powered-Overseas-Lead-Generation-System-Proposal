@@ -55,11 +55,12 @@ test('n8n retrigger uses the same singleton execution key',async()=>{
 
 test('worker restart resumes from checkpoint and provider ledger prevents another network charge',async()=>{
   const state={checkpoint:'CREATED',status:'QUEUED'};let generateCalls=0;let providerNetworkCalls=0;let discoverInvocations=0;
+  let completionClearsError=false;
   const pool={query:async(sql,params=[])=>{
     if(sql.includes("dispatch_state='PROCESSING'"))return{rowCount:1,rows:[{checkpoint:state.checkpoint}]};
     if(sql.includes('SET checkpoint=$2')){state.checkpoint=params[1];return{rows:[]};}
     if(sql.includes('UPDATE leadgen.research_jobs SET status')){state.status=params[1];return{rows:[]};}
-    if(sql.includes("dispatch_state='COMPLETED'")){return{rows:[]};}
+    if(sql.includes("dispatch_state='COMPLETED'")){completionClearsError=sql.includes('last_error_code=NULL')&&sql.includes('next_attempt_at=NULL');return{rows:[]};}
     if(sql.includes("dispatch_state='RETRY_PENDING'")){return{rows:[]};}
     throw new Error(`Unexpected executor SQL: ${sql}`);
   }};
@@ -72,9 +73,37 @@ test('worker restart resumes from checkpoint and provider ledger prevents anothe
   await assert.rejects(()=>executor.execute({research_job_id:'JOB-1',execution_key:'research-job:JOB-1'}),/worker restart/);
   const result=await executor.execute({research_job_id:'JOB-1',execution_key:'research-job:JOB-1'});
   assert.equal(result.status,'COMPLETED');assert.equal(generateCalls,1);assert.equal(discoverInvocations,2);assert.equal(providerNetworkCalls,1);
+  assert.equal(completionClearsError,true);
 });
 
 test('direct outbox dispatch is mandatory and has no legacy feature flag',async()=>{
   const h=harness();const result=await h.service.createAtomic(async()=>({...h.state.job,inserted:true}));
   assert.equal(result.dispatch.state,'DISPATCHED');assert.ok(h.state.outbox);assert.equal(h.state.queueCalls.length,1);
+});
+
+test('target-category input errors terminate the outbox and replay without retrying',async()=>{
+  const state={dispatch:'DISPATCHED',checkpoint:'CREATED',attempts:0,stageCalls:0};
+  const pool={query:async(sql,params=[])=>{
+    if(sql.includes("dispatch_state='PROCESSING'")){
+      if(['COMPLETED','FAILED'].includes(state.dispatch))return{rowCount:0,rows:[]};
+      state.dispatch='PROCESSING';state.attempts+=1;return{rowCount:1,rows:[{checkpoint:state.checkpoint}]};
+    }
+    if(sql.includes('SELECT dispatch_state,checkpoint,last_error_code'))return{rowCount:1,rows:[{
+      dispatch_state:state.dispatch,checkpoint:state.checkpoint,last_error_code:'TARGET_CATEGORY_REQUIRED'
+    }]};
+    if(sql.includes("dispatch_state='FAILED'")){state.dispatch='FAILED';return{rows:[]};}
+    if(sql.includes("status='FAILED'"))return{rows:[]};
+    if(sql.includes('UPDATE leadgen.research_jobs SET status'))return{rows:[]};
+    throw new Error(`Unexpected non-retryable SQL: ${sql} ${params.length}`);
+  }};
+  const executor=new ResearchJobDirectExecutor({pool,stages:{generateQueries:async()=>{
+    state.stageCalls+=1;throw Object.assign(new Error('category required'),{
+      code:'TARGET_CATEGORY_REQUIRED',retryable:false,classification:'NON_RETRYABLE_INPUT_ERROR'
+    });
+  }}});
+  const first=await executor.execute({research_job_id:'JOB-INPUT',execution_key:'research-job:JOB-INPUT'});
+  const replay=await executor.execute({research_job_id:'JOB-INPUT',execution_key:'research-job:JOB-INPUT'});
+  assert.deepEqual({status:first.status,retryable:first.retryable},{status:'FAILED',retryable:false});
+  assert.deepEqual({status:replay.status,idempotent:replay.idempotent_replay},{status:'FAILED',idempotent:true});
+  assert.equal(state.attempts,1);assert.equal(state.stageCalls,1);
 });

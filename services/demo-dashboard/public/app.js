@@ -805,6 +805,27 @@ function opportunitySupplierCell(item) {
   return `<span class="crm-supplier-route">${countLabel}${portal !== '#' ? `<a href="${esc(portal)}" target="_blank" rel="noreferrer">${bi('打开供应商入口','Open supplier route')}</a>` : ''}</span>`;
 }
 
+function opportunityRouteReadinessCell(item) {
+  const routes=[];
+  if (item.buyer_name && String(item.decision_maker_status||'').toUpperCase()==='VERIFIED') routes.push(bi('具名买手','Named buyer'));
+  if (item.official_email_route) routes.push(bi('官方邮箱','Official email'));
+  if (item.official_phone_route) routes.push(bi('电话','Phone'));
+  if (item.official_whatsapp_route) routes.push('WhatsApp');
+  if (item.official_form_route) routes.push(bi('联系表单','Contact form'));
+  if (item.supplier_vendor_route || item.supplier_portal_url) routes.push(bi('供应商入口','Supplier route'));
+  if (!routes.length) return `<span class="crm-cell-empty">${bi('联系路径待补充','Contact route required')}</span>`;
+  return `<span class="crm-supplier-route">${routes.map(route=>`<span>${route}</span>`).join('')}</span>`;
+}
+
+function opportunityNextActionCell(item) {
+  const status=phase7OpportunityStatus(item);
+  const action=status==='RECOMMENDED'||status==='MANAGEMENT_APPROVED'
+    ?bi('准备人工联系','Prepare manual contact')
+    :status==='NOT_SUITABLE'?bi('无需跟进','No follow-up')
+      :bi('补齐主要资料','Complete primary evidence');
+  return `<strong>${action}</strong><button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button>`;
+}
+
 function opportunityBarrierCell(item) {
   const barriers = valueList(item.barrier_signals);
   if (!barriers.length) return `<span class="crm-cell-empty">${bi('障碍待确认','Barriers to confirm')}</span>`;
@@ -951,12 +972,13 @@ function renderOpportunityTable() {
     const displayOpportunity = phase7OpportunityStatus(item);
     return `<tr data-opportunity-key="${esc(opportunityKey)}">
       <td class="op-col-company" data-label="公司 / Company"><div class="crm-op-cell"><button class="crm-company-link crm-opportunity-company" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看机会','View opportunity')}</span></button></div></td>
-      <td class="op-col-market-product" data-label="市场与产品画像 / Market and product profile"><div class="crm-op-cell"><strong>${esc(marketValue(item))}</strong>${productProfilesCell(item)}</div></td>
+      <td class="op-col-market" data-label="市场 / Market"><div class="crm-op-cell"><strong>${esc(marketValue(item))}</strong></div></td>
+      <td class="op-col-product-match" data-label="目标类目匹配 / Target Category Match"><div class="crm-op-cell">${opportunityProductMatchCell(item)}</div></td>
+      <td class="op-col-verification" data-label="公司核验 / Company Verification"><div class="crm-op-cell">${verificationBadge(item)}</div></td>
+      <td class="op-col-buyer-model" data-label="采购模式 / Buyer Model"><div class="crm-op-cell">${opportunityBuyerModelCell(item)}</div></td>
+      <td class="op-col-contact" data-label="具名买手或官方路径 / Named Buyer or Official Route"><div class="crm-op-cell">${opportunityBuyerCell(item)}${opportunityRouteReadinessCell(item)}</div></td>
       <td class="op-col-status" data-label="机会状态 / Opportunity Status"><div class="crm-op-cell is-status">${displayOpportunity ? phase7OpportunityBadge(displayOpportunity) : `<span class="crm-cell-empty">${bi('待确认','To confirm')}</span>`}</div></td>
-      <td class="op-col-buyer-model" data-label="采购模式与职责 / Buyer Model and Role"><div class="crm-op-cell">${opportunityBuyerModelCell(item)}${opportunityRoleCell(item)}</div></td>
-      <td class="op-col-product-match" data-label="商品类目评分 / Product Category Score"><div class="crm-op-cell">${opportunityProductMatchCell(item)}</div></td>
-      <td class="op-col-contact" data-label="采购联系人 / Buyer and valid contact"><div class="crm-op-cell">${opportunityBuyerCell(item)}${contactValueHtml(contact)}</div></td>
-      <td class="op-col-supplier-action" data-label="供应商准入与操作 / Supplier Access and Action"><div class="crm-op-cell crm-op-action-cell">${opportunitySupplierAccessCell(item)}${opportunitySupplierCell(item)}<button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button></div></td></tr>`;
+      <td class="op-col-action" data-label="下一步 / Next Action"><div class="crm-op-cell crm-op-action-cell">${opportunityNextActionCell(item)}</div></td></tr>`;
   }).join('');
   host.querySelectorAll('[data-opportunity-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.opportunityId)));
 }
@@ -2282,7 +2304,7 @@ $('#research-form').addEventListener('submit', async event => {
     city: $('#research-city').value.trim(),
     region: $('#research-region').value.trim(),
     product_category: $('#research-category').value,
-    product_profile: $('#research-category').selectedOptions[0]?.dataset.productProfile || 'WOMENSWEAR',
+    product_profile: $('#research-product-profile')?.value || null,
     buyer_types: buyerTypes,
     max_results: Number($('#research-limit').value)
   };
