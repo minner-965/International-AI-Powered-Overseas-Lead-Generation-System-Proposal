@@ -5,6 +5,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {deriveOpportunityDecision} from '../src/phase7/opportunityDecision.js';
 import {Phase7Repository} from '../src/phase7/repository.js';
+import {queryCategoryProcurementOpportunities} from '../src/categoryProcurement/opportunitiesRoute.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
 const legacyCategory={match_status:'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE',calculation_version:'category-procurement-match-v2',
@@ -58,4 +59,15 @@ test('B05 replay implementation locks and refreshes a company-level canonical ro
   assert.match(body,/dm\.company_id=\(SELECT company_id FROM target\)/);
   assert.match(body,/lower\(btrim\(dc\.contact_value_normalized\)\)=lower\(btrim\(\$3\)\)/);
   assert.match(body,/UPDATE leadgen\.decision_maker_contacts SET[\s\S]*last_verified_at=\$11/);
+});
+
+test('B05 opportunity directory excludes category matches that have no current opportunity decision',async()=>{
+  let sql='';
+  const pool={query:async statement=>{sql=String(statement);return{rows:[]};}};
+  const rows=await queryCategoryProcurementOpportunities({
+    pool,query:{status:'ALL'},publicDataOriginSql:"'PUBLIC_RESEARCH'",
+    companyMarketVisibleSql:()=> 'TRUE',excludesConfirmedExistingCustomerSql:()=> 'TRUE'
+  });
+  assert.deepEqual(rows,[]);
+  assert.match(sql,/bod\.id IS NOT NULL/);
 });

@@ -15,7 +15,7 @@ export async function queryCategoryProcurementOpportunities({
   const params=[];
   const clauses=[`c.data_origin IN (${publicDataOriginSql})`,companyMarketVisibleSql('c'),
     "c.verification_status='VERIFIED'","c.lifecycle_status='ACTIVE'",'c.explicit_exclusion_reason IS NULL',
-    excludesConfirmedExistingCustomerSql('c')];
+    excludesConfirmedExistingCustomerSql('c'),'bod.id IS NOT NULL'];
   const add=(value,clause)=>{params.push(value);clauses.push(clause(params.length));};
   if(query.country)add(upper(query.country),index=>`c.country_code=$${index}`);
   if(query.tier)add(upper(query.tier),index=>`coalesce(sr.tier,lr.tier)=$${index}`);
