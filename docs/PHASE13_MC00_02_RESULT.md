@@ -19,8 +19,8 @@
 - 完整自动测试：985项，931通过、54跳过、0失败；跳过项不计通过。
 - 兼容回归验证了三个旧 Tavily 审计用途的原始指纹，旧记录重放不新增调用；Advanced 使用独立指纹。
 - 独立 PostgreSQL：5/5通过，临时数据库已清理；不写业务数据库。
-- 已部署应用的浏览器联系联动：9/9通过。证据：`artifacts/phase12-ui-baseline/contact-sync/2026-09-07T11-16-32-542Z/result.json`。
-- 草稿正反向浏览器最终复测：22/22通过。证据：`artifacts/phase12-ui-baseline/workflow-audit/2026-09-07T11-16-40-058Z/result.json`。使用拦截测试记录，未写业务库。
+- 已部署应用的浏览器联系联动：9/9通过。证据：`artifacts/phase12-ui-baseline/contact-sync/2026-09-07T11-21-25-744Z/result.json`。
+- 草稿正反向浏览器最终复测：22/22通过。证据：`artifacts/phase12-ui-baseline/workflow-audit/2026-09-07T11-21-33-140Z/result.json`。使用拦截测试记录，未写业务库。
 
 前后基线的企业138、来源438、联系方式129、研究任务461、已发邮件2、草稿9、审批9、来信3、服务用量记录842全部一致。后置只读证据：`artifacts/backups/phase13-mc00-2026-09-07T11-17-47-119Z/baseline.json`。服务健康，IMAP最近同步为11:15:34 UTC，既有收信继续运行；该时间变化不是发信或新Brave请求。
 
@@ -28,6 +28,6 @@
 
 ## Git与边界
 
-Phase12冻结实现 `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0`，新验收标签和备份见 MC00报告。本轮MC01/02实现提交回执尚未生成；不预写提交、推送或新标签成功。
+Phase12冻结实现 `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0`，新验收标签和备份见 MC00报告。本轮 MC01/02 本地实现提交为 `e3cf16f05bd2ea460eb537a9909d67592959c1b8`。Phase13推送与标签未执行，保留给后续发布工作包，不将代码测试标签描述为真实搜索验收。
 
 后续配置及真实测试需单独记录实际结果；此处不进入MC03、30天监控、电话或WhatsApp业务流程。
