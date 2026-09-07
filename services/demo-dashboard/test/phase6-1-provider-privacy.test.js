@@ -58,7 +58,11 @@ test('Tavily receives an allowlisted payload with zero internal product/customer
     internal_products:[canary],historical_orders:[canary],max_queries:1
   });
   await provider.search({query:query.query||query.query_text||query,count:4,country:'AE'});
-  assert.deepEqual(Object.keys(captured).sort(),['auto_parameters','country','include_answer','include_images','include_raw_content','max_results','query','search_depth','topic'].sort());
+  assert.deepEqual(Object.keys(captured).sort(),['auto_parameters','country','include_answer','include_images','include_raw_content','include_usage','max_results','query','search_depth','topic'].sort());
+  assert.equal(captured.include_usage,true);
+  assert.equal(captured.auto_parameters,false);
+  assert.equal(captured.include_raw_content,false);
+  assert.equal(captured.include_answer,false);
   assertNoCanary(captured);
 });
 

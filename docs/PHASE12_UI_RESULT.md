@@ -1,5 +1,7 @@
 # Phase 12 — Workspace V3 implementation handoff
 
+Verified acceptance release receipt: implementation `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0`, annotated tag `phase12-workspace-ui-v3-accepted-20260907` (object `fb70993b7eaff99beb78985f6220a1d2ee914fd3`) verified at the configured remote. Previous implementation tag unchanged. This supersedes the historical uncommitted state below; assessment limitations remain. See PHASE13_MC00_RESULT.md for actual Git/data freeze.
+
 Current addendum (2026-09-07): follow-up reference/layout, automated/browser accessibility and business regression checks are complete. Scoped implementation acceptance is **PASS**, with human screen-reader listening explicitly NOT_TESTED and no WCAG certification. See [acceptance completion](PHASE12_ACCEPTANCE_COMPLETION.md) and [contact-progress correction](CONTACT_PROGRESS_SYNC_RESULT.md). The follow-up changes have not yet been committed/tagged; the prior release receipt and NOT_ACCEPTED statements below remain historical, not the current implementation assessment.
 
 Date: 2026-09-07. Authorized final work: WP-UI15 and WP-UI16; STOP after release handoff. This is an implementation milestone, **not a blanket Phase12 acceptance PASS**.

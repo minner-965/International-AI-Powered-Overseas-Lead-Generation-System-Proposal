@@ -138,12 +138,13 @@ function publicJob(row = {}) {
 }
 
 export class ResearchWorkbenchService {
-  constructor({pool,hunter=null,autoEvidence=null,providerAccountState=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[]}={}) {
+  constructor({pool,hunter=null,autoEvidence=null,providerAccountState=null,discoveryAccountState=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[]}={}) {
     if (!pool) throw new Error('ResearchWorkbenchService requires a PostgreSQL pool');
     this.pool=pool;
     this.hunter=hunter;
     this.autoEvidence=autoEvidence;
     this.providerAccountState=providerAccountState;
+    this.discoveryAccountState=discoveryAccountState;
     this.contactVerificationTtlDays=Math.max(1,Number(contactVerificationTtlDays)||30);
     this.runCapUnits=Math.max(0,Number(runCapUnits)||0);
     this.billingPeriodCapUnits=Math.max(0,Number(billingPeriodCapUnits)||0);
@@ -308,6 +309,7 @@ export class ResearchWorkbenchService {
       this.catalogProfiles(),this.budgetState(),this.autoEvidence?this.autoEvidence.summary():Promise.resolve(null),
       this.providerAccountState?this.providerAccountState.getState():Promise.resolve({status:'UNKNOWN'})
     ]);
+    const discoveryProvider=this.discoveryAccountState?await this.discoveryAccountState.getState('COMPANY_DISCOVERY'):searchProvider;
     const tasks=await this.listTasks({limit:3});
     const row=counts.rows[0];
     const automationStatus=this.autoEvidence?.status()||null;
@@ -321,8 +323,9 @@ export class ResearchWorkbenchService {
       last_reconciled_at:automation?.latest_schedule?.occurred_at||null,
        source_service_health:automationStatus.tavilyEnabled?searchProvider.status:'DISABLED',
       email_verification_health:upper(this.hunter?.capabilities?.mode)==='DISABLED'?'DISABLED':budget.state==='BUDGET_HOLD'?'DEGRADED':'READY',
-      search_service:{status:searchProvider.status,retry_after_at:searchProvider.retry_after_at||null,
-        checked_at:searchProvider.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR'].includes(searchProvider.status)},
+      search_service:{status:discoveryProvider.status,retry_after_at:discoveryProvider.retry_after_at||null,
+        checked_at:discoveryProvider.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR','STORAGE_RIGHTS_REQUIRED'].includes(discoveryProvider.status)},
+      evidence_service:{status:searchProvider.status,checked_at:searchProvider.checked_at||null},
       tavily_usage:{...(automation?.tavily_metrics||{}),limit_mode:'PROVIDER_ACCOUNT_ONLY'}
     }:null;
     return {as_of:new Date().toISOString(),active_jobs:Number(row.active_jobs),evidence_tasks:tasks.total,

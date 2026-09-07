@@ -146,7 +146,7 @@ test('provider fallbacks are market-neutral', async () => {
   });
   await brave.search({ query: 'supplier' });
   assert.equal(braveUrl.searchParams.get('country'), 'ALL');
-  assert.equal(braveUrl.searchParams.has('search_lang'), false);
+  assert.equal(braveUrl.searchParams.get('search_lang'), 'en');
 
   let dataForSeoTask;
   const dataForSeo = new DataForSeoSearchProvider({

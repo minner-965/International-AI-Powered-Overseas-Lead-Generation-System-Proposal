@@ -1,5 +1,11 @@
 # Version Changelog
 
+## Phase12 accepted freeze / WP-MC00 — 2026-09-07
+
+- Verified implementation `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0`, remote branch and new tag `phase12-workspace-ui-v3-accepted-20260907`; prior tag unchanged.
+- Private database archive and all 57 migration hashes preserved; archive listing checked. See `PHASE13_MC00_RESULT.md`.
+- MC00 PASS; authorized MC01/MC02 IN_PROGRESS. STOP at MC02; no MC03 shadow cohort or multi-channel sales implementation.
+
 ## Phase12 acceptance completion and contact-progress synchronization — 2026-09-07 — uncommitted
 
 - Completed fresh same-viewport reference comparison and 72 automated/browser accessibility assessments; human screen-reader listening NOT_TESTED, no WCAG certification.

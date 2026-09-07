@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createSearchProvider } from '../search/discoveryService.js';
+import { createPurposeSearchProvider } from '../search/SearchProviderRouter.js';
 import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { extractPublicContacts } from '../contact/ContactExtractor.js';
@@ -128,7 +128,7 @@ export class EnrichmentService {
   } = {}) {
     this.pool = pool;
     this.searchConfig = searchConfig;
-    this.provider = provider || createSearchProvider(searchConfig);
+    this.provider = provider || createPurposeSearchProvider(searchConfig, 'CONTACT_DISCOVERY');
     this.searchAudit = searchAudit || new TavilyUsageAudit({ provider:this.provider,pool,...tavilyUsageConfig });
     this.checker = checker || new WebsiteReachabilityChecker({ ...crawlerConfig,blockedDomains:['linkedin.com'] });
     this.hunter = hunter || new HunterProvider({ ...hunterConfig,pool });

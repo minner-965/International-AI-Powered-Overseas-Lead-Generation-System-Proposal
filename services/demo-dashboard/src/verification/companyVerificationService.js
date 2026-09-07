@@ -1,6 +1,6 @@
 import { htmlService } from '../platform/HtmlService.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
-import { createSearchProvider } from '../search/discoveryService.js';
+import { createPurposeSearchProvider } from '../search/SearchProviderRouter.js';
 import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { searchCountryCode } from '../search/queryGenerator.js';
 import { extractRootDomain, normalizeUrl } from '../search/resultNormalizer.js';
@@ -326,7 +326,7 @@ async function verifyOne(pool, candidate, job, config, checker) {
       RETURNING id`, [candidate.id, candidate.research_job_id]);
     const verificationId = seed.rows[0].id;
     await client.query('DELETE FROM leadgen.company_verification_evidence WHERE research_candidate_id=$1', [candidate.id]);
-    await client.query("DELETE FROM leadgen.company_social_accounts WHERE research_candidate_id=$1 AND source_type<>'TAVILY_BASIC_SEARCH'", [candidate.id]);
+    await client.query("DELETE FROM leadgen.company_social_accounts WHERE research_candidate_id=$1 AND source_type NOT IN('TAVILY_BASIC_SEARCH','TAVILY_ADVANCED_SEARCH')", [candidate.id]);
     const evidence = await insertEvidence(client, verificationId, candidate, [...pageEvidence, ...contactEvidence]);
     const pageBundles = crawl.pages.map(page => ({ evidence: evidence.filter(item => item.source_url === page.url) }));
     const officialCandidate = {
@@ -428,7 +428,7 @@ async function verifyOne(pool, candidate, job, config, checker) {
 async function socialFallback(pool, job, results, config) {
   if (!config.allowSocialSearch || !config.searchConfig?.tavilyApiKey) return { requests: 0, credits: 0, accounts: 0 };
   const marketProfile = marketProfileForJob(job);
-  const provider = createSearchProvider({ ...config.searchConfig, provider: 'tavily' });
+  const provider = createPurposeSearchProvider({ ...config.searchConfig, provider: 'tavily' }, 'COMPANY_VERIFICATION');
   const selected = results.filter(item => item.verification_status !== 'REJECTED' && item.social_accounts === 0);
   const searchAudit=String(provider.name||'').toLowerCase()==='tavily'
     ?new TavilyUsageAudit({provider,pool,...(config.tavilyUsageConfig||{})}):null;
@@ -461,9 +461,10 @@ async function socialFallback(pool, job, results, config) {
           INSERT INTO leadgen.company_social_accounts
             (company_id,research_candidate_id,platform,profile_url,normalized_profile_url,account_type,
              verification_status,source_url,source_type,captured_at)
-          VALUES ($1,$2,$3,$4,$5,'BUSINESS','PUBLIC_SEARCH_MATCH',$4,'TAVILY_BASIC_SEARCH',now())
+          VALUES ($1,$2,$3,$4,$5,'BUSINESS','PUBLIC_SEARCH_MATCH',$4,$6,now())
           ON CONFLICT (research_candidate_id,normalized_profile_url) DO NOTHING`, [
-          row.company_id, item.candidate_id, social.platform, result.url, social.normalized_profile_url]);
+          row.company_id, item.candidate_id, social.platform, result.url, social.normalized_profile_url,
+          provider.searchDepth === 'advanced' ? 'TAVILY_ADVANCED_SEARCH' : 'TAVILY_BASIC_SEARCH']);
         accounts += rowCount;
         candidateAccounts += rowCount;
       }

@@ -8,7 +8,8 @@ function billingPeriod(now=new Date()){
 
 function normalizedRequest(request={}){
   return{query:String(request.query||'').replace(/\s+/g,' ').trim(),count:Math.max(1,Math.min(20,Number(request.count)||5)),
-    country:String(request.country||'').trim().toUpperCase(),country_name:String(request.countryName||'').replace(/\s+/g,' ').trim()};
+    country:String(request.country||'').trim().toUpperCase(),country_name:String(request.countryName||'').replace(/\s+/g,' ').trim(),
+    ...(request.searchDepth==='advanced'?{search_depth:'advanced',language:String(request.searchLang||'')}: {})};
 }
 
 function stableFingerprint({researchJobId,companyId,purpose,endpoint,request}){
@@ -105,10 +106,10 @@ export class TavilyUsageLedger{
     }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
   }
 
-  async settle(event,{usedUnits=0,status='COMPLETED',providerRequestId=null,errorCode=null,resultCount=0,referenceIds=[]}={}){
+  async settle(event,{usedUnits=0,status='COMPLETED',providerRequestId=null,errorCode=null,resultCount=0,referenceIds=[],creditsSource=null}={}){
     if(event.replay)return event;
     const used=Math.max(0,Number(usedUnits)||0);
-    const resultPayload={audit:{purpose:event.result_payload?.audit?.purpose||null,
+    const resultPayload={audit:{credits_source:creditsSource||event.result_payload?.audit?.credits_source||'historical_unspecified',purpose:event.result_payload?.audit?.purpose||null,
       usage_group:event.result_payload?.audit?.usage_group||null,provider_used_units:used,
       result_count:Math.max(0,Number(resultCount)||0),reference_ids:(Array.isArray(referenceIds)?referenceIds:[]).map(String).slice(0,20)}};
     if(!this.pool){
@@ -123,9 +124,9 @@ export class TavilyUsageLedger{
     return result.rows[0]||event;
   }
 
-  async attachReferences(event,{providerRequestId=null,usedUnits=0,resultCount=0,referenceIds=[]}={}){
+  async attachReferences(event,{providerRequestId=null,usedUnits=0,resultCount=0,referenceIds=[],creditsSource=null}={}){
     if(event.replay)return event;
-    const resultPayload={audit:{purpose:event.result_payload?.audit?.purpose||null,
+    const resultPayload={audit:{credits_source:creditsSource||'historical_unspecified',purpose:event.result_payload?.audit?.purpose||null,
       usage_group:event.result_payload?.audit?.usage_group||null,provider_used_units:Math.max(0,Number(usedUnits)||0),
       result_count:Math.max(0,Number(resultCount)||0),reference_ids:(Array.isArray(referenceIds)?referenceIds:[]).map(String).slice(0,20)}};
     if(!this.pool){
@@ -145,6 +146,7 @@ export class TavilyUsageAudit{
   }
 
   async search({researchJobId,companyId=null,productProfile=null,purpose,budgetPool=null,request,persistResults=null,loadPersistedResults=null}){
+    if(this.provider?.searchDepth==='advanced')request={...request,searchDepth:'advanced'};
     if(String(this.provider?.name||'').toLowerCase()!=='tavily')return this.provider.search(request);
     if(this.providerAccountState)await this.providerAccountState.beforeSearch();
     let claim=await this.ledger.claim({researchJobId,companyId,productProfile,purpose,usageGroup:budgetPool,
@@ -158,7 +160,7 @@ export class TavilyUsageAudit{
       const storedResultCount=Number(claim.result_payload?.audit?.result_count||0);
       const persisted=typeof loadPersistedResults==='function'?await loadPersistedResults({referenceIds,resultCount:storedResultCount}):[];
       const results=boundedResults(persisted);
-      return{provider:'tavily',requestId:claim.provider_request_id||null,credits:Number(claim.used_units||0),results,
+      return{provider:'tavily',requestId:claim.provider_request_id||null,credits:Number(claim.used_units||0),creditsSource:claim.result_payload?.audit?.credits_source||'historical_unspecified',results,
         result_count:Math.max(storedResultCount,results.length),replay:true,usage_event:claim};
     }
     let response;
@@ -172,14 +174,14 @@ export class TavilyUsageAudit{
     try{if(typeof persistResults==='function')persisted=await persistResults(results)||persisted;}
     catch(error){
       const usage=await this.ledger.settle(claim,{usedUnits:Number(response.credits||0),status:'TEMPORARY_ERROR',
-        providerRequestId:response.requestId||null,errorCode:'RESULT_PERSIST_FAILED',resultCount:results.length});
+        providerRequestId:response.requestId||null,errorCode:'RESULT_PERSIST_FAILED',resultCount:results.length,creditsSource:response.creditsSource});
       error.usage_event=usage;throw error;
     }
     claim=await this.ledger.attachReferences(claim,{providerRequestId:response.requestId||null,
-      usedUnits:Number(response.credits||0),resultCount:results.length,referenceIds:persisted.referenceIds});
+      usedUnits:Number(response.credits||0),resultCount:results.length,referenceIds:persisted.referenceIds,creditsSource:response.creditsSource});
     const status=results.length?'COMPLETED':'NOT_FOUND';
     const usage=await this.ledger.settle(claim,{usedUnits:Number(response.credits||0),status,
-      providerRequestId:response.requestId||null,resultCount:results.length,referenceIds:persisted.referenceIds});
+      providerRequestId:response.requestId||null,resultCount:results.length,referenceIds:persisted.referenceIds,creditsSource:response.creditsSource});
     if(this.providerAccountState)await this.providerAccountState.observeSearchSuccess(response.requestId||null);
     return{...response,results,result_count:results.length,usage_event:usage};
   }

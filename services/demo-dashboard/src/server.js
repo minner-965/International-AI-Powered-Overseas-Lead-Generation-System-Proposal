@@ -36,6 +36,7 @@ import { createResearchRouter } from './research/router.js';
 import { OrchestratorHealthService } from './orchestration/OrchestratorHealthService.js';
 import { ResearchDirectDispatchService,ResearchJobDirectExecutor } from './research/ResearchDirectDispatchService.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
+import {SearchProviderRouter} from './search/SearchProviderRouter.js';
 
 const { Pool } = pg;
 const app = express();
@@ -68,6 +69,7 @@ function canonicalDigest(value) {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 const searchConfig = Object.freeze({
+  dualSearchEnabled: /^(1|true|yes)$/i.test(process.env.SEARCH_DUAL_ROUTING_ENABLED || ''),
   provider: String(process.env.SEARCH_PROVIDER || 'tavily').toLowerCase(),
   braveApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   dataForSeoLogin: process.env.DATAFORSEO_LOGIN || '',
@@ -106,6 +108,7 @@ const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:sea
   refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
   timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
 const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
+const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -385,7 +388,7 @@ const autoEvidenceExecutors=createAutoEvidenceExecutors({
 const autoEvidenceService = new AutoEvidenceOrchestrator({
   pool,
   queue:phase7QueueProxy,
-  providerAccountState:tavilyProviderAccountState,
+  providerAccountState:searchProviderRouter.forPurpose('CATEGORY_EVIDENCE'),
   env:process.env,
   audit,
   executors:autoEvidenceExecutors
@@ -499,6 +502,7 @@ const researchWorkbenchService = new ResearchWorkbenchService({
   hunter:enrichmentService.hunter,
   autoEvidence:autoEvidenceService,
   providerAccountState:tavilyProviderAccountState,
+  discoveryAccountState:searchProviderRouter,
   contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
   runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
   billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000),
@@ -1176,7 +1180,7 @@ async function createCategoryProcurementResearchJob({companyIds=[],maxResults=10
     throw Object.assign(new Error('One or more companies are not verified active Category Procurement targets'),{code:'CATEGORY_PROCUREMENT_COMPANY_INELIGIBLE'});
   }
   if(!selected.rowCount)throw Object.assign(new Error('No verified active companies are available for Category Procurement'),{code:'CATEGORY_PROCUREMENT_SCOPE_EMPTY'});
-  await tavilyProviderAccountState.ensureCanCreate();
+  await searchProviderRouter.ensureCanCreate('CATEGORY_EVIDENCE');
   const requestedCompanyIds=selected.rows.map(row=>row.id);
   const marketCodes=[...new Set(selected.rows.map(row=>row.country_code).filter(Boolean))];
   const created=await pool.query(`INSERT INTO leadgen.research_jobs
@@ -1265,7 +1269,7 @@ app.post('/api/research/jobs', managementAuth.authenticate,
         detail: 'country, buyer_types and max_results (1-100) are required'
       });
     }
-    await tavilyProviderAccountState.ensureCanCreate();
+    await searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY');
     const requestPayload = {
       country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
       preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
@@ -1329,7 +1333,7 @@ app.get('/api/research/jobs/:id', async (req, res, next) => {
 app.post('/api/enrichment/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
-    await tavilyProviderAccountState.ensureCanCreate();
+    await searchProviderRouter.ensureCanCreate('CONTACT_DISCOVERY');
     const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
     let productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
@@ -1697,7 +1701,7 @@ app.post('/api/internal/research/jobs/:id/discover', requireInternalToken, async
   try {
     const result = await telemetry.withSpan('phase5.external.search', {
       research_job_id: req.params.id,
-      provider: searchConfig.provider,
+      provider: searchProviderRouter.route('COMPANY_DISCOVERY').provider,
       operation: 'candidate_discovery'
     }, async span => {
       const discovered = await discoverResearchCandidates(pool, req.params.id, searchConfig,{tavilyUsageConfig});
@@ -1741,7 +1745,7 @@ app.post('/api/internal/research/jobs/:id/verify-companies', requireInternalToke
   try {
     const result = await telemetry.withSpan('phase5.external.company-verification', {
       research_job_id: req.params.id,
-      provider: searchConfig.provider,
+      provider: searchProviderRouter.route('COMPANY_VERIFICATION').provider,
       operation: 'company_verification'
     }, async span => {
       const verified = await verifyResearchCandidates(pool, req.params.id, {

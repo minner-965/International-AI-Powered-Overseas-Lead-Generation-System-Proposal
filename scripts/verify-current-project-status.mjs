@@ -24,8 +24,22 @@ for (const key of schema.required) assert(Object.hasOwn(status, key), `Missing c
 for (const key of Object.keys(status)) assert(Object.hasOwn(schema.properties, key), `Unknown current status field: ${key}`);
 assert(/^[0-9a-f]{40}$/.test(status.commit), 'Current status commit is invalid');
 assert(schema.properties.latest_released_phase.enum.includes(status.latest_released_phase), 'Latest released phase is invalid');
-assert(['Phase 10', 'Phase 11', 'Phase 12'].includes(status.current_active_phase), 'Current active phase must be a supported exact phase');
-const phase12Active = status.current_active_phase === 'Phase 12';
+assert(['Phase 10', 'Phase 11', 'Phase 12', 'Phase 13'].includes(status.current_active_phase), 'Current active phase must be a supported exact phase');
+const phase13Active=status.current_active_phase==='Phase 13';
+const phase12Active = ['Phase 12','Phase 13'].includes(status.current_active_phase);
+if(phase13Active){
+  const phase=status.phase13_search;
+  assert(phase && JSON.stringify(phase.scope)===JSON.stringify(['WP-MC00','WP-MC01','WP-MC02']),'Phase13 scope is limited to MC00 through MC02');
+  assert(phase.wp_mc00==='PASS' && ['IN_PROGRESS','PASS'].includes(phase.wp_mc01) && ['IN_PROGRESS','PASS'].includes(phase.wp_mc02),'Phase13 must retain actual work-package states');
+  assert(phase.stop_after==='WP-MC02' && status.explicit_stop_boundary.includes('WP-MC02'),'Phase13 must stop at MC02');
+  assert(status.phase12_ui?.full_phase_acceptance==='PASS' && status.latest_released_phase==='Phase 12 (Workspace UI)','Phase13 requires accepted released Phase12');
+  assert(existsSync(join(root,'docs/PHASE13_MC00_RESULT.md')),'Phase13 baseline report required');
+  if(phase.wp_mc01==='PASS' && phase.wp_mc02==='PASS'){
+    assert(phase.runtime_activation==='NOT_ACTIVATED_PENDING_CONFIG' && phase.live_brave_test==='NOT_RUN','Code acceptance must not imply live Brave activation');
+    assert(phase.brave_configured===false && phase.storage_rights_confirmed===false,'Current unconfigured Brave/storage flags must remain explicit');
+    assert(phase.result_report==='docs/PHASE13_MC00_02_RESULT.md' && existsSync(join(root,phase.result_report)),'MC00-02 code acceptance requires actual result report');
+  }
+}else assert(!Object.hasOwn(status,'phase13_search'),'Phase13 metadata requires Phase13 active');
 if (phase12Active) {
   const ui = status.phase12_ui;
   assert(ui && typeof ui === 'object' && !Array.isArray(ui), 'Phase 12 UI work-package metadata is required');
@@ -55,8 +69,8 @@ if (phase12Active) {
     assert(status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Unaccepted Phase 12 must preserve the accepted Phase 11 release');
     assert(status.final_acceptance_state === 'INCOMPLETE', 'Unaccepted Phase 12 final acceptance remains incomplete');
   }
-  assert(status.next_allowed_work_package === 'STOP_AWAIT_PRODUCTION_POLICY', 'Phase 12 must stop after the authorized release handoff');
-  assert(ui.stop_after === 'WP-UI16' && status.explicit_stop_boundary.includes('WP-UI16'), 'Phase 12 STOP must name WP-UI16');
+  assert(status.next_allowed_work_package === (phase13Active?'WP_MC02_STOP':'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
   for (const key of Object.keys(ui)) assert(Object.hasOwn(uiSchema.properties, key), `Unknown Phase 12 UI metadata: ${key}`);

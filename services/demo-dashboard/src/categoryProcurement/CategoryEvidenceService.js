@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import * as cheerio from 'cheerio';
-import { createSearchProvider } from '../search/discoveryService.js';
+import { createPurposeSearchProvider } from '../search/SearchProviderRouter.js';
 import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { domainService } from '../platform/DomainService.js';
@@ -35,7 +35,7 @@ function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if
 
 export class CategoryEvidenceService{
   constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2}={}){
-    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.provider=provider||createSearchProvider(searchConfig);
+    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.provider=provider||createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE');
     this.searchAudit=searchAudit||new TavilyUsageAudit({provider:this.provider,pool,...tavilyUsageConfig});
     this.checker=checker||new WebsiteReachabilityChecker({...crawlerConfig,blockedDomains:['linkedin.com']});this.maxQueriesPerProfile=Math.max(1,Math.min(4,Number(maxQueriesPerProfile)||4));
     this.maxQueriesPerCompany=Math.max(1,Math.min(8,Number(maxQueriesPerCompany)||8));this.maxPagesPerCompany=Math.max(1,Math.min(12,Number(maxPagesPerCompany)||12));this.maxDiscoveryDepth=Math.max(0,Math.min(2,Number(maxDiscoveryDepth)||2));

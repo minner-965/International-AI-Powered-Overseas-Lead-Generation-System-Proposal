@@ -190,3 +190,12 @@ Reused native dialog, details, original form controls, current Tabler controls/i
 Before adding a dependency document exact version, license text, official release/security status, self-hosted deployment, data sent outside DPV, ongoing fee/resource cost, reason existing native/Tabler capability falls short, rollback path and test plan. No third-party CDN is part of the new production UI.
 
 The reference HTML provides visual direction, not trusted business data, APIs, external-script approval or authority to overwrite current workflow gates. Existing UI artifacts remain in place only until their surface is migrated and verified; unused replaced CSS/JS must then be removed after reference checks. APIs, stable hooks, scores, real records, mail eligibility, approval and suppression gates stay unchanged.
+# Phase 13 search reuse review — 2026-09-07
+
+Reuse the existing JavaScript adapters, native Node fetch/AbortSignal, PostgreSQL provider_usage_events, and existing company/category/contact processing. No new production package is required.
+
+- Brave official Web Search API: commercial API terms, not an open-source dataset license. Backend-only token; only public research queries sent. Metered request costs depend on the subscribed account; no billed amount is invented. Official API documentation is available and was checked for pagination/country limits. Result storage remains gated by the account's storage entitlement. Boundary: discovery hints, never direct Opportunity qualification.
+- Tavily official Search API: retain current backend integration and account state; explicit Basic/Advanced, no automatic parameters or answer/raw-content expansion. Existing account pricing applies; record actual usage when returned and mark estimates. Boundary: evidence and contact search; original verification still required.
+- Native runtime and existing ledger: no new vendor, data residency, package license or maintenance burden. Database result cache stays on the existing local deployment and is excluded from Git exports. Frozen migration 057 remains unchanged.
+
+Sources: [Brave API](https://api-dashboard.search.brave.com/api-reference/web/search/get), [Tavily API](https://docs.tavily.com/documentation/api-reference/endpoint/search).

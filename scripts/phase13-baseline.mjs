@@ -1,0 +1,17 @@
+import {execFileSync} from 'node:child_process';
+import {mkdirSync,writeFileSync,readFileSync,readdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const run=(args,input)=>execFileSync('docker',args,{encoding:'utf8',input,timeout:60000});
+const out=`artifacts/backups/phase13-mc00-${new Date().toISOString().replace(/[:.]/g,'-')}`;
+mkdirSync(out,{recursive:true});
+const script=`import pg from 'pg';const c=new pg.Client({host:process.env.POSTGRES_HOST||'postgres',database:process.env.POSTGRES_DB,user:process.env.POSTGRES_USER,password:process.env.POSTGRES_PASSWORD});await c.connect();await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+const counts={};for(const t of ['companies','sources','contacts','research_jobs','outbound_messages','outreach_drafts','outreach_approvals','inbound_messages','provider_usage_events'])counts[t]=(await c.query('SELECT count(*)::int n FROM leadgen.'+t)).rows[0].n;
+const tables=(await c.query("SELECT table_name FROM information_schema.tables WHERE table_schema='leadgen' AND (table_name LIKE '%migration%' OR table_name LIKE '%checkpoint%')")).rows;
+const imap=(await c.query('SELECT max(last_sync_at) last_sync_at FROM leadgen.imap_mailbox_checkpoints')).rows;
+const jobs=(await c.query('SELECT status,count(*)::int count,max(created_at) latest_created_at FROM leadgen.research_jobs GROUP BY status')).rows;
+await c.query('ROLLBACK');await c.end();console.log(JSON.stringify({counts,tables,imap,jobs}));`;
+const database=JSON.parse(run(['exec','-i','dpv-leadgen-demo-dashboard-1','node','--input-type=module'],script));
+const migrations=Object.fromEntries(readdirSync('database/migrations').filter(f=>f.endsWith('.sql')).sort().map(f=>[f,createHash('sha256').update(readFileSync('database/migrations/'+f)).digest('hex')]));
+const flags=JSON.parse(run(['exec','dpv-leadgen-demo-dashboard-1','node','-e',`console.log(JSON.stringify(Object.fromEntries(['OUTREACH_ENABLED','OUTREACH_MANUAL_SEND_ONLY','SMTP_ENABLED','SMTP_IMAP_INBOUND_SYNC_ENABLED','SEARCH_PROVIDER','SEARCH_STORAGE_RIGHTS_CONFIRMED'].map(k=>[k,process.env[k]??null]))))`]));
+writeFileSync(out+'/baseline.json',JSON.stringify({observed_at:new Date().toISOString(),database,migrations,flags},null,2));
+console.log(JSON.stringify({out,database,latest_migration:Object.keys(migrations).at(-1),flags}));

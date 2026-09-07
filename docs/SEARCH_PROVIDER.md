@@ -1,6 +1,32 @@
 # Search Provider and Contact Check Configuration
 
-Reviewed: 2026-08-27
+Reviewed: 2026-09-07
+
+## Phase 13 MC01–MC02 rollout
+
+`SEARCH_DUAL_ROUTING_ENABLED=true` selects the centralized purpose router:
+
+| Purpose | Provider |
+|---|---|
+| COMPANY_DISCOVERY | Brave |
+| COMPANY_VERIFICATION / CATEGORY_EVIDENCE / CONTACT_DISCOVERY / OFFICIAL_CONTACT_VERIFICATION | Tavily Advanced, with the existing website crawler |
+| SHADOW_BENCHMARK | Explicit Brave + Tavily Basic plan only; no automatic execution in MC02 |
+
+The running environment remains in explicit legacy mode (`SEARCH_DUAL_ROUTING_ENABLED` absent/false): Tavily Basic remains available. Brave credentials were absent from the running service and `SEARCH_STORAGE_RIGHTS_CONFIRMED=false` at the MC00 check. This is not an automatic fallback: enabling dual mode without the requirements fails closed. No live Brave result or cost is claimed.
+
+Use the dual-routing switch for the supported Brave rollout, not legacy `SEARCH_PROVIDER=brave` across all purposes. The old global-Brave evidence/contact path predates this release and bypasses the Tavily-specific ledger; it is not activated or covered by the new dual-route audit guarantee. The supported route keeps evidence/contact on audited Tavily Advanced.
+
+Put configuration in the existing private `.env.phase2` backend environment file, used by the dashboard and workers. Set `BRAVE_SEARCH_API_KEY`, confirm the API plan permits result storage, set `SEARCH_STORAGE_RIGHTS_CONFIRMED=true`, then set `SEARCH_DUAL_ROUTING_ENABLED=true`. Keep `TAVILY_API_KEY` configured. Recreate the affected services after checking active jobs; changing a host file alone does not change running containers. Never commit credentials.
+
+Brave uses its official web search endpoint, country/language and page offset 0–9. Unsupported search markets such as AE map to provider `ALL`; the original market and country-specific query remain intact. MX is supported directly. Retries are bounded to three attempts, honor short Retry-After values, and defer longer waits rather than blocking the worker. Authentication failures do not retry.
+
+The existing `provider_usage_events` table stores Brave request fingerprints and per-attempt records. `result_payload.audit.attempt_count` counts provider-call intents, with finished HTTP/error outcomes retained; ledger row count is logical requests, not retry count. Brave billing units are unknown, not free: `billing_units_known=false`. Cached results support replay across process restarts. Unfinished or failed ledger entries require review rather than silent repeated billing.
+
+Tavily Basic historical fingerprints remain unchanged; Advanced has a distinct identity. `include_usage=true` requests actual usage, and `credits_source` distinguishes provider usage from depth estimates and unspecified historical values. No new application quantity hard limits or database migration were added. Existing emergency/credential/storage/rate-limit boundaries remain.
+
+Official references: [Brave web search](https://api-dashboard.search.brave.com/api-reference/web/search/get), [Tavily search parameters](https://docs.tavily.com/documentation/api-reference/endpoint/search).
+
+The older single-provider configuration below describes the retained legacy mode, not the new dual route.
 
 ## Active search provider
 

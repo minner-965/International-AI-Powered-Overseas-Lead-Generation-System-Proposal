@@ -22,17 +22,18 @@ export class TavilySearchProvider extends SearchProvider {
     if (!this.apiKey) {
       throw new SearchProviderError('Tavily API key is not configured', { code: 'MISSING_API_KEY' });
     }
-    if (this.searchDepth !== 'basic') {
-      throw new SearchProviderError('Phase 3 requires Tavily Basic Search', { code: 'INVALID_SEARCH_DEPTH' });
+    if (!['basic', 'advanced'].includes(this.searchDepth)) {
+      throw new SearchProviderError('Tavily search depth must be basic or advanced', { code: 'INVALID_SEARCH_DEPTH' });
     }
     const body = {
       query: String(query),
-      search_depth: 'basic',
+      search_depth: this.searchDepth,
       topic: 'general',
       max_results: Math.max(1, Math.min(20, Number(count) || 5)),
       include_answer: false,
       include_raw_content: false,
       include_images: false,
+      include_usage: true,
       auto_parameters: false
     };
     if (country && String(country).toUpperCase() !== 'ALL') {
@@ -76,12 +77,17 @@ export class TavilySearchProvider extends SearchProvider {
     if (!Array.isArray(payload?.results)) {
       throw new SearchProviderError('Tavily response is missing results', { code: 'INVALID_RESPONSE' });
     }
+    const reportedCredits = payload?.usage?.credits;
+    const hasReportedCredits = ['number', 'string'].includes(typeof reportedCredits)
+      && String(reportedCredits).trim() !== '' && Number.isFinite(Number(reportedCredits)) && Number(reportedCredits) >= 0;
     return {
       provider: this.name,
       query,
       requestId: payload.request_id || null,
       responseTime: Number(payload.response_time || 0),
-      credits: Number(payload?.usage?.credits || 1),
+      searchDepth: this.searchDepth,
+      credits: hasReportedCredits ? Number(reportedCredits) : this.searchDepth === 'advanced' ? 2 : 1,
+      creditsSource: hasReportedCredits ? 'provider_reported' : 'depth_estimate',
       results: payload.results.map((result, index) => ({
         title: result?.title || '',
         url: result?.url || '',

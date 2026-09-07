@@ -1,6 +1,5 @@
-import { BraveSearchProvider } from './BraveSearchProvider.js';
-import { DataForSeoSearchProvider } from './DataForSeoSearchProvider.js';
-import { TavilySearchProvider } from './TavilySearchProvider.js';
+import {createConfiguredSearchProvider,resolveSearchRoute} from './SearchProviderRouter.js';
+import {SearchUsageAudit} from './SearchUsageAudit.js';
 import { TavilyUsageAudit } from './TavilyUsageAudit.js';
 import { generateResearchQueries, searchCountryCode } from './queryGenerator.js';
 import { normalizeSearchResult } from './resultNormalizer.js';
@@ -9,30 +8,11 @@ import { marketProfileForJob, marketProviderLocationName, marketSearchLanguage }
 import { getProductCategoryProfile } from '../market/productProfiles.js';
 
 export function createSearchProvider(config = {}, overrides = {}) {
-  const providerName = String(config.provider || 'brave').toLowerCase();
-  if (overrides.provider) return overrides.provider;
-  if (providerName === 'brave') return new BraveSearchProvider({
-    apiKey: config.braveApiKey,
-    timeoutMs: config.timeoutMs,
-    fetchImpl: overrides.fetchImpl
-  });
-  if (providerName === 'dataforseo') return new DataForSeoSearchProvider({
-    login: config.dataForSeoLogin,
-    password: config.dataForSeoPassword,
-    timeoutMs: config.timeoutMs,
-    fetchImpl: overrides.fetchImpl
-  });
-  if (providerName === 'tavily') return new TavilySearchProvider({
-    apiKey: config.tavilyApiKey,
-    endpoint: config.tavilyEndpoint,
-    searchDepth: config.tavilySearchDepth,
-    timeoutMs: config.timeoutMs,
-    fetchImpl: overrides.fetchImpl
-  });
-  throw new Error(`Unsupported search provider: ${providerName}`);
+  return createConfiguredSearchProvider(config,overrides);
 }
 
 export async function persistGeneratedQueries(client, job, config) {
+  config=resolveSearchRoute(config,'COMPANY_DISCOVERY');
   const generated = generateResearchQueries(job);
   const rows = [];
   for (const query of generated) {
@@ -52,6 +32,7 @@ export async function persistGeneratedQueries(client, job, config) {
 }
 
 export async function discoverResearchCandidates(pool, jobId, config, overrides = {}) {
+  config=resolveSearchRoute(config,'COMPANY_DISCOVERY');
   if (String(config.provider || '').toLowerCase() === 'brave' && !config.storageRightsConfirmed) {
     const error = new Error('Search provider storage rights are not confirmed');
     error.code = 'STORAGE_RIGHTS_NOT_CONFIRMED';
@@ -60,7 +41,7 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
   const started = Date.now();
   const provider = createSearchProvider(config, overrides);
   const searchAudit=String(provider.name||'').toLowerCase()==='tavily'
-    ?new TavilyUsageAudit({provider,pool,...(overrides.tavilyUsageConfig||{})}):null;
+    ?new TavilyUsageAudit({provider,pool,...(overrides.tavilyUsageConfig||{})}):String(provider.name||'').toLowerCase()==='brave'?new SearchUsageAudit({provider,pool}):null;
   const client = await pool.connect();
   try {
     const jobResult = await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [jobId]);
@@ -123,6 +104,7 @@ export async function discoverResearchCandidates(pool, jobId, config, overrides 
         failed += 1;
         const safeError = String(error.message || 'Search request failed').replace(/\s+/g, ' ').slice(0, 500);
         await client.query(`UPDATE leadgen.research_search_queries SET status='FAILED',result_count=0,error_message=$2,executed_at=now() WHERE id=$1`, [query.id, safeError]);
+        if(['AUTHENTICATION_FAILED','AUTH_ERROR','MISSING_API_KEY','RATE_LIMITED','CREDIT_EXHAUSTED','SEARCH_REQUEST_IN_PROGRESS'].includes(error.code))throw error;
       }
     }
     if (!successful) {

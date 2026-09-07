@@ -117,7 +117,7 @@ test('Brave provider reports missing key, 401 and timeout without exposing a key
   await assert.rejects(() => timedOut.search({query:'test'}), error => error.code === 'TIMEOUT');
 });
 
-test('Tavily provider uses Basic Search only and maps score, usage and deterministic rank', async () => {
+test('Tavily provider defaults to Basic Search and maps score, usage and deterministic rank', async () => {
   let captured;
   const provider = new TavilySearchProvider({
     apiKey:'tvly-test',
@@ -146,9 +146,9 @@ test('Tavily provider uses Basic Search only and maps score, usage and determini
   assert.equal(result.results[1].rank,2);
 });
 
-test('Tavily provider rejects missing key, non-basic depth, 401, 403, credit limit and timeout', async () => {
+test('Tavily provider rejects missing key, unsupported depth, 401, 403, credit limit and timeout', async () => {
   await assert.rejects(()=>new TavilySearchProvider().search({query:'test'}),error=>error.code==='MISSING_API_KEY');
-  await assert.rejects(()=>new TavilySearchProvider({apiKey:'x',searchDepth:'advanced'}).search({query:'test'}),error=>error.code==='INVALID_SEARCH_DEPTH');
+  await assert.rejects(()=>new TavilySearchProvider({apiKey:'x',searchDepth:'automatic'}).search({query:'test'}),error=>error.code==='INVALID_SEARCH_DEPTH');
   for (const status of [401,403]) {
     const provider=new TavilySearchProvider({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({detail:'invalid key'}),{status})});
     await assert.rejects(()=>provider.search({query:'test'}),error=>error.code==='AUTH_ERROR');

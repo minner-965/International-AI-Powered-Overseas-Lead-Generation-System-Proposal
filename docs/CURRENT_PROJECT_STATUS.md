@@ -8,14 +8,16 @@ This file is the single source of truth for current execution state. Historical 
   "generated_updated_at": "2026-09-07T19:03:55+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
-  "commit": "1b9c7c4d12dd6610b8b494b6a4c62b1d188a81dc",
+  "commit": "6403dd3fb4e82ea757636c8a59cb7edf29f5beb0",
   "dirty_at_snapshot": true,
-  "latest_released_phase": "Phase 11 (Controlled outreach)",
-  "current_active_phase": "Phase 12",
+  "latest_released_phase": "Phase 12 (Workspace UI)",
+  "current_active_phase": "Phase 13",
+  "phase13_search":{"scope":["WP-MC00","WP-MC01","WP-MC02"],"wp_mc00":"PASS","wp_mc01":"PASS","wp_mc02":"PASS","runtime_activation":"NOT_ACTIVATED_PENDING_CONFIG","live_brave_test":"NOT_RUN","brave_configured":false,"storage_rights_confirmed":false,"result_report":"docs/PHASE13_MC00_02_RESULT.md","stop_after":"WP-MC02"},
   "phase12_ui": {
     "scope": ["WP-UI15", "WP-UI16"],
     "status": "ACCEPTANCE_COMPLETION",
     "full_phase_acceptance": "PASS",
+    "release":{"commit":"6403dd3fb4e82ea757636c8a59cb7edf29f5beb0","push":"VERIFIED"},
     "acceptance_report": "docs/PHASE12_ACCEPTANCE_COMPLETION.md",
     "accepted_assessment": {"reference":"PASS","accessibility":"AUTOMATED_AND_BROWSER_ASSESSED","human_screen_reader":"NOT_TESTED","wcag_certification":false},
     "prior_release_acceptance": "PASS",
@@ -374,13 +376,17 @@ This file is the single source of truth for current execution state. Historical 
     }
   },
   "current_blockers": [],
-  "next_allowed_work_package": "STOP_AWAIT_PRODUCTION_POLICY",
-  "explicit_stop_boundary": "WP-UI15 and WP-UI16 follow-up acceptance is PASS for the documented reference and automated/browser accessibility scope, with human screen-reader listening NOT_TESTED and no WCAG certification. STOP at the Phase12 freeze boundary until actual Git/data checks are recorded; commit/push/tag facts are not yet claimed. User has authorized subsequent WP-MC00 through WP-MC02, but Phase13 implementation is not recorded as started in this snapshot. WP-A16 and WP-OQ09 historical acceptance remains. Manual single-email sending remains available; automatic sending and automatic follow-up remain closed. This acceptance work performs zero sends."
+  "next_allowed_work_package": "WP_MC02_STOP",
+  "explicit_stop_boundary": "Phase12 scoped acceptance and its verified Git/data freeze are complete. Phase13 authorization is limited to WP-MC00 through WP-MC02; STOP after WP-MC02. Do not implement MC03 shadow cohorts, trial monitoring or sales-channel workflows. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance, manual single-email policy and closed automatic email/follow-up. No email is sent by these search-adapter work packages."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+Current MC01/MC02 code acceptance: PASS for the implemented adapter/router and executed tests, not live-provider activation. Brave credentials are not configured and storage-rights confirmation remains false. Runtime activation is NOT_ACTIVATED_PENDING_CONFIG; live Brave test NOT_RUN. Existing legacy Tavily configuration is preserved rather than silently used as automatic fallback for a selected unavailable provider. Full suite984/930passed/54skipped/0failed, isolated PostgreSQL5/5 with temporary database cleanup, browser contact-sync9/9. No new external provider calls, mail, migrations, dependencies or MC03 work. See PHASE13_MC00_02_RESULT.md; follow-up implementation commit is still pending and current commit remains the actually frozen6403dd3 baseline.
+
+Current MC00 release receipt: accepted Phase12 implementation `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0` and remote branch were verified; new acceptance tag `phase12-workspace-ui-v3-accepted-20260907` has object `fb70993b7eaff99beb78985f6220a1d2ee914fd3` and peels to that implementation. Old tag is unchanged. Local database dump and immutable migration hashes are recorded in PHASE13_MC00_RESULT.md. MC00 PASS; MC01/MC02 IN_PROGRESS, STOP at MC02. Earlier uncommitted/not-released statements below are historical and superseded only by this verified receipt.
 
 Current acceptance completion (2026-09-07 19:03 +08:00): Phase 12 implementation acceptance is PASS for the executed reference-layout, automated/browser accessibility and regression scope in PHASE12_ACCEPTANCE_COMPLETION.md. Human screen-reader listening remains NOT_TESTED and no WCAG certification is asserted. The user accepted the specific +37.48% performance result; measured evidence remains unchanged. Final contact-progress regression: 966 total / 912 passed / 0 failed / 54 skipped, targeted12/12 and isolated projection/aggregate9/9, browser9/9 and draft22/22. Existing real email totals remain unchanged by this work. Git freeze/commit/push/tag for these follow-up changes have not yet executed; latest_released_phase therefore remains Phase 11, and the existing Phase12 implementation-only tag is not rewritten. The older NOT_ACCEPTED/STOP descriptions below are preserved historical checkpoints, superseded by this current scoped acceptance. Phase13 implementation is not yet recorded as started; its MC00 freeze gate is next after actual Git/data checks.
 

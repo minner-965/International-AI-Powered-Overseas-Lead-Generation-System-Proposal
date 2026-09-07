@@ -19,7 +19,8 @@
     "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
     "dirty_at_snapshot": {"type":"boolean"},
     "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
-    "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12"]},
+    "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12","Phase 13"]},
+    "phase13_search":{"type":"object","additionalProperties":false,"required":["scope","wp_mc00","wp_mc01","wp_mc02","stop_after"],"properties":{"scope":{"const":["WP-MC00","WP-MC01","WP-MC02"]},"wp_mc00":{"const":"PASS"},"wp_mc01":{"enum":["IN_PROGRESS","PASS"]},"wp_mc02":{"enum":["IN_PROGRESS","PASS"]},"runtime_activation":{"const":"NOT_ACTIVATED_PENDING_CONFIG"},"live_brave_test":{"const":"NOT_RUN"},"brave_configured":{"const":false},"storage_rights_confirmed":{"const":false},"result_report":{"const":"docs/PHASE13_MC00_02_RESULT.md"},"stop_after":{"const":"WP-MC02"}}},
     "phase12_ui": {
       "type":"object", "additionalProperties":false,
       "required":["scope","status","full_phase_acceptance","prior_release_acceptance","stop_after"],
@@ -108,7 +109,7 @@
       }
     },
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION"]},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION","WP_MC02_STOP"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   },
   "allOf":[
@@ -117,13 +118,13 @@
       "then":{"properties":{"effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":false}}}}}
     },
     {
-      "if":{"properties":{"current_active_phase":{"const":"Phase 12"}}},
+      "if":{"properties":{"current_active_phase":{"enum":["Phase 12","Phase 13"]}}},
       "then":{
         "required":["phase12_ui","phase11_readiness"],
         "properties":{
           "final_acceptance_state":{"enum":["INCOMPLETE","PASS"]},
           "latest_released_phase":{"enum":["Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
-          "next_allowed_work_package":{"const":"STOP_AWAIT_PRODUCTION_POLICY"},
+          "next_allowed_work_package":{"enum":["STOP_AWAIT_PRODUCTION_POLICY","WP_MC02_STOP"]},
           "effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":true},"outreach_manual_send_only":{"const":true},"outreach_worker_send_enabled":{"const":false}}}
         }
       },
