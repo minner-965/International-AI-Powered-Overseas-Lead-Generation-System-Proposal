@@ -73,4 +73,14 @@ These limitations are preserved in current project status. Commit/push/tag ident
 - Performance batch 2: `artifacts/phase12-ui-baseline/browser-performance/2026-09-07T09-36-58-445Z/result.json`.
 - Native zoom/reduced motion: `artifacts/phase12-ui-baseline/browser-accessibility/2026-09-07T09-37-27-549Z/result.json`.
 
-Starting HEAD: `2b639e9e1acfe0c08c78a3803434a6761bb04cda`. Branch and requested annotated tag: `phase12-workspace-ui-v3`. Git execution receipt follows after remote verification; no release action is asserted by this preparatory report alone.
+## Verified Git release receipt
+
+- Starting HEAD: `2b639e9e1acfe0c08c78a3803434a6761bb04cda`.
+- Implementation commit: `1b9c7c4d12dd6610b8b494b6a4c62b1d188a81dc`.
+- Branch: `phase12-workspace-ui-v3`; pushed successfully to the configured GitHub origin.
+- Annotated tag: `phase12-workspace-ui-v3`; tag object `34dec2dba5316f31a99c2452c806cd728a239a3d`.
+- Remote branch and peeled tag were independently read with `git ls-remote` and both resolved to the implementation commit above.
+- This documentation-only receipt is committed after that verification. The tag stays on the tested implementation; no tag rewrite. The branch subsequently includes this receipt.
+- The tag message explicitly identifies an implementation handoff with open acceptance gaps. It does not assert full Phase12 PASS or a public-server deployment.
+
+WP-UI16 release operations completed; STOP. Shared sources/business data preserved; no new email from this work.
