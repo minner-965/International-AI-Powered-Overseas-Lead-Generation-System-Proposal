@@ -177,6 +177,16 @@ Reused native dialog, details, original form controls, current Tabler controls/i
 
 ## Adoption and retirement protocol
 
+### Accessibility completion QA tooling (2026-09-07)
+
+- **Candidate/version/license:** `axe-core` **4.10.3**, **MPL-2.0**, verified from the installed package and [official pinned source](https://github.com/dequelabs/axe-core/tree/v4.10.3).
+- **Decision:** QA-only reuse. Existing native/Tabler components are not accessibility testing engines; this adds rendered contrast and ARIA checks rather than a production widget.
+- **Location/boundary:** ignored `artifacts/phase12-ui-baseline/qa-tools/`; injected into a fresh independent Chrome test context. Production package files, runtime assets and lockfiles are unchanged.
+- **Privacy/cost:** local execution; browser permits only loopback GET/HEAD and blocks remote origins, writes and WebSockets. No hosted audit upload or service fee. Screenshots/results remain private. Zero production bundle bytes added.
+- **Maintenance/security:** official pinned repository reviewed; local reproducibility version, not a claim of latest release or comprehensive advisory clearance. Installation uses `--ignore-scripts`. A future version change requires renewed review.
+- **Limit:** automated findings and Chromium accessibility-tree inspection do not replace human screen-reader testing or establish complete WCAG conformance. Incomplete checks require additional review.
+- **Rollback:** remove the QA-only local package and stop invoking its script; no application rollback is needed.
+
 Before adding a dependency document exact version, license text, official release/security status, self-hosted deployment, data sent outside DPV, ongoing fee/resource cost, reason existing native/Tabler capability falls short, rollback path and test plan. No third-party CDN is part of the new production UI.
 
 The reference HTML provides visual direction, not trusted business data, APIs, external-script approval or authority to overwrite current workflow gates. Existing UI artifacts remain in place only until their surface is migrated and verified; unused replaced CSS/JS must then be removed after reference checks. APIs, stable hooks, scores, real records, mail eligibility, approval and suppression gates stay unchanged.

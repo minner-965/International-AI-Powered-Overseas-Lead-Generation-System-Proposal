@@ -1,4 +1,5 @@
 import express from 'express';
+import {attachContactProgress} from './outreach/contactProgress.js';
 import pg from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { load } from 'cheerio';
@@ -2331,7 +2332,7 @@ app.get('/api/leads', async (req, res, next) => {
         r.lead_score, r.tier, r.approval_status, r.send_status, r.next_action
       FROM leadgen.companies c LEFT JOIN leadgen.lead_reviews r ON r.company_id = c.id
       WHERE ${clauses.join(' AND ')} ORDER BY r.lead_score DESC, c.company_name`, params);
-    res.json(rows);
+    res.json(await attachContactProgress(pool,rows));
   } catch (e) { next(e); }
 });
 
@@ -2407,7 +2408,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
         'contact_lifecycle_status','contact_last_verified_at']) delete lead[field];
       lead.contact_access='RESTRICTED';
     }
-    res.json(lead);
+    res.json((await attachContactProgress(pool,[lead]))[0]);
   } catch (e) { next(e); }
 });
 

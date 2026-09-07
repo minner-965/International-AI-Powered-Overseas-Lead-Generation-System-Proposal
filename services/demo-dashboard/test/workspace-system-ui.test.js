@@ -100,7 +100,8 @@ test('V3 reference colors, bilingual hierarchy and overview proportions replace 
   assert.match(foundation, /\.bi\s*\{[^}]*flex-direction:\s*column/);
   assert.match(foundation, /\.bi > \[lang="zh-CN"\], \.bi > \[lang="en"\]\s*\{[^}]*font-size:\s*1em[^}]*font-weight:\s*inherit/);
   assert.match(overview, /grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(overview, /grid-template-columns:\s*minmax\(0,2fr\) minmax\(0,1fr\)/);
+  assert.match(overview, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(overview, /v3-overview-analysis>section:first-child\{grid-column:span 2\}/);
   assert.match(overview, /@media\s*\(max-width:\s*700px\)/);
   assert.doesNotMatch(`${tokens}\n${foundation}\n${overview}`, /#5146e5|#4338ca|linear-gradient|shimmer/i);
 });

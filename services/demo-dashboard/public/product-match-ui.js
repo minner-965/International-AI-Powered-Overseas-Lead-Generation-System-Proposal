@@ -17,7 +17,7 @@ const categoryProcurementStatusLabels = Object.freeze({
   WEAK_CATEGORY_MATCH: pair('品类匹配较弱', 'Weak category match'),
   PRODUCT_MISMATCH: pair('已确认品类不匹配', 'Confirmed category mismatch'),
   NEEDS_PRODUCT_EVIDENCE: pair('需补充客户品类资料', 'Customer category evidence required'),
-  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('历史状态（现按批准类目）', 'Legacy state (approved category now applies)'),
+  NEEDS_INTERNAL_CATALOG_EVIDENCE: pair('类目评估待更新', 'Category assessment needs updating'),
   INELIGIBLE_BUYER_MODEL: pair('客户模式不符合', 'Ineligible buyer model'),
   UNKNOWN: pair('公司类目待确认', 'Company category to confirm')
 });
@@ -48,17 +48,17 @@ const buyerSubtypeLabels = Object.freeze({
 });
 
 const productOpportunityStatusLabels = Object.freeze({
-  READY: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
-  SKU_READY: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
-  PARTIAL_INTERNAL_CATALOG: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
-  SKU_PARTIAL: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
-  NO_REAL_CANDIDATE: pair('历史状态（现按商品类目评估）', 'Legacy state (category-level assessment now applies)'),
+  READY: pair('类目评估待更新', 'Category assessment needs updating'),
+  SKU_READY: pair('类目评估待更新', 'Category assessment needs updating'),
+  PARTIAL_INTERNAL_CATALOG: pair('类目评估待更新', 'Category assessment needs updating'),
+  SKU_PARTIAL: pair('类目评估待更新', 'Category assessment needs updating'),
+  NO_REAL_CANDIDATE: pair('类目评估待更新', 'Category assessment needs updating'),
   NO_EXACT_SKU: pair('按商品类目评估', 'Category-level assessment'),
-  INTERNAL_CATALOG_UPLOAD_REQUIRED: pair('历史状态（无需商品补充任务）', 'Legacy state (no catalog task)'),
+  INTERNAL_CATALOG_UPLOAD_REQUIRED: pair('类目评估待更新', 'Category assessment needs updating'),
   NOT_REQUIRED: pair('按商品类目评估', 'Category-level assessment'),
   CATEGORY_SCOPE_QUALIFIED: pair('已符合批准类目', 'Approved category qualified'),
   OUT_OF_SCOPE: pair('不在公司类目范围', 'Out of scope'),
-  NOT_RUN_GATE_FAILED: pair('品类采购门槛未通过', 'Category procurement gate not passed'),
+  NOT_RUN_GATE_FAILED: pair('类目评估条件未通过', 'Category assessment requirements not met'),
   UNKNOWN: pair('商品类目机会待评估', 'Product category opportunity to assess')
 });
 
@@ -152,9 +152,9 @@ const reasonLabels = Object.freeze({
   COMMERCIAL_POSITIONING_PRICE_BAND_UNKNOWN: pair('价格定位兼容性待确认', 'Price-positioning compatibility requires confirmation'),
   ATTRIBUTE_SPECIFICATION_FIT_UNKNOWN: pair('产品属性与规格兼容性待确认', 'Attribute and specification compatibility requires confirmation'),
   MOQ_ORDER_FORMAT_COMPATIBILITY_UNKNOWN: pair('起订量与订单形式兼容性待确认', 'MOQ and order-format compatibility requires confirmation'),
-  COMMERCIAL_POSITIONING_PRICE_BAND_OPTIONAL_UNTIL_INTEREST: pair('已有公开资料时参考；无资料则跳过，意向后由老板沟通', 'Use existing public facts when available; otherwise skip until management discusses it after interest'),
-  ATTRIBUTE_SPECIFICATION_FIT_OPTIONAL_UNTIL_INTEREST: pair('无需前期补充；客户有意向后由老板沟通', 'No pre-contact enrichment required; management discusses it after interest'),
-  MOQ_ORDER_FORMAT_OPTIONAL_UNTIL_INTEREST: pair('无需前期补充；客户有意向后由老板沟通', 'No pre-contact enrichment required; management discusses it after interest'),
+  COMMERCIAL_POSITIONING_PRICE_BAND_OPTIONAL_UNTIL_INTEREST: pair('价格区间供参考，合作意向后商议', 'Indicative price range; discuss after interest'),
+  ATTRIBUTE_SPECIFICATION_FIT_OPTIONAL_UNTIL_INTEREST: pair('规格可在合作意向后商议', 'Discuss specifications after interest'),
+  MOQ_ORDER_FORMAT_OPTIONAL_UNTIL_INTEREST: pair('订单条件可在合作意向后商议', 'Discuss order terms after interest'),
   IMPORT_SOURCING_MODEL_FIT_UNKNOWN: pair('进口与采购模式兼容性待确认', 'Import and sourcing model compatibility requires confirmation'),
   RECENT_PRODUCT_BUYING_SIGNAL_UNKNOWN: pair('近期产品与采购信号待确认', 'Recent product and buying signals require confirmation'),
   PRODUCT_EVIDENCE_MISSING: pair('公开产品资料待补充', 'Public product evidence required')

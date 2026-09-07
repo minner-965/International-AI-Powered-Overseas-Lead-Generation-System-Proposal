@@ -1,5 +1,6 @@
 import { projectResearchTask,compareResearchTasks,rankCohortCandidate } from './researchTaskProjection.js';
 import { createHash } from 'node:crypto';
+import {firstContactPendingSql} from '../outreach/contactProgress.js';
 
 const ACTIVE_JOB_STATES = Object.freeze(['QUEUED','DISCOVERING','CRAWLING','QUALIFYING','SCORING','RESOLVING','VERIFYING','PERSISTING']);
 const COMPLETE_JOB_STATES = new Set(['COMPLETE','COMPLETED']);
@@ -303,7 +304,7 @@ export class ResearchWorkbenchService {
             AND dc.last_verified_at>=now()-($2::int*interval '1 day') AND d.person_name IS NOT NULL
             AND d.verification_status='VERIFIED' AND d.lifecycle_status='ACTIVE' AND pr.relevance IN('HIGH','MEDIUM')
             AND d.normalized_role IN('BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING')) verified_email_routes,
-        (SELECT count(*)::int FROM leadgen.business_opportunity_current WHERE contact_readiness='READY' AND business_fit_status='FIT') contact_ready_opportunities`,[ACTIVE_JOB_STATES,this.contactVerificationTtlDays]),
+        (SELECT count(*)::int FROM leadgen.business_opportunity_current o WHERE contact_readiness='READY' AND business_fit_status='FIT' AND ${firstContactPendingSql('o')}) contact_ready_opportunities`,[ACTIVE_JOB_STATES,this.contactVerificationTtlDays]),
       this.catalogProfiles(),this.budgetState(),this.autoEvidence?this.autoEvidence.summary():Promise.resolve(null),
       this.providerAccountState?this.providerAccountState.getState():Promise.resolve({status:'UNKNOWN'})
     ]);

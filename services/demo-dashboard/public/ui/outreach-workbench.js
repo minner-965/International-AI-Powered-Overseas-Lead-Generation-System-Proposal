@@ -1,4 +1,6 @@
 import { managementRequest } from '../phase7-ui.js';
+import { publishCommunicationChange, subscribeCommunicationChanges } from './communication-sync.js';
+import { contactProgressStatus, contactNextAction } from './contact-progress.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bi=(zh,en)=>`<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
@@ -8,8 +10,11 @@ Object.assign(labels,{VALID:['已核验','Verified'],ELIGIBLE:['条件通过','E
 Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待批准联系','Contact approval required'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
 const status=value=>{const tone=['APPROVED','VALID','ELIGIBLE','REPLIED','DELIVERED'].includes(value)?'current':['FAILED','REJECTED','OPTED_OUT','BOUNCED','HARD_BOUNCED'].includes(value)?'rejected':['SENT','SENT_NO_REPLY','PROVIDER_ACCEPTED','READY_TO_SEND'].includes(value)?'active':'review';return `<span class="data-state-badge state-${tone}">${bi(...(labels[value]||['待准备','Not prepared']))}</span>`;};
 const category=value=>bi(...(value==='GENERAL_MERCHANDISE'?['日用百货','General merchandise']:['女装','Womenswear']));
-const businessStatus=row=>row.business_contact_status&&row.business_contact_status!=='NOT_SENT'?status(row.business_contact_status):row.opportunity_status!=='MANAGEMENT_APPROVED'?status('NEEDS_MANAGEMENT_APPROVAL'):row.eligibility_status!=='ELIGIBLE'?status('NEEDS_RECIPIENT_REVIEW'):status(row.send_status||row.draft_status||'NEEDS_DRAFT');
+const businessStatus=row=>contactProgressStatus(row)?status(contactProgressStatus(row)):row.business_contact_status&&row.business_contact_status!=='NOT_SENT'?status(row.business_contact_status):row.opportunity_status!=='MANAGEMENT_APPROVED'?status('NEEDS_MANAGEMENT_APPROVAL'):row.eligibility_status!=='ELIGIBLE'?status('NEEDS_RECIPIENT_REVIEW'):status(row.send_status||row.draft_status||'NEEDS_DRAFT');
+labels.DO_NOT_CONTACT=['停止联系','Do Not Contact'];
 const nextAction=value=>{
+  const progressAction=contactNextAction(state.row);
+  if(progressAction)return bi(...progressAction);
   if(value==='REVIEW_DRAFT'&&state.row?.draft_status==='APPROVED'&&!state.row.message_id){
     if(state.row.send_allowed&&state.data?.sending_enabled)return bi('待发送','Ready to send');
     if(state.row.send_blocked_reasons?.includes('SEND_RATE_CAP_BLOCKED'))return bi('发送额度待恢复','Send allowance pending');
@@ -31,8 +36,10 @@ const q=id=>document.getElementById(id);
 dialog.classList.add('v3-email-review');
 const reviewBody=dialog.querySelector('.p11-outreach-body');
 const companyColumn=document.createElement('aside');companyColumn.className='v3-email-company';
+companyColumn.setAttribute('aria-label','邮件客户资料 Email company details');
 const composerColumn=document.createElement('section');composerColumn.className='v3-email-composer';
 const gateColumn=document.createElement('aside');gateColumn.className='v3-email-gates';
+gateColumn.setAttribute('aria-label','邮件审核条件 Email review conditions');
 companyColumn.append(q('outreach-review-summary'));
 composerColumn.innerHTML=`<h4>${bi('邮件内容','Email content')}</h4><div id="outreach-recipient-display" class="v3-email-recipient"></div>`;
 composerColumn.append(q('outreach-review-form'),q('outreach-review-feedback'));
@@ -83,7 +90,18 @@ function readiness(row){
   return bi('当前版本可单封发送。','This version is ready for a single-email send.');
 }
 function controls(){
-  const row=state.row;if(!row)return;
+  const row=state.row;
+  if(!row){
+    for(const id of ['outreach-save','outreach-submit','outreach-approve','outreach-reject','outreach-send','outreach-contact-approve'])q(id).disabled=true;
+    approveContact.hidden=true;
+    refreshReview.disabled=state.busy||state.dirty;
+    q('outreach-subject').readOnly=true;q('outreach-body').readOnly=true;
+    q('outreach-subject').disabled=state.busy;q('outreach-body').disabled=state.busy;
+    q('outreach-gate-status').innerHTML=bi('此公司已移出当前联系队列','This company is no longer in the current contact queue');
+    q('outreach-send-readiness').innerHTML=bi('请返回公司列表，重新选择当前记录。','Return to the company list and select a current record.');
+    dialog.setAttribute('aria-busy',String(state.busy));
+    return;
+  }
   const frozen=Boolean(row.message_id),eligible=row.eligibility_status==='ELIGIBLE'&&row.opportunity_status==='MANAGEMENT_APPROVED';
   approveContact.hidden=row.opportunity_status==='MANAGEMENT_APPROVED'||frozen;
   approveContact.disabled=state.busy||state.dirty||row.opportunity_status!=='RECOMMENDED';
@@ -95,6 +113,7 @@ function controls(){
   q('outreach-approve').disabled=state.busy||state.dirty||frozen||row.draft_status!=='PENDING_REVIEW'||!row.submitted_at;
   q('outreach-reject').disabled=state.busy||state.dirty||frozen||!['PENDING_REVIEW','APPROVED'].includes(row.draft_status);
   q('outreach-send').disabled=state.busy||state.dirty||!state.data?.sending_enabled||(!row.send_allowed&&!row.retry_allowed);
+  if(state.data?.read_failed)for(const id of ['outreach-save','outreach-submit','outreach-approve','outreach-reject','outreach-send','outreach-contact-approve'])q(id).disabled=true;
   q('outreach-send').innerHTML=row.retry_allowed?bi('重新提交此邮件','Resubmit this email'):bi('发送此邮件','Send this email');
   q('outreach-send').setAttribute('aria-describedby','outreach-send-readiness');
   q('outreach-send-readiness').innerHTML=readiness(row);
@@ -102,7 +121,7 @@ function controls(){
   dialog.setAttribute('aria-busy',String(state.busy));
 }
 function renderDialog(){
-  const row=state.row;if(!row)return;
+  const row=state.row;if(!row){controls();return;}
   q('outreach-review-summary').innerHTML=`<strong>${esc(row.company_name)}</strong><dl><dt>${bi('商品类目','Product category')}</dt><dd>${category(row.product_profile)}</dd><dt>${bi('收件人','Recipient')}</dt><dd>${esc(row.recipient_email||'—')}</dd><dt>${bi('邮箱核验','Email verification')}</dt><dd>${row.verification_status==='VALID'?status('VALID'):status('VERIFICATION_REQUIRED')} · ${date(row.verified_at)}</dd><dt>${bi('当前状态','Current status')}</dt><dd>${businessStatus(row)}</dd><dt>${bi('收件证据','Receipt evidence')}</dt><dd>${row.receipt_evidence_status==='UNCONFIRMED'||!row.receipt_evidence_status?bi('尚无收件确认','No receipt confirmation'):bi('已有收件证据','Receipt evidence recorded')}</dd><dt>${bi('负责人','Owner')}</dt><dd>${esc(row.owner||'—')}</dd><dt>${bi('下一步','Next action')}</dt><dd>${nextAction(row.next_action)}</dd><dt>${bi('最近回复','Latest reply')}</dt><dd>${date(row.last_reply_at)}</dd></dl><details><summary>${bi('活动记录','Activity history')}</summary><ol class="p11-activity-list">${(row.activity||[]).map(event=>`<li>${bi(...(activityLabels[event.event_type]||['联系状态已更新','Contact status updated']))}<time>${date(event.occurred_at)}</time></li>`).join('')||`<li>${bi('暂无活动','No activity yet')}</li>`}</ol></details>`;
   q('outreach-subject').value=row.subject||state.data?.template?.subject||'';
   if(window.matchMedia('(max-width:600px)').matches){
@@ -118,20 +137,33 @@ function renderList(){
   const host=q('outreach-workbench-list');if(!host)return;
   const items=state.data?.items||[];
   const companies=new Map();items.forEach((row,index)=>{if(!companies.has(row.company_id))companies.set(row.company_id,[]);companies.get(row.company_id).push({row,index});});
-  host.innerHTML=items.length?[...companies.values()].map(group=>`<article class="p11-outreach-row"><div class="v3-email-identity"><span class="v3-email-avatar" aria-hidden="true">${esc(group[0].row.company_name?.slice(0,1)||'—')}</span><div><strong>${esc(group[0].row.company_name)}</strong><p>${esc(group[0].row.recipient_email||'—')}</p></div></div><div class="p11-category-actions">${group.map(({row,index})=>`<div><span class="v3-email-category">${category(row.product_profile)}</span><span class="v3-email-state">${businessStatus(row)}</span><button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${bi('审核与发送','Review & send')}</button></div>`).join('')}</div></article>`).join(''):`<div class="p8-empty-state">${bi('暂无可准备开发信的公司，请先检查业务机会与邮箱。','No companies are ready for draft preparation. Review opportunities and mailboxes first.')}</div>`;
+  host.innerHTML=items.length?[...companies.values()].map(group=>`<article class="p11-outreach-row"><div class="v3-email-identity"><span class="v3-email-avatar" aria-hidden="true">${esc(group[0].row.company_name?.slice(0,1)||'—')}</span><div><strong>${esc(group[0].row.company_name)}</strong><p>${esc(group[0].row.recipient_email||'—')}</p></div></div><div class="p11-category-actions">${group.map(({row,index})=>`<div><span class="v3-email-category">${category(row.product_profile)}</span><span class="v3-email-state">${businessStatus(row)}</span><button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${contactProgressStatus(row)?bi('查看邮件记录','View mail record'):bi('审核与发送','Review & send')}</button></div>`).join('')}</div></article>`).join(''):`<div class="p8-empty-state">${bi('暂无可准备开发信的公司，请先检查业务机会与邮箱。','No companies are ready for draft preparation. Review opportunities and mailboxes first.')}</div>`;
   host.querySelectorAll('[data-outreach-index]').forEach(button=>button.addEventListener('click',()=>{state.opener=button;state.row=items[Number(button.dataset.outreachIndex)];q('outreach-review-feedback').textContent='';renderDialog();dialog.showModal();q('outreach-review-title').focus();}));
 }
 async function load(){
+  const generation=(state.loadGeneration||0)+1;state.loadGeneration=generation;
   const host=q('outreach-workbench-list');if(!host)return;host.setAttribute('aria-busy','true');
-  try{state.data=await managementRequest('/api/outreach/workbench');if(state.row)state.row=state.data.items.find(row=>row.company_id===state.row.company_id&&row.product_profile===state.row.product_profile)||null;renderList();}
-  catch{if(state.data){state.data.sending_enabled=false;state.data.read_failed=true;}controls();host.innerHTML=`<div class="p8-empty-state">${bi('邮件工作台读取未完成，请点击刷新状态重试。','Email workspace did not load. Use Refresh status to retry.')}</div>`;throw new Error('WORKBENCH_READ_FAILED');}
-  finally{host.setAttribute('aria-busy','false');}
+  try{const data=await managementRequest('/api/outreach/workbench');if(state.loadGeneration!==generation)return;state.data=data;if(state.row)state.row=state.data.items.find(row=>row.company_id===state.row.company_id&&row.product_profile===state.row.product_profile)||null;renderList();controls();}
+  catch{if(state.loadGeneration!==generation)return;if(state.data){state.data.sending_enabled=false;state.data.read_failed=true;}controls();host.innerHTML=`<div class="p8-empty-state">${bi('邮件工作台读取未完成，请点击刷新状态重试。','Email workspace did not load. Use Refresh status to retry.')}</div>`;throw new Error('WORKBENCH_READ_FAILED');}
+  finally{if(state.loadGeneration===generation)host.setAttribute('aria-busy','false');}
 }
+let pendingSync=false;
+async function refreshAfterChange(){
+  if(state.busy){pendingSync=true;return;}
+  if(document.hidden)return;
+  if(!dialog.open&&location.hash!=='#contact-queue')return;
+  // Refresh gates without replacing unsaved subject/body input.
+  try{await load();if(dialog.open&&!state.dirty)renderDialog();else controls();}catch{}
+}
+subscribeCommunicationChanges(refreshAfterChange);
+window.addEventListener('focus',refreshAfterChange);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshAfterChange();});
+setInterval(refreshAfterChange,30000);
 async function operate(action,{sending=false}={}){
-  if(state.busy)return;state.busy=true;controls();feedback('正在处理，请稍候。','Processing. Please wait.');
-  try{await action();await load();renderDialog();feedback('操作已保存。','The action was saved.');await loadOperations();}
-  catch{if(sending){try{await load();renderDialog();}catch{if(state.data)state.data.sending_enabled=false;}}feedback('此步骤未完成，请检查当前状态后重试；发送结果待核对时请勿重复发送。','This step did not complete. Check the current status before retrying; do not resend while a send result is under review.');}
-  finally{state.busy=false;controls();}
+  if(state.busy||!state.row||state.data?.read_failed)return;state.loadGeneration=(state.loadGeneration||0)+1;state.busy=true;controls();feedback('正在处理，请稍候。','Processing. Please wait.');
+  try{await action();publishCommunicationChange({companyId:state.row?.company_id,productProfile:state.row?.product_profile,reason:sending?'SEND_COMPLETED':'UPDATED'});await load();renderDialog();feedback('操作已保存。','The action was saved.');await loadOperations();}
+  catch{if(sending){publishCommunicationChange({companyId:state.row?.company_id,reason:'SEND_RECONCILE'});try{await load();renderDialog();}catch{if(state.data)state.data.sending_enabled=false;}}feedback('此步骤未完成，请检查当前状态后重试；发送结果待核对时请勿重复发送。','This step did not complete. Check the current status before retrying; do not resend while a send result is under review.');}
+  finally{state.busy=false;controls();if(pendingSync){pendingSync=false;void refreshAfterChange();}}
 }
 function close(){
   if(state.busy)return;

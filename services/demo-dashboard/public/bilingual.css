@@ -12,7 +12,7 @@
   font-weight: inherit;
 }
 
-.bi > [lang="en"] { color: inherit; opacity: .84; }
+.bi > [lang="en"] { color: inherit; opacity: 1; }
 .run-status { white-space: pre-line; }
 .actions .bi,
 #start-research .bi { align-items: center; text-align: center; }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import {contactNextAction} from '../public/ui/contact-progress.js';
 const source=await readFile(new URL('../public/ui/outreach-workbench.js',import.meta.url),'utf8');
 
 test('workbench uses approval ID for sending and server-derived draft preparation',()=>{
@@ -52,7 +53,8 @@ test('disabled send explains server reasons and a failed refresh invalidates cac
 
 test('approved drafts show the actionable send step instead of repeating draft review',()=>{
   const renderer=source.slice(source.indexOf('const nextAction='),source.indexOf('const activityLabels='));
-  const render=(row,data={sending_enabled:true})=>vm.runInNewContext(`${renderer}\nnextAction('REVIEW_DRAFT')`,{state:{row,data},bi:(zh,en)=>`${zh}|${en}`});
+  const render=(row,data={sending_enabled:true})=>vm.runInNewContext(`${renderer}\nnextAction('REVIEW_DRAFT')`,{state:{row,data},contactNextAction,bi:(zh,en)=>`${zh}|${en}`});
+  assert.equal(render({contact_progress_status:'SENT_NO_REPLY',draft_status:'APPROVED'}),'等待回复|Await Reply');
   assert.equal(render({draft_status:'APPROVED',send_allowed:true}),'待发送|Ready to send');
   assert.equal(render({draft_status:'APPROVED',send_blocked_reasons:['SEND_RATE_CAP_BLOCKED']}),'发送额度待恢复|Send allowance pending');
   assert.equal(render({draft_status:'APPROVED'},{sending_enabled:false}),'发信权限待确认|Sending permission pending');

@@ -1321,6 +1321,14 @@ export class Phase7Service {
       const outreachByCompany=new Map(outreachRows.map(row=>[`${row.company_id}:${row.product_profile}`,row]));
       return rows.filter(row=>resolved.mode!=='SELECTED_ROWS'||resolved.selectedEntityIds.includes(row.company_id)).map(row=>{
         const outreach=outreachByCompany.get(`${row.company_id}:${row.product_profile}`)||{};
+        const contactProgress=row.contact_progress_status||outreach.contact_progress_status||outreach.business_contact_status||'NOT_SENT';
+        const historicalTransport=row.contact_progress_transport_status||outreach.contact_progress_transport_status;
+        const historicalReceipt=row.contact_progress_receipt_evidence_status||outreach.contact_progress_receipt_evidence_status;
+        const historicalSent=row.last_contact_at||outreach.last_contact_at;
+        const historicalReply=row.contact_progress_reply_status||outreach.contact_progress_reply_status;
+        const contactNextAction=['OPTED_OUT','DO_NOT_CONTACT','BOUNCED'].includes(contactProgress)?'STOP_CONTACT'
+          :contactProgress==='SENT_NO_REPLY'?'WAIT_FOR_REPLY':contactProgress==='REPLIED'?'REVIEW_REPLY'
+            :contactProgress==='SEND_AMBIGUOUS'?'REVIEW_SEND_RESULT':null;
         const {sku_readiness_status:_skuReadiness,catalog_enrichment_required:_catalogEnrichment,
           product_opportunity_status:_productOpportunityStatus,product_opportunity_count:_productOpportunityCount,
           top_product_opportunity:_topProductOpportunity,...businessRow}=row;
@@ -1356,10 +1364,10 @@ export class Phase7Service {
         source_reference_urls:row.contact_source_url||'',
         recipient:outreach.recipient_email||'',recipient_type:outreach.recipient_type||'',recipient_source:outreach.recipient_source||'',
         email_send_eligibility:outreach.eligibility_status||'',management_approval:outreach.opportunity_status==='MANAGEMENT_APPROVED'?'APPROVED':'PENDING_REVIEW',
-        draft_status:outreach.draft_status||'',business_contact_status:outreach.business_contact_status||'NOT_SENT',
-        transport_status:outreach.transport_status||'NOT_ATTEMPTED',receipt_evidence_status:outreach.receipt_evidence_status||'UNCONFIRMED',
-        sent_at:outreach.sent_at?.toISOString?.()||outreach.sent_at||'',reply_status:outreach.reply_status||(outreach.sent_at?'NO_REPLY_YET':'NOT_SENT'),suppression:outreach.suppression||false,
-        owner:outreach.owner||'NOT_ASSIGNED',next_action:outreach.suppression?'STOP_CONTACT':outreach.next_action||(outreach.sent_at?'WAIT_FOR_REPLY':'REVIEW_DRAFT'),crm_sync:outreach.crm_sync||'NOT_REQUIRED'
+        draft_status:outreach.draft_status||'',business_contact_status:contactProgress,
+        transport_status:historicalTransport||outreach.transport_status||'NOT_ATTEMPTED',receipt_evidence_status:historicalReceipt||outreach.receipt_evidence_status||'UNCONFIRMED',
+        sent_at:historicalSent?.toISOString?.()||historicalSent||outreach.sent_at?.toISOString?.()||outreach.sent_at||'',reply_status:historicalReply||outreach.reply_status||(outreach.sent_at?'NO_REPLY_YET':'NOT_SENT'),suppression:outreach.suppression||false,
+        owner:outreach.owner||'NOT_ASSIGNED',next_action:contactNextAction||(outreach.suppression?'STOP_CONTACT':outreach.next_action||(outreach.sent_at?'WAIT_FOR_REPLY':'REVIEW_DRAFT')),crm_sync:outreach.crm_sync||'NOT_REQUIRED'
       };});
     }
     if(resolved.exportType==='PRODUCT_CATALOG_INTERNAL'){

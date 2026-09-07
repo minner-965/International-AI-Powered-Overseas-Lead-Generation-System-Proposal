@@ -1,5 +1,6 @@
 import { bilingual as bi, escapeText as esc, stateMarkup } from './components.js';
 import { isMarketVisible } from '../../market-visibility.js';
+import { initialContactPending } from '../contact-progress.js';
 
 /** One set of original controls: compact disclosure on phone, open filter bar on desktop. */
 export function mountCompanyFilters(root) {
@@ -92,7 +93,7 @@ export function groupContactCompanies(opportunities) {
   const groups = new Map();
   for (const item of array(opportunities)) {
     const id = idFor(item);
-    if (!id || !eligibleStatus(item) || !isMarketVisible(item.country_code)) continue;
+    if (!id || !eligibleStatus(item) || !initialContactPending(item) || !isMarketVisible(item.country_code)) continue;
     if (!groups.has(id)) groups.set(id,{ companyId:id, name:item.company_name || item.resolved_company_name || '—', market:item.country_code || '—', categories:[], opportunities:[] });
     const group = groups.get(id);
     if (category(item) && !group.categories.includes(category(item))) group.categories.push(category(item));

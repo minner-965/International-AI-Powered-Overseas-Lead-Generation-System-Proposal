@@ -30,9 +30,31 @@ if (phase12Active) {
   const ui = status.phase12_ui;
   assert(ui && typeof ui === 'object' && !Array.isArray(ui), 'Phase 12 UI work-package metadata is required');
   assert(JSON.stringify(ui.scope) === JSON.stringify(['WP-UI15', 'WP-UI16']), 'Phase 12 authorization is limited to cleanup and release handoff');
-  assert(ui.status === 'CLEANUP_AND_RELEASE_HANDOFF' && ui.full_phase_acceptance === 'NOT_ACCEPTED', 'Phase 12 must not claim final acceptance while recorded assessment gaps remain');
-  assert(ui.prior_release_acceptance === 'PASS' && status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Phase 12 must preserve the accepted Phase 11 release');
-  assert(status.final_acceptance_state === 'INCOMPLETE', 'Active Phase 12 final acceptance remains incomplete');
+  assert(ui.prior_release_acceptance === 'PASS', 'Phase 12 must preserve the accepted Phase 11 release');
+  if(ui.full_phase_acceptance === 'PASS') {
+    assert(ui.status === 'ACCEPTANCE_COMPLETION' && status.final_acceptance_state === 'PASS', 'Phase 12 PASS requires acceptance completion state');
+    assert(ui.acceptance_report === 'docs/PHASE12_ACCEPTANCE_COMPLETION.md', 'Phase 12 acceptance report path must be explicit');
+    const reportPath=join(root,ui.acceptance_report);
+    assert(existsSync(reportPath),'Phase 12 acceptance report is missing');
+    const report=readFileSync(reportPath,'utf8');
+    const evidenceMatch=report.match(/<!-- PHASE12_ACCEPTANCE_JSON:BEGIN -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- PHASE12_ACCEPTANCE_JSON:END -->/);
+    assert(evidenceMatch,'Phase 12 acceptance requires structured actual evidence');
+    const evidence=JSON.parse(evidenceMatch[1]);
+    assert(evidence.performance_exception?.accepted_by_user===true && evidence.performance_exception.cold_load_growth_percent===37.48,'Preserve the user accepted specific measured performance exception');
+    assert(evidence.reference?.status==='PASS' && evidence.reference.same_viewport===true,'Reference comparison must pass at the same viewport');
+    assert(evidence.accessibility?.status==='AUTOMATED_AND_BROWSER_ASSESSED' && evidence.accessibility.human_screen_reader==='NOT_TESTED' && evidence.accessibility.wcag_certification===false,'Accessibility assessment must disclose its human screen-reader and certification limitations');
+    for(const [key,value] of Object.entries({reference:'PASS',accessibility:'AUTOMATED_AND_BROWSER_ASSESSED',human_screen_reader:'NOT_TESTED',wcag_certification:false}))assert(ui.accepted_assessment?.[key]===value,'Accepted assessment scope must remain explicit');
+    assert(evidence.regression?.failed===0 && Number.isInteger(evidence.regression.passed) && evidence.regression.passed>0,'Actual passing regression evidence required');
+    assert(evidence.business?.task_email_sends===0,'UI acceptance must not cause live email sends');
+    assert(Array.isArray(evidence.remaining_limitations) && evidence.remaining_limitations.length>0,'Acceptance scope limitations must be disclosed');
+    assert(!status.current_blockers.some(item=>item.startsWith('PHASE12_')),'Open Phase 12 blockers preclude acceptance');
+    assert(['Phase 11 (Controlled outreach)','Phase 12 (Workspace UI)'].includes(status.latest_released_phase),'Accepted UI does not invent an unrelated release');
+    if(status.latest_released_phase==='Phase 12 (Workspace UI)')assert(/^[0-9a-f]{40}$/.test(ui.release?.commit) && ui.release.push==='VERIFIED','Phase 12 released state requires actual verified Git release metadata');
+  } else {
+    assert(ui.status === 'CLEANUP_AND_RELEASE_HANDOFF' && ui.full_phase_acceptance === 'NOT_ACCEPTED', 'Phase 12 must not claim final acceptance while recorded assessment gaps remain');
+    assert(status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Unaccepted Phase 12 must preserve the accepted Phase 11 release');
+    assert(status.final_acceptance_state === 'INCOMPLETE', 'Unaccepted Phase 12 final acceptance remains incomplete');
+  }
   assert(status.next_allowed_work_package === 'STOP_AWAIT_PRODUCTION_POLICY', 'Phase 12 must stop after the authorized release handoff');
   assert(ui.stop_after === 'WP-UI16' && status.explicit_stop_boundary.includes('WP-UI16'), 'Phase 12 STOP must name WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
@@ -82,7 +104,7 @@ if (status.current_active_phase === 'Phase 10') {
     const release=readiness.evidence_summary?.release;
     assert(readiness.wp_oq15==='PASS'&&readiness.wp_oq16==='PASS','Final PASS requires browser and release acceptance');
     assert(/^[0-9a-f]{40}$/.test(release?.commit)&&release.push==='VERIFIED'&&release.acceptance_tag==='phase11-oqumail-controlled-outreach-accepted'&&release.status==='VERIFIED','Final PASS requires actual release commit, verified push and acceptance tag');
-    assert(status.latest_released_phase==='Phase 11 (Controlled outreach)','Final PASS must identify the verified Phase 11 release');
+    assert(status.latest_released_phase==='Phase 11 (Controlled outreach)' || (phase12Active && status.phase12_ui.full_phase_acceptance==='PASS' && status.latest_released_phase==='Phase 12 (Workspace UI)'), 'Final PASS must preserve verified Phase 11 history or the separately verified accepted Phase 12 release');
   }
   if(['SINGLE_SEND_ACCEPTED_AWAITING_REPLY','PASS'].includes(readiness.wp_oq11)){
     assert(readiness.evidence_summary?.prospect_pilot?.smtp_accepted===1, 'OQ11 sent status requires exactly one accepted pilot');

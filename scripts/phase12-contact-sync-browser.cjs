@@ -1,0 +1,37 @@
+// Fresh browser; GET-only. Invalidation events never submit business operations.
+const {chromium}=require('C:/Users/ACER/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const origin='http://127.0.0.1:3000';
+const out=path.resolve(__dirname,'../artifacts/phase12-ui-baseline/contact-sync',new Date().toISOString().replace(/[:.]/g,'-'));
+fs.mkdirSync(out,{recursive:true});
+const report={checks:[],errors:[],blocked:[]};
+(async()=>{const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});try{
+ const context=await browser.newContext({viewport:{width:1440,height:900},serviceWorkers:'block',reducedMotion:'reduce'});
+ await context.route('**/*',r=>{if(new URL(r.request().url()).origin===origin&&r.request().method()==='GET')return r.continue();report.blocked.push(r.request().method());return r.abort();});
+ const page=await context.newPage();page.on('pageerror',e=>report.errors.push(e.message));
+ let metricsReads=0;page.on('request',r=>{if(new URL(r.url()).pathname==='/api/metrics')metricsReads++;});
+ await page.goto(origin+'/#overview');await page.locator('#metrics[aria-busy="false"]').waitFor();
+ const first=await page.evaluate(async()=>{const rows=await(await fetch('/api/opportunities?status=ALL&limit=500')).json();return Array.isArray(rows)?rows:rows.items||[];});
+ const prior=first.filter(r=>r.has_prior_company_contact);assert.ok(prior.length>=2);
+ assert.ok(prior.every(r=>r.first_contact_pending===false));report.checks.push('accepted history retained across current opportunity versions');
+ const expected=first.filter(r=>r.display_opportunity_status==='RECOMMENDED'&&r.first_contact_pending).length;
+ assert.equal(Number(await page.locator('#metrics article > strong').first().innerText()),expected);report.checks.push('overview recommendation equals pending first-contact opportunities');
+ await page.screenshot({path:path.join(out,'overview.png')});
+ const before=metricsReads;await page.evaluate(async()=>{const m=await import('/ui/communication-sync.js');m.publishCommunicationChange({reason:'UPDATED'});});
+ await page.waitForFunction(()=>document.querySelector('#metrics')?.getAttribute('aria-busy')==='false');await page.waitForTimeout(700);assert.ok(metricsReads>before);report.checks.push('local change rereads overview');
+ const second=await context.newPage();await second.goto(origin+'/#overview');await second.locator('#metrics[aria-busy="false"]').waitFor();
+ const crossBefore=metricsReads;await second.evaluate(async()=>{const m=await import('/ui/communication-sync.js');m.publishCommunicationChange({reason:'UPDATED'});});await page.waitForTimeout(1000);assert.ok(metricsReads>crossBefore);report.checks.push('cross-tab change rereads overview');await second.close();
+ await page.goto(origin+'/#opportunities');await page.locator('#opportunity-status').selectOption('ALL');await page.locator('#opportunity-status').dispatchEvent('change');await page.waitForTimeout(1000);
+ const rows=await page.locator('#opportunity-table').innerText();assert.match(rows,/Sent|已发/);assert.doesNotMatch(rows,/准备人工联系/);report.checks.push('all opportunities retain sent records and show follow-up action');await page.screenshot({path:path.join(out,'opportunities.png')});
+ await page.goto(origin+'/#contact-ready');await page.waitForTimeout(1000);assert.equal(await page.locator('[data-contact-ready-content] [data-contact-review]').count(),0);report.checks.push('already-contacted companies excluded from initial-contact queue');await page.screenshot({path:path.join(out,'contact-ready.png')});
+ await page.goto(origin+'/#contact-queue');await page.waitForTimeout(1000);assert.match(await page.locator('#outreach-workbench-list').innerText(),/Sent|已发/);report.checks.push('email workbench preserves sent history');await page.screenshot({path:path.join(out,'email-workbench.png')});
+ await page.goto(origin+'/#opportunities');await page.locator('#opportunity-status').selectOption('ALL');await page.locator('#opportunity-status').dispatchEvent('change');
+ await page.locator('#opportunity-table [data-opportunity-id]').first().click();
+ await page.locator('#detail[open] [data-contact-progress]').first().waitFor();
+ assert.match(await page.locator('#detail [data-contact-progress]').first().innerText(),/Sent|已发/);report.checks.push('company detail uses persisted contact history');
+ await page.screenshot({path:path.join(out,'company-detail.png')});await page.keyboard.press('Escape');
+ await page.goto(origin+'/#replies');await page.locator('[data-replies-list] .v3-reply-row').first().waitFor();
+ assert.match(await page.locator('[data-replies-list]').innerText(),/Sent|已发/);report.checks.push('replies workspace retains sent companies pending response');
+ await page.screenshot({path:path.join(out,'replies.png')});
+ assert.equal(report.errors.length,0);assert.equal(report.blocked.length,0);report.pass=true;
+ }finally{await browser.close();fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({out,...report}));}})().catch(e=>{report.fatal=e.message;fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.error(e);process.exitCode=1;});

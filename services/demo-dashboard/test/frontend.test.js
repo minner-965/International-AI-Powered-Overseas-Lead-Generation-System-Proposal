@@ -86,7 +86,7 @@ test('research progress reports stable stage floors and live verification progre
 
 test('research stage labels describe the actual business step instead of generic running state', () => {
   assert.deepEqual(researchStageLabel({ job_type:'COMPANY_DISCOVERY',progress_stage:'CRAWLING',status:'RUNNING' }),
-    ['验证公司真实性','Verifying company identity']);
+    ['核验企业身份','Verifying company identity']);
   assert.deepEqual(researchStageLabel({ job_type:'CATEGORY_PROCUREMENT_ENRICHMENT',progress_stage:'CRAWLING',status:'RUNNING' }),
     ['核验公司经营类目','Verifying company category']);
   assert.deepEqual(researchStageLabel({ job_type:'DECISION_MAKER_ENRICHMENT',progress_stage:'VERIFYING',status:'RUNNING' }),
@@ -94,7 +94,7 @@ test('research stage labels describe the actual business step instead of generic
   assert.deepEqual(researchStageLabel({ job_type:'REAL_OPPORTUNITY_RESEARCH',progress_stage:'PERSISTING',status:'RUNNING' }),
     ['保存联系方式并生成业务机会','Saving contacts and creating opportunities']);
   assert.deepEqual(researchStageLabel({ job_type:'COMPANY_DISCOVERY',status:'RUNNING',candidates_found:10,candidates_checked:2 }),
-    ['验证公司真实性','Verifying company identity']);
+    ['核验企业身份','Verifying company identity']);
   assert.deepEqual(researchStageLabel({ progress_stage:'COMPLETED',status:'COMPLETED' }),
     ['全部阶段已完成','All stages completed']);
 });
@@ -375,7 +375,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.deepEqual(buyerBusinessModelLabel('DIRECT_END_BUYER'), ['终端零售买家','Direct end buyer']);
   assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_CONFIRMED'), ['类目已确认','Category confirmed']);
   assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['类目已确认','Category confirmed']);
-  assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['历史状态（现按商品类目评估）','Legacy state (category-level assessment now applies)']);
+  assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['类目评估待更新','Category assessment needs updating']);
   assert.deepEqual(productOpportunityStatusLabel('NOT_REQUIRED'), ['按商品类目评估','Category-level assessment']);
   assert.deepEqual(supplierAccessBandLabel('LOW_MEDIUM'), ['供应商准入中低','Low-medium supplier access']);
   assert.deepEqual(productAccessMatrixLabel('DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS'), ['终端买家 · 高类目评分 · 高准入','Direct buyer · high category score · high access']);

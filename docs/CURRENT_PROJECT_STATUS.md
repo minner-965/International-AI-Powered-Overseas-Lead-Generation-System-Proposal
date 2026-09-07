@@ -5,17 +5,19 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-07T17:30:45+08:00",
+  "generated_updated_at": "2026-09-07T19:03:55+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
   "commit": "1b9c7c4d12dd6610b8b494b6a4c62b1d188a81dc",
-  "dirty_at_snapshot": false,
+  "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 11 (Controlled outreach)",
   "current_active_phase": "Phase 12",
   "phase12_ui": {
     "scope": ["WP-UI15", "WP-UI16"],
-    "status": "CLEANUP_AND_RELEASE_HANDOFF",
-    "full_phase_acceptance": "NOT_ACCEPTED",
+    "status": "ACCEPTANCE_COMPLETION",
+    "full_phase_acceptance": "PASS",
+    "acceptance_report": "docs/PHASE12_ACCEPTANCE_COMPLETION.md",
+    "accepted_assessment": {"reference":"PASS","accessibility":"AUTOMATED_AND_BROWSER_ASSESSED","human_screen_reader":"NOT_TESTED","wcag_certification":false},
     "prior_release_acceptance": "PASS",
     "stop_after": "WP-UI16"
   },
@@ -74,7 +76,7 @@ This file is the single source of truth for current execution state. Historical 
     "WP-OQ15 application CRM browser demonstration verified on desktop and 390px mobile",
     "WP-OQ16 implementation commit, remote branch and annotated acceptance tag verified; STOP"
   ],
-  "final_acceptance_state": "INCOMPLETE",
+  "final_acceptance_state": "PASS",
   "business_result_state": "NO",
   "applied_migrations": [
     {"migration_key":"024_phase6_1_category_procurement_match.sql","sha256":"f468b82796e4941a65d81dc37f4a2cc9ca10ca0ccc938abf4ec4ad5a83b4930d"},
@@ -371,14 +373,20 @@ This file is the single source of truth for current execution state. Historical 
       "release":{"source_head":"44f5b65753c4d32008c6637684afb2be1da342b1","commit":"781f1e837508fc990325b9bb377d880c5ea148a9","push":"VERIFIED","remote_branch":"phase10-remove-internal-limits-20260904-112916","remote_branch_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","acceptance_tag":"phase11-oqumail-controlled-outreach-accepted","tag_object":"9b80fc1cb5491a64f20788791e5127715312aec8","tag_peeled_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","status":"VERIFIED","note":"Acceptance tag identifies the tested implementation. A subsequent documentation-only receipt commit records verified release facts without moving the acceptance tag."}
     }
   },
-  "current_blockers": ["PHASE12_COLD_LOAD_COMBINED_SAMPLE_EXCEEDS_20_PERCENT", "PHASE12_FRESH_SAME_VIEWPORT_REFERENCE_COMPARISON_OPEN", "PHASE12_ASSISTIVE_TECHNOLOGY_AND_EXHAUSTIVE_CONTRAST_ASSESSMENT_OPEN"],
+  "current_blockers": [],
   "next_allowed_work_package": "STOP_AWAIT_PRODUCTION_POLICY",
-  "explicit_stop_boundary": "WP-UI15 and WP-UI16 cleanup and release handoff are authorized; STOP after WP-UI16. Full Phase 12 acceptance is NOT_ACCEPTED pending the recorded reference/accessibility assessments; commit/push/tag facts must be recorded only after verification. WP-A16 and WP-OQ09 retain historical acceptance. User-authorized manual single-email sending remains available; automatic sending and automatic follow-up remain closed. This UI work performs zero sends. No further phase expansion."
+  "explicit_stop_boundary": "WP-UI15 and WP-UI16 follow-up acceptance is PASS for the documented reference and automated/browser accessibility scope, with human screen-reader listening NOT_TESTED and no WCAG certification. STOP at the Phase12 freeze boundary until actual Git/data checks are recorded; commit/push/tag facts are not yet claimed. User has authorized subsequent WP-MC00 through WP-MC02, but Phase13 implementation is not recorded as started in this snapshot. WP-A16 and WP-OQ09 historical acceptance remains. Manual single-email sending remains available; automatic sending and automatic follow-up remain closed. This acceptance work performs zero sends."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+Current acceptance completion (2026-09-07 19:03 +08:00): Phase 12 implementation acceptance is PASS for the executed reference-layout, automated/browser accessibility and regression scope in PHASE12_ACCEPTANCE_COMPLETION.md. Human screen-reader listening remains NOT_TESTED and no WCAG certification is asserted. The user accepted the specific +37.48% performance result; measured evidence remains unchanged. Final contact-progress regression: 966 total / 912 passed / 0 failed / 54 skipped, targeted12/12 and isolated projection/aggregate9/9, browser9/9 and draft22/22. Existing real email totals remain unchanged by this work. Git freeze/commit/push/tag for these follow-up changes have not yet executed; latest_released_phase therefore remains Phase 11, and the existing Phase12 implementation-only tag is not rewritten. The older NOT_ACCEPTED/STOP descriptions below are preserved historical checkpoints, superseded by this current scoped acceptance. Phase13 implementation is not yet recorded as started; its MC00 freeze gate is next after actual Git/data checks.
+
+Current authorization addendum (2026-09-07): the user explicitly accepts the recorded cold-load increase of +37.48% (165.7 → 227.8 ms) for this measured comparison. The performance blocker is closed by this specific user acceptance, not by changing the historical result or granting a general higher loading threshold. The fixed baseline, 20% review line and 40% resource allowance remain documented. The user also requests completion of the remaining visual/accessibility assessments and inclusion of the follow-up fixes in the freeze. Those checks are in progress: full Phase 12 acceptance remains NOT_ACCEPTED until actual evidence closes the remaining gates. No new acceptance commit or tag is claimed. Earlier dated STOP/threshold interpretations below describe the prior release; this addendum supersedes them only for the accepted performance exception and completion of the remaining QA.
+
+Post-release follow-up requested by the user: full-workspace forward/reverse audit and copy cleanup. Local uncommitted corrections and actual test scope are recorded in PHASE12_FULL_WORKSPACE_RECHECK.md. This follow-up does not rewrite the prior tag or imply full Phase12 acceptance. Mail controls fail closed on removed rows/read failures; full suite 942 total / 888 passed / 0 failed / 54 skipped, isolated SQL29/29, browser workflow20, current-page52 and API-failure26 observations passed. No task-originated mail or operational data changes.
 
 WP-UI16 Git receipt: implementation `1b9c7c4d12dd6610b8b494b6a4c62b1d188a81dc` and annotated tag `phase12-workspace-ui-v3` (object `34dec2dba5316f31a99c2452c806cd728a239a3d`) were pushed and independently verified against origin. This documentation-only receipt follows the tagged implementation; the tag is an implementation milestone, not full acceptance. The last fully accepted phase remains Phase 11. Post-cleanup combined cold-load sample exceeds the approved 20% line; reference/accessibility gaps also remain. Full suite 936 total / 882 passed / 0 failed / 54 skipped; 104 route observations and four zoom/motion dialog checks passed. Before/after operational aggregates and flags match; task-originated email delta zero. STOP.
 

@@ -1,4 +1,5 @@
 import {confirmedCategoryStatusSql} from './categoryAdmission.js';
+import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
 
 const upper=value=>String(value||'').trim().toUpperCase();
 
@@ -21,6 +22,7 @@ export async function queryCategoryProcurementOpportunities({
     confirmedCategoryStatusSql('cpm.match_status'),
     "coalesce(routes.route_types,'{}'::text[])&&ARRAY['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM']::text[]",
     "bod.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED','HOLD')"];
+  if (['RECOMMENDED','MANAGEMENT_APPROVED'].includes(upper(query.status))) clauses.push(firstContactPendingSql('bod'));
   const add=(value,clause)=>{params.push(value);clauses.push(clause(params.length));};
   if(query.country)add(upper(query.country),index=>`c.country_code=$${index}`);
   if(query.tier)add(upper(query.tier),index=>`coalesce(sr.tier,lr.tier)=$${index}`);
@@ -195,5 +197,5 @@ export async function queryCategoryProcurementOpportunities({
       WHERE t.company_id=c.id AND t.product_profile=cpm.product_profile
       ORDER BY t.created_at DESC,t.id DESC LIMIT 1)auto_task ON true
     WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy} LIMIT $${params.length}`,params);
-  return result.rows;
+  return attachContactProgress(pool,result.rows);
 }

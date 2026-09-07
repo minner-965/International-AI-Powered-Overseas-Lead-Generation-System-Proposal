@@ -23,6 +23,7 @@ textarea.dpv-field { min-height: 120px; resize: vertical; width: 100%; }
 .data-state-badge:is(.state-rejected,.state-invalid), .p8-status:is(.is-unsuitable,.is-suppressed) { color:var(--dpv-danger); background:var(--dpv-danger-soft); }
 .data-state-badge:is(.state-superseded,.state-duplicate,.state-archived,.state-unknown) { color:var(--dpv-muted); background:var(--dpv-surface-subtle); }
 .dpv-badge--success, .dpv-state[data-state="success"] { color: var(--dpv-success); background: var(--dpv-success-soft); }
+.crm-icp-profile-card .badge.bg-green-lt { color: var(--dpv-success) !important; background-color: var(--dpv-success-soft) !important; }
 .dpv-badge--warning, .dpv-state:is([data-state="warning"],[data-state="stale"],[data-state="degraded"]) { color: var(--dpv-warning); background: var(--dpv-warning-soft); }
 .dpv-badge--danger, .dpv-state:is([data-state="error"],[data-state="permission-denied"]) { color: var(--dpv-danger); background: var(--dpv-danger-soft); }
 .dpv-badge--info { color: var(--dpv-info); background: var(--dpv-info-soft); }

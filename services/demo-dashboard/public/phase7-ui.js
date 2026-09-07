@@ -1,3 +1,4 @@
+import {publishCommunicationChange,subscribeCommunicationChanges} from './ui/communication-sync.js';
 const text = value => String(value ?? '').trim();
 const esc = value => text(value).replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 const bi = (zh, en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
@@ -20,7 +21,7 @@ const STATE_LABELS = Object.freeze({
   VALID:['有效','Valid'], ACCEPT_ALL:['全域接收，需复核','Accept-all; review required'],
   PUBLICLY_OBSERVED:['企业页面已登记','Published by business'], FORMAT_VALID:['格式有效','Format valid'],
   NOT_VERIFIED:['尚未核验','Not verified'], UNKNOWN:['待确认','To confirm'], INVALID:['无效','Invalid'],
-  PROVIDER_ACCEPTED:['服务已接收','Provider accepted'], DELIVERED:['已送达','Delivered'],
+  PROVIDER_ACCEPTED:['邮件服务已接收','Accepted by mail service'], DELIVERED:['已送达','Delivered'],
   DELIVERY_DELAYED:['送达延迟','Delivery delayed'], COMPLAINED:['收到投诉','Complaint received'], OPTED_OUT:['不再联系','Opted out'],
   OPENED:['已打开','Opened'], CLICKED:['已点击','Clicked'], REPLIED:['已回复','Replied'],
   SOFT_BOUNCED:['暂未送达','Temporary delivery issue'], HARD_BOUNCED:['退信','Bounced'],
@@ -247,6 +248,7 @@ async function importTransition(action, button) {
     importState.record = await request(`/api/data-imports/${encodeURIComponent(id)}/${action}`, {
       method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({})
     });
+    if(action==='commit')publishCommunicationChange({reason:'UPDATED'});
     await refreshImportRecord();
     if (status) status.innerHTML = action === 'commit' ? bi('业务记录已写入。','Business records have been committed.') : bi('当前操作已保存。','The operation has been saved.');
   } catch (error) {
@@ -418,6 +420,20 @@ export function initPhase7Ui() {
 }
 
 const detailStates = new WeakMap();
+function invalidateCommunicationDetails(change={}){
+  document.querySelectorAll('dialog[open]').forEach(detail=>{
+    const state=detailStates.get(detail);if(!state||(change.companyId&&state.companyId!==change.companyId))return;
+    state.generation=(state.generation||0)+1;state.cache=null;state.loaded.clear();
+    if(state.editing)return;
+    detail.querySelectorAll('[id^="detail-panel-"]').forEach(panel=>{
+      if(!panel.hidden&&['outreach-readiness','outreach-drafts','outreach-messages','outreach-replies','data-history'].includes(panel.id.slice(13)))
+        loadDetailPanel(detail,panel.id.slice(13),{force:true});
+    });
+  });
+}
+subscribeCommunicationChanges(invalidateCommunicationDetails);
+if(typeof window!=='undefined')window.addEventListener('focus',()=>invalidateCommunicationDetails());
+if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='hidden')invalidateCommunicationDetails();});
 
 function detailEmpty(icon, zh, en, bodyZh, bodyEn) {
   return `<div class="crm-empty-state crm-phase7-detail-state"><i class="ti ${esc(icon)}" aria-hidden="true"></i><h4>${bi(zh,en)}</h4></div>`;
@@ -611,6 +627,7 @@ async function optionalRequest(url) {
 
 async function detailData(detail) {
   const state = detailStates.get(detail);
+  const generation=state.generation||0;
   if (state.cache) return state.cache;
   const reference = opportunityRef(state);
   const query = new URLSearchParams({ company_id:state.companyId });
@@ -633,7 +650,7 @@ async function detailData(detail) {
   ]);
   const messageEvents = await Promise.all(messageIds.map(id => optionalRequest(`/api/outreach/messages/${encodeURIComponent(id)}/events`)));
   const verificationHistory = await Promise.all(state.contactIds.map(id => optionalRequest(`/api/contacts/${encodeURIComponent(id)}/verification-history`)));
-  state.cache = {
+  const data = {
     decision,
     queue,
     drafts:[...draftInline,...drafts.filter(Boolean).map(value => value.draft || value)],
@@ -645,7 +662,8 @@ async function detailData(detail) {
     ],
     history:[...items(queue?.events || queue?.history),...messageEvents.flatMap(items),...verificationHistory.flatMap(items)],
   };
-  return state.cache;
+  if(generation===(state.generation||0))state.cache=data;
+  return data;
 }
 
 async function loadDetailPanel(detail, key, { force = false } = {}) {
@@ -654,11 +672,13 @@ async function loadDetailPanel(detail, key, { force = false } = {}) {
   if (!state || !panel || state.loading.has(key) || (state.loaded.has(key) && !force)) return;
   if (force) state.cache = null;
   state.loading.add(key);
+  const generation=state.generation||0;
   panel.setAttribute('aria-busy','true');
   panel.innerHTML = `<div class="crm-detail-loading" role="status">${bi('正在读取业务记录','Loading business records')}</div>`;
   const loader = () => loadDetailPanel(detail,key,{ force:true });
   try {
     const data = await detailData(detail);
+    if(generation!==(state.generation||0))return;
     panel.innerHTML = key === 'outreach-readiness' ? renderReadiness(state,data.decision,data.queue)
       : key === 'outreach-drafts' ? draftCards(data.drafts)
         : key === 'outreach-messages' ? messageCards(data.messages)
@@ -668,10 +688,11 @@ async function loadDetailPanel(detail, key, { force = false } = {}) {
     state.loaded.add(key);
     if (key === 'outreach-readiness') state.flash = null;
   } catch (error) {
-    detailError(panel,loader,error);
+    if(generation===(state.generation||0))detailError(panel,loader,error);
   } finally {
     state.loading.delete(key);
     panel.setAttribute('aria-busy','false');
+    if(generation!==(state.generation||0)&&detail.open&&!panel.hidden&&!state.editing)loadDetailPanel(detail,key,{force:true});
   }
 }
 
@@ -713,6 +734,8 @@ async function performOpportunityAction(detail, panel, action, button) {
         ? bi('已加入待联系。','Added to Contact Queue.')
         : bi('管理操作已保存。','The management action has been saved.')
     };
+    state.editing=false;
+    publishCommunicationChange({companyId:state.companyId,productProfile:state.productProfile,reason:'MANAGEMENT_UPDATED'});
     state.cache = null;
     state.loaded.delete('outreach-readiness');
     state.loaded.delete('data-history');
@@ -738,6 +761,7 @@ function wireReadinessPanel(detail, panel) {
 export function attachPhase7CompanyDetail(detail, { companyId, opportunityId = '', productProfile = '', contactIds = [] } = {}) {
   if (!detail || !companyId) return;
   detailStates.set(detail,{ companyId:text(companyId), opportunityId:text(opportunityId), productProfile:text(productProfile).toUpperCase(), contactIds:[...new Set(contactIds.filter(Boolean).map(text))], loaded:new Set(), loading:new Set(), cache:null, flash:null });
+  if(!detail.dataset.communicationInputBound){detail.dataset.communicationInputBound='true';detail.addEventListener('input',()=>{const state=detailStates.get(detail);if(state)state.editing=true;});}
   detail.querySelectorAll('[data-phase7-detail-tab]').forEach(tab => {
     const load = () => loadDetailPanel(detail,tab.dataset.detailTab);
     tab.addEventListener('click',load);

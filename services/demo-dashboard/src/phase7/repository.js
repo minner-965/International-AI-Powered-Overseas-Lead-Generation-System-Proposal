@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { deriveOpportunityDecision } from './opportunityDecision.js';
+import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -142,7 +143,7 @@ export class Phase7Repository {
       LEFT JOIN LATERAL(SELECT x.id FROM leadgen.sources x WHERE x.company_id=c.id ORDER BY x.id LIMIT 1)src ON true
       WHERE o.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED') OR d.id IS NOT NULL
       ORDER BY c.company_name,o.product_profile LIMIT 100`);
-    return result.rows;
+    return attachContactProgress(this.pool,result.rows);
   }
 
   async getOutreachOperationsSummary(){
@@ -152,9 +153,11 @@ export class Phase7Repository {
         LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=a.opportunity_snapshot_id
         LEFT JOIN LATERAL(SELECT rc.reply_category FROM leadgen.inbound_messages i
           LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x
-            WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)rc ON true
+            WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)rc ON true
           WHERE i.correlation_outbound_message_id=m.id AND i.correlation_status='MATCHED'
-          ORDER BY i.received_at DESC LIMIT 1)reply ON true
+          ORDER BY CASE WHEN rc.reply_category='OPT_OUT' THEN 0
+            WHEN rc.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE') THEN 1 ELSE 2 END,
+            i.received_at DESC,i.id DESC LIMIT 1)reply ON true
         WHERE CASE WHEN crm.funnel_status IN('OPTED_OUT','BOUNCED','REPLIED') THEN crm.funnel_status
           WHEN m.send_status='HARD_BOUNCED' THEN 'BOUNCED'
           WHEN reply.reply_category='OPT_OUT' THEN 'OPTED_OUT'
@@ -163,8 +166,8 @@ export class Phase7Repository {
       (SELECT count(*)::int FROM leadgen.sales_tasks
         WHERE record_scope='PROSPECT' AND task_status IN('OPEN','IN_PROGRESS')
           AND task_type IN('FOLLOW_UP','REPLY_REVIEW','QUOTATION','SAMPLE','MEETING','CRM_HANDOFF')) pending_followups,
-      (SELECT count(*)::int FROM leadgen.business_opportunity_current
-        WHERE display_opportunity_status='RECOMMENDED') pending_management,
+      (SELECT count(*)::int FROM leadgen.business_opportunity_current o
+        WHERE display_opportunity_status='RECOMMENDED' AND ${firstContactPendingSql('o')}) pending_management,
       (SELECT count(*)::int FROM leadgen.business_opportunity_current
         WHERE business_fit_status='FIT' AND contact_readiness<>'READY'
           AND display_opportunity_status='EVIDENCE_REQUIRED') pending_contacts,
@@ -175,10 +178,11 @@ export class Phase7Repository {
       (SELECT count(*)::int FROM leadgen.outreach_drafts WHERE draft_status='APPROVED') approved,
       (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status IN('QUEUED','SENDING')) queued,
       (SELECT count(*)::int FROM leadgen.outbound_messages WHERE sent_at IS NOT NULL) smtp_accepted,
-      (SELECT count(*)::int FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
-        WHERE i.correlation_status='MATCHED' AND EXISTS(SELECT 1 FROM leadgen.reply_classifications rc WHERE rc.inbound_message_id=i.id
-          AND rc.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE')) AND EXISTS(SELECT 1 FROM leadgen.outbound_messages m
-          WHERE m.recipient_id=t.recipient_id AND m.sent_at IS NOT NULL)) replies,
+      (SELECT count(*)::int FROM leadgen.inbound_messages i
+        JOIN LATERAL(SELECT rc.reply_category FROM leadgen.reply_classifications rc WHERE rc.inbound_message_id=i.id
+          ORDER BY rc.created_at DESC,rc.id DESC LIMIT 1)current_reply ON true
+        WHERE i.correlation_status='MATCHED' AND current_reply.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE')
+          AND EXISTS(SELECT 1 FROM leadgen.outbound_messages m WHERE m.id=i.correlation_outbound_message_id AND m.sent_at IS NOT NULL)) replies,
       (SELECT count(*)::int FROM leadgen.contact_suppressions WHERE lifted_at IS NULL) suppressed,
       (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status IN('FAILED','BLOCKED','AMBIGUOUS','HARD_BOUNCED')) failed,
       (SELECT count(*)::int FROM leadgen.controlled_application_contexts) controlled_contexts,
@@ -396,7 +400,7 @@ export class Phase7Repository {
         (array_agg(o.id ORDER BY o.created_at DESC,o.id DESC))[1] opportunity_id,
         max(o.created_at) assessed_at
       FROM leadgen.business_opportunity_current o
-      WHERE o.display_opportunity_status='RECOMMENDED'
+      WHERE o.display_opportunity_status='RECOMMENDED' AND ${firstContactPendingSql('o')}
       GROUP BY o.company_id
     )
     SELECT r.opportunity_id,c.id company_id,c.company_name,c.country_code,c.website_url,
@@ -434,7 +438,7 @@ export class Phase7Repository {
       AND c.explicit_exclusion_reason IS NULL AND c.replaced_by_company_id IS NULL
       AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions sx WHERE sx.company_id=c.id AND sx.lifted_at IS NULL)
     ORDER BY r.assessed_at DESC,c.company_name LIMIT $1`, [Math.max(1,Math.min(500,Number(limit)||200))]);
-    return result.rows;
+    return attachContactProgress(this.pool,result.rows);
   }
 
   async syncManualOfficialRoutes({ verificationTtlDays = 30, sourceTtlDays = 90, createdBy = 'SYSTEM_RECONCILIATION' } = {}) {

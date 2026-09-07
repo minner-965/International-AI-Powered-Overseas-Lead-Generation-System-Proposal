@@ -1,5 +1,7 @@
 # Phase 12 — Workspace V3 implementation handoff
 
+Current addendum (2026-09-07): follow-up reference/layout, automated/browser accessibility and business regression checks are complete. Scoped implementation acceptance is **PASS**, with human screen-reader listening explicitly NOT_TESTED and no WCAG certification. See [acceptance completion](PHASE12_ACCEPTANCE_COMPLETION.md) and [contact-progress correction](CONTACT_PROGRESS_SYNC_RESULT.md). The follow-up changes have not yet been committed/tagged; the prior release receipt and NOT_ACCEPTED statements below remain historical, not the current implementation assessment.
+
 Date: 2026-09-07. Authorized final work: WP-UI15 and WP-UI16; STOP after release handoff. This is an implementation milestone, **not a blanket Phase12 acceptance PASS**.
 
 ## Outcome
@@ -84,3 +86,9 @@ These limitations are preserved in current project status. Commit/push/tag ident
 - The tag message explicitly identifies an implementation handoff with open acceptance gaps. It does not assert full Phase12 PASS or a public-server deployment.
 
 WP-UI16 release operations completed; STOP. Shared sources/business data preserved; no new email from this work.
+
+## Acceptance completion addendum — 2026-09-07
+
+The user explicitly accepted the recorded combined cold-load increase of **+37.48% (165.7 → 227.8 ms)**. This specific measured result is now accepted by the user; the prior performance blocker is closed. The original samples, calculations and release-state statements above remain historical evidence. This is not a new universal loading threshold, a rolling baseline or an exemption for subsequent regressions: the fixed freeze comparison and 20% review line remain in the QA protocol.
+
+The user also authorized completing the remaining same-viewport reference and accessibility assessments, fixing their findings, and including the uncommitted follow-up fixes in the eventual freeze. These checks are in progress. **Full Phase 12 acceptance remains NOT_ACCEPTED at this addendum**; no new Git freeze, acceptance tag or Phase 13 implementation is asserted here. Final acceptance must cite the actual completed checks and retain any unverified scope explicitly.

@@ -4,7 +4,7 @@ const normalized = value => String(value || '').trim().toUpperCase();
 const readinessLabels = Object.freeze({
   SALES_READY: pair('可安排销售跟进', 'Sales ready'),
   NEEDS_DECISION_MAKER: pair('需补充采购负责人', 'Needs buying contact'),
-  NEEDS_CONTACT_ROUTE: pair('需补充联系路径', 'Needs contact route'),
+  NEEDS_CONTACT_ROUTE: pair('需补充联系方式', 'Contact channel required'),
   NEEDS_VERIFICATION: pair('需补充核验', 'Needs verification'),
   HISTORICAL_REVIEW: pair('需复核历史记录', 'Historical review'),
   EXISTING_CUSTOMER: pair('现有客户', 'Existing customer'),
@@ -113,7 +113,7 @@ const feasibilityDimensions = Object.freeze({
 
 const dimensionStateLabels = Object.freeze({
   OPEN: pair('开放', 'Open'), SUPPORTED: pair('有依据支持', 'Supported'), CLOSED: pair('较封闭', 'Closed'),
-  CONTACT_ROUTE: pair('有联系路径', 'Contact route available'), INVITATION_ONLY: pair('仅限邀请', 'Invitation only'),
+  CONTACT_ROUTE: pair('有联系方式', 'Contact channel available'), INVITATION_ONLY: pair('仅限邀请', 'Invitation only'),
   NAMED_VERIFIED: pair('已核验采购人员', 'Verified named buyer'), DEPARTMENT_VERIFIED: pair('已核验采购部门', 'Verified department'),
   ROUTE_ONLY: pair('仅有采购路径', 'Route only'), HIGH: pair('高', 'High'), MEDIUM: pair('中', 'Medium'),
   LOW: pair('低', 'Low'), COMPATIBLE: pair('条件匹配', 'Compatible'), BARRIER: pair('存在障碍', 'Barrier found'),
@@ -138,8 +138,8 @@ const enrichmentStatusLabels = Object.freeze({
 });
 
 const systemRouteLabels = Object.freeze({
-  'CORPORATE CONTACT ROUTE': pair('企业商务联系路径', 'Corporate contact route'),
-  'CORPORATE PROCUREMENT CONTACT': pair('企业采购联系路径', 'Corporate procurement contact'),
+  'CORPORATE CONTACT ROUTE': pair('企业商务联系方式', 'Company business contact'),
+  'CORPORATE PROCUREMENT CONTACT': pair('企业采购联系方式', 'Company procurement contact'),
   'BUYING DEPARTMENT': pair('采购部门', 'Buying department'),
   'PROCUREMENT DEPARTMENT': pair('采购部门', 'Procurement department'),
   'PURCHASING DEPARTMENT': pair('采购部门', 'Purchasing department'),
@@ -153,19 +153,19 @@ const systemReasonLabels = Object.freeze({
   'Explicit home/general-merchandise buying scope': pair('明确属于家居或日用百货采购范围', 'Explicit home or general-merchandise buying scope'),
   'Explicit fashion/apparel scope': pair('明确属于时尚或服装范围', 'Explicit fashion or apparel scope'),
   'Relevant buying role; product scope requires confirmation': pair('采购角色相关，具体产品范围仍需确认', 'Relevant buying role; product scope requires confirmation'),
-  'Commercial/import role is a fallback route': pair('商务或进口岗位仅作为补充联系路径', 'Commercial or import role is a fallback route'),
+  'Commercial/import role is a fallback route': pair('商务或进口岗位仅作为补充联系方式', 'Commercial or import role is a fallback route'),
   'Buying responsibility is not established': pair('采购职责尚未确认', 'Buying responsibility is not established'),
-  'Corporate business contact route': pair('企业官网公开的商务联系路径', 'Business contact route published on the official site'),
+  'Corporate business contact route': pair('企业官网公开的商务联系方式', 'Business contact route published on the official site'),
   'Supplier registration route': pair('企业公开的供应商注册路径', 'Supplier registration route published by the business'),
   'Explicit supplier restriction evidence found': pair('发现明确的供应商限制依据', 'Explicit supplier restriction evidence found'),
   'External supplier openness is published': pair('企业公开了外部供应商合作信息', 'External supplier openness is published'),
   'Supplier openness requires confirmation': pair('外部供应商开放度仍需确认', 'Supplier openness requires confirmation'),
   'A supplier or vendor route is published': pair('企业公开了供应商准入路径', 'A supplier or vendor route is published'),
-  'A business contact route is available': pair('已有企业商务联系路径', 'A business contact route is available'),
+  'A business contact route is available': pair('已有企业商务联系方式', 'A business contact route is available'),
   'Supplier onboarding route requires confirmation': pair('供应商准入路径仍需确认', 'Supplier onboarding route requires confirmation'),
   'A named buying role is verified': pair('已核验具名采购人员', 'A named buying role is verified'),
   'A buying/procurement department is verified': pair('已核验采购部门', 'A buying or procurement department is verified'),
-  'A corporate route is available': pair('已有企业联系路径', 'A corporate route is available'),
+  'A corporate route is available': pair('已有企业联系方式', 'A corporate route is available'),
   'Buying responsibility requires confirmation': pair('采购职责仍需确认', 'Buying responsibility requires confirmation'),
   'Published requirements indicate an operational gate': pair('公开要求显示存在运营准入门槛', 'Published requirements indicate an operational gate'),
   'Published operational/supplier requirements are available': pair('已找到公开的运营或供应商要求', 'Published operational or supplier requirements are available'),

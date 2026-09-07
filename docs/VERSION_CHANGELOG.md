@@ -1,5 +1,13 @@
 # Version Changelog
 
+## Phase12 acceptance completion and contact-progress synchronization — 2026-09-07 — uncommitted
+
+- Completed fresh same-viewport reference comparison and 72 automated/browser accessibility assessments; human screen-reader listening NOT_TESTED, no WCAG certification.
+- Recorded the user's acceptance of the specific +37.48% historical cold-load measurement without replacing its fixed baseline or introducing a blanket allowance.
+- Corrected cross-snapshot contact history, initial-contact queues, overview, export and reply aggregation; current draft approvals remain independent of historical mail.
+- Final regression: 966 total, 912 passed, 0 failed, 54 skipped; targeted12/12, isolated projection/aggregate9/9, actual browser synchronization9/9 and intercepted draft workflow22/22.
+- Scoped implementation acceptance PASS: `PHASE12_ACCEPTANCE_COMPLETION.md`. Git freeze, commit/push and new acceptance tag still pending; no Phase13 implementation or task-originated email claimed.
+
 ## phase12-workspace-ui-v3 — 2026-09-07 — implementation handoff
 
 - Consolidated V3 shell, overview, opportunities, research/jobs, company/contact detail, email/replies, records, import/export and settings under the project UI system.

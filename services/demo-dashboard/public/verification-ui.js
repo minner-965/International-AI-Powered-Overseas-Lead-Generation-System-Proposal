@@ -26,7 +26,7 @@ export function researchStatusLabel(value) {
 const commonResearchStageLabels = Object.freeze({
   QUEUED: pair('等待开始', 'Waiting to start'),
   DISCOVERING: pair('搜索候选公司', 'Searching candidate companies'),
-  CRAWLING: pair('验证公司真实性', 'Verifying company identity'),
+  CRAWLING: pair('核验企业身份', 'Verifying company identity'),
   QUALIFYING: pair('确认公司经营类目', 'Confirming company category'),
   SCORING: pair('评估类目匹配结果', 'Assessing category match'),
   RESOLVING: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
@@ -39,7 +39,7 @@ const commonResearchStageLabels = Object.freeze({
   FINDING_BUYER: pair('搜索负责人和公司联系方式', 'Finding decision-makers and company contacts'),
   VERIFYING_EMAIL: pair('验证商务邮箱', 'Verifying business email'),
   REFRESHING_DECISION: pair('更新业务机会结果', 'Updating opportunity result'),
-  IDENTITY: pair('验证公司真实性', 'Verifying company identity'),
+  IDENTITY: pair('核验企业身份', 'Verifying company identity'),
   BUYER_MODEL: pair('确认客户经营模式', 'Confirming company business model'),
   CATEGORY_PROCUREMENT: pair('核验公司经营类目', 'Verifying company category'),
   PRODUCT: pair('确认公司经营类目', 'Confirming company category'),

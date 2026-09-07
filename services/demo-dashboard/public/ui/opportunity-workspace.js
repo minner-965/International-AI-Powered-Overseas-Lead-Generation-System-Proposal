@@ -18,11 +18,10 @@ export const communicationViews = Object.freeze(['SENT_NO_REPLY', 'REPLIED']);
 const recordKey = item => `${item?.company_id || item?.companyId || item?.id || ''}:${item?.product_profile || ''}`;
 export function filterOpportunityCommunication(items, workbench, view) {
   if (!communicationViews.includes(view)) return items;
-  if (!workbench || !Array.isArray(workbench.items)) return [];
-  const keys = new Set(workbench.items
-    .filter(row => row.record_scope !== 'CONTROLLED' && row.business_contact_status === view)
+  const keys = new Set((workbench?.items || [])
+    .filter(row => row.record_scope !== 'CONTROLLED' && (row.contact_progress_status || row.business_contact_status) === view)
     .map(recordKey));
-  return items.filter(item => keys.has(recordKey(item)));
+  return items.filter(item => item.contact_progress_status ? item.contact_progress_status === view : keys.has(recordKey(item)));
 }
 export function opportunityCommunicationRecord(item, workbench) {
   return workbench?.items?.find(row => row.record_scope !== 'CONTROLLED' && recordKey(row) === recordKey(item)) || null;
@@ -102,13 +101,13 @@ function workstreamStatus(item, stream) {
     PROVIDER_CAPACITY_WAIT:['等待搜索服务额度恢复','Waiting for search capacity'],
     HUMAN_REVIEW_REQUIRED:['等待复核','Review required'], COMPLETED:['已完成','Completed']
   };
-  return labels[value] || (stream === 'human' ? ['等待复核','Review required'] : ['等待自动处理','Awaiting automation']);
+  return labels[value] || (stream === 'human' ? ['等待复核','Review required'] : ['等待核验','Awaiting verification']);
 }
 
 function renderWorkstreamList(host, records, stream, getBlocker, getBlockerLabel, onTask) {
   if (!host) return;
   const labels = {
-    auto:{ empty:['当前没有自动补证事项','No auto-enrichment items'], action:['查看补证进度','View enrichment progress'] },
+    auto:{ empty:['暂无待核验资料','No evidence pending review'], action:['查看核验进度','View verification progress'] },
     human:{ empty:['当前没有人工复核事项','No human-review items'], action:['处理例外','Review exception'] }
   }[stream];
   if (!records.length) {

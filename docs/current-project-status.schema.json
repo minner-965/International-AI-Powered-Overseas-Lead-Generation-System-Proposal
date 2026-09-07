@@ -18,18 +18,22 @@
     "branch": {"type":"string","minLength":1},
     "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
     "dirty_at_snapshot": {"type":"boolean"},
-    "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)"]},
+    "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
     "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12"]},
     "phase12_ui": {
       "type":"object", "additionalProperties":false,
       "required":["scope","status","full_phase_acceptance","prior_release_acceptance","stop_after"],
       "properties":{
         "scope":{"const":["WP-UI15","WP-UI16"]},
-        "status":{"const":"CLEANUP_AND_RELEASE_HANDOFF"},
-        "full_phase_acceptance":{"const":"NOT_ACCEPTED"},
+        "status":{"enum":["CLEANUP_AND_RELEASE_HANDOFF","ACCEPTANCE_COMPLETION"]},
+        "full_phase_acceptance":{"enum":["NOT_ACCEPTED","PASS"]},
+        "acceptance_report":{"const":"docs/PHASE12_ACCEPTANCE_COMPLETION.md"},
+        "accepted_assessment":{"type":"object","additionalProperties":false,"required":["reference","accessibility","human_screen_reader","wcag_certification"],"properties":{"reference":{"const":"PASS"},"accessibility":{"const":"AUTOMATED_AND_BROWSER_ASSESSED"},"human_screen_reader":{"const":"NOT_TESTED"},"wcag_certification":{"const":false}}},
+        "release":{"type":"object","additionalProperties":false,"required":["commit","push"],"properties":{"commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"push":{"const":"VERIFIED"}}},
         "prior_release_acceptance":{"const":"PASS"},
         "stop_after":{"const":"WP-UI16"}
-      }
+      },
+      "allOf":[{"if":{"properties":{"full_phase_acceptance":{"const":"PASS"}}},"then":{"required":["acceptance_report","accepted_assessment"],"properties":{"status":{"const":"ACCEPTANCE_COMPLETION"}}},"else":{"properties":{"status":{"const":"CLEANUP_AND_RELEASE_HANDOFF"}}}}]
     },
     "phase_state": {
       "type":"array",
@@ -117,8 +121,8 @@
       "then":{
         "required":["phase12_ui","phase11_readiness"],
         "properties":{
-          "final_acceptance_state":{"const":"INCOMPLETE"},
-          "latest_released_phase":{"const":"Phase 11 (Controlled outreach)"},
+          "final_acceptance_state":{"enum":["INCOMPLETE","PASS"]},
+          "latest_released_phase":{"enum":["Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
           "next_allowed_work_package":{"const":"STOP_AWAIT_PRODUCTION_POLICY"},
           "effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":true},"outreach_manual_send_only":{"const":true},"outreach_worker_send_enabled":{"const":false}}}
         }

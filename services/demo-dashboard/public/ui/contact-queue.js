@@ -1,8 +1,10 @@
 import {phase8StatusMarkup} from './status.js';
+import {subscribeCommunicationChanges} from './communication-sync.js';
 
 const host=document.querySelector('#contact-queue-list');
 const status=document.querySelector('#contact-queue-status');
 let loaded=false;
+let generation=0;
 
 const text=value=>String(value??'').trim();
 const esc=value=>text(value).replace(/[&<>'"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
@@ -54,18 +56,27 @@ function render(items){
 
 export async function loadContactQueue({force=false}={}){
   if(!host||(loaded&&!force))return;
+  const ticket=++generation;
   host.setAttribute('aria-busy','true');
   if(status)status.innerHTML=bi('正在读取待联系公司','Loading contact-ready companies');
   try{
     const payload=await workspaceRequest('/api/workspace/contact-queue');const items=rows(payload);
+    if(ticket!==generation)return;
     render(items);loaded=true;
     if(status)status.innerHTML=bi(`当前 ${items.length} 家待联系公司`,`${items.length} contact-ready companies`);
   }catch{
+    if(ticket!==generation)return;
     host.innerHTML=`<div class="p8-empty-state"><i class="ti ti-alert-triangle" aria-hidden="true"></i><h3>${bi('待联系公司读取未完成','Contact-ready companies could not be loaded')}</h3><button id="contact-queue-retry" class="btn btn-outline-primary" type="button">${bi('重试','Try again')}</button></div>`;
     host.querySelector('#contact-queue-retry')?.addEventListener('click',()=>loadContactQueue({force:true}));
     if(status)status.textContent='';
-  }finally{host.removeAttribute('aria-busy');}
+  }finally{if(ticket===generation)host.removeAttribute('aria-busy');}
 }
 
-document.addEventListener('crm:viewchange',event=>{if(event.detail?.view === 'contact-queue')loadContactQueue();});
+const visible=()=>!!host&&!host.closest('[hidden]')&&document.visibilityState!=='hidden';
+let refreshScheduled=false;
+function invalidate(){loaded=false;generation++;if(visible()&&!refreshScheduled){refreshScheduled=true;queueMicrotask(()=>{refreshScheduled=false;if(visible())loadContactQueue({force:true});});}}
+subscribeCommunicationChanges(invalidate);
+document.addEventListener('crm:viewchange',event=>{if(event.detail?.view === 'contact-queue'||event.detail?.view === 'contact-ready')invalidate();});
+window.addEventListener('focus',invalidate);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='hidden')invalidate();});
 if(location.hash==='#contact-queue')loadContactQueue();

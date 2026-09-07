@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 
 const read = file => readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
 
@@ -35,4 +36,37 @@ test('file-size and controlled single-message scope remain explicit', () => {
   for (const id of ['data-import-submit','data-import-approve','data-import-commit']) {
     assert.match(html, new RegExp(`<button id="${id}"[^>]+disabled>`));
   }
+});
+
+test('research and company copy uses business terms while retaining workflow identifiers', () => {
+  const html = read('index.html');
+  const app = read('app.js');
+  for (const source of [html, app]) {
+    assert.doesNotMatch(source, /自动补证|Auto [Ee]nrichment|商务联系路径|企业联系路径汇总|等待自动处理/);
+    assert.doesNotMatch(source, /真实数据|真实线索|公开数据|系统保持|不会自动发送/);
+  }
+  assert.match(html, /value="AUTO_EVIDENCE">资料核验 \/ Evidence review/);
+  assert.match(html, /name="blocker"/);
+  assert.match(html, /待解决事项/);
+  assert.match(app, /QUEUED:\['等待核验','Queued'\]/);
+  assert.match(app, /esc\(record\.evidence_text\)/);
+  assert.match(app, /esc\(contact\.contact_value\)/);
+});
+
+test('source-page checks show known business states without inventing success or exposing internal codes', () => {
+  const app = read('app.js');
+  const declaration = app.slice(app.indexOf('function candidatePageStatusLabel('), app.indexOf('function candidateEvidence('));
+  const label = runInNewContext(`${declaration}; candidatePageStatusLabel`);
+  assert.equal(label('COMPLETED')[1], 'Page reviewed');
+  for (const value of ['HTTP_ERROR','NON_HTML','BLOCKED_BY_ROBOTS','ROBOTS_BLOCKED','POLICY_BLOCKED','CROSS_DOMAIN_REDIRECT','INVALID_URL','TOO_LARGE','TIMEOUT','NETWORK_ERROR','NOT_FETCHED']) {
+    assert.notEqual(label(value)[1], 'Page reviewed');
+    assert.notEqual(label(value)[1], 'Page status unconfirmed');
+    assert.notEqual(label(value)[1], value);
+  }
+  for (const value of [null, undefined, '', 'UNKNOWN_NEW_STATUS', '200']) assert.equal(label(value)[1], 'Page status unconfirmed');
+  const renderer = app.slice(app.indexOf('function candidateEvidence('), app.indexOf('const statusClass'));
+  assert.doesNotMatch(renderer, /HTTP status|Fetch URL|esc\(primary\.fetch_status/);
+  assert.match(renderer, /esc\(primary\.requested_url \|\| candidate\.url\)/);
+  assert.match(renderer, /esc\(primary\.page_title \|\| '-'\)/);
+  assert.match(renderer, /candidate\.checked_at \|\| primary\.captured_at/);
 });

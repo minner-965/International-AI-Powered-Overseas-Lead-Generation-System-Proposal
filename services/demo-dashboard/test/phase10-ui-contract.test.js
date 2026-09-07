@@ -14,7 +14,7 @@ test('Phase 10 separates automatic enrichment and human review without a catalog
     'opportunity-auto-evidence-list','opportunity-priority-list',
     'research-automation-monitor','research-priority-tasks','jobs-automation-monitor','settings-automation-monitor'
   ]) assert.match(html,new RegExp(`id="${hook}"`));
-  for(const label of ['自动补证进度','Auto Enrichment','需人工复核','Human Review']) {
+  for(const label of ['资料核验进度','Evidence Review','需人工复核','Human Review']) {
     assert.ok(html.includes(label),`missing workstream label ${label}`);
   }
   for(const removed of ['opportunity-catalog-maintenance-list','research-catalog-maintenance','内部商品待完善','Catalog Maintenance','打开商品维护','Open catalog maintenance']) {

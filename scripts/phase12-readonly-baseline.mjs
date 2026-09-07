@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const run=(command,args,input)=>execFileSync(command,args,{cwd:root,encoding:'utf8',input,timeout:60000,maxBuffer:4*1024*1024});
 const snapshot=process.argv[2]||'before';
-if(!['before','after','wp03-before','wp03-after','wp05-final','wp06-before','wp08-final','wp09-before','wp11-final','wp12-before','wp14-final','wp14-browser-before','wp14-browser-after','manual-ui-before','manual-ui-after','wp15-before','wp16-after'].includes(snapshot)) throw new Error('Expected a supported before or after snapshot.');
+if(!['before','after','wp03-before','wp03-after','wp05-final','wp06-before','wp08-final','wp09-before','wp11-final','wp12-before','wp14-final','wp14-browser-before','wp14-browser-after','manual-ui-before','manual-ui-after','wp15-before','wp16-after','full-audit-before','full-audit-after','acceptance-completion-before','acceptance-completion-after'].includes(snapshot)) throw new Error('Expected a supported before or after snapshot.');
 const output=join(root,'artifacts','phase12-ui-baseline',`business-${snapshot}.json`);
 if(existsSync(output)) throw new Error('Baseline already exists; preserve the original freeze evidence.');
 async function audit(){

@@ -1,5 +1,6 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 import { finiteCount, marketSeries, lazyChart } from './charts.js';
+import { initialContactPending } from '../contact-progress.js';
 const bi = (zh,en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const number = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString();
 const empty = (zh,en) => `<p class="v3-overview-empty">${bi(zh,en)}</p>`;
@@ -44,7 +45,7 @@ export function overviewModel({metrics,opportunities,operations,research,getStat
     const market = row.country_code || row.market || '—';
     markets.set(market,(markets.get(market) || 0)+1);
   }
-  return {recommended:opportunities ? opportunities.filter(row=>getStatus(row)==='RECOMMENDED').length : null,
+  return {recommended:opportunities ? opportunities.filter(row=>getStatus(row)==='RECOMMENDED'&&initialContactPending(row)).length : null,
     verified:metrics?.verified_active ?? null,sent,pending:pendingParts?pendingParts.reduce((sum,item)=>sum+item.count,0):null,pendingParts,
     markets:[...markets].sort((a,b)=>b[1]-a[1]),marketTotal:Array.isArray(opportunities)?companies.size:null,
     operations:operations?.prospect || null};
@@ -74,13 +75,13 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   const model=overviewModel({metrics,opportunities,operations,research,getStatus});
   const set=(id,html)=>{const el=document.getElementById(id);if(el){el.innerHTML=html;el.setAttribute('aria-busy','false');delete el.dataset.refreshing;}};
   set('metrics',[
-    [model.recommended,'建议联系','Recommended','当前业务机会','Current business opportunities','target-arrow','primary'],
+    [model.recommended,'建议联系','Recommended','尚未首次联系','Awaiting first contact','target-arrow','primary'],
     [model.verified,'当前有效企业','Verified Active Companies','','','building','success'],
     [model.sent,'已发未回复','Sent · Awaiting Reply','全部客户邮件','All prospect mail','mail','primary'],
     [model.pending,'待处理','Pending Actions','审批、跟进、联系与运营事项','Approvals, follow-up, contacts & operations','clipboard-list','warning']
   ].map(([value,zh,en,scopeZh,scopeEn,icon,tone])=>`<article class="v3-overview-metric" data-tone="${tone}"><div class="v3-overview-metric-top">${bi(zh,en)}<i class="ti ti-${icon}" aria-hidden="true"></i></div><strong>${number(value)}</strong>${scopeZh ? `<p>${bi(scopeZh,scopeEn)}</p>` : ''}</article>`).join(''));
   const stageValues={verified:model.verified,category:opportunities?opportunities.filter(row=>['CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'].includes(row.category_procurement_match_status)).length:null,
-    contact:research?.contact_ready_opportunities ?? null,management:opportunities?opportunities.filter(row=>getStatus(row)==='MANAGEMENT_APPROVED').length:null,
+    contact:research?.contact_ready_opportunities ?? null,management:opportunities?opportunities.filter(row=>getStatus(row)==='MANAGEMENT_APPROVED'&&initialContactPending(row)).length:null,
     sent:operations?.prospect?.smtp_accepted ?? null,replied:operations?.prospect?.replies ?? null};
   const stages=[['verified','已验证企业','Verified Companies'],['category','类目匹配机会','Category-Matched Opportunities'],['contact','联系方式就绪','Contact-Ready Opportunities'],['management','管理批准机会','Management Approved'],['sent','已发邮件','Sent Emails'],['replied','客户回复','Customer Replies']];
   const max=Math.max(1,...Object.values(stageValues).map(value=>Number(value || 0)));
@@ -104,6 +105,8 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   const date=value=>value && Number.isFinite(new Date(value).getTime())?esc(new Date(value).toLocaleString()):'—';
   const jobsHtml=jobs?recentJobs.length?`<ul class="v3-overview-job-list">${recentJobs.map(job=>`<li><div class="v3-overview-job-heading"><strong>${esc((job.market_codes || []).join(' / ') || '—')}</strong>${bi(...(stageLabels[job.progress_stage] || stageLabels[job.status] || ['状态待确认','Status Pending']))}</div><p>${jobCategory(job)}</p><dl><div><dt>${bi('建立时间','Created')}</dt><dd>${date(job.created_at)}</dd></div><div><dt>${bi('最近活动','Last Activity')}</dt><dd>${date(job.last_provider_event_at || job.updated_at)}</dd></div><div><dt>${bi('已核验企业','Verified Companies')}</dt><dd>${number(job.verified_companies)}</dd></div></dl></li>`).join('')}</ul>`:empty('暂无研究任务','No research jobs'):empty('任务明细暂未读取，请刷新。','Job details unavailable. Refresh to retry.');
   set('overview-tasks',`${research?`<dl class="v3-overview-task-counts"><div><dt>${bi('进行中的研究任务','Active Research Jobs')}</dt><dd>${number(research.active_jobs)}</dd></div></dl>`:''}${jobsHtml}`);
+  const jobList=document.querySelector('#overview-tasks .v3-overview-job-list');
+  if(jobList){jobList.tabIndex=0;jobList.setAttribute('aria-label','最近研究任务 Recent research jobs');}
   const tasks=(research?.priority_tasks || []).slice(0,3);
   const pendingDrafts=operations?.prospect?.pending_drafts;
   const alerts=operations?.monitoring?.alerts || [];

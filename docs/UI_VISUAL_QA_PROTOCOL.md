@@ -19,4 +19,8 @@ WP-UI00 screenshots record the existing system at 1440×900, 1280×720, 390×844
 
 ## Result records
 
+### Accepted measured performance exception — 2026-09-07
+
+The user explicitly accepted the recorded combined cold-load increase of **37.48%** (165.7 → 227.8 ms) against the fixed frozen baseline. This specific measured result is accepted, not an outstanding release blocker. Preserve the original measurements and the general 20% review line above; this approval does not create an unlimited exception or silently change the baseline. Resource growth remains subject to the approved 40% allowance. Other functional, visual and accessibility checks still require evidence.
+
 Each check records actual evidence, status PASS/FAIL/NOT RUN and cause. Current WP-UI00–02 may pass their limited scope while full Phase12 remains NOT STARTED. Commit/push/tag belongs to WP-UI16 unless separately requested; freeze branch does not imply final acceptance tag.
