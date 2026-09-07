@@ -42,8 +42,8 @@ function isMailboxRoute(contact = {}) {
   const routeType = upper(contact.route_type || contact.channel);
   const email = String(contact.normalized_email || contact.email || contact.contact_value || '').trim();
   const explicitRoute = contact.active_business_email_route === true;
-  const emailTypedRoute = ['EMAIL', 'BUSINESS_EMAIL', 'WORK_EMAIL'].includes(contactType)
-    || ['EMAIL', 'BUSINESS_EMAIL', 'WORK_EMAIL'].includes(routeType);
+  const emailTypes = ['EMAIL', 'BUSINESS_EMAIL', 'WORK_EMAIL', 'GENERIC_BUSINESS_EMAIL', 'DEPARTMENT_EMAIL'];
+  const emailTypedRoute = emailTypes.includes(contactType) || emailTypes.includes(routeType);
   return Boolean(email) && (explicitRoute || emailTypedRoute);
 }
 
@@ -93,6 +93,9 @@ export function evaluateOutreachEligibility(input = {}, options = {}) {
   const buyerModel = upper(first(input, ['buyer_business_model.buyer_model', 'buyer_model', 'buyer_business_model']));
   const matchStatus = upper(first(input, ['category_procurement_match.match_status', 'category_procurement_match_status']));
   const readiness = upper(first(input, ['readiness.opportunity_readiness', 'readiness.readiness', 'opportunity_readiness', 'readiness_status']));
+  const recommendation = upper(first(input, ['system_recommendation_status', 'opportunity.system_recommendation_status']));
+  const businessFit = upper(first(input, ['business_fit_status', 'opportunity.business_fit_status']));
+  const currentBusinessOpportunity = recommendation === 'RECOMMENDED' && businessFit === 'FIT';
   const contact = input.contact || input.recipient || {};
 
   if (sendStage && input.outreach_enabled !== true) reasons.push('OUTREACH_DISABLED');
@@ -100,13 +103,12 @@ export function evaluateOutreachEligibility(input = {}, options = {}) {
   if (companyVerification !== 'VERIFIED') reasons.push('COMPANY_NOT_VERIFIED');
   if (companyLifecycle !== 'ACTIVE') reasons.push('COMPANY_NOT_ACTIVE');
   if (relationship !== 'NEW_PROSPECT') reasons.push('RELATIONSHIP_NOT_NEW_PROSPECT');
-  if (!ELIGIBLE_BUYER_MODELS.includes(buyerModel)) reasons.push('BUYER_MODEL_NOT_ELIGIBLE');
+  if (buyerModel === 'EXCLUDED_INTERMEDIARY'
+    || (!currentBusinessOpportunity && !ELIGIBLE_BUYER_MODELS.includes(buyerModel))) reasons.push('BUYER_MODEL_NOT_ELIGIBLE');
   if (!isCategoryMatchConfirmed(matchStatus)) reasons.push('CATEGORY_MATCH_CONFIRMATION_REQUIRED');
-  if (readiness !== 'SALES_READY') reasons.push('READINESS_NOT_SALES_READY');
-
-  const namedBuyer = truthy(input, ['has_verified_profile_relevant_named_buyer', 'decision_route.verified_named_buyer']);
-  const buyingDepartment = truthy(input, ['has_verified_buying_department', 'decision_route.verified_buying_department']);
-  if (!namedBuyer && !buyingDepartment) reasons.push('VERIFIED_BUYER_ROUTE_REQUIRED');
+  // Category cooperation is sufficient commercial evidence. The legacy
+  // SALES_READY and named-buyer facts remain visible but are not send gates:
+  // a fresh, verified company mailbox may be the first contact route.
 
   const activeRoute = truthy(input, ['has_active_business_email_route'])
     || isMailboxRoute(contact);

@@ -91,6 +91,100 @@ export class Phase7Repository {
     return result.rows[0] || null;
   }
 
+  async listOutreachWorkbench(){
+    const result=await this.pool.query(`SELECT c.id company_id,c.company_name,o.product_profile,
+      o.id opportunity_id,o.display_opportunity_status opportunity_status,
+      s.id eligibility_snapshot_id,s.eligibility_status,s.input_digest,
+      r.id recipient_id,coalesce(r.normalized_recipient,contact.contact_value_normalized) recipient_email,
+      coalesce(r.verification_status,contact.verification_status) verification_status,
+      coalesce(r.verified_at,contact.last_verified_at) verified_at,
+      coalesce(r.verification_provider,contact.verification_provider) verification_provider,contact.evidence_origin verification_source,
+      d.id draft_id,d.draft_status,d.subject,d.body_text,d.version draft_version,d.submitted_at,
+      a.id approval_id,m.id message_id,m.send_status,src.id evidence_source_id,
+      r.recipient_type,contact.source_url recipient_source,m.transport_status,m.receipt_evidence_status,
+      CASE WHEN crm.funnel_status IN('OPTED_OUT','BOUNCED','REPLIED') THEN crm.funnel_status
+        WHEN m.send_status='HARD_BOUNCED' THEN 'BOUNCED'
+        WHEN reply.reply_category='OPT_OUT' THEN 'OPTED_OUT'
+        WHEN reply.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE') THEN 'REPLIED'
+        ELSE m.business_contact_status END business_contact_status,m.sent_at,
+      d.created_at draft_created_at,a.approved_at,coalesce(crm.owner_identity,q.owner_identity,me.actor_identity) owner,
+      crm.next_action,reply.received_at last_reply_at,reply.reply_category reply_status,
+      coalesce(sync.sync_status,'NOT_REQUIRED') crm_sync,
+      EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.lifted_at IS NULL AND x.company_id=c.id AND
+        (x.contact_id=r.contact_id OR x.decision_maker_contact_id=r.decision_maker_contact_id OR
+        x.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(r.normalized_recipient)),'UTF8')),'hex'))) suppression,
+      coalesce(activity.events,'[]'::jsonb) activity,
+      (m.send_status='BLOCKED' AND m.sent_at IS NULL AND m.provider_message_id IS NULL AND m.ambiguous_since IS NULL
+        AND NOT EXISTS(SELECT 1 FROM leadgen.outbound_message_attempts x WHERE x.outbound_message_id=m.id AND x.provider_call_started_at IS NOT NULL)) retry_before_provider_possible
+      FROM leadgen.business_opportunity_current o JOIN leadgen.companies c ON c.id=o.company_id
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_eligibility_snapshots x
+        WHERE x.company_id=o.company_id AND x.product_profile=o.product_profile ORDER BY created_at DESC,id DESC LIMIT 1)s ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_drafts x JOIN leadgen.outreach_eligibility_snapshots ds ON ds.id=x.eligibility_snapshot_id
+        WHERE x.company_id=o.company_id AND ds.product_profile=o.product_profile ORDER BY x.created_at DESC,x.version DESC,x.id DESC LIMIT 1)d ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_recipients x
+        WHERE (d.id IS NOT NULL AND x.id=d.recipient_id) OR (d.id IS NULL AND x.eligibility_snapshot_id=s.id AND x.lifecycle_status='ACTIVE') ORDER BY verified_at DESC NULLS LAST,id LIMIT 1)r ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.decision_maker_contacts x WHERE x.decision_maker_id=s.decision_maker_id
+        AND x.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+        AND (r.decision_maker_contact_id IS NULL OR x.id=r.decision_maker_contact_id)
+        ORDER BY (x.verification_status='VALID') DESC,x.last_verified_at DESC NULLS LAST,x.id LIMIT 1)contact ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_approvals x WHERE x.draft_id=d.id
+        AND x.content_hash=d.content_hash AND x.decision='APPROVED' ORDER BY approved_at DESC,id DESC LIMIT 1)a ON true
+      LEFT JOIN leadgen.outbound_messages m ON m.approval_id=a.id
+      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=c.id AND q.product_profile=o.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
+      LEFT JOIN leadgen.business_opportunity_management_events me ON me.id=q.management_event_id
+      LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=o.id
+      LEFT JOIN LATERAL(SELECT i.received_at,rc.reply_category FROM leadgen.inbound_messages i
+        LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)rc ON true
+        WHERE i.correlation_outbound_message_id=m.id AND i.correlation_status='MATCHED' ORDER BY i.received_at DESC LIMIT 1)reply ON true
+      LEFT JOIN LATERAL(SELECT x.sync_status FROM leadgen.crm_sync_outbox x WHERE x.record_scope='PROSPECT' AND x.company_id=c.id ORDER BY x.created_at DESC LIMIT 1)sync ON true
+      LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('event_type',x.activity_type,'occurred_at',x.created_at) ORDER BY x.created_at) events
+        FROM leadgen.opportunity_activities x WHERE x.record_scope='PROSPECT' AND x.company_id=c.id AND x.opportunity_snapshot_id=o.id)activity ON true
+      LEFT JOIN LATERAL(SELECT x.id FROM leadgen.sources x WHERE x.company_id=c.id ORDER BY x.id LIMIT 1)src ON true
+      WHERE o.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED') OR d.id IS NOT NULL
+      ORDER BY c.company_name,o.product_profile LIMIT 100`);
+    return result.rows;
+  }
+
+  async getOutreachOperationsSummary(){
+    const result=await this.pool.query(`SELECT
+      (SELECT count(*)::int FROM (SELECT DISTINCT ON(company_id,product_profile) eligibility_status,expires_at
+        FROM leadgen.outreach_eligibility_snapshots ORDER BY company_id,product_profile,created_at DESC,id DESC)s
+        WHERE eligibility_status='ELIGIBLE' AND expires_at>now()) eligible,
+      (SELECT count(*)::int FROM leadgen.outreach_drafts WHERE draft_status IN('DRAFT','PENDING_REVIEW','NEEDS_CHANGES')) pending_drafts,
+      (SELECT count(*)::int FROM leadgen.outreach_drafts WHERE draft_status='APPROVED') approved,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status IN('QUEUED','SENDING')) queued,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE sent_at IS NOT NULL) smtp_accepted,
+      (SELECT count(*)::int FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
+        WHERE i.correlation_status='MATCHED' AND EXISTS(SELECT 1 FROM leadgen.reply_classifications rc WHERE rc.inbound_message_id=i.id
+          AND rc.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE')) AND EXISTS(SELECT 1 FROM leadgen.outbound_messages m
+          WHERE m.recipient_id=t.recipient_id AND m.sent_at IS NOT NULL)) replies,
+      (SELECT count(*)::int FROM leadgen.contact_suppressions WHERE lifted_at IS NULL) suppressed,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status IN('FAILED','BLOCKED','AMBIGUOUS','HARD_BOUNCED')) failed,
+      (SELECT count(*)::int FROM leadgen.controlled_application_contexts) controlled_contexts,
+      (SELECT count(*)::int FROM leadgen.controlled_application_messages WHERE send_status='PROVIDER_ACCEPTED') controlled_sent,
+      (SELECT count(*)::int FROM leadgen.controlled_application_inbound_messages) controlled_inbound,
+      (SELECT count(*)::int FROM leadgen.controlled_application_suppressions) controlled_suppressed`);
+    const {controlled_contexts,controlled_sent,controlled_inbound,controlled_suppressed,...prospect}=result.rows[0];
+    return{prospect,controlled:{contexts:controlled_contexts,sent:controlled_sent,inbound:controlled_inbound,suppressed:controlled_suppressed}};
+  }
+
+  async getOutreachMonitoring(){
+    const result=await this.pool.query(`SELECT
+      (SELECT max(last_sync_at) FROM leadgen.imap_mailbox_checkpoints) last_inbound_sync,
+      (SELECT max(last_success_at) FROM leadgen.imap_mailbox_checkpoints) last_successful_sync,
+      (SELECT count(*)::int FROM leadgen.imap_mailbox_checkpoints WHERE last_success_at IS NULL OR last_success_at<now()-interval '15 minutes') imap_checkpoint_stale,
+      (SELECT count(*)::int FROM leadgen.imap_mailbox_checkpoints WHERE checkpoint_status='ERROR') imap_sync_failure,
+      (SELECT count(*)::int FROM leadgen.imap_checkpoint_events WHERE event_type='UIDVALIDITY_RESET' AND occurred_at>now()-interval '24 hours') uidvalidity_changed,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status='AMBIGUOUS') send_ambiguous,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE send_status='SENDING' AND send_lease_expires_at<now()) outbound_stuck,
+      (SELECT count(*)::int FROM leadgen.crm_sync_outbox WHERE record_scope='PROSPECT' AND sync_status IN('PENDING','PROCESSING','RETRYABLE_ERROR') AND created_at<now()-interval '15 minutes') crm_outbox_lag,
+      (SELECT count(*)::int FROM leadgen.crm_sync_outbox WHERE record_scope='PROSPECT' AND last_error='CRM_STALE_PROCESSING_RECONCILIATION_REQUIRED') crm_reconciliation_required,
+      (SELECT count(*)::int FROM leadgen.outbound_message_attempts WHERE started_at>now()-interval '24 hours' AND (response_code='535' OR 'SMTP_AUTH_FAILED'=ANY(reason_codes))) smtp_auth_failure,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE updated_at>now()-interval '24 hours' AND send_status='BLOCKED' AND EXISTS(SELECT 1 FROM unnest(reason_codes) reason WHERE reason LIKE '%SUPPRESS%')) suppression_blocked_attempt,
+      (SELECT count(*)::int FROM leadgen.inbound_messages WHERE correlation_status<>'MATCHED') inbound_correlation_review`);
+    return result.rows[0];
+  }
+
   async createMarketingContext(input) {
     const result = await this.pool.query(`INSERT INTO leadgen.marketing_context_versions
       (version,context_status,allowed_markets,allowed_product_profiles,target_languages,
@@ -209,17 +303,17 @@ export class Phase7Repository {
 
         const ttlDays=Math.max(1,Number(input.verification_ttl_days)||30);
         const contacts=await client.query(`SELECT dc.id decision_maker_contact_id,
-          lower(btrim(dc.contact_value_normalized)) normalized_recipient,dc.verification_status,
+          lower(btrim(dc.contact_value_normalized)) normalized_recipient,dc.contact_type,dc.verification_status,
           dc.verification_provider,dc.last_verified_at
           FROM leadgen.decision_maker_contacts dc
           JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id AND dm.id=$1
-            AND dm.company_id=$2 AND dm.verification_status='VERIFIED' AND dm.lifecycle_status='ACTIVE'
-            AND dm.normalized_role IN('BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT',
-              'CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
-          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id
-            AND pr.product_profile=$3 AND pr.relevance IN('HIGH','MEDIUM')
-          WHERE dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+            AND dm.company_id=$2 AND dm.lifecycle_status='ACTIVE'
+          JOIN leadgen.companies recipient_company ON recipient_company.id=dm.company_id
+          WHERE $3::text IS NOT NULL AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
             AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($4::int*interval '1 day')
+            AND dc.last_verified_at<=now()
+            AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED'
+            AND lower(split_part(dc.contact_value_normalized,'@',2))=lower(regexp_replace(recipient_company.normalized_domain,'^(live:[a-z]{2}:)?(www[.])?','','i'))
             AND position('@' in dc.contact_value_normalized)>1
             AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions cs
               WHERE cs.company_id=$2 AND cs.lifted_at IS NULL)
@@ -233,15 +327,15 @@ export class Phase7Repository {
         const contact=contacts.rows[0];
         const recipient=await client.query(`INSERT INTO leadgen.outreach_recipients
           (eligibility_snapshot_id,company_id,decision_maker_contact_id,normalized_recipient,
-           consent_status,verification_status,verification_provider,verified_at,lifecycle_status)
-          VALUES($1,$2,$3,$4,'UNKNOWN','VALID',$5,$6,'ACTIVE')
+           consent_status,verification_status,verification_provider,verified_at,lifecycle_status,recipient_type,recipient_source_class,recipient_domain_verified)
+          VALUES($1,$2,$3,$4,'UNKNOWN','VALID',$5,$6,'ACTIVE',CASE WHEN $7='BUSINESS_EMAIL' THEN 'NAMED_BUYER_EMAIL' WHEN $7='DEPARTMENT_EMAIL' THEN 'OFFICIAL_DEPARTMENT_EMAIL' ELSE 'OFFICIAL_COMPANY_EMAIL' END,'VERIFIED_DECISION_MAKER_CONTACT',true)
           ON CONFLICT(eligibility_snapshot_id,normalized_recipient) DO UPDATE SET
             verification_status=EXCLUDED.verification_status,
             verification_provider=EXCLUDED.verification_provider,
             verified_at=EXCLUDED.verified_at
           WHERE leadgen.outreach_recipients.lifecycle_status='ACTIVE'
           RETURNING *`,[eligible.id,current.company_id,contact.decision_maker_contact_id,
-          contact.normalized_recipient,contact.verification_provider,contact.last_verified_at]);
+          contact.normalized_recipient,contact.verification_provider,contact.last_verified_at,contact.contact_type]);
         approvalRecipients=recipient.rows;
         recipientsCreated=recipient.rowCount;
         if(!approvalRecipients.some(row=>row.lifecycle_status==='ACTIVE'&&row.verification_status==='VALID'
@@ -394,21 +488,15 @@ export class Phase7Repository {
               'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')) verified_buyer_role_count,
         (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc
           JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
-          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
-          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
-            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
-              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
-              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
             AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) business_email_route_count,
         (SELECT count(*)::int FROM leadgen.decision_maker_contacts dc
           JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
-          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
-          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
-            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
-              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
-              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
             AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
             AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($1::int*interval '1 day')
+            AND dc.last_verified_at<=now() AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED'
+            AND lower(split_part(dc.contact_value_normalized,'@',2))=lower(regexp_replace(c.normalized_domain,'^(live:[a-z]{2}:)?(www[.])?','','i'))
             AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
               AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
                 sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) active_valid_email_route_count,
@@ -442,20 +530,18 @@ export class Phase7Repository {
         (SELECT coalesce(array_agg(DISTINCT dc.verification_status),'{}'::text[]) FROM leadgen.decision_maker_contacts dc
           JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
             AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')) email_route_statuses,
-        EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id AND sx.lifted_at IS NULL) contact_suppressed,
+        /* Address suppressions are evaluated on each route above, not as a company-wide hold. */
+        false contact_suppressed,
         (SELECT dm.id FROM leadgen.decision_makers dm
-          JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=dm.id AND pr.product_profile=cpm.product_profile
-          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dm.verification_status='VERIFIED'
-            AND pr.relevance IN('HIGH','MEDIUM') AND dm.normalized_role IN(
-              'BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT',
-              'MERCHANDISING','SOURCING','BUYING_DEPARTMENT','PROCUREMENT_DEPARTMENT')
+          WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE'
           ORDER BY CASE WHEN EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc WHERE dc.decision_maker_id=dm.id
               AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
               AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($1::int*interval '1 day')
+              AND dc.last_verified_at<=now() AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED'
+              AND lower(split_part(dc.contact_value_normalized,'@',2))=lower(regexp_replace(c.normalized_domain,'^(live:[a-z]{2}:)?(www[.])?','','i'))
               AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=c.id
                 AND sx.lifted_at IS NULL AND (sx.decision_maker_contact_id=dc.id OR
                   sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))) THEN 0 ELSE 1 END,
-            CASE pr.relevance WHEN 'HIGH' THEN 1 ELSE 2 END,
             dm.updated_at DESC LIMIT 1) decision_maker_id
       FROM current_match cpm JOIN leadgen.companies c ON c.id=cpm.company_id
       JOIN leadgen.buyer_business_model_results bbm ON bbm.id=cpm.buyer_business_model_result_id
@@ -593,27 +679,34 @@ export class Phase7Repository {
       ORDER BY s.company_id,s.product_profile,s.created_at DESC,s.id DESC
     ), eligible_contacts AS (
       SELECT s.id eligibility_snapshot_id,s.company_id,dc.id decision_maker_contact_id,
-        lower(btrim(dc.contact_value_normalized)) normalized_recipient,dc.verification_status,
+        lower(btrim(dc.contact_value_normalized)) normalized_recipient,dc.contact_type,dc.verification_status,
         dc.verification_provider,dc.last_verified_at
       FROM current_eligible s
       JOIN leadgen.companies c ON c.id=s.company_id AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
       JOIN leadgen.decision_makers dm ON dm.id=s.decision_maker_id AND dm.company_id=s.company_id
-        AND dm.verification_status='VERIFIED' AND dm.lifecycle_status='ACTIVE'
+        AND dm.lifecycle_status='ACTIVE'
       JOIN leadgen.decision_maker_contacts dc ON dc.decision_maker_id=dm.id
       WHERE dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
         AND dc.verification_status='VALID' AND dc.last_verified_at>=now()-($4::int*interval '1 day')
+        AND dc.last_verified_at<=now()
+        AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED'
+        AND lower(split_part(dc.contact_value_normalized,'@',2))=lower(regexp_replace(c.normalized_domain,'^(live:[a-z]{2}:)?(www[.])?','','i'))
         AND ($3::uuid IS NULL OR dc.id=$3)
         AND position('@' in dc.contact_value_normalized)>1
         AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions cs
           WHERE cs.company_id=s.company_id AND cs.lifted_at IS NULL)
         AND NOT EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx
-          WHERE sx.company_id=s.company_id AND sx.decision_maker_contact_id=dc.id AND sx.lifted_at IS NULL)
+          WHERE sx.company_id=s.company_id AND sx.lifted_at IS NULL AND (
+            sx.decision_maker_contact_id=dc.id OR
+            sx.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(dc.contact_value_normalized)),'UTF8')),'hex')))
     )
     INSERT INTO leadgen.outreach_recipients
       (eligibility_snapshot_id,company_id,decision_maker_contact_id,normalized_recipient,
-       consent_status,verification_status,verification_provider,verified_at,lifecycle_status)
+       consent_status,verification_status,verification_provider,verified_at,lifecycle_status,recipient_type,recipient_source_class,recipient_domain_verified)
     SELECT eligibility_snapshot_id,company_id,decision_maker_contact_id,normalized_recipient,
-      'UNKNOWN',verification_status,verification_provider,last_verified_at,'ACTIVE'
+      'UNKNOWN',verification_status,verification_provider,last_verified_at,'ACTIVE',
+      CASE WHEN contact_type='BUSINESS_EMAIL' THEN 'NAMED_BUYER_EMAIL' WHEN contact_type='DEPARTMENT_EMAIL' THEN 'OFFICIAL_DEPARTMENT_EMAIL' ELSE 'OFFICIAL_COMPANY_EMAIL' END,
+      'VERIFIED_DECISION_MAKER_CONTACT',true
     FROM eligible_contacts
     ON CONFLICT(eligibility_snapshot_id,normalized_recipient) DO NOTHING
     RETURNING *`, [requiredUuid(companyId,'company_id'),productProfile || null,contactId ? requiredUuid(contactId,'contact_id') : null,
@@ -679,11 +772,11 @@ export class Phase7Repository {
     requiredUuid(id, 'draft_id');
     const result = await queryable.query(`SELECT d.*,s.product_profile,s.input_digest eligibility_input_digest,
       s.company_id eligibility_company_id,s.eligibility_status current_eligibility_status,
-      s.relationship_status current_relationship_status,s.expires_at current_eligibility_expires_at,r.decision_maker_contact_id,
+      s.relationship_status current_relationship_status,s.expires_at current_eligibility_expires_at,r.decision_maker_contact_id,r.normalized_recipient,r.recipient_type,r.recipient_source_class,r.recipient_domain_verified,
       r.verification_status current_recipient_verification_status,r.lifecycle_status current_recipient_lifecycle_status,
       r.verified_at current_recipient_verified_at,c.country_code,c.verification_status current_company_verification_status,
       c.lifecycle_status current_company_lifecycle_status,o.id current_opportunity_snapshot_id,
-      o.display_opportunity_status current_opportunity_status,q.id current_contact_work_queue_id,q.queue_status current_queue_status,
+      o.display_opportunity_status current_opportunity_status,q.id current_contact_work_queue_id,q.management_event_id current_management_event_id,q.queue_status current_queue_status,
       (s.buyer_business_model_result_id=o.buyer_business_model_result_id
         AND s.category_procurement_match_result_id=o.category_procurement_match_result_id
         AND s.product_opportunity_result_id IS NOT DISTINCT FROM o.product_opportunity_result_id
@@ -692,9 +785,9 @@ export class Phase7Repository {
         WHERE newer.company_id=s.company_id AND newer.product_profile=s.product_profile
           AND (newer.created_at,newer.id)>(s.created_at,s.id)) is_latest_eligibility_snapshot,
       EXISTS(SELECT 1 FROM leadgen.company_suppressions x WHERE x.company_id=d.company_id AND x.lifted_at IS NULL) current_company_suppressed,
-      EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=d.company_id AND x.lifted_at IS NULL AND (
+      (EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions rs WHERE rs.company_id=d.company_id AND rs.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(r.normalized_recipient)),'UTF8')),'hex') AND rs.lifted_at IS NULL) OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=d.company_id AND x.lifted_at IS NULL AND (
         (r.contact_id IS NOT NULL AND x.contact_id=r.contact_id) OR
-        (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id))) current_contact_suppressed,
+        (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id)))) current_contact_suppressed,
       v.content marketing_context_content,v.allowed_markets marketing_context_allowed_markets,
       v.allowed_product_profiles marketing_context_allowed_profiles,v.target_languages marketing_context_target_languages,
       v.expires_at marketing_context_expires_at,
@@ -746,7 +839,8 @@ export class Phase7Repository {
       const recipientIdentity=await client.query(`SELECT normalized_recipient FROM leadgen.outreach_recipients WHERE id=$1`,[input.recipient_id]);
       const recipientHash=recipientIdentity.rowCount?sha256(String(recipientIdentity.rows[0].normalized_recipient||'').trim().toLowerCase()):null;
       const gate = await client.query(`SELECT s.*,r.normalized_recipient,r.consent_status,
-        r.verification_status recipient_verification_status,r.verified_at,r.lifecycle_status recipient_lifecycle_status,
+      r.verification_status recipient_verification_status,r.verified_at,r.lifecycle_status recipient_lifecycle_status,
+      r.recipient_type,r.recipient_source_class,r.recipient_domain_verified,
         c.country_code
         FROM leadgen.outreach_eligibility_snapshots s
         JOIN leadgen.outreach_recipients r ON r.eligibility_snapshot_id=s.id AND r.company_id=s.company_id
@@ -863,8 +957,16 @@ export class Phase7Repository {
       await this.assertCurrentDraftGate(id,client,{verificationTtlDays:input.verification_ttl_days});
       const current = await this.getDraft(id, client);
       if (!current) throw notFound('Draft not found', 'OUTREACH_DRAFT_NOT_FOUND');
-      if (!['DRAFT', 'INVALID_DRAFT', 'NEEDS_CHANGES', 'PENDING_REVIEW'].includes(current.draft_status)) {
-        const error = new Error('Only an unapproved draft can be revised'); error.code = 'DRAFT_REVISION_FORBIDDEN'; error.status = 409; throw error;
+      if (!['DRAFT', 'INVALID_DRAFT', 'NEEDS_CHANGES', 'REJECTED', 'PENDING_REVIEW', 'APPROVED', 'SUPERSEDED'].includes(current.draft_status)) {
+        const error = new Error('Draft is not in a revisable state'); error.code = 'DRAFT_REVISION_FORBIDDEN'; error.status = 409; throw error;
+      }
+      const revisionGate=await client.query(`SELECT
+        EXISTS(SELECT 1 FROM leadgen.outbound_messages m JOIN leadgen.outreach_approvals a
+          ON a.id=m.approval_id WHERE a.draft_id=$1) has_message,
+        EXISTS(SELECT 1 FROM leadgen.outreach_drafts WHERE supersedes_draft_id=$1) has_revision`,[id]);
+      if(revisionGate.rows[0]?.has_message||revisionGate.rows[0]?.has_revision){
+        const error=new Error('Queued or already revised drafts require their current workflow');
+        error.code='DRAFT_REVISION_FORBIDDEN';error.status=409;throw error;
       }
       await client.query(`UPDATE leadgen.outreach_drafts SET draft_status='SUPERSEDED',updated_at=now() WHERE id=$1`, [id]);
       const created = await client.query(`INSERT INTO leadgen.outreach_drafts
@@ -915,6 +1017,10 @@ export class Phase7Repository {
       if(input.decision==='APPROVED')await this.assertCurrentDraftGate(input.draft_id,client,{verificationTtlDays:input.verification_ttl_days});
       const draft = await this.getDraft(input.draft_id, client);
       if (!draft) throw notFound('Draft not found', 'OUTREACH_DRAFT_NOT_FOUND');
+      if(input.decision==='APPROVED'&&!draft.submitted_at){
+        const error=new Error('Submit the current draft before approval');
+        error.code='DRAFT_SUBMISSION_REQUIRED';error.status=409;throw error;
+      }
       const prior = await client.query(`SELECT * FROM leadgen.outreach_approvals
         WHERE approval_digest=$1 AND decision=$2 ORDER BY approved_at DESC LIMIT 1`, [input.approval_digest,input.decision]);
       let approval = prior.rows[0] || null;
@@ -922,12 +1028,14 @@ export class Phase7Repository {
         const result = await client.query(`INSERT INTO leadgen.outreach_approvals
         (draft_id,recipient_id,company_id,draft_version,normalized_recipient,product_profile,
          content_hash,approval_digest,evidence_snapshot_hash,from_identity,reply_to,channel,
-         decision,approver_identity,approver_role,reason)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'EMAIL',$12,$13,$14,$15)
+         decision,approver_identity,approver_role,reason,opportunity_snapshot_id,management_event_id,
+         recipient_route_snapshot_hash,provider_purpose,expires_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'EMAIL',$12,$13,$14,$15,$16,$17,$18,$19,$20)
         ON CONFLICT DO NOTHING RETURNING *`, [
         draft.id,draft.recipient_id,draft.company_id,draft.version,draft.normalized_recipient,draft.product_profile,
         draft.content_hash,input.approval_digest,input.evidence_snapshot_hash,input.from_identity,input.reply_to,
-        input.decision,input.actor,input.role,input.reason]);
+        input.decision,input.actor,input.role,input.reason,input.opportunity_snapshot_id,input.management_event_id,
+        input.recipient_route_snapshot_hash,input.provider_purpose,input.expires_at]);
         approval = result.rows[0] || (await client.query(`SELECT * FROM leadgen.outreach_approvals
           WHERE draft_id=$1 AND draft_version=$2 AND content_hash=$3 AND normalized_recipient=$4
             AND from_identity=$5 AND reply_to=$6 AND decision='APPROVED'
@@ -948,7 +1056,7 @@ export class Phase7Repository {
     requiredUuid(id, 'message_or_approval_id');
     const result = await this.pool.query(`SELECT a.*,d.language,d.subject,d.body_text,d.followups,d.template_version,d.version,
       d.draft_status,r.consent_status,r.verification_status recipient_verification_status,
-      r.verified_at,r.lifecycle_status recipient_lifecycle_status,r.contact_id,r.decision_maker_contact_id,
+      r.verified_at,r.lifecycle_status recipient_lifecycle_status,r.recipient_type,r.recipient_source_class,r.recipient_domain_verified,r.contact_id,r.decision_maker_contact_id,
       s.eligibility_status,s.reason_codes eligibility_reason_codes,s.expires_at eligibility_expires_at,
       s.buyer_business_model_result_id,s.category_procurement_match_result_id,s.product_opportunity_result_id,
       s.cooperation_feasibility_result_id,s.decision_maker_id,
@@ -963,9 +1071,10 @@ export class Phase7Repository {
         ON hc.id=l.historical_customer_id WHERE l.company_id=a.company_id AND l.link_status='CONFIRMED'
         AND hc.customer_role='INTERNAL_EXISTING_CUSTOMER') confirmed_existing_customer,
       EXISTS(SELECT 1 FROM leadgen.company_suppressions x WHERE x.company_id=a.company_id AND x.lifted_at IS NULL) company_suppressed,
-      EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=a.company_id AND x.lifted_at IS NULL
+      q.management_event_id current_management_event_id,
+      (EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions rs WHERE rs.company_id=a.company_id AND rs.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(r.normalized_recipient)),'UTF8')),'hex') AND rs.lifted_at IS NULL) OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=a.company_id AND x.lifted_at IS NULL
         AND ((r.contact_id IS NOT NULL AND x.contact_id=r.contact_id) OR
-             (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id))) contact_suppressed,
+             (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id)))) contact_suppressed,
       coalesce((SELECT jsonb_agg(p.approved_claim_ids) FROM leadgen.outreach_draft_products p WHERE p.draft_id=d.id),'[]'::jsonb) draft_product_claim_sets
       FROM leadgen.outreach_approvals a JOIN leadgen.outreach_drafts d ON d.id=a.draft_id
       JOIN leadgen.outreach_recipients r ON r.id=a.recipient_id
@@ -973,6 +1082,7 @@ export class Phase7Repository {
       JOIN leadgen.companies c ON c.id=a.company_id
       LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=a.company_id AND o.product_profile=a.product_profile
       LEFT JOIN leadgen.decision_makers dm ON dm.id=s.decision_maker_id
+      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=a.company_id AND q.product_profile=a.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
       WHERE (a.id=$1 OR a.draft_id=$1) AND a.decision='APPROVED'
       ORDER BY a.approved_at DESC LIMIT 1`, [id]);
     return result.rows[0] || null;
@@ -980,20 +1090,35 @@ export class Phase7Repository {
 
   async createOutboundMessage(input) {
     const result = await this.pool.query(`INSERT INTO leadgen.outbound_messages
-      (company_id,recipient_id,approval_id,provider,provider_purpose,idempotency_key,send_status,reason_codes)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8::text[])
+      (company_id,recipient_id,approval_id,provider,provider_purpose,idempotency_key,message_key_header,send_status,reason_codes,send_execution_key,rfc_message_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$6,$10)
       ON CONFLICT(idempotency_key) DO UPDATE SET updated_at=leadgen.outbound_messages.updated_at
       RETURNING *`, [input.company_id,input.recipient_id,input.approval_id,input.provider,input.provider_purpose,
-      input.idempotency_key,input.send_status,input.reason_codes]);
+      input.idempotency_key,input.message_key_header||null,input.send_status,input.reason_codes,input.rfc_message_id||null]);
     return result.rows[0];
+  }
+
+  async retryBlockedOutboundBeforeProvider(messageId,approvalId){
+    return this.transaction(async client=>{
+      const locked=(await client.query('SELECT * FROM leadgen.outbound_messages WHERE id=$1 FOR UPDATE',[requiredUuid(messageId,'message_id')])).rows[0];
+      if(!locked)throw notFound('Outbound message not found','OUTBOUND_MESSAGE_NOT_FOUND');
+      const attempted=(await client.query('SELECT EXISTS(SELECT 1 FROM leadgen.outbound_message_attempts WHERE outbound_message_id=$1 AND provider_call_started_at IS NOT NULL) started',[messageId])).rows[0]?.started;
+      if(locked.send_status!=='BLOCKED'||locked.approval_id!==approvalId||attempted||locked.sent_at||locked.provider_message_id||locked.ambiguous_since){
+        const error=new Error('Only a blocked message with no provider attempt can be retried');error.code='OUTBOUND_RETRY_FORBIDDEN';error.status=409;throw error;
+      }
+      return(await client.query(`UPDATE leadgen.outbound_messages SET send_status='QUEUED',reason_codes='{}'::text[],
+        transport_status='NOT_ATTEMPTED',business_contact_status='NOT_SENT',updated_at=now()
+        WHERE id=$1 RETURNING *`,[messageId])).rows[0];
+    });
   }
 
   async getOutboundMessage(id) {
     const result = await this.pool.query(`SELECT m.*,a.draft_id,a.draft_version,a.normalized_recipient,a.from_identity,a.reply_to,
+      a.opportunity_snapshot_id,a.management_event_id,a.recipient_route_snapshot_hash,a.expires_at,
       a.approval_digest,a.content_hash,a.evidence_snapshot_hash,a.product_profile,a.channel,a.decision approval_decision,
       d.language,d.subject,d.body_text,d.followups,d.template_version,d.version,d.draft_status,
       r.consent_status,r.verification_status recipient_verification_status,r.verified_at,
-      r.lifecycle_status recipient_lifecycle_status,r.contact_id,r.decision_maker_contact_id,
+      r.lifecycle_status recipient_lifecycle_status,r.recipient_type,r.recipient_source_class,r.recipient_domain_verified,r.contact_id,r.decision_maker_contact_id,
       s.eligibility_status,s.expires_at eligibility_expires_at,s.buyer_business_model_result_id,
       s.category_procurement_match_result_id,s.product_opportunity_result_id,s.cooperation_feasibility_result_id,s.decision_maker_id,
       c.verification_status company_verification_status,c.lifecycle_status company_lifecycle_status,
@@ -1007,9 +1132,10 @@ export class Phase7Repository {
         ON hc.id=l.historical_customer_id WHERE l.company_id=m.company_id AND l.link_status='CONFIRMED'
         AND hc.customer_role='INTERNAL_EXISTING_CUSTOMER') confirmed_existing_customer,
       EXISTS(SELECT 1 FROM leadgen.company_suppressions x WHERE x.company_id=m.company_id AND x.lifted_at IS NULL) company_suppressed,
-      EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=m.company_id AND x.lifted_at IS NULL
+      q.management_event_id current_management_event_id,
+      (EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions rs WHERE rs.company_id=m.company_id AND rs.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(r.normalized_recipient)),'UTF8')),'hex') AND rs.lifted_at IS NULL) OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.company_id=m.company_id AND x.lifted_at IS NULL
         AND ((r.contact_id IS NOT NULL AND x.contact_id=r.contact_id) OR
-             (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id))) contact_suppressed,
+             (r.decision_maker_contact_id IS NOT NULL AND x.decision_maker_contact_id=r.decision_maker_contact_id)))) contact_suppressed,
       coalesce((SELECT jsonb_agg(p.approved_claim_ids) FROM leadgen.outreach_draft_products p WHERE p.draft_id=d.id),'[]'::jsonb) draft_product_claim_sets,
       (SELECT count(*)::int FROM leadgen.outbound_messages x WHERE x.send_status IN('PROVIDER_ACCEPTED','DELIVERED')
         AND x.sent_at>=now()-interval '1 minute') sent_last_minute,
@@ -1022,7 +1148,9 @@ export class Phase7Repository {
       JOIN leadgen.outreach_eligibility_snapshots s ON s.id=d.eligibility_snapshot_id
       JOIN leadgen.companies c ON c.id=m.company_id
       LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=m.company_id AND o.product_profile=a.product_profile
-      LEFT JOIN leadgen.decision_makers dm ON dm.id=s.decision_maker_id WHERE m.id=$1`, [requiredUuid(id, 'message_id')]);
+      LEFT JOIN leadgen.decision_makers dm ON dm.id=s.decision_maker_id
+      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=m.company_id AND q.product_profile=a.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
+      WHERE m.id=$1`, [requiredUuid(id, 'message_id')]);
     return result.rows[0] || null;
   }
 
@@ -1055,6 +1183,56 @@ export class Phase7Repository {
     });
   }
 
+  async reserveOutboundAttempt(messageId,{rfcMessageId=null,leaseSeconds=120}={}){
+    return this.transaction(async client=>{
+      const locked=await client.query('SELECT * FROM leadgen.outbound_messages WHERE id=$1 FOR UPDATE',[requiredUuid(messageId,'message_id')]);
+      const message=locked.rows[0];if(!message)throw notFound('Outbound message not found','OUTBOUND_MESSAGE_NOT_FOUND');
+      if(message.provider_message_id&&['PROVIDER_ACCEPTED','DELIVERED'].includes(message.send_status))return{...message,idempotent_replay:true};
+      if(message.send_status==='AMBIGUOUS')return{...message,ambiguous_hold:true};
+      const recipient=(await client.query('SELECT * FROM leadgen.outreach_recipients WHERE id=$1 FOR UPDATE',[message.recipient_id])).rows[0];
+      const recipientHash=sha256(recipient?.normalized_recipient||'');
+      const suppression=await client.query(`SELECT EXISTS(SELECT 1 FROM leadgen.outreach_recipients r WHERE r.id=$1 AND (EXISTS(SELECT 1 FROM leadgen.company_suppressions cs WHERE cs.company_id=r.company_id AND cs.lifted_at IS NULL) OR EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions rs WHERE rs.company_id=r.company_id AND rs.normalized_recipient_hash=$2 AND rs.lifted_at IS NULL) OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions sx WHERE sx.company_id=r.company_id AND sx.lifted_at IS NULL AND ((r.contact_id IS NOT NULL AND sx.contact_id=r.contact_id) OR (r.decision_maker_contact_id IS NOT NULL AND sx.decision_maker_contact_id=r.decision_maker_contact_id) OR sx.normalized_recipient_hash=$2)))) blocked`,[message.recipient_id,recipientHash]);
+      if(suppression.rows[0]?.blocked){const held=(await client.query(`UPDATE leadgen.outbound_messages SET send_status='BLOCKED',reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY['SUPPRESSED_BEFORE_PROVIDER_CALL']::text[])),updated_at=now() WHERE id=$1 RETURNING *`,[messageId])).rows[0];return{...held,suppression_blocked:true};}
+      if(message.send_status==='SENDING'){
+        const previous=await client.query(`SELECT * FROM leadgen.outbound_message_attempts WHERE outbound_message_id=$1 ORDER BY attempt_number DESC LIMIT 1`,[messageId]);
+        if(previous.rows[0]?.provider_call_started_at){
+          const held=await client.query(`UPDATE leadgen.outbound_messages SET send_status='AMBIGUOUS',transport_status='SEND_AMBIGUOUS',business_contact_status='SEND_AMBIGUOUS',ambiguous_since=coalesce(ambiguous_since,now()),send_lease_expires_at=NULL,updated_at=now() WHERE id=$1 RETURNING *`,[messageId]);
+          return{...held.rows[0],ambiguous_hold:true};
+        }
+        if(message.send_lease_expires_at&&new Date(message.send_lease_expires_at)>new Date())return{...message,send_in_progress:true};
+      }
+      const count=await client.query(`SELECT coalesce(max(attempt_number),0)+1 attempt_number FROM leadgen.outbound_message_attempts WHERE outbound_message_id=$1`,[messageId]);
+      const attempt=await client.query(`INSERT INTO leadgen.outbound_message_attempts(outbound_message_id,attempt_number,attempt_status,provider) SELECT id,$2,'STARTED',provider FROM leadgen.outbound_messages WHERE id=$1 RETURNING *`,[messageId,count.rows[0].attempt_number]);
+      await client.query(`UPDATE leadgen.outbound_messages SET send_status='SENDING',rfc_message_id=coalesce(rfc_message_id,$2),send_reserved_at=now(),send_lease_expires_at=now()+($3::int*interval '1 second'),updated_at=now() WHERE id=$1`,[messageId,rfcMessageId,Math.max(30,Number(leaseSeconds)||120)]);
+      return{...attempt.rows[0],rfc_message_id:rfcMessageId||message.rfc_message_id};
+    });
+  }
+
+  async blockOutboundWithoutAttempt(messageId,reasonCodes=[]){
+    return(await this.pool.query(`UPDATE leadgen.outbound_messages SET send_status='BLOCKED',reason_codes=$2::text[],updated_at=now() WHERE id=$1 AND send_status IN('QUEUED','BLOCKED') RETURNING *`,[requiredUuid(messageId,'message_id'),reasonCodes])).rows[0]||null;
+  }
+
+  async markOutboundProviderCallStarted(messageId,attemptId){
+    return this.transaction(async client=>{
+      const locked=(await client.query(`SELECT m.*,r.normalized_recipient,r.contact_id,r.decision_maker_contact_id
+        FROM leadgen.outbound_messages m JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+        WHERE m.id=$1 FOR UPDATE OF m,r`,[requiredUuid(messageId,'message_id')])).rows[0];
+      if(!locked)throw notFound('Outbound message not found','OUTBOUND_MESSAGE_NOT_FOUND');
+      const recipientHash=sha256(locked.normalized_recipient||'');
+      const blocked=(await client.query(`SELECT
+        EXISTS(SELECT 1 FROM leadgen.company_suppressions WHERE company_id=$1 AND lifted_at IS NULL)
+        OR EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions WHERE company_id=$1 AND normalized_recipient_hash=$2 AND lifted_at IS NULL)
+        OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions WHERE company_id=$1 AND lifted_at IS NULL AND ((contact_id IS NOT NULL AND contact_id=$3) OR (decision_maker_contact_id IS NOT NULL AND decision_maker_contact_id=$4) OR normalized_recipient_hash=$2)) blocked`,[locked.company_id,recipientHash,locked.contact_id,locked.decision_maker_contact_id])).rows[0]?.blocked;
+      if(blocked){
+        await client.query(`UPDATE leadgen.outbound_message_attempts SET attempt_status='BLOCKED',reason_codes=ARRAY['SUPPRESSED_BEFORE_PROVIDER_CALL'],completed_at=now() WHERE id=$1 AND outbound_message_id=$2 AND completed_at IS NULL`,[attemptId,messageId]);
+        await client.query(`UPDATE leadgen.outbound_messages SET send_status='CANCELLED',reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY['SUPPRESSED_BEFORE_PROVIDER_CALL']::text[])),send_lease_expires_at=NULL,updated_at=now() WHERE id=$1`,[messageId]);
+        return{suppression_blocked:true,id:attemptId};
+      }
+      const result=await client.query(`UPDATE leadgen.outbound_message_attempts SET provider_call_started_at=coalesce(provider_call_started_at,now()) WHERE id=$1 AND outbound_message_id=$2 AND completed_at IS NULL RETURNING *`,[attemptId,messageId]);
+      if(!result.rowCount)throw notFound('Outbound attempt is unavailable','OUTBOUND_ATTEMPT_STATE_CONFLICT');return result.rows[0];
+    });
+  }
+
   async completeOutboundAttempt({ messageId, attemptId, attemptStatus, sendStatus, reasonCodes = [], responseCode = null, responseDigest = null,
     providerMessageId = null, providerThreadId = null, rfcMessageId = null, sendExecutionKey = null }) {
     return this.transaction(async client => {
@@ -1065,6 +1243,9 @@ export class Phase7Repository {
         rfc_message_id=coalesce($6,rfc_message_id),send_execution_key=coalesce($7,send_execution_key),
         ambiguous_since=CASE WHEN $2='AMBIGUOUS' THEN coalesce(ambiguous_since,now()) ELSE NULL END,
         sent_at=CASE WHEN $2='PROVIDER_ACCEPTED' THEN now() ELSE sent_at END,
+        transport_status=CASE WHEN $2='PROVIDER_ACCEPTED' THEN 'SMTP_ACCEPTED' WHEN $2='AMBIGUOUS' THEN 'SEND_AMBIGUOUS' WHEN $2 IN('FAILED','BLOCKED') THEN 'SEND_FAILED' ELSE transport_status END,
+        business_contact_status=CASE WHEN $2='PROVIDER_ACCEPTED' THEN 'SENT_NO_REPLY' WHEN $2='AMBIGUOUS' THEN 'SEND_AMBIGUOUS' WHEN $2 IN('FAILED','BLOCKED') THEN 'SEND_FAILED' ELSE business_contact_status END,
+        send_lease_expires_at=NULL,
         updated_at=now() WHERE id=$1 RETURNING *`, [messageId,sendStatus,reasonCodes,providerMessageId,providerThreadId,rfcMessageId,sendExecutionKey]);
       let thread = null;
       if (sendStatus === 'PROVIDER_ACCEPTED' && result.rowCount) {
@@ -1086,6 +1267,12 @@ export class Phase7Repository {
       (outbound_message_id,event_type,rfc_message_id,provider_message_id,provider_thread_id,event_digest)
       VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(event_digest) DO NOTHING RETURNING *`,
     [requiredUuid(messageId,'message_id'),eventType,rfcMessageId,providerMessageId,providerThreadId,digest]);
+    return result.rows[0]||null;
+  }
+
+  async recordOutboundAmbiguousEvent(messageId,{provider,eventType,rfcMessageId,providerMessageId=null}={}){
+    const digest=sha256(JSON.stringify({messageId,provider,eventType,rfcMessageId,providerMessageId}));
+    const result=await this.pool.query(`INSERT INTO leadgen.outbound_ambiguous_send_events(outbound_message_id,provider,event_type,rfc_message_id,provider_message_id,evidence_digest) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(evidence_digest) DO NOTHING RETURNING *`,[requiredUuid(messageId,'message_id'),provider,eventType,rfcMessageId,providerMessageId,digest]);
     return result.rows[0]||null;
   }
 
@@ -1111,6 +1298,33 @@ export class Phase7Repository {
       last_success_at=CASE WHEN EXCLUDED.last_status='COMPLETED' THEN now() ELSE leadgen.gmail_mailbox_checkpoints.last_success_at END,
       last_status=EXCLUDED.last_status,last_error_code=EXCLUDED.last_error_code,updated_at=now() RETURNING *`,[hash,historyId,status,errorCode]);
     return result.rows[0];
+  }
+
+  async getImapCheckpoint(mailbox,folder){
+    return(await this.pool.query(`SELECT * FROM leadgen.imap_mailbox_checkpoints WHERE provider='SMTP' AND mailbox_identity_hash=$1 AND folder_path=$2`,[sha256(String(mailbox||'').trim().toLowerCase()),String(folder)])).rows[0]||null;
+  }
+
+  async saveImapCheckpoint(mailbox,{folder,uidvalidity,lastProcessedUid=0,highestModseq=null,status='COMPLETED'}={}){
+    return this.transaction(async client=>{
+      const mailboxHash=sha256(String(mailbox||'').trim().toLowerCase());
+      const prior=(await client.query(`SELECT * FROM leadgen.imap_mailbox_checkpoints WHERE provider='SMTP' AND mailbox_identity_hash=$1 AND folder_path=$2 FOR UPDATE`,[mailboxHash,folder])).rows[0]||null;
+      const changed=Boolean(prior&&Number(prior.uidvalidity)!==Number(uidvalidity));
+      const row=(await client.query(`INSERT INTO leadgen.imap_mailbox_checkpoints(provider,mailbox_identity_hash,folder_path,uidvalidity,last_processed_uid,highest_modseq,checkpoint_status,reset_count,last_sync_at,last_success_at)
+        VALUES('SMTP',$1,$2,$3,$4,$5,$6,0,now(),CASE WHEN $6='ACTIVE' THEN now() END)
+        ON CONFLICT(provider,mailbox_identity_hash,folder_path) DO UPDATE SET uidvalidity=EXCLUDED.uidvalidity,last_processed_uid=EXCLUDED.last_processed_uid,highest_modseq=EXCLUDED.highest_modseq,
+          checkpoint_status=CASE WHEN leadgen.imap_mailbox_checkpoints.uidvalidity<>EXCLUDED.uidvalidity THEN 'RESET_RESCAN' ELSE EXCLUDED.checkpoint_status END,
+          reset_count=leadgen.imap_mailbox_checkpoints.reset_count+CASE WHEN leadgen.imap_mailbox_checkpoints.uidvalidity<>EXCLUDED.uidvalidity THEN 1 ELSE 0 END,last_sync_at=now(),last_success_at=CASE WHEN $6='ACTIVE' THEN now() ELSE leadgen.imap_mailbox_checkpoints.last_success_at END,updated_at=now() RETURNING *`,
+      [mailboxHash,folder,Number(uidvalidity),Number(lastProcessedUid)||0,highestModseq,status==='COMPLETED'?'ACTIVE':'ERROR'])).rows[0];
+      const eventType=!prior?'CREATED':changed?'UIDVALIDITY_RESET':status==='COMPLETED'?'ADVANCED':'SYNC_FAILED';
+      const digest=sha256(JSON.stringify({checkpointId:row.id,eventType,priorUidvalidity:prior?.uidvalidity||null,uidvalidity:Number(uidvalidity),priorUid:prior?.last_processed_uid||null,uid:Number(lastProcessedUid)||0}));
+      await client.query(`INSERT INTO leadgen.imap_checkpoint_events(checkpoint_id,event_type,prior_uidvalidity,current_uidvalidity,prior_uid,current_uid,event_digest) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(event_digest) DO NOTHING`,[row.id,eventType,prior?.uidvalidity||null,Number(uidvalidity),prior?.last_processed_uid||null,Number(lastProcessedUid)||0,digest]);
+      return{...row,uidvalidity_changed:changed};
+    });
+  }
+
+  async recordImapReceipt(input){
+    const result=await this.pool.query(`INSERT INTO leadgen.imap_message_receipts(mailbox_identity_hash,folder_path,uidvalidity,imap_uid,internet_message_id,webhook_inbox_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(mailbox_identity_hash,folder_path,uidvalidity,imap_uid) DO NOTHING RETURNING *`,[input.mailbox_identity_hash,input.folder_path,input.uidvalidity,input.uid,input.internet_message_id||null,input.webhook_inbox_id||null]);
+    return{receipt:result.rows[0]||null,replay:!result.rowCount};
   }
 
   async persistWebhook(input) {
@@ -1147,8 +1361,9 @@ export class Phase7Repository {
       const bare=clean.replace(/^<|>$/g,'');return[clean,bare,`<${bare}>`];
     }))];
     if(!values.length)return null;
-    const result=await this.pool.query(`SELECT * FROM leadgen.outbound_messages
-      WHERE rfc_message_id=ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`,[values]);
+    const result=await this.pool.query(`SELECT m.*,r.normalized_recipient FROM leadgen.outbound_messages m
+      JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+      WHERE m.rfc_message_id=ANY($1::text[]) ORDER BY m.created_at DESC LIMIT 1`,[values]);
     return result.rows[0]||null;
   }
 
@@ -1164,11 +1379,11 @@ export class Phase7Repository {
     return this.transaction(async client => {
       const result = await client.query(`INSERT INTO leadgen.inbound_messages
         (provider,provider_message_id,webhook_inbox_id,thread_id,correlation_status,from_address_hash,
-         subject_sanitized,body_text_sanitized,attachment_status,received_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         subject_sanitized,body_text_sanitized,attachment_status,received_at,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,header_classification,correlation_outbound_message_id,correlation_method,correlation_evidence_digest)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19)
         ON CONFLICT(provider,provider_message_id) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id RETURNING *`,
       [input.provider,input.provider_message_id,input.webhook_inbox_id,input.thread_id,input.correlation_status,
-        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at]);
+        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at,input.mailbox_identity_hash||null,input.folder_path||null,input.imap_uidvalidity||null,input.imap_uid||null,input.internet_message_id||null,JSON.stringify(input.header_classification||{}),input.correlation_outbound_message_id||null,input.correlation_method||null,input.correlation_evidence_digest||null]);
       if (input.thread_id) {
         await client.query(`UPDATE leadgen.outreach_threads SET thread_status='REPLIED',last_message_at=$2,updated_at=now()
           WHERE id=$1 AND thread_status='OPEN'`, [input.thread_id,input.received_at]);
@@ -1179,10 +1394,9 @@ export class Phase7Repository {
 
   async createReplyClassification(input) {
     const result = await this.pool.query(`INSERT INTO leadgen.reply_classifications
-      (inbound_message_id,intent,confidence,review_status,classifier_version,reason_codes)
-      VALUES($1,$2,$3,$4,$5,$6::text[]) RETURNING *`, [input.inbound_message_id,input.intent,input.confidence,
-      input.review_status,input.classifier_version,input.reason_codes]);
-    return result.rows[0];
+      (inbound_message_id,intent,confidence,review_status,classifier_version,reason_codes,reply_category,classification_revision)
+      VALUES($1,$2,$3,$4,$5,$6::text[],$7,$8) ON CONFLICT(inbound_message_id,classifier_version,classification_revision) DO NOTHING RETURNING *`, [input.inbound_message_id,input.intent,input.confidence,input.review_status,input.classifier_version,input.reason_codes,input.reply_category||'UNKNOWN_REVIEW',input.classification_revision||1]);
+    return result.rows[0]||(await this.pool.query(`SELECT * FROM leadgen.reply_classifications WHERE inbound_message_id=$1 AND classifier_version=$2 AND classification_revision=$3`,[input.inbound_message_id,input.classifier_version,input.classification_revision||1])).rows[0];
   }
 
   async createSalesTask(input) {
@@ -1208,9 +1422,81 @@ export class Phase7Repository {
     return { outbox:existing.rows[0],replay:true };
   }
 
+  async applyInboundCrmEffects(input){
+    return this.transaction(async client=>{
+      const baseKey=input.effect_key;const activityKey=`${baseKey}:activity:${input.activity_type}`;
+      const activity=(await client.query(`INSERT INTO leadgen.opportunity_activities(company_id,opportunity_snapshot_id,inbound_message_id,classification_id,activity_type,owner_identity,due_at,details,idempotency_key)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,input.opportunity_snapshot_id||null,input.inbound_message_id,input.classification_id,input.activity_type,input.owner||null,input.due_at||null,JSON.stringify(input.details||{}),activityKey])).rows[0]||null;
+      if(activity&&input.opportunity_snapshot_id)await client.query(`INSERT INTO leadgen.opportunity_crm_states(opportunity_snapshot_id,company_id,funnel_status,owner_identity,next_action,next_action_due_at,source_inbound_message_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(opportunity_snapshot_id) DO UPDATE SET funnel_status=EXCLUDED.funnel_status,owner_identity=coalesce(EXCLUDED.owner_identity,leadgen.opportunity_crm_states.owner_identity),next_action=EXCLUDED.next_action,next_action_due_at=EXCLUDED.next_action_due_at,source_inbound_message_id=EXCLUDED.source_inbound_message_id,version=leadgen.opportunity_crm_states.version+1,updated_at=now()`,[input.opportunity_snapshot_id,input.company_id,input.funnel_status,input.owner||null,input.next_action||null,input.due_at||null,input.inbound_message_id]);
+      if(activity&&input.close_followups)await client.query(`UPDATE leadgen.sales_tasks SET task_status='CANCELLED',closed_at=now(),close_reason='OPT_OUT',updated_at=now() WHERE thread_id=$1 AND task_status IN('OPEN','IN_PROGRESS')`,[input.thread_id]);
+      let task=null;if(input.task){task=(await client.query(`INSERT INTO leadgen.sales_tasks(company_id,thread_id,inbound_message_id,task_type,task_status,owner,due_at,details,opportunity_snapshot_id,classification_id,effect_key)
+        VALUES($1,$2,$3,$4,'OPEN',$5,$6,$7::jsonb,$8,$9,$10) ON CONFLICT(effect_key) WHERE effect_key IS NOT NULL DO NOTHING RETURNING *`,[input.company_id,input.thread_id,input.inbound_message_id,input.task.task_type,input.owner||null,input.due_at||null,JSON.stringify(input.task.details||{}),input.opportunity_snapshot_id||null,input.classification_id,`${baseKey}:task`])).rows[0]||null;}
+      const payload={activity_id:activity?.id||null,inbound_message_id:input.inbound_message_id,classification_id:input.classification_id,opportunity_snapshot_id:input.opportunity_snapshot_id||null,activity_type:input.activity_type,funnel_status:input.funnel_status,owner:input.owner||null,due_at:input.due_at||null};
+      const activityOutbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,task_id,operation,payload,idempotency_key,sync_status,next_attempt_at) VALUES($1,NULL,'UPDATE_ACTIVITY',$2::jsonb,$3,'PENDING',now()) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,JSON.stringify(payload),`${baseKey}:crm:activity`])).rows[0]||null;
+      let taskOutbox=null;if(task)taskOutbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,task_id,operation,payload,idempotency_key,sync_status,next_attempt_at) VALUES($1,$2,'CREATE_TASK',$3::jsonb,$4,'PENDING',now()) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,task.id,JSON.stringify({task_id:task.id,task_type:task.task_type,due_at:task.due_at,source:'INBOUND_FOLLOWUP'}),`${baseKey}:crm:task`])).rows[0]||null;
+      return{activity,task,outboxes:[activityOutbox,taskOutbox].filter(Boolean),replay:!activity&&!task&&!activityOutbox&&!taskOutbox};
+    });
+  }
+
   async getCrmOutbox(id) {
     const result=await this.pool.query('SELECT * FROM leadgen.crm_sync_outbox WHERE id=$1',[requiredUuid(id,'outbox_id')]);
     return result.rows[0]||null;
+  }
+
+  async enqueueControlledCrmEffects(contextId){
+    requiredUuid(contextId,'controlled_context_id');
+    const result=await this.pool.query(`INSERT INTO leadgen.crm_sync_outbox
+      (company_id,record_scope,controlled_context_id,controlled_inbound_message_id,operation,payload,idempotency_key,sync_status,next_attempt_at)
+      SELECT NULL,'CONTROLLED',i.context_id,i.id,'UPDATE_ACTIVITY',jsonb_build_object('classification_revision',i.classification_revision),
+        'controlled-crm:'||i.context_id::text||':'||i.id::text||':'||i.classification_revision::text,'PENDING',now()
+      FROM leadgen.controlled_application_inbound_messages i WHERE i.context_id=$1 AND i.classification_revision IS NOT NULL
+      ON CONFLICT(idempotency_key) DO NOTHING RETURNING id`,[contextId]);
+    const rows=await this.pool.query(`SELECT id,sync_status FROM leadgen.crm_sync_outbox WHERE record_scope='CONTROLLED' AND controlled_context_id=$1 ORDER BY created_at,id`,[contextId]);
+    return{created:result.rowCount,items:rows.rows};
+  }
+
+  async processControlledCrmOutbox(id){
+    return this.transaction(async client=>{
+      const candidate=(await client.query(`SELECT controlled_context_id FROM leadgen.crm_sync_outbox WHERE id=$1 AND record_scope='CONTROLLED'`,[requiredUuid(id,'outbox_id')])).rows[0];
+      if(!candidate)throw notFound('Controlled CRM item not found','CONTROLLED_CRM_NOT_FOUND');
+      const context=(await client.query(`SELECT * FROM leadgen.controlled_application_contexts WHERE id=$1 FOR UPDATE`,[candidate.controlled_context_id])).rows[0];
+      const outbox=(await client.query(`SELECT * FROM leadgen.crm_sync_outbox WHERE id=$1 FOR UPDATE`,[id])).rows[0];
+      if(outbox.sync_status==='SYNCED')return{status:'SYNCED',outbox_id:id,replay:true,network_calls:0};
+      if(outbox.record_scope!=='CONTROLLED'||outbox.company_id!==null||outbox.controlled_context_id!==context.id)throw new Error('CONTROLLED_CRM_SCOPE_MISMATCH');
+      const inbound=(await client.query(`SELECT * FROM leadgen.controlled_application_inbound_messages WHERE id=$1 AND context_id=$2`,[outbox.controlled_inbound_message_id,context.id])).rows[0];
+      if(!inbound||Number(inbound.classification_revision)!==Number(outbox.payload?.classification_revision))throw new Error('CONTROLLED_CRM_CLASSIFICATION_STALE');
+      const category=inbound.reply_category;
+      const activityType=category==='OPT_OUT'?'OPTED_OUT':category==='BOUNCE_DSN'?'BOUNCED':
+        ['AUTO_REPLY','OUT_OF_OFFICE'].includes(category)?'AUTO_REPLY':category==='UNKNOWN_REVIEW'?'FOLLOW_UP_REQUIRED':'REPLIED';
+      const review=!['OPT_OUT','BOUNCE_DSN','AUTO_REPLY','OUT_OF_OFFICE'].includes(category);
+      const dueAt=review?new Date(new Date(inbound.received_at).getTime()+86400000):null;
+      const suppressed=(await client.query(`SELECT EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions WHERE context_id=$1 AND lifted_at IS NULL)
+        OR EXISTS(SELECT 1 FROM leadgen.controlled_application_inbound_messages WHERE context_id=$1 AND reply_category='OPT_OUT') blocked`,[context.id])).rows[0].blocked;
+      await client.query(`INSERT INTO leadgen.opportunity_activities
+        (company_id,record_scope,controlled_context_id,controlled_inbound_message_id,activity_type,owner_identity,due_at,details,idempotency_key)
+        VALUES(NULL,'CONTROLLED',$1,$2,$3,$4,$5,$6::jsonb,$7) ON CONFLICT(idempotency_key) DO NOTHING`,
+        [context.id,inbound.id,activityType,context.created_by,dueAt,JSON.stringify({reply_category:category,occurred_at:inbound.received_at}),`${outbox.idempotency_key}:activity`]);
+      if(review)await client.query(`INSERT INTO leadgen.sales_tasks
+        (company_id,record_scope,controlled_context_id,controlled_inbound_message_id,task_type,task_status,owner,due_at,details,effect_key,closed_at,close_reason)
+        VALUES(NULL,'CONTROLLED',$1,$2,'REPLY_REVIEW',$3,$4,$5,'{}'::jsonb,$6,CASE WHEN $7 THEN now() END,CASE WHEN $7 THEN 'OPT_OUT' END)
+        ON CONFLICT(effect_key) WHERE effect_key IS NOT NULL DO NOTHING`,[context.id,inbound.id,suppressed?'CANCELLED':'OPEN',context.created_by,dueAt,`${outbox.idempotency_key}:task`,suppressed]);
+      if(suppressed)await client.query(`UPDATE leadgen.sales_tasks SET task_status='CANCELLED',closed_at=coalesce(closed_at,now()),close_reason='OPT_OUT',updated_at=now()
+        WHERE record_scope='CONTROLLED' AND controlled_context_id=$1 AND task_status IN('OPEN','IN_PROGRESS')`,[context.id]);
+      await client.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='SYNCED',attempt_count=attempt_count+1,last_error=NULL,next_attempt_at=NULL,updated_at=now() WHERE id=$1`,[id]);
+      return{status:'SYNCED',outbox_id:id,replay:false,network_calls:0};
+    });
+  }
+
+  async getControlledCrmState(contextId){
+    const [activities,tasks,outbox]=await Promise.all([
+      this.pool.query(`SELECT id,activity_type,owner_identity,due_at,created_at FROM leadgen.opportunity_activities WHERE record_scope='CONTROLLED' AND controlled_context_id=$1 ORDER BY created_at,id`,[contextId]),
+      this.pool.query(`SELECT id,task_type,task_status,owner,due_at,closed_at,close_reason FROM leadgen.sales_tasks WHERE record_scope='CONTROLLED' AND controlled_context_id=$1 ORDER BY created_at,id`,[contextId]),
+      this.pool.query(`SELECT id,sync_status,created_at,updated_at FROM leadgen.crm_sync_outbox WHERE record_scope='CONTROLLED' AND controlled_context_id=$1 ORDER BY created_at,id`,[contextId])]);
+    const task=tasks.rows.find(row=>['OPEN','IN_PROGRESS'].includes(row.task_status))||tasks.rows.at(-1);
+    const stopped=task?.task_status==='CANCELLED'||activities.rows.some(row=>row.activity_type==='OPTED_OUT');
+    return{activities:activities.rows,tasks:tasks.rows,outbox:outbox.rows,status:outbox.rows.length&&outbox.rows.every(row=>row.sync_status==='SYNCED')?'SYNCED':'PENDING',
+      owner:task?.owner||activities.rows.at(-1)?.owner_identity||null,next_action:stopped?'STOP_CONTACT':task?'REVIEW_REPLY':null,due_at:stopped?null:task?.due_at||null};
   }
 
   async claimCrmOutbox(id) {
@@ -1219,7 +1505,14 @@ export class Phase7Repository {
       if(!current.rowCount)throw notFound('CRM outbox item not found','CRM_OUTBOX_NOT_FOUND');
       const row=current.rows[0];
       if(['SYNCED','PERMANENT_ERROR','CANCELLED'].includes(row.sync_status))return{outbox:row,claimed:false};
-      if(row.sync_status==='PROCESSING')return{outbox:row,claimed:false};
+      if(row.sync_status==='PROCESSING'){
+        if(new Date(row.updated_at).getTime()<Date.now()-300000){
+          const held=await client.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='PERMANENT_ERROR',
+            last_error='CRM_STALE_PROCESSING_RECONCILIATION_REQUIRED',next_attempt_at=NULL,updated_at=now() WHERE id=$1 RETURNING *`,[id]);
+          return{outbox:held.rows[0],claimed:false};
+        }
+        return{outbox:row,claimed:false};
+      }
       if(row.next_attempt_at&&new Date(row.next_attempt_at)>new Date())return{outbox:row,claimed:false};
       const claimed=await client.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='PROCESSING',
         attempt_count=attempt_count+1,updated_at=now(),last_error=NULL WHERE id=$1 RETURNING *`,[id]);
@@ -1260,29 +1553,34 @@ export class Phase7Repository {
       attempt_count=attempt_count+1,last_error=$2,updated_at=now() WHERE id=$1 RETURNING *`,[id,String(error||'QUEUE_DISPATCH_FAILED').slice(0,1000)])).rows[0];
   }
 
-  async findInboundThread({ references = [], replyToken = null, sender = null } = {}) {
-    const cleanReferences = [...new Set((references || []).map(value=>String(value||'').replace(/[<>]/g,'').trim()).filter(Boolean))];
-    const result = await this.pool.query(`SELECT t.id,t.company_id,t.recipient_id,
-      CASE WHEN m.provider_message_id=ANY($1::text[]) THEN 'MESSAGE_HEADERS'
-           WHEN t.thread_token=$2 THEN 'REPLY_TO_TOKEN'
-           WHEN lower(r.normalized_recipient)=lower($3) THEN 'SENDER_ACTIVE_THREAD' END correlation_method
+  async findInboundThread({ inReplyTo = null, references = [], messageKey = null, providerThreadId = null } = {}) {
+    const variants=value=>{const bare=String(value||'').replace(/[<>]/g,'').trim();return bare?[bare,`<${bare}>`]:[];};
+    const replyValues=[...new Set(variants(inReplyTo))];const referenceValues=[...new Set((references||[]).flatMap(variants))];
+    const result = await this.pool.query(`SELECT t.id,t.company_id,t.recipient_id,m.id outbound_message_id,
+      CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 'IN_REPLY_TO'
+           WHEN m.rfc_message_id=ANY($2::text[]) THEN 'REFERENCES'
+           WHEN m.message_key_header=$3 THEN 'MESSAGE_KEY'
+           WHEN m.provider_thread_id=$4 THEN 'PROVIDER_THREAD' END correlation_method
       FROM leadgen.outreach_threads t
       JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
       LEFT JOIN leadgen.outbound_messages m ON m.company_id=t.company_id AND m.recipient_id=t.recipient_id
       WHERE t.thread_status IN('OPEN','REPLIED','MANUAL_TAKEOVER') AND (
-        (cardinality($1::text[])>0 AND m.provider_message_id=ANY($1::text[])) OR
-        ($2::text IS NOT NULL AND t.thread_token=$2) OR
-        ($3::text IS NOT NULL AND lower(r.normalized_recipient)=lower($3)))
-      ORDER BY CASE WHEN m.provider_message_id=ANY($1::text[]) THEN 1 WHEN t.thread_token=$2 THEN 2 ELSE 3 END,
-        t.updated_at DESC LIMIT 1`, [cleanReferences,replyToken||null,sender||null]);
+        m.rfc_message_id=ANY($1::text[]) OR m.rfc_message_id=ANY($2::text[]) OR m.message_key_header=$3 OR m.provider_thread_id=$4)
+      ORDER BY CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 1 WHEN m.rfc_message_id=ANY($2::text[]) THEN 2 WHEN m.message_key_header=$3 THEN 3 ELSE 4 END,t.updated_at DESC LIMIT 1`,[replyValues,referenceValues,messageKey||null,providerThreadId||null]);
     return result.rows[0] || null;
   }
 
   async getInboundForTask(id) {
     const result = await this.pool.query(`SELECT i.*,t.company_id,t.recipient_id,t.thread_status,
-      c.intent,c.confidence,c.reason_codes classification_reason_codes
+      c.id classification_id,c.intent,c.reply_category,c.classification_revision,c.confidence,c.reason_codes classification_reason_codes,
+      o.id opportunity_snapshot_id,coalesce(q.owner_identity,me.actor_identity) owner_identity
       FROM leadgen.inbound_messages i
       LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
+      LEFT JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
+      LEFT JOIN leadgen.outreach_eligibility_snapshots s ON s.id=r.eligibility_snapshot_id
+      LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=t.company_id AND o.product_profile=s.product_profile
+      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=t.company_id AND q.product_profile=s.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
+      LEFT JOIN leadgen.business_opportunity_management_events me ON me.id=q.management_event_id
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x
         WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)c ON true
       WHERE i.id=$1`, [requiredUuid(id,'inbound_message_id')]);
@@ -1314,21 +1612,43 @@ export class Phase7Repository {
   async suppressRecipientForMessage(messageId, suppressionType, sourceEventId, { companyWide = false } = {}) {
     return this.transaction(async client => {
       const recipient = await client.query(`SELECT m.company_id,r.contact_id,r.decision_maker_contact_id,r.normalized_recipient
-        FROM leadgen.outbound_messages m JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id WHERE m.id=$1`, [messageId]);
+        FROM leadgen.outbound_messages m JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+        WHERE m.id=$1 FOR UPDATE OF r`, [messageId]);
       if (!recipient.rowCount) return null;
       const row=recipient.rows[0];
       const result=await client.query(`INSERT INTO leadgen.contact_suppressions
         (company_id,contact_id,decision_maker_contact_id,normalized_recipient_hash,suppression_type,
          reason,source_event_id,recorded_by)
         VALUES($1,$2,$3,CASE WHEN $2::uuid IS NULL AND $3::uuid IS NULL THEN $4 ELSE NULL END,$5,$5,$6,'PROVIDER_EVENT')
-        ON CONFLICT DO NOTHING RETURNING *`, [row.company_id,row.contact_id,row.decision_maker_contact_id,
+      ON CONFLICT DO NOTHING RETURNING *`, [row.company_id,row.contact_id,row.decision_maker_contact_id,
         sha256(row.normalized_recipient),suppressionType,sourceEventId]);
+      const recipientHash=sha256(row.normalized_recipient);
+      if(['OPT_OUT','HARD_BOUNCE','COMPLAINT','MANUAL'].includes(suppressionType))await client.query(`INSERT INTO leadgen.outreach_recipient_suppressions
+        (company_id,normalized_recipient_hash,suppression_type,recorded_by)
+        VALUES($1,$2,$3,'PROVIDER_EVENT') ON CONFLICT DO NOTHING`,[row.company_id,recipientHash,suppressionType]);
       if (suppressionType === 'COMPLAINT') {
         await client.query(`INSERT INTO leadgen.company_suppressions(company_id,suppression_type,reason)
           VALUES($1,'DO_NOT_CONTACT','Provider complaint') ON CONFLICT DO NOTHING`, [row.company_id]);
       } else if (suppressionType === 'OPT_OUT' && companyWide) {
         await client.query(`INSERT INTO leadgen.company_suppressions(company_id,suppression_type,reason)
           VALUES($1,'OPT_OUT','Explicit company-wide opt-out') ON CONFLICT DO NOTHING`, [row.company_id]);
+      }
+      await client.query(`UPDATE leadgen.outreach_recipients SET lifecycle_status='SUPPRESSED',
+        consent_status=CASE WHEN $3='OPT_OUT' THEN 'OPTED_OUT' ELSE consent_status END,updated_at=now()
+        WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)`,[row.company_id,row.normalized_recipient,suppressionType]);
+      await client.query(`UPDATE leadgen.outreach_drafts SET draft_status='CANCELLED',updated_at=now()
+        WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2))
+          AND draft_status IN('DRAFT','INVALID_DRAFT','PENDING_REVIEW','NEEDS_CHANGES','APPROVED')`,[row.company_id,row.normalized_recipient]);
+      await client.query(`UPDATE leadgen.outbound_messages SET send_status='CANCELLED',
+        reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY[$3]::text[])),updated_at=now()
+        WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2))
+          AND send_status IN('QUEUED','BLOCKED')`,[row.company_id,row.normalized_recipient,`${suppressionType}_SUPPRESSED`]);
+      if(suppressionType==='COMPLAINT'||(suppressionType==='OPT_OUT'&&companyWide)){
+        await client.query(`UPDATE leadgen.outreach_drafts SET draft_status='CANCELLED',updated_at=now()
+          WHERE company_id=$1 AND draft_status IN('DRAFT','INVALID_DRAFT','PENDING_REVIEW','NEEDS_CHANGES','APPROVED')`,[row.company_id]);
+        await client.query(`UPDATE leadgen.outbound_messages SET send_status='CANCELLED',
+          reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY['COMPANY_SUPPRESSED']::text[])),updated_at=now()
+          WHERE company_id=$1 AND send_status IN('QUEUED','BLOCKED')`,[row.company_id]);
       }
       return result.rows[0]||null;
     });
@@ -1338,16 +1658,21 @@ export class Phase7Repository {
     return this.transaction(async client => {
       const recipient=await client.query(`SELECT t.company_id,r.contact_id,r.decision_maker_contact_id,r.normalized_recipient,t.id thread_id
         FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
-        JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id WHERE i.id=$1 FOR UPDATE OF t`, [inboundMessageId]);
+        JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id WHERE i.id=$1 FOR UPDATE OF t,r`, [inboundMessageId]);
       if(!recipient.rowCount)return null;
       const row=recipient.rows[0];
       const inserted=await client.query(`INSERT INTO leadgen.contact_suppressions
         (company_id,contact_id,decision_maker_contact_id,normalized_recipient_hash,suppression_type,reason,recorded_by)
         VALUES($1,$2,$3,CASE WHEN $2::uuid IS NULL AND $3::uuid IS NULL THEN $4 ELSE NULL END,'OPT_OUT','OPT_OUT','INBOUND_REPLY')
         ON CONFLICT DO NOTHING RETURNING *`, [row.company_id,row.contact_id,row.decision_maker_contact_id,sha256(row.normalized_recipient)]);
+      const recipientHash=sha256(row.normalized_recipient);
+      await client.query(`INSERT INTO leadgen.outreach_recipient_suppressions(company_id,normalized_recipient_hash,suppression_type,source_inbound_message_id,recorded_by) VALUES($1,$2,'OPT_OUT',$3,'INBOUND_REPLY') ON CONFLICT DO NOTHING`,[row.company_id,recipientHash,inboundMessageId]);
       if(companyWide)await client.query(`INSERT INTO leadgen.company_suppressions(company_id,suppression_type,reason)
         VALUES($1,'OPT_OUT','Explicit company-wide opt-out') ON CONFLICT DO NOTHING`,[row.company_id]);
       await client.query(`UPDATE leadgen.outreach_threads SET thread_status='SUPPRESSED',updated_at=now() WHERE id=$1`,[row.thread_id]);
+      await client.query(`UPDATE leadgen.outreach_recipients SET lifecycle_status='SUPPRESSED',consent_status='OPTED_OUT',updated_at=now() WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)`,[row.company_id,row.normalized_recipient]);
+      await client.query(`UPDATE leadgen.outreach_drafts SET draft_status='CANCELLED',updated_at=now() WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)) AND draft_status IN('DRAFT','INVALID_DRAFT','PENDING_REVIEW','NEEDS_CHANGES','APPROVED')`,[row.company_id,row.normalized_recipient]);
+      await client.query(`UPDATE leadgen.outbound_messages SET send_status='CANCELLED',reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY['OPT_OUT_SUPPRESSED']::text[])),updated_at=now() WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)) AND send_status IN('QUEUED','BLOCKED')`,[row.company_id,row.normalized_recipient]);
       return inserted.rows[0]||null;
     });
   }
@@ -1684,6 +2009,202 @@ export class Phase7Repository {
         WHERE id=$1 RETURNING *`, [id]);
       return { import: mapImportStatus(committed.rows[0]), replay:false, mutations,
         affected_company_ids:[...new Set([...autoEvidenceCompanies,...affectedCompanies])] };
+    });
+  }
+
+  async createControlledApplicationContext(input){
+    const result=await this.pool.query(`INSERT INTO leadgen.controlled_application_contexts
+      (context_label,recipient_hash,provider,provider_purpose,sender_identity,reply_to,max_messages,snapshot_hash,created_by)
+      VALUES($1,$2,'SMTP',$3,$4,$5,$6,$7,$8)
+      ON CONFLICT(recipient_hash,snapshot_hash) DO UPDATE SET updated_at=leadgen.controlled_application_contexts.updated_at
+      RETURNING *`,[input.context_label,input.recipient_hash,input.provider_purpose,input.sender_identity,input.reply_to,
+      input.max_messages,input.snapshot_hash,input.created_by]);
+    return result.rows[0];
+  }
+
+  async getControlledApplicationContext(id){
+    const context=(await this.pool.query(`SELECT c.*,
+      EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions s WHERE s.recipient_hash=c.recipient_hash AND s.lifted_at IS NULL) suppressed,
+      (SELECT count(*)::int FROM leadgen.controlled_application_messages m WHERE m.context_id=c.id AND m.send_status IN('QUEUED','SENDING','PROVIDER_ACCEPTED','AMBIGUOUS')) reserved_messages
+      FROM leadgen.controlled_application_contexts c WHERE c.id=$1`,[requiredUuid(id,'controlled_context_id')])).rows[0];
+    if(!context)return null;
+    const [approvals,drafts,messages,activities]=await Promise.all([
+      this.pool.query(`SELECT id,context_id,draft_id,approval_stage,draft_version,binding_digest,decision,approver_identity,approver_role,reason,approved_at FROM leadgen.controlled_application_approvals WHERE context_id=$1 ORDER BY approved_at,id`,[id]),
+      this.pool.query(`SELECT * FROM leadgen.controlled_application_drafts WHERE context_id=$1 ORDER BY version,id`,[id]),
+      this.pool.query(`SELECT id,context_id,draft_id,provider,provider_purpose,idempotency_key,rfc_message_id,message_key_header,send_status,provider_message_id,reason_codes,sent_at,created_at,updated_at FROM leadgen.controlled_application_messages WHERE context_id=$1 ORDER BY created_at,id`,[id]),
+      this.pool.query(`SELECT id,context_id,inbound_message_id,activity_type,idempotency_key,occurred_at,created_at FROM leadgen.controlled_application_activities WHERE context_id=$1 ORDER BY occurred_at,id`,[id])]);
+    return{...context,approvals:approvals.rows,drafts:drafts.rows,messages:messages.rows,activities:activities.rows};
+  }
+
+  async listControlledApplicationContexts(limit=20){
+    const result=await this.pool.query(`SELECT id,context_label,provider,provider_purpose,max_messages,context_status,snapshot_hash,created_by,created_at,updated_at,closed_at
+      FROM leadgen.controlled_application_contexts ORDER BY created_at DESC,id DESC LIMIT $1`,[Math.max(1,Math.min(100,Number(limit)||20))]);
+    return result.rows;
+  }
+
+  async approveControlledApplicationContext(id,input){
+    return this.transaction(async client=>{
+      const context=(await client.query(`SELECT * FROM leadgen.controlled_application_contexts WHERE id=$1 FOR UPDATE`,[requiredUuid(id,'controlled_context_id')])).rows[0];
+      if(!context)throw notFound('Controlled application context not found','CONTROLLED_CONTEXT_NOT_FOUND');
+      if(!['PENDING_MANAGEMENT_APPROVAL','MANAGEMENT_APPROVED'].includes(context.context_status)){const error=new Error('Controlled context is not awaiting management approval');error.code='CONTROLLED_CONTEXT_APPROVAL_FORBIDDEN';error.status=409;throw error;}
+      const approval=(await client.query(`INSERT INTO leadgen.controlled_application_approvals
+        (context_id,approval_stage,binding_digest,decision,approver_identity,approver_role,reason)
+        VALUES($1,'MANAGEMENT',$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING *`,
+      [id,input.binding_digest,input.decision,input.approver_identity,input.approver_role,input.reason])).rows[0]
+        ||(await client.query(`SELECT * FROM leadgen.controlled_application_approvals WHERE context_id=$1 AND approval_stage='MANAGEMENT' AND binding_digest=$2 AND decision=$3 ORDER BY approved_at DESC LIMIT 1`,[id,input.binding_digest,input.decision])).rows[0];
+      const status=input.decision==='APPROVED'?'MANAGEMENT_APPROVED':'CLOSED';
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status=$2,updated_at=now(),closed_at=CASE WHEN $2='CLOSED' THEN now() ELSE NULL END WHERE id=$1`,[id,status]);
+      return approval;
+    });
+  }
+
+  async createControlledApplicationDraft(id,input){
+    return this.transaction(async client=>{
+      const context=(await client.query(`SELECT * FROM leadgen.controlled_application_contexts WHERE id=$1 FOR UPDATE`,[requiredUuid(id,'controlled_context_id')])).rows[0];
+      if(!context||!['MANAGEMENT_APPROVED','DRAFT_PENDING'].includes(context.context_status))throw notFound('Management-approved controlled context not found','CONTROLLED_CONTEXT_NOT_APPROVED');
+      const version=Number((await client.query(`SELECT coalesce(max(version),0)+1 version FROM leadgen.controlled_application_drafts WHERE context_id=$1`,[id])).rows[0].version);
+      const draft=(await client.query(`INSERT INTO leadgen.controlled_application_drafts(context_id,version,subject,body_text,content_hash,created_by)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(context_id,content_hash) DO UPDATE SET updated_at=leadgen.controlled_application_drafts.updated_at RETURNING *`,
+      [id,version,input.subject,input.body_text,input.content_hash,input.created_by])).rows[0];
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status='DRAFT_PENDING',updated_at=now() WHERE id=$1`,[id]);
+      return draft;
+    });
+  }
+
+  async approveControlledApplicationDraft(contextId,draftId,input){
+    return this.transaction(async client=>{
+      const draft=(await client.query(`SELECT d.*,c.snapshot_hash,c.context_status FROM leadgen.controlled_application_drafts d JOIN leadgen.controlled_application_contexts c ON c.id=d.context_id WHERE d.id=$1 AND d.context_id=$2 FOR UPDATE OF d,c`,[requiredUuid(draftId,'controlled_draft_id'),requiredUuid(contextId,'controlled_context_id')])).rows[0];
+      if(!draft||!['DRAFT_PENDING','DRAFT_APPROVED'].includes(draft.context_status))throw notFound('Controlled draft not found','CONTROLLED_DRAFT_NOT_FOUND');
+      const approval=(await client.query(`INSERT INTO leadgen.controlled_application_approvals
+        (context_id,draft_id,approval_stage,draft_version,binding_digest,decision,approver_identity,approver_role,reason)
+        VALUES($1,$2,'DRAFT',$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING *`,
+      [contextId,draftId,draft.version,input.binding_digest,input.decision,input.approver_identity,input.approver_role,input.reason])).rows[0]
+        ||(await client.query(`SELECT * FROM leadgen.controlled_application_approvals WHERE context_id=$1 AND draft_id=$2 AND approval_stage='DRAFT' AND binding_digest=$3 AND decision=$4 ORDER BY approved_at DESC LIMIT 1`,[contextId,draftId,input.binding_digest,input.decision])).rows[0];
+      await client.query(`UPDATE leadgen.controlled_application_drafts SET draft_status=$2,updated_at=now() WHERE id=$1`,[draftId,input.decision==='APPROVED'?'APPROVED':'REJECTED']);
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status=$2,updated_at=now(),closed_at=CASE WHEN $2='CLOSED' THEN now() ELSE NULL END WHERE id=$1`,[contextId,input.decision==='APPROVED'?'DRAFT_APPROVED':'CLOSED']);
+      return approval;
+    });
+  }
+
+  async createControlledApplicationMessage(contextId,draftId,input){
+    return this.transaction(async client=>{
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('leadgen.controlled_application_send',0))`);
+      const row=(await client.query(`SELECT c.*,d.version,d.subject,d.body_text,d.content_hash,d.draft_status,
+        EXISTS(SELECT 1 FROM leadgen.controlled_application_approvals a WHERE a.context_id=c.id AND a.approval_stage='MANAGEMENT' AND a.decision='APPROVED' AND a.binding_digest=c.snapshot_hash) management_approved,
+        EXISTS(SELECT 1 FROM leadgen.controlled_application_approvals a WHERE a.context_id=c.id AND a.draft_id=d.id AND a.approval_stage='DRAFT' AND a.draft_version=d.version AND a.decision='APPROVED' AND a.binding_digest=$3) draft_approved,
+        EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions s WHERE s.recipient_hash=c.recipient_hash AND s.lifted_at IS NULL) suppressed,
+        (SELECT count(*)::int FROM leadgen.controlled_application_messages m WHERE m.send_status IN('QUEUED','SENDING','PROVIDER_ACCEPTED','AMBIGUOUS')) reserved_count
+        FROM leadgen.controlled_application_contexts c JOIN leadgen.controlled_application_drafts d ON d.context_id=c.id
+        WHERE c.id=$1 AND d.id=$2 FOR UPDATE OF c,d`,[requiredUuid(contextId,'controlled_context_id'),requiredUuid(draftId,'controlled_draft_id'),input.draft_binding_digest])).rows[0];
+      if(!row)throw notFound('Controlled draft not found','CONTROLLED_DRAFT_NOT_FOUND');
+      const reasons=[];if(row.context_status!=='DRAFT_APPROVED'||row.draft_status!=='APPROVED')reasons.push('CONTROLLED_DRAFT_NOT_APPROVED');
+      if(!row.management_approved||!row.draft_approved)reasons.push('CONTROLLED_APPROVAL_BINDING_MISMATCH');
+      if(row.suppressed)reasons.push('CONTROLLED_RECIPIENT_SUPPRESSED');
+      if(Number(row.reserved_count)>=Number(row.max_messages))reasons.push('CONTROLLED_TEST_CAP_REACHED');
+      const status=reasons.length?'BLOCKED':'QUEUED';
+      const message=(await client.query(`INSERT INTO leadgen.controlled_application_messages
+        (context_id,draft_id,provider,provider_purpose,idempotency_key,rfc_message_id,message_key_header,send_status,reason_codes)
+        VALUES($1,$2,'SMTP',$3,$4,$5,$6,$7,$8::text[]) ON CONFLICT(context_id,draft_id) DO UPDATE SET updated_at=leadgen.controlled_application_messages.updated_at RETURNING *`,
+      [contextId,draftId,row.provider_purpose,input.idempotency_key,input.rfc_message_id,input.message_key_header,status,reasons])).rows[0];
+      if(!reasons.length)await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status='SEND_QUEUED',updated_at=now() WHERE id=$1`,[contextId]);
+      return{message,reasons};
+    });
+  }
+
+  async getControlledApplicationMessage(id){
+    const result=await this.pool.query(`SELECT m.*,c.recipient_hash,c.sender_identity,c.reply_to,c.max_messages,c.context_status,c.snapshot_hash,d.subject,d.body_text,d.content_hash,d.version draft_version,
+      EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions s WHERE s.recipient_hash=c.recipient_hash AND s.lifted_at IS NULL) suppressed
+      FROM leadgen.controlled_application_messages m JOIN leadgen.controlled_application_contexts c ON c.id=m.context_id JOIN leadgen.controlled_application_drafts d ON d.id=m.draft_id WHERE m.id=$1`,[requiredUuid(id,'controlled_message_id')]);
+    return result.rows[0]||null;
+  }
+
+  async reserveControlledApplicationAttempt(messageId){
+    return this.transaction(async client=>{
+      const message=(await client.query(`SELECT m.*,c.recipient_hash FROM leadgen.controlled_application_messages m JOIN leadgen.controlled_application_contexts c ON c.id=m.context_id WHERE m.id=$1 FOR UPDATE OF m,c`,[requiredUuid(messageId,'controlled_message_id')])).rows[0];
+      if(!message)throw notFound('Controlled message not found','CONTROLLED_MESSAGE_NOT_FOUND');
+      if(message.send_status==='PROVIDER_ACCEPTED')return{...message,idempotent_replay:true};
+      const suppressed=(await client.query(`SELECT EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions s WHERE s.recipient_hash=$1 AND s.lifted_at IS NULL) blocked`,[message.recipient_hash])).rows[0]?.blocked===true;
+      if(suppressed){await client.query(`UPDATE leadgen.controlled_application_messages SET send_status='CANCELLED',reason_codes=ARRAY['CONTROLLED_RECIPIENT_SUPPRESSED'],updated_at=now() WHERE id=$1`,[messageId]);return{...message,suppression_blocked:true};}
+      if(message.send_status==='SENDING'){
+        const existing=(await client.query(`SELECT * FROM leadgen.controlled_application_attempts WHERE message_id=$1 ORDER BY attempt_number DESC LIMIT 1 FOR UPDATE`,[messageId])).rows[0];
+        if(existing?.provider_call_started_at){await client.query(`UPDATE leadgen.controlled_application_messages SET send_status='AMBIGUOUS',reason_codes=ARRAY['CONTROLLED_SEND_MANUAL_HOLD'],updated_at=now() WHERE id=$1`,[messageId]);await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status='SEND_AMBIGUOUS',updated_at=now() WHERE id=$1`,[message.context_id]);return{...message,ambiguous_hold:true,attempt_id:existing.id};}
+        return{...message,send_in_progress:true,attempt_id:existing?.id||null};
+      }
+      if(message.send_status!=='QUEUED')return{...message,blocked:true};
+      const number=Number((await client.query(`SELECT coalesce(max(attempt_number),0)+1 number FROM leadgen.controlled_application_attempts WHERE message_id=$1`,[messageId])).rows[0].number);
+      const attempt=(await client.query(`INSERT INTO leadgen.controlled_application_attempts(message_id,attempt_number,attempt_status) VALUES($1,$2,'STARTED') RETURNING *`,[messageId,number])).rows[0];
+      await client.query(`UPDATE leadgen.controlled_application_messages SET send_status='SENDING',updated_at=now() WHERE id=$1`,[messageId]);
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status='SENDING',updated_at=now() WHERE id=$1`,[message.context_id]);
+      return attempt;
+    });
+  }
+
+  async markControlledApplicationProviderCallStarted(messageId,attemptId){
+    return this.transaction(async client=>{
+      const message=(await client.query(`SELECT m.*,c.recipient_hash FROM leadgen.controlled_application_messages m JOIN leadgen.controlled_application_contexts c ON c.id=m.context_id WHERE m.id=$1 FOR UPDATE OF m,c`,[requiredUuid(messageId,'controlled_message_id')])).rows[0];
+      if(!message)return{blocked:true};
+      const suppressed=(await client.query(`SELECT EXISTS(SELECT 1 FROM leadgen.controlled_application_suppressions s WHERE s.recipient_hash=$1 AND s.lifted_at IS NULL) blocked`,[message.recipient_hash])).rows[0]?.blocked===true;
+      if(suppressed){await client.query(`UPDATE leadgen.controlled_application_messages SET send_status='CANCELLED',reason_codes=ARRAY['CONTROLLED_RECIPIENT_SUPPRESSED'],updated_at=now() WHERE id=$1`,[messageId]);await client.query(`UPDATE leadgen.controlled_application_attempts SET attempt_status='BLOCKED',response_code='CONTROLLED_RECIPIENT_SUPPRESSED',completed_at=now() WHERE id=$1 AND provider_call_started_at IS NULL`,[attemptId]);return{suppression_blocked:true};}
+      const attempt=(await client.query(`UPDATE leadgen.controlled_application_attempts SET provider_call_started_at=coalesce(provider_call_started_at,now()) WHERE id=$1 AND message_id=$2 AND completed_at IS NULL RETURNING *`,[attemptId,messageId])).rows[0];
+      return attempt||{blocked:true};
+    });
+  }
+
+  async completeControlledApplicationAttempt(messageId,attemptId,result){
+    return this.transaction(async client=>{
+      const status=result.status==='PROVIDER_ACCEPTED'?'PROVIDER_ACCEPTED':result.status==='AMBIGUOUS'?'AMBIGUOUS':'FAILED';
+      const attemptStatus=status==='PROVIDER_ACCEPTED'?'ACCEPTED':status;
+      await client.query(`UPDATE leadgen.controlled_application_attempts SET attempt_status=$2,response_code=$3,completed_at=now() WHERE id=$1`,[attemptId,attemptStatus,result.code||null]);
+      const message=(await client.query(`UPDATE leadgen.controlled_application_messages SET send_status=$2,provider_message_id=$3,sent_at=CASE WHEN $2='PROVIDER_ACCEPTED' THEN now() ELSE sent_at END,reason_codes=CASE WHEN $4::text IS NULL THEN reason_codes ELSE ARRAY[$4] END,updated_at=now() WHERE id=$1 RETURNING *`,[messageId,status,result.provider_message_id||null,result.code||null])).rows[0];
+      const contextStatus=status==='PROVIDER_ACCEPTED'?'AWAITING_REPLY':status==='AMBIGUOUS'?'SEND_AMBIGUOUS':'FAILED';
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status=$2,updated_at=now() WHERE id=$1`,[message.context_id,contextStatus]);
+      return message;
+    });
+  }
+
+  async getControlledImapCheckpoint(mailboxHash,folder){
+    return (await this.pool.query(`SELECT * FROM leadgen.controlled_application_imap_checkpoints WHERE mailbox_identity_hash=$1 AND folder_path=$2`,[mailboxHash,folder])).rows[0]||null;
+  }
+
+  async saveControlledImapCheckpoint(input){
+    return (await this.pool.query(`INSERT INTO leadgen.controlled_application_imap_checkpoints(mailbox_identity_hash,folder_path,uidvalidity,last_processed_uid)
+      VALUES($1,$2,$3,$4) ON CONFLICT(mailbox_identity_hash,folder_path) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_processed_uid=excluded.last_processed_uid,updated_at=now() RETURNING *`,[input.mailbox_identity_hash,input.folder_path,input.uidvalidity,input.last_processed_uid])).rows[0];
+  }
+
+  async findControlledMessageByHeaders({messageKey,references=[]}){
+    const result=await this.pool.query(`SELECT m.*,c.recipient_hash FROM leadgen.controlled_application_messages m JOIN leadgen.controlled_application_contexts c ON c.id=m.context_id
+      WHERE ($1::text<>'' AND m.message_key_header=$1) OR m.rfc_message_id=ANY($2::text[])
+        OR (m.reason_codes @> ARRAY['CONTROLLED_SENT_EXACT_CONTENT_MATCH']::text[] AND m.provider_message_id=ANY($2::text[]))
+      ORDER BY m.created_at DESC LIMIT 1`,[String(messageKey||''),references]);
+    return result.rows[0]||null;
+  }
+
+  async recordControlledInbound(input){
+    const owner=(await this.pool.query(`SELECT recipient_hash FROM leadgen.controlled_application_contexts WHERE id=$1`,[requiredUuid(input.context_id,'controlled_context_id')])).rows[0];
+    const dsn=input.classification_input?.dsn===true;
+    if(!owner||(dsn?input.dsn_recipient_hash!==owner.recipient_hash:input.from_address_hash!==owner.recipient_hash))return{row:null,replay:false,rejected:true};
+    const result=await this.pool.query(`INSERT INTO leadgen.controlled_application_inbound_messages
+      (context_id,outbound_message_id,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,from_address_hash,dsn_recipient_hash,subject_sanitized,body_text_sanitized,classification_input,received_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13) ON CONFLICT(mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid) DO NOTHING RETURNING *`,
+    [input.context_id,input.outbound_message_id,input.mailbox_identity_hash,input.folder_path,input.imap_uidvalidity,input.imap_uid,input.internet_message_id,input.from_address_hash,input.dsn_recipient_hash,input.subject_sanitized,input.body_text_sanitized,JSON.stringify(input.classification_input||{}),input.received_at]);
+    if(result.rowCount)return{row:result.rows[0],replay:false};
+    return{row:(await this.pool.query(`SELECT * FROM leadgen.controlled_application_inbound_messages WHERE mailbox_identity_hash=$1 AND folder_path=$2 AND imap_uidvalidity=$3 AND imap_uid=$4`,[input.mailbox_identity_hash,input.folder_path,input.imap_uidvalidity,input.imap_uid])).rows[0],replay:true};
+  }
+
+  async applyControlledInbound(input){
+    return this.transaction(async client=>{
+      const inbound=(await client.query(`SELECT i.*,c.recipient_hash FROM leadgen.controlled_application_inbound_messages i JOIN leadgen.controlled_application_contexts c ON c.id=i.context_id WHERE i.id=$1 FOR UPDATE OF i,c`,[requiredUuid(input.inbound_message_id,'controlled_inbound_id')])).rows[0];
+      if(!inbound)throw notFound('Controlled inbound message not found','CONTROLLED_INBOUND_NOT_FOUND');
+      await client.query(`UPDATE leadgen.controlled_application_inbound_messages SET reply_category=$2,classification_revision=$3 WHERE id=$1`,[inbound.id,input.reply_category,input.classification_revision]);
+      const activity=(await client.query(`INSERT INTO leadgen.controlled_application_activities(context_id,inbound_message_id,activity_type,idempotency_key,occurred_at)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[inbound.context_id,inbound.id,input.activity_type,input.idempotency_key,inbound.received_at])).rows[0];
+      const hardBounce=input.activity_type==='BOUNCE_DSN'&&String(inbound.classification_input?.dsn_details?.status||'').startsWith('5.');
+      let suppression=null;if(input.activity_type==='OPT_OUT'||hardBounce)suppression=(await client.query(`INSERT INTO leadgen.controlled_application_suppressions(context_id,recipient_hash,suppression_type,source_inbound_message_id)
+        VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING *`,[inbound.context_id,inbound.recipient_hash,input.activity_type==='OPT_OUT'?'OPT_OUT':'HARD_BOUNCE',inbound.id])).rows[0]||null;
+      const status=input.activity_type==='OPT_OUT'?'OPTED_OUT':'REPLIED';
+      await client.query(`UPDATE leadgen.controlled_application_contexts SET context_status=CASE
+        WHEN context_status='OPTED_OUT' THEN context_status ELSE $2 END,updated_at=now() WHERE id=$1`,[inbound.context_id,status]);
+      return{activity,suppression,replay:!activity};
     });
   }
 

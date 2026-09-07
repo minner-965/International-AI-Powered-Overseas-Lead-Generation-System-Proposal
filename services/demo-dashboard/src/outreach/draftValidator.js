@@ -4,6 +4,7 @@ import { OUTREACH_POLICY_VERSION, unique, upper } from './constants.js';
 const REPLY_PREFIX = /^\s*(re|fw|fwd)\s*:/i;
 const INTERNAL_CANARY = /(supplier\s*(cost|price)|internal\s*(margin|profit)|raw\s*order|customer\s*note|staging\s*(path|directory)|\\\\[^\s]+\\|[a-z]:\\[^\s]+|api[_ -]?key|password|bearer\s+[a-z0-9._-]+)/i;
 const COMMERCIAL_COMMITMENT = /(\bmoq\b|minimum order|lead[ -]?time|delivery within|certif(?:ied|ication)|payment terms?|\b(?:usd|eur|aed|mxn)\s*\d|[$€]\s*\d|guarantee(?:d)?\s+(?:price|delivery|quality))/i;
+const UNSUPPORTED_PROCUREMENT_ASSERTION = /(we\s+(?:know|understand|noticed|see)\b[^.\n]{0,100}\b(?:purchas(?:e|ing)|procure(?:ment)?|sourc(?:e|ing)|buying)\b|您(?:正在|计划|有意).{0,30}(?:采购|购买|进货))/i;
 
 function asSet(values) {
   return new Set(Array.isArray(values) ? values.map(String) : []);
@@ -43,6 +44,7 @@ export function validateOutreachDraft(output = {}, contract = {}) {
   if (/<[a-z][\s\S]*>/i.test(body)) errors.push('PLAIN_TEXT_REQUIRED');
   if (INTERNAL_CANARY.test(`${subject}\n${body}`)) errors.push('RESTRICTED_INTERNAL_CONTENT');
   if (COMMERCIAL_COMMITMENT.test(removeApprovedClaimText(`${subject}\n${body}`, allowedClaims))) errors.push('UNSUPPORTED_COMMERCIAL_COMMITMENT');
+  if (UNSUPPORTED_PROCUREMENT_ASSERTION.test(`${subject}\n${body}`)) errors.push('UNSUPPORTED_PROCUREMENT_ASSERTION');
   if (contract.target_language && language !== String(contract.target_language).toLowerCase()) errors.push('LANGUAGE_POLICY_MISMATCH');
   if (contract.input_digest && String(output.input_digest || '') !== String(contract.input_digest)) errors.push('INPUT_DIGEST_MISMATCH');
 

@@ -58,7 +58,7 @@ test('B05 replay implementation locks and refreshes a company-level canonical ro
   assert.match(body,/pg_advisory_xact_lock/);
   assert.match(body,/dm\.company_id=\(SELECT company_id FROM target\)/);
   assert.match(body,/lower\(btrim\(dc\.contact_value_normalized\)\)=lower\(btrim\(\$3\)\)/);
-  assert.match(body,/UPDATE leadgen\.decision_maker_contacts SET[\s\S]*last_verified_at=\$11/);
+  assert.match(body,/UPDATE leadgen\.decision_maker_contacts SET[\s\S]*last_verified_at=CASE WHEN verification_provider='HUNTER'[\s\S]*THEN last_verified_at ELSE \$11 END/);
 });
 
 test('B05 opportunity directory excludes category matches that have no current opportunity decision',async()=>{

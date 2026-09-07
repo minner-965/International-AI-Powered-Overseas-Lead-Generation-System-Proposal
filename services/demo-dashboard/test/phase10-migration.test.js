@@ -19,7 +19,8 @@ import {applyPhase7Migration,PHASE10_CATEGORY_SCOPE_MIGRATION_KEY,
   PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY,
   PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,
   PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY,
-  PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+  PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY,
+  PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 
 const root=process.env.DPV_PROJECT_ROOT
   ? path.resolve(process.env.DPV_PROJECT_ROOT)
@@ -85,13 +86,17 @@ test('explicit migration runner applies Phase 10 migrations in order through cat
   assert.equal(PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY,'049_phase10_1_category_contact_simplification.sql');
   assert.equal(PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY,'050_phase10_1_category_status_compatibility.sql');
   assert.equal(PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY,'051_phase10_2_category_readiness_compatibility.sql');
+  assert.equal(PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY,'055_phase11_controlled_application_context.sql');
   assert.ok(runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration')>runner.indexOf('phase10ProviderAccountState=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration')>runner.indexOf('phase10EmptyResearchPurgeAudit=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration')>runner.indexOf('phase10RetireInternalTavilyEnforcement=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration')>runner.indexOf('phase10CategoryDrivenContext=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryStatusCompatibility=await applyPhase7Migration')>runner.indexOf('phase10CategoryContactSimplification=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase10CategoryReadinessCompatibility=await applyPhase7Migration')>runner.indexOf('phase10CategoryStatusCompatibility=await applyPhase7Migration'));
-  assert.match(runner,/status:phase10CategoryReadinessCompatibility\.status/);
+  assert.ok(runner.indexOf('phase11ControlledApplication=await applyPhase7Migration')>runner.indexOf('phase11SuppressionClosedLoop=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase11VersionPayloadGuard=await applyPhase7Migration')>runner.indexOf('phase11ControlledApplication=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase11ControlledSharedCrm=await applyPhase7Migration')>runner.indexOf('phase11VersionPayloadGuard=await applyPhase7Migration'));
+  assert.match(runner,/status:phase11ControlledSharedCrm\.status/);
 });
 
 test('048 moves automatic evidence identity to target category scope while preserving legacy profile metadata',()=>{

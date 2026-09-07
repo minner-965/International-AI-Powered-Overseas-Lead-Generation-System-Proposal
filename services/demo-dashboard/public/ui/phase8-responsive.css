@@ -57,6 +57,24 @@
   .crm-opportunity-primary-filters,
   .p8-form-grid,
   .crm-settings-grid { grid-template-columns: 1fr; }
+  .p11-controlled-mail .crm-panel-header,
+  .p11-controlled-layout,
+  .p11-controlled-runtime,
+  .p11-controlled-summary,
+  .p11-controlled-action { grid-template-columns: 1fr; }
+  .p11-controlled-mail .crm-panel-header { display: grid; }
+  .p11-controlled-mail .crm-panel-header .btn,
+  .p11-controlled-action .btn,
+  .p11-controlled-draft-form .btn,
+  .p11-controlled-submit .btn { width: 100%; }
+  .p11-controlled-runtime > div + div,
+  .p11-controlled-summary > div:nth-child(odd) { border-inline-start: 0; border-inline-end: 0; }
+  .p11-controlled-runtime > div + div { border-top: 1px solid var(--p8-border); }
+  .p11-controlled-summary > div:nth-last-child(-n+2) { border-bottom: 1px solid var(--p8-border); }
+  .p11-controlled-summary > div:last-child { border-bottom: 0; }
+  .p11-controlled-steps { display: flex; overflow-x: auto; scroll-snap-type: x proximity; }
+  .p11-controlled-steps li { min-width: 8.5rem; flex: 0 0 auto; scroll-snap-align: start; }
+  .p11-controlled-context { align-items: flex-start; flex-direction: column; }
   .crm-filter-group-grid { grid-template-columns: 1fr; }
   .crm-drawer { width: 100vw; max-width: none; max-height: 100dvh; margin: 0; border-radius: 0; }
   .crm-drawer-body { max-height: calc(100dvh - 9rem); padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)); }
@@ -108,3 +126,5 @@
   .crm-detail-body,
   .crm-drawer-body { overscroll-behavior: contain; }
 }
+@media(max-width:1023px){.p11-operations-flow{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767px){.p11-outreach-row{flex-wrap:wrap}.p11-outreach-row>div:first-child{flex-basis:100%}.p11-outreach-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.p11-outreach-body{padding:16px}.p11-outreach-body dl{grid-template-columns:1fr;gap:4px}.p11-outreach-body dd{margin-bottom:8px}.p11-outreach-footer{gap:8px;padding:12px}.p11-outreach-footer .btn{flex:1 1 calc(50% - 8px)}.p11-operations-flow{grid-template-columns:repeat(2,minmax(0,1fr))}}

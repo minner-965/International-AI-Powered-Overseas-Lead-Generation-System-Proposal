@@ -148,9 +148,9 @@ function csvField(value) {
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
-export function serializeCsv(headers, rows) {
+export function serializeCsv(headers, rows, headerLabels = {}) {
   const cleanHeaders = headers.map(normalizeHeader);
-  const lines = [cleanHeaders.map(csvField).join(',')];
+  const lines = [cleanHeaders.map(header=>csvField(headerLabels[header]||header)).join(',')];
   for (const row of rows) {
     lines.push(cleanHeaders.map((header) => csvField(row?.[header])).join(','));
   }

@@ -382,9 +382,9 @@ export class EnrichmentService {
         is_generic=$6,is_department=$7,
         verification_status=CASE WHEN $8='HUNTER' THEN $9 WHEN $9='VALID' THEN 'VALID'
           ELSE verification_status END,
-        verification_provider=$8,
+        verification_provider=CASE WHEN verification_provider='HUNTER' AND $8<>'HUNTER' THEN verification_provider ELSE $8 END,
         verification_score=CASE WHEN $8='HUNTER' THEN $10 ELSE verification_score END,
-        last_verified_at=$11,updated_at=now() WHERE id=$1 RETURNING *`,[
+        last_verified_at=CASE WHEN verification_provider='HUNTER' AND $8<>'HUNTER' THEN last_verified_at ELSE $11 END,updated_at=now() WHERE id=$1 RETURNING *`,[
         existing.rows[0].id,jobId,contact.contact_value_raw,contact.evidence_origin||'OFFICIAL_SITE_OBSERVED',contact.source_url,
         contact.is_generic===true,contact.is_department===true,contact.verification_provider||null,
         contact.verification_status||'NOT_VERIFIED',contact.verification_score??null,contact.last_verified_at||null
@@ -403,10 +403,12 @@ export class EnrichmentService {
           WHEN EXCLUDED.verification_provider='HUNTER' THEN EXCLUDED.verification_status
           WHEN EXCLUDED.verification_status='VALID' THEN 'VALID'
           ELSE leadgen.decision_maker_contacts.verification_status END,
-        verification_provider=EXCLUDED.verification_provider,
+        verification_provider=CASE WHEN leadgen.decision_maker_contacts.verification_provider='HUNTER' AND EXCLUDED.verification_provider<>'HUNTER'
+          THEN leadgen.decision_maker_contacts.verification_provider ELSE EXCLUDED.verification_provider END,
         verification_score=CASE WHEN EXCLUDED.verification_provider='HUNTER' THEN EXCLUDED.verification_score
           ELSE leadgen.decision_maker_contacts.verification_score END,
-        last_verified_at=EXCLUDED.last_verified_at,updated_at=now()
+        last_verified_at=CASE WHEN leadgen.decision_maker_contacts.verification_provider='HUNTER' AND EXCLUDED.verification_provider<>'HUNTER'
+          THEN leadgen.decision_maker_contacts.last_verified_at ELSE EXCLUDED.last_verified_at END,updated_at=now()
       RETURNING *`,[
       decisionMakerId,jobId,routeType,contact.contact_value_raw,value,contact.evidence_origin || 'OFFICIAL_SITE_OBSERVED',
       contact.verification_status || 'NOT_VERIFIED',contact.verification_provider || null,contact.verification_score ?? null,
@@ -485,11 +487,80 @@ export class EnrichmentService {
     } finally { client.release(); }
   }
 
+  async verifyOfficialMailboxes(job,company) {
+    const domain=domainService.getRegistrableDomain(String(company.official_root_domain||'').replace(/^live:[^:]+:/,''))
+      || domainService.getRegistrableDomain(company.website_url);
+    if(!domain)return {calls:0,used_units:0};
+    const ttl=Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30));
+    const candidates=await this.pool.query(`SELECT dc.*,EXISTS (SELECT 1 FROM leadgen.contact_verification_events v
+        WHERE v.decision_maker_contact_id=dc.id AND v.verified_at=dc.last_verified_at) verification_recorded
+      FROM leadgen.decision_maker_contacts dc
+      JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+      WHERE dm.company_id=$1 AND dm.lifecycle_status='ACTIVE'
+        AND dc.contact_type IN ('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+        AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED'
+        AND NOT EXISTS (SELECT 1 FROM leadgen.contact_suppressions s WHERE s.decision_maker_contact_id=dc.id)
+      ORDER BY dc.is_department DESC,dc.id`,[company.id]);
+    let calls=0,used_units=0;
+    const seen=new Set();
+    for(const contact of candidates.rows){
+      const email=String(contact.contact_value_normalized||'').trim().toLowerCase();
+      if(!email.includes('@') || domainService.getRegistrableDomain(`https://${email.split('@').at(-1)}`)!==domain
+        || domainService.getRegistrableDomain(contact.source_url)!==domain || seen.has(email))continue;
+      seen.add(email);
+      if(contact.verification_recorded && contact.verification_provider==='HUNTER' && ['VALID','ACCEPT_ALL','INVALID','UNKNOWN'].includes(contact.verification_status)
+        && Date.parse(contact.last_verified_at)>Date.now()-ttl*86400000)continue;
+      if(calls>=3)break;
+      let result;
+      const persist=async(results,{capturedAt})=>{
+        const verified=results?.[0];
+        if(!verified)return {referenceIds:[]};
+        await this.pool.query(`UPDATE leadgen.decision_maker_contacts SET verification_status=$2,
+          verification_provider='HUNTER',verification_score=$3,last_verified_at=$4,updated_at=now() WHERE id=$1`,
+          [contact.id,verified.verification_status,verified.verification_score??null,capturedAt]);
+        return {referenceIds:[contact.id]};
+      };
+      try{
+        result=await this.hunter.verifyEmail({researchJobId:job.id,companyId:company.id,email,persistResults:persist,
+          loadPersistedResults:async({referenceIds})=>{
+            if(!referenceIds.includes(String(contact.id)))return [];
+            const saved=await this.pool.query(`SELECT verification_status,verification_score FROM leadgen.decision_maker_contacts WHERE id=$1`,[contact.id]);
+            return saved.rows.map(row=>({...row,email}));
+          }});
+      }catch(error){
+        if(isHunterBudgetError(error))return {calls,used_units,stop_reason:'HUNTER_BUDGET_CAP',budget_reached:true};
+        throw error;
+      }
+      calls+=result.status==='SKIPPED'?0:1;
+      used_units+=Number(result.credits?.used||0);
+      if(result.error_code==='AUTHENTICATION_FAILED')return {calls,used_units,stop_reason:'HUNTER_AUTHENTICATION_FAILED'};
+      if(['TEMPORARY_ERROR','REPLAY_LOOKUP_REQUIRED'].includes(result.status))return {calls,used_units,temporary_error:true};
+      const verified=result.results?.[0];
+      if(!verified)continue;
+      const capturedAt=result.captured_at||new Date();
+      // Preserve the observed route and source; verification is a separate, traceable fact.
+      await persist([verified],{capturedAt});
+      if(result.usage_event?.id)await this.pool.query(`INSERT INTO leadgen.contact_verification_events
+        (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
+         verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
+        VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7::timestamptz,$7::timestamptz,$7::timestamptz+($8::int*interval '1 day'),$9,$9,$10)
+        ON CONFLICT (idempotency_key) DO NOTHING`,[job.id,company.id,contact.id,result.usage_event.id,
+        verified.verification_status,verified.verification_score??null,capturedAt,ttl,sha(email),sha(job.id,contact.id,result.usage_event.id,verified.verification_status)]);
+      if(verified.verification_status==='INVALID')await this.pool.query(`INSERT INTO leadgen.contact_suppressions
+        (company_id,decision_maker_contact_id,suppression_type,reason,recorded_by)
+        VALUES ($1,$2,'INVALID_EMAIL','Email verification returned INVALID','CONTACT_VERIFICATION') ON CONFLICT DO NOTHING`,[company.id,contact.id]);
+    }
+    return {calls,used_units};
+  }
+
   async applyHunter(job,company,findings,{hunterEnabled=true}={}) {
     if(!hunterEnabled)return {calls:0,used_units:0,mode:'AUTO_EVIDENCE_POLICY_DISABLED'};
     if (!this.hunter.capabilities.enabled) return { calls:0,used_units:0,mode:'DISABLED' };
-    let calls = 0;
-    let usedUnits = 0;
+    const official=(Array.isArray(findings.observed_contacts) || findings.routes?.length)
+      ? await this.verifyOfficialMailboxes(job,company) : {calls:0,used_units:0};
+    if(official.stop_reason || official.temporary_error)return {...official,mode:this.hunter.mode};
+    let calls = official.calls;
+    let usedUnits = official.used_units;
     const namedCandidates = findings.decision_makers.filter(item=>item.person_name && item.verification_status === 'VERIFIED'
       && ['BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING']
         .includes(item.normalized_role));
@@ -560,7 +631,7 @@ export class EnrichmentService {
           if(usageEventId)await client.query(`INSERT INTO leadgen.contact_verification_events
               (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
                verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
-              VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7,$7,$7+($8::int*interval '1 day'),$9,$9,$10)
+              VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7::timestamptz,$7::timestamptz,$7::timestamptz+($8::int*interval '1 day'),$9,$9,$10)
               ON CONFLICT (idempotency_key) DO NOTHING`,[
               job.id,company.id,contact.id,usageEventId,verificationStatus,verified?.verification_score ?? found.verification_score ?? null,
               capturedAt,Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30)),inputDigest,

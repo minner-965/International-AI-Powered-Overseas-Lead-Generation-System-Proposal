@@ -4,6 +4,7 @@
   --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --p8-canvas: #f6f5f2;
   --p8-surface: #ffffff;
+  --p8-overlay: rgb(16 19 26 / .48);
   --p8-surface-subtle: #f1f2f6;
   --p8-surface-raised: #ffffff;
   --p8-ink: #172033;

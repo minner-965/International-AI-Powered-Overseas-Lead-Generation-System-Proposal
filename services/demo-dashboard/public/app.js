@@ -1976,14 +1976,14 @@ async function showLead(id) {
     openDetail(detail);
   }
   let lead = await optionalJson(`/api/leads/${encodeURIComponent(id)}`);
-  const hasLegacyReview = Boolean(lead);
+  const hasLegacyReview = Boolean(lead?.lead_review_id);
   const currentOpportunity = state.opportunities.find(item=>
     String(companyIdFor(item)) === String(id)
     || String(leadIdFor(item)) === String(id)
     || (lead && String(companyIdFor(item)) === String(companyIdFor(lead))));
   if (lead && currentOpportunity) {
     lead = { ...lead, ...currentOpportunity, approval_status: lead.approval_status,
-      lead_review_id: lead.lead_review_id || id };
+      lead_review_id: lead.lead_review_id || null };
   } else if (!lead) lead = currentOpportunity;
   if (!lead) {
     detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('客户详情读取失败','Company detail could not be loaded')}</h3><button type="button" class="btn btn-outline-secondary detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
@@ -2109,6 +2109,14 @@ async function showLead(id) {
   wireDetailTabs(detail);
   wireDetailSections(detail);
   wireDetailCloseButtons(detail);
+  const outreachEntry=document.createElement('button');
+  outreachEntry.type='button';outreachEntry.className='btn btn-outline-primary';
+  outreachEntry.innerHTML=bi('邮件审核与联系','Email Review & Contact');
+  outreachEntry.addEventListener('click',()=>{
+    detail.close();
+    document.dispatchEvent(new CustomEvent('crm:openoutreach',{detail:{companyId}}));
+  });
+  detail.querySelector('.crm-detail-identity')?.append(outreachEntry);
   attachPhase7CompanyDetail(detail,{
     companyId,
     opportunityId:lead.opportunity_id || lead.opportunityId || '',

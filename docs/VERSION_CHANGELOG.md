@@ -1,5 +1,60 @@
 # Version Changelog
 
+## phase11-oqumail-final-acceptance — 2026-09-07
+
+- Completed explicit email-review navigation and company-to-mail entry; corrected missing legacy review identity and removed the invalid legacy action for records without a review.
+- Added operations monitoring and 18-field bilingual CSV/XLSX contact reporting, with separate submission, receipt and business-contact states.
+- Migration 057 reuses shared application CRM outbox, Activity and Sales Task for explicitly scoped controlled replies. Actual two-message replay completed with two synced items, two Activities and one opt-out-closed task; repeated and post-restart replay created nothing new.
+- Corrected UIDVALIDITY cursor reset, IMAP success timestamp, partial-index task conflict, stuck CRM processing and uncertain SMTP disconnect retry handling.
+- Full suite: 851 total, 797 passed, zero failed, 54 skipped; isolated database checks: 18 passed. Browser desktop/mobile and actual exports checked. No new email was sent by this final acceptance work.
+- Authoritative result and release references: `PHASE11_RESULT.md`. Earlier records below are historical checkpoints.
+
+## phase11-outreach-workbench-final — 2026-09-07 — historical checkpoint
+
+- Added application draft editing, submission, approval, one-message sending and before-provider-only recovery, plus operations overview and server execution/model-state rules.
+- Completed controlled send/reply/opt-out validation and one Rizqé pilot accepted by SMTP at 11:20:44 +08. One prospect message, two attempt records, only one provider send call. Delivery/read/reply remain unconfirmed.
+- Fixed expiry normalization, worker approval projection, required send execution identity, rejected-draft revision, tablet overflow and dark-mode token precedence.
+- Final regression: 843 tests, 789 passed, 0 failed, 54 skipped; actual PostgreSQL rollback and readback checks each passed independently.
+- Sending scope and live-send switches closed after the single pilot; inbound polling remains enabled. No LLM inference adapter has been activated.
+- Authoritative result: `PHASE11_OUTREACH_WORKBENCH_RESULT.md`.
+
+## phase11-oq09-oq11 — 2026-09-07 — historical pre-send checkpoint, superseded above
+
+### Added
+
+- Added strict opt-out, suppression and structured DSN handling with pre-provider and provider-call-start suppression checks.
+- Added the isolated controlled-application context, approval, draft, message, attempt, IMAP, activity and suppression persistence boundary.
+- Added a bilingual management-page controlled email workflow with context creation, two-stage approval and explicit final submission confirmation.
+- Added the real Opportunity pilot-readiness report; no prospect message is created when recipient, procurement evidence or approvals are incomplete.
+
+### Verification
+
+- Full dashboard suite: 817 total, 765 passed, 0 failed and 52 skipped isolated database scenarios.
+- Controlled backend and UI focused suite: 14 passed, 0 failed.
+- PostgreSQL, dashboard and outreach worker are healthy after rebuild.
+- The controlled workflow is prepared at the final external-send confirmation boundary; live-prospect sending remains disabled.
+
+## phase11-oqumail-safety-and-controlled-boundary — 2026-09-07 — historical pre-send checkpoint
+
+- Added stable SMTP Message-ID, exactly-once reservation, ambiguity hold, strict recipient/approval gates, UID/UIDVALIDITY IMAP synchronization, exact reply correlation and idempotent CRM activity/follow-up handling.
+- Added migration 054 and completed the opt-out/suppression closed loop: unsent work is cancelled, suppressed resend performs zero SMTP calls and zero new attempts, and provider-call-start performs a final transactional suppression check.
+- Restricted automatic hard-bounce handling to a matching structured `message/delivery-status` 5.x.x DSN; ordinary delivery-failure text cannot suppress a recipient.
+- Isolated `CONTROLLED_TEST` from `PROSPECT_PILOT` with separate execution identity, exact ignored allowlist, persistent controlled-message cap and closed defaults. Migration 055 adds non-prospect controlled approval, draft, queue, IMAP, activity and suppression records without Company/Opportunity/production-CRM links.
+- OQ10 remains pending for its UI one-click action and the real send/reply/opt-out loop. OQ11 stopped before send because the database has zero strictly send-eligible, management-approved recipients and the two current candidates are supplier-side businesses without proven external procurement demand.
+- Verification: 813 tests total, 761 passed, 0 failed and 52 isolated database scenarios skipped. PostgreSQL, dashboard and outreach worker are healthy. Prospect email delta is zero.
+- Result: `PHASE11_OQ09_OQ11_RESULT.md`.
+
+## phase11-oqumail-baseline — 2026-09-05 — WP-OQ00 through WP-OQ02 passed
+
+- Executed WP-OQ00, WP-OQ01, and WP-OQ02. Phase 10 pre-email acceptance remains intact; Phase 11 final acceptance remains INCOMPLETE.
+- Verified all 51 migration files against the starting Git HEAD and all 28 actual ledger entries (024–051) against their SHA256. No legacy 001–023 ledger records were invented.
+- Rebuilt 001–051 in a separate empty PostgreSQL database; 049/050 replay returned SKIPPED_ALREADY_APPLIED with the ledger unchanged. The temporary database was removed and its absence verified. Production remained read-only.
+- Captured 129 companies, 364 sources, 113 contacts and 32 current opportunity rows, including 2 recommended. Current mailbox-level send-eligible candidates: 0. All approval, outbound, inbound, suppression and CRM mail side-effect counters remain 0.
+- Confirmed company mailbox SMTP/IMAP authentication, controlled external receipt smoke, TLS 1.3, SMTP STARTTLS/AUTH, IMAP special-use folders and IDLE. The Sent lookup did not find the smoke Message-ID, so later ambiguous-send handling must not rely on Sent auto-save.
+- Added safe runtime configuration reporting, read-only mailbox capability probing, the SMTP/IMAP provider adapter, and provider-selection tests. The selected runtime provider is SMTP/IMAP while all send and synchronization gates remain closed.
+- Full application suite: 741 passed, 0 failed, 52 skipped. Dashboard and outreach worker are healthy.
+- No migration SQL was changed and no new email was sent by these work packages. Reports: `PHASE11_OQ00_OQ02_RESULT.md`, `PHASE11_OQUMAIL_CONNECTIVITY_SMOKE_RESULT.md`, and `PHASE11_OQUMAIL_CAPABILITY_PROBE_RESULT.md`. STOP after WP-OQ02.
+
 ## phase10.4 — 2026-09-04 — broad company intake, multi-category research and contact-ready opportunities
 
 ### Changed

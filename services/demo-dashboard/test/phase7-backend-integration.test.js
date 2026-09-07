@@ -102,6 +102,7 @@ test('CRM worker persists retryable configuration state when no adapter is confi
   const service=new Phase7Service({pool:{query:async()=>({rows:[],rowCount:0})},env:{}});
   service.repository={
     claimCrmOutbox:async()=>({claimed:true,outbox:{id:U.draft,idempotency_key:'crm-key',attempt_count:1,operation:'CREATE_TASK',payload:{}}}),
+    getCrmOutbox:async()=>({record_scope:'PROSPECT'}),
     failCrmOutbox:async(id,input)=>({id,sync_status:'RETRYABLE_ERROR',attempt_count:1,next_attempt_at:'2026-08-31T10:00:00.000Z',input}),
   };
   const result=await service.processCrmSyncWork({outbox_id:U.draft});
@@ -266,7 +267,8 @@ test('management approval creates recipients only through the verified current-e
   let sql='';const repository=new Phase7Repository({pool:{query:async(query)=>{sql=query;return{rows:[],rowCount:0};}}});
   await repository.createEligibleRecipients({companyId:U.company,verificationTtlDays:30});
   for(const gate of ["display_opportunity_status='MANAGEMENT_APPROVED'","q.queue_status='ACTIVE'","s.eligibility_status='ELIGIBLE'",
-    "s.relationship_status='NEW_PROSPECT'","c.verification_status='VERIFIED'","dm.verification_status='VERIFIED'",
+    "s.relationship_status='NEW_PROSPECT'","c.verification_status='VERIFIED'","dm.lifecycle_status='ACTIVE'",
+    "dc.evidence_origin='OFFICIAL_SITE_OBSERVED'",'dc.last_verified_at<=now()', 'normalized_recipient_hash',
     "dc.verification_status='VALID'",'s.buyer_business_model_result_id=o.buyer_business_model_result_id',
     's.category_procurement_match_result_id=o.category_procurement_match_result_id',
     's.product_opportunity_result_id IS NOT DISTINCT FROM o.product_opportunity_result_id',
@@ -274,6 +276,11 @@ test('management approval creates recipients only through the verified current-e
 
   const repositorySource=await textFile('services/demo-dashboard/src/phase7/repository.js');
   const approvalBody=repositorySource.slice(repositorySource.indexOf('async recordOpportunityManagement'),repositorySource.indexOf('async listContactQueue'));
+  assert.doesNotMatch(approvalBody,/dm\.normalized_role IN|JOIN leadgen\.decision_maker_product_relevance/);
+  assert.doesNotMatch(sql,/dm\.verification_status='VERIFIED'/);
+  const refreshBody=repositorySource.slice(repositorySource.indexOf('async refreshOpportunityDecisions'),repositorySource.indexOf('async findContact'));
+  assert.match(refreshBody,/false contact_suppressed/);
+  assert.match(refreshBody,/normalized_recipient_hash=encode/);
   for(const boundary of ["display_opportunity_status!=='RECOMMENDED'","system_recommendation_status!=='RECOMMENDED'",
     "business_fit_status!=='FIT'","contact_readiness!=='READY'","eligibility_status!=='ELIGIBLE'",
     'ELIGIBILITY_VERSION_STALE','DECISION_REVISION_CHANGED',"dc.verification_status='VALID'",

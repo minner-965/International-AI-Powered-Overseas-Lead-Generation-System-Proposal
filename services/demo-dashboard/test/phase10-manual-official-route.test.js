@@ -31,7 +31,7 @@ test('Contact-ready Companies UI has no official-route review panel or action en
     readFile(new URL('../public/index.html',import.meta.url),'utf8'),
     readFile(new URL('../public/ui/contact-queue.js',import.meta.url),'utf8')
   ]);
-  assert.match(html,/待联系公司/);assert.match(html,/Contact-ready Companies/);
+  assert.match(html,/邮件审核与联系/);assert.match(html,/Email Review &amp; Contact/);
   assert.match(ui,/\/api\/workspace\/contact-queue/);
   assert.match(ui,/matched_categories/);assert.match(ui,/named_buyers/);assert.match(ui,/contact_routes/);
   assert.match(ui,/查看公司/);assert.match(ui,/View company/);

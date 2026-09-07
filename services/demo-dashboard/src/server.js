@@ -2376,7 +2376,8 @@ app.get('/api/export/leads', managementAuth.authenticate,
 app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(`
-      SELECT c.*, r.*, ct.full_name, ct.job_title, ct.business_email, ct.business_phone,
+      SELECT c.*, r.*, c.id AS id, c.id AS company_id, r.id AS lead_review_id,
+        ct.full_name, ct.job_title, ct.business_email, ct.business_phone,
         ct.email_verification_status,ct.verification_method,ct.verification_detail,ct.verification_checked_at,
         ct.contact_verification_status,ct.contact_lifecycle_status,ct.contact_last_verified_at,
         ${evaluatedCategoryProfilesSql('c')} AS product_profiles,

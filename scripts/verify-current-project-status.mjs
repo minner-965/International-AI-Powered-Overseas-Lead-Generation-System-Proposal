@@ -21,12 +21,73 @@ function assert(condition, message) {
 }
 
 for (const key of schema.required) assert(Object.hasOwn(status, key), `Missing current status field: ${key}`);
+for (const key of Object.keys(status)) assert(Object.hasOwn(schema.properties, key), `Unknown current status field: ${key}`);
 assert(/^[0-9a-f]{40}$/.test(status.commit), 'Current status commit is invalid');
-assert(status.latest_released_phase === 'Phase 10 (Pre-email)', 'Latest released phase must be Phase 10 (Pre-email)');
-assert(status.current_active_phase === 'Phase 10', 'Current active phase must be Phase 10');
-assert(status.final_acceptance_state === 'PASS', 'Phase 10 pre-email final acceptance must pass');
-assert(status.business_result_state === 'YES', 'Phase 10 pre-email business result must be YES');
-assert(status.next_allowed_work_package === 'POST_PHASE10_EMAIL_CONFIGURATION', 'Next boundary must be post-Phase10 email configuration');
+assert(schema.properties.latest_released_phase.enum.includes(status.latest_released_phase), 'Latest released phase is invalid');
+assert(['Phase 10', 'Phase 11'].includes(status.current_active_phase), 'Current active phase must be Phase 10 or Phase 11 readiness');
+if (status.current_active_phase === 'Phase 10') {
+  assert(status.final_acceptance_state === 'PASS', 'Phase 10 pre-email final acceptance must pass');
+  assert(status.business_result_state === 'YES', 'Phase 10 pre-email business result must be YES');
+  assert(status.next_allowed_work_package === 'POST_PHASE10_EMAIL_CONFIGURATION', 'Next boundary must be post-Phase10 email configuration');
+  assert(!Object.hasOwn(status, 'phase11_readiness'), 'Phase 11 readiness requires Phase 11 to be active');
+} else {
+  assert(['INCOMPLETE','PASS'].includes(status.final_acceptance_state), 'Phase 11 acceptance state is invalid');
+  assert(status.business_result_state === 'NO', 'Phase 11 readiness has no outreach business result');
+  assert(schema.properties.next_allowed_work_package.enum.includes(status.next_allowed_work_package), 'Phase 11 next work package is invalid');
+  const readiness = status.phase11_readiness;
+  assert(readiness && typeof readiness === 'object' && !Array.isArray(readiness), 'Phase 11 readiness evidence is missing');
+  const expectedOqScope=Array.from({length:17},(_,i)=>`WP-OQ${String(i).padStart(2,'0')}`);
+  assert(JSON.stringify(readiness.scope) === JSON.stringify(expectedOqScope), 'Phase 11 readiness scope must record WP-OQ00 through WP-OQ16');
+  for (const key of ['wp_oq00','wp_oq01','wp_oq02','wp_oq03','wp_oq04','wp_oq05','wp_oq06','wp_oq07','wp_oq09']) assert(readiness[key] === 'PASS', `Phase 11 ${key} must pass`);
+  for(const key of ['wp_oq08','wp_oq12','wp_oq13','wp_oq14','wp_oq15','wp_oq16'])assert(schema.properties.phase11_readiness.properties[key].enum.includes(readiness[key]),`${key} status is invalid`);
+  assert(schema.properties.phase11_readiness.properties.wp_oq10.enum.includes(readiness.wp_oq10), 'OQ10 status is invalid');
+  assert(schema.properties.phase11_readiness.properties.wp_oq11.enum.includes(readiness.wp_oq11), 'OQ11 status is invalid');
+  if(readiness.wp_oq10==='PASS'){
+    const controlled=readiness.evidence_summary?.controlled_application_e2e;
+    assert(controlled?.smtp_accepted===1 && controlled.inbound_messages>=2 && controlled.opt_out_suppressions>=1,
+      'OQ10 PASS requires real accepted send, replies and opt-out evidence');
+    assert(controlled.blocked_resend_additional_provider_calls===0, 'OQ10 PASS requires zero-call suppressed resend evidence');
+    assert(readiness.evidence_summary?.application_crm_closure?.status==='PASS', 'Full OQ10 PASS requires actual shared application CRM closure, not isolated Activities alone');
+  }
+  if(readiness.wp_oq08==='PASS'){
+    const crm=readiness.evidence_summary?.application_crm_closure;
+    assert(crm?.status==='PASS'&&crm.synced_outbox>=2&&crm.opportunity_activities>=2&&crm.sales_tasks>=1&&crm.owner&&crm.historical_due_at,'OQ08 PASS requires actual shared CRM effects, owner and due evidence');
+    assert(crm.prospect_crm_rows===0&&crm.worker_restart_replay_created===0,'Controlled CRM acceptance must retain prospect isolation and restart replay proof');
+  }
+  if(readiness.wp_oq10==='CONTROLLED_SUBSYSTEM_PASS_CRM_INCOMPLETE'){
+    assert(status.current_blockers.includes('ACTUAL_APPLICATION_REPLY_TO_CRM_CLOSURE_INCOMPLETE'),'Limited controlled result requires explicit CRM blocker');
+    assert(readiness.evidence_summary?.production_crm_closure?.status==='INCOMPLETE','Limited result must retain incomplete CRM evidence');
+  }
+  const regression=readiness.evidence_summary?.final_regression;
+  assert(regression&&regression.tests_total===regression.tests_passed+regression.tests_failed+regression.tests_skipped,'Regression totals must reconcile without treating skips as passes');
+  if(['PASS','REGRESSION_PASS_FAULT_FIXTURES'].includes(readiness.wp_oq14))assert(regression.provider_fault_fixture_status==='PASS'&&regression.tests_failed===0&&regression.isolated_postgres_passed===regression.isolated_postgres_checks,'OQ14 acceptance requires passing fault fixtures and isolated checks');
+  if(readiness.wp_oq16==='DOCUMENTS_READY_RELEASE_NOT_EXECUTED'){
+    for(const key of ['commit','push','acceptance_tag'])assert(readiness.evidence_summary?.release?.[key]==='NOT_EXECUTED',`Unreleased state must not fabricate ${key}`);
+  }
+  if(status.final_acceptance_state==='PASS'){
+    const release=readiness.evidence_summary?.release;
+    assert(readiness.wp_oq15==='PASS'&&readiness.wp_oq16==='PASS','Final PASS requires browser and release acceptance');
+    assert(/^[0-9a-f]{40}$/.test(release?.commit)&&release.push==='VERIFIED'&&release.acceptance_tag==='phase11-oqumail-controlled-outreach-accepted'&&release.status==='VERIFIED','Final PASS requires actual release commit, verified push and acceptance tag');
+    assert(status.latest_released_phase==='Phase 11 (Controlled outreach)','Final PASS must identify the verified Phase 11 release');
+  }
+  if(['SINGLE_SEND_ACCEPTED_AWAITING_REPLY','PASS'].includes(readiness.wp_oq11)){
+    assert(readiness.evidence_summary?.prospect_pilot?.smtp_accepted===1, 'OQ11 sent status requires exactly one accepted pilot');
+  }
+  assert(/^[0-9a-f]{40}$/.test(readiness.git_baseline?.commit), 'Phase 11 starting Git commit is missing');
+  assert(readiness.git_baseline?.dirty === false, 'Phase 11 must preserve the recorded clean starting baseline');
+  assert(readiness.evidence_summary && typeof readiness.evidence_summary === 'object'
+    && !Array.isArray(readiness.evidence_summary) && Object.keys(readiness.evidence_summary).length > 0, 'Phase 11 evidence summary is missing');
+  if(readiness.wp_oq10==='REAL_E2E_PENDING')assert(status.current_blockers.some(item => /APPLICATION_OUTBOUND_E2E_NOT_YET_VERIFIED/.test(item)), 'Pending OQ10 requires its current blocker');
+  for (const flag of ['outbound_email_enabled', 'gmail_api_enabled', 'gmail_inbound_sync_enabled']) {
+    assert(status.effective_runtime_flags[flag] === false, `Phase 11 readiness flag must remain false: ${flag}`);
+  }
+  assert(status.effective_runtime_flags.outreach_send_scope==='DISABLED'&&status.effective_runtime_flags.live_prospect_send_approved===false,'Final partial acceptance must leave prospect sending closed');
+  assert(status.effective_runtime_flags.controlled_test_mode===false&&status.effective_runtime_flags.controlled_test_max_messages===0,'Controlled final limit must be zero with controlled mode closed');
+  assert(status.provider_configuration.outbound_email_provider === 'SMTP', 'Phase 11 must select the SMTP provider');
+  assert(status.provider_configuration.inbound_email_provider === 'IMAP', 'Phase 11 must record IMAP as the inbound protocol');
+  assert(status.provider_configuration.mail_provider_vendor === 'OQUMAIL', 'Phase 11 must record the selected company mailbox vendor');
+  assert(status.explicit_stop_boundary.includes('WP-OQ09'), 'Phase 11 STOP must name the completed suppression boundary');
+}
 assert(status.explicit_stop_boundary.includes('STOP'), 'Explicit STOP boundary is missing');
 assert(status.explicit_stop_boundary.includes('WP-A16'), 'STOP boundary must record completion through WP-A16');
 for (const expected of [
@@ -66,7 +127,13 @@ for (const name of [
   '039_phase10_tavily_fair_budget.sql',
   '040_phase10_commercial_product_fit.sql',
   '041_phase10_manual_official_route_queue.sql',
-  '042_phase10_gmail_api_provider.sql'
+  '042_phase10_gmail_api_provider.sql',
+  '052_phase11_oqumail_outbound_safety.sql',
+  '053_phase11_oqumail_inbound_crm.sql',
+  '054_phase11_suppression_closed_loop.sql',
+  '055_phase11_controlled_application_context.sql',
+  '056_phase11_version_payload_guard_rowtype.sql',
+  '057_phase11_controlled_shared_crm.sql'
 ]) {
   const path = join(root, 'database', 'migrations', name);
   assert(existsSync(path), `Migration is missing: ${name}`);

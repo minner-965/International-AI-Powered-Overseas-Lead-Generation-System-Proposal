@@ -225,25 +225,30 @@ export async function buildTemplateWorkbook(importType) {
   });
 }
 
-export async function buildXlsxExportBuffer({ worksheetName = 'Export', headers, rows }) {
+export async function buildXlsxExportBuffer({ worksheetName = 'Export', headers, rows, headerLabels = {} }) {
   const ExcelJS = await loadExcelJs();
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Codex';
+  workbook.creator = 'DPV';
   const worksheet = workbook.addWorksheet(worksheetName, {
     properties: { defaultColWidth: 24 },
     views: [{ state: 'frozen', ySplit: 1 }],
   });
   worksheet.columns = headers.map((header) => ({
-    header,
+    header:headerLabels[header]||header,
     key: header,
-    width: /url|route|evidence|categories|blocker|next_action/.test(String(header))
+    width: /url|route|source|evidence|categories|blocker|next_action/.test(String(header))
       ? 36 : header === 'company_name' ? 28 : Math.max(18, Math.min(30, String(header).length + 4)),
     style: { numFmt: '@' },
   }));
   styleHeaderRow(worksheet.getRow(1));
+  if(Object.keys(headerLabels).length)worksheet.getRow(1).height=60;
   for (const row of rows) {
     const nextRow = worksheet.addRow(Object.fromEntries(headers.map((header) => [header, escapeFormulaCell(row?.[header] ?? '')])));
-    nextRow.height = 36;
+    const lineCount=Math.max(1,...headers.map((header,index)=>String(row?.[header]??'').split('\n').reduce((sum,line)=>{
+      const visualLength=[...line].reduce((length,char)=>length+(/[^\u0000-\u00ff]/.test(char)?2:1),0);
+      return sum+Math.max(1,Math.ceil(visualLength/Math.max(8,worksheet.columns[index].width-3)));
+    },0)));
+    nextRow.height = Math.min(120,Math.max(36,lineCount*16+12));
     styleDataCells(worksheet, nextRow.number, headers);
   }
   worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1,rows.length+1), column: headers.length } };

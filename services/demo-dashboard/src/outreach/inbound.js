@@ -33,25 +33,39 @@ export function sanitizeInboundText(value, maximum = 20_000) {
   return text.slice(0, Math.max(0, Number(maximum) || 0));
 }
 
+function unquotedReplyText(value){
+  const lines=String(value??'').split(/\r?\n/);const kept=[];
+  for(const line of lines){
+    if(/^\s*(?:-{2,}\s*Original Message\s*-{2,}|On\s.+\swrote:\s*|From:\s+\S.+@)/i.test(line))break;
+    if(/^\s*>/.test(line))continue;
+    kept.push(line);
+  }
+  return kept.join('\n');
+}
+
 /** Deterministic intent classification. It creates task instructions, never a send action. */
 export function classifyInboundReply(input = {}) {
   const subject = sanitizeInboundText(input.subject, 500);
-  const body = sanitizeInboundText(input.body_text || input.text || input.html, 20_000);
-  const text = `${subject}\n${body}`;
-  let intent = 'REVIEW';
-  for (const candidate of ['OPT_OUT', 'AUTO_REPLY', 'DECLINE', 'DEFER', 'QUOTATION', 'SAMPLE', 'MEETING', 'CATALOGUE']) {
+  const sourceBody=input.body_text || input.text || input.html;const body = sanitizeInboundText(sourceBody, 20_000);
+  const actionableBody=sanitizeInboundText(unquotedReplyText(sourceBody),20_000);const text = `${subject}\n${actionableBody}`;
+  const headers=input.headers||{};const headerAutomatic=input.automatic===true;const textAutomatic=INTENT_PATTERNS.AUTO_REPLY.test(text);const outOfOffice=input.out_of_office===true||/out of (?:the )?office|away from (?:my )?email|fuera de (?:la )?oficina/i.test(text);
+  const dsn=input.dsn===true;let intent = 'REVIEW';
+  if(dsn)intent='IRRELEVANT';else if(headerAutomatic||outOfOffice)intent='AUTO_REPLY';else if(INTENT_PATTERNS.OPT_OUT.test(text))intent='OPT_OUT';else if(textAutomatic)intent='AUTO_REPLY';
+  for (const candidate of (intent!=='REVIEW')?[]:['DECLINE','DEFER','QUOTATION','SAMPLE','MEETING','CATALOGUE']) {
     if (INTENT_PATTERNS[candidate].test(text)) { intent = candidate; break; }
   }
   if (!text.trim()) intent = 'IRRELEVANT';
   if (!REPLY_INTENTS.includes(intent)) intent = 'REVIEW';
-  const taskIntents = new Set(['CATALOGUE', 'SAMPLE', 'QUOTATION', 'MEETING', 'DEFER', 'REVIEW']);
+  const replyCategory=dsn?'BOUNCE_DSN':outOfOffice?'OUT_OF_OFFICE':intent==='AUTO_REPLY'?'AUTO_REPLY':intent==='OPT_OUT'?'OPT_OUT':intent==='DECLINE'?'HUMAN_NEGATIVE':['CATALOGUE','SAMPLE','QUOTATION','MEETING'].includes(intent)?'HUMAN_POSITIVE':intent==='DEFER'?'HUMAN_NEUTRAL':'UNKNOWN_REVIEW';
+  const taskIntents = new Set(['CATALOGUE', 'SAMPLE', 'QUOTATION', 'MEETING', 'DEFER', 'DECLINE','REVIEW']);
   return {
     intent,
+    reply_category: replyCategory,
     confidence: intent === 'REVIEW' ? 0.35 : 0.9,
     confidence_basis: intent === 'REVIEW' ? 'LOW' : 'RULE_MATCH',
     sanitized_subject: subject,
     sanitized_body_text: body,
-    actions: taskIntents.has(intent)
+    actions: taskIntents.has(intent)&&intent!=='AUTO_REPLY'&&!outOfOffice&&!dsn
       ? [{ action: 'CREATE_SALES_TASK', requires_human_review: true }]
       : [],
     automatic_send_allowed: false,
@@ -119,6 +133,11 @@ const TASK_BLUEPRINTS = Object.freeze({
     title: 'Track requested follow-up timing',
     next_action: 'Set the next action to the requested follow-up window after human review.',
     due_hours: 72
+  },
+  DECLINE: {
+    title: 'Review negative reply',
+    next_action: 'Review the reply, update the opportunity, and decide whether contact should close.',
+    due_hours: 24
   },
   REVIEW: {
     title: 'Manual inbound review required',

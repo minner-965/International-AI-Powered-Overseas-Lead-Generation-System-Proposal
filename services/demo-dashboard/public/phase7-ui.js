@@ -70,6 +70,12 @@ const REASON_LABELS = Object.freeze({
 });
 
 const FIELD_LABELS = Object.freeze({
+  target_category:['目标类目','Target category'],opportunity_status:['机会状态','Opportunity status'],
+  recipient:['收件邮箱','Recipient'],recipient_type:['收件人类型','Recipient type'],recipient_source:['收件人来源','Recipient source'],
+  email_send_eligibility:['邮件联系资格','Email send eligibility'],management_approval:['当前管理审核','Current management approval'],
+  business_contact_status:['业务联系状态','Business contact status'],transport_status:['邮件提交状态','Mail submission status'],
+  receipt_evidence_status:['收件证据','Receipt evidence'],sent_at:['发送时间','Sent at'],reply_status:['回复状态','Reply status'],
+  suppression:['停止联系','Stop contact'],crm_sync:['跟进同步','CRM sync'],
   company_name:['公司','Company'], market:['市场','Market'], country_code:['国家代码','Country code'], website_url:['企业网站','Official website'],
   verification_status:['核验状态','Verification'], lifecycle_status:['数据状态','Data status'], buyer_business_model:['客户采购模式','Buyer Model'],
   product_profile:['产品画像','Product Profile'], product_category_score:['商品类目评分','Product Category Score'],
@@ -140,8 +146,11 @@ async function downloadResponse(url, fallbackName) {
   const anchor = document.createElement('a');
   anchor.href = href;
   anchor.download = filename;
+  anchor.hidden = true;
+  document.body.append(anchor);
   anchor.click();
-  setTimeout(() => URL.revokeObjectURL(href), 1000);
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 60000);
 }
 
 function setBusy(button, busy, labels) {
@@ -293,7 +302,7 @@ function renderExportResult(payload) {
   document.querySelector('#data-export-download')?.addEventListener('click', async event => {
     const button = event.currentTarget;
     setBusy(button,true,['正在准备','Preparing','下载文件','Download file']);
-    try { await downloadResponse(href,`DPV_Export.${text(firstValue(job,['format','export_format'])).toLowerCase() || 'xlsx'}`); }
+    try { await downloadResponse(href,`DPV_Export.${text(firstValue(job,['format','export_format'])).toLowerCase() || 'xlsx'}`); document.querySelector('#data-export-status').innerHTML=bi('文件已交给浏览器下载，请查看下载列表。','The file was handed to your browser. Check its downloads list.'); }
     catch (error) { document.querySelector('#data-export-status').innerHTML = operationError(error); }
     finally { setBusy(button,false,['正在准备','Preparing','下载文件','Download file']); }
   });

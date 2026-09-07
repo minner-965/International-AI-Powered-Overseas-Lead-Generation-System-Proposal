@@ -12,8 +12,41 @@ import {
   stableJson,
 } from './fileContract.js';
 
+export const OUTREACH_EXPORT_LABELS=Object.freeze({
+  company_name:'公司 / Company',matched_categories:'目标类目 / Target Category',opportunity_status:'机会状态 / Opportunity Status',
+  recipient:'收件邮箱 / Recipient',recipient_type:'收件人类型 / Recipient Type',recipient_source:'收件人来源 / Recipient Source',
+  email_send_eligibility:'邮件联系资格 / Email Send Eligibility',management_approval:'当前管理审核 / Current Management Approval',
+  draft_status:'开发信审核 / Draft Approval',business_contact_status:'联系状态 / Business Contact Status',
+  transport_status:'邮件提交状态 / SMTP Status',receipt_evidence_status:'收件证据 / Receipt Evidence Status',
+  sent_at:'发送时间 / Sent At',reply_status:'回复状态 / Reply Status',suppression:'停止联系 / Suppression',
+  owner:'负责人 / Owner',next_action:'下一步 / Next Action',crm_sync:'跟进同步 / CRM Sync'
+});
+export function outreachExportValue(value,key=''){
+  if(key==='matched_categories'){
+    const categories={TOPS:'上衣 / Tops',DRESSES:'连衣裙 / Dresses',SKIRTS:'半身裙 / Skirts',PANTS:'裤装 / Pants',TROUSERS:'裤装 / Trousers',
+      SHORTS:'短裤 / Shorts',OUTERWEAR:'外套 / Outerwear',KNITWEAR:'针织服装 / Knitwear',WOMENSWEAR:'女装 / Womenswear',
+      ACTIVEWEAR:'运动服 / Activewear',SWIMWEAR:'泳装 / Swimwear',UNDERWEAR:'内衣 / Underwear',SLEEPWEAR:'睡衣 / Sleepwear',
+      LOUNGEWEAR:'家居服 / Loungewear',GENERAL_MERCHANDISE:'百货 / General merchandise'};
+    return String(value||'').split(';').map(part=>categories[part.trim().toUpperCase()]||part.trim()).filter(Boolean).join('; ');
+  }
+  const labels={SENT_NO_REPLY:'已发送，未回复 / Sent, no reply yet',SMTP_ACCEPTED:'邮件服务已接收 / Mail server accepted',
+    UNCONFIRMED:'尚无收件确认 / Receipt not confirmed',RECEIVED_CONFIRMED:'收件已确认 / Receipt confirmed',
+    NOT_SENT:'尚未发送 / Not sent',NOT_ATTEMPTED:'尚未提交 / Not submitted',REPLIED:'已回复 / Replied',
+    OPTED_OUT:'已退订 / Opted out',BOUNCED:'已退信 / Bounced',SEND_AMBIGUOUS:'发送待核对 / Send requires review',
+    SEND_FAILED:'发送失败 / Send failed',ELIGIBLE:'符合联系条件 / Eligible',BLOCKED:'待补齐联系条件 / Pending requirements',
+    MANAGEMENT_APPROVED:'已确认联系 / Contact approved',RECOMMENDED:'建议联系 / Recommended',
+    APPROVED:'已批准 / Approved',DRAFT:'草稿 / Draft',PENDING_REVIEW:'待审核 / Pending review',
+    OFFICIAL_COMPANY_EMAIL:'官方公司邮箱 / Official company email',OFFICIAL_DEPARTMENT_EMAIL:'官方部门邮箱 / Official department email',
+    NAMED_BUYER_EMAIL:'实名联系人邮箱 / Named buyer email',NOT_REQUIRED:'暂无同步事项 / Nothing to sync',
+    SYNCED:'已同步 / Synced',PENDING:'待同步 / Pending sync',WAIT_FOR_REPLY:'等待回复 / Wait for reply',
+    STOP_CONTACT:'停止联系 / Stop contact',REVIEW_DRAFT:'审核开发信 / Review draft',NO_REPLY_YET:'尚未回复 / No reply yet',
+    NOT_ASSIGNED:'待分配 / Not assigned'};
+  return typeof value==='boolean'?(value?'是 / Yes':'否 / No'):(labels[value]??value??'');
+}
+
 const BASE_COLUMNS = Object.freeze([
   'company_name',
+  ...Object.keys(OUTREACH_EXPORT_LABELS).filter(key=>!['company_name','matched_categories','opportunity_status','draft_status','owner','next_action'].includes(key)),
   'market',
   'matched_categories',
   'category_evidence',

@@ -101,7 +101,7 @@ test('unclear, excluded and unknown buyer models are blocked without changing th
   }
 });
 
-test('supplier access cannot compensate for Product Match or SALES_READY', () => {
+test('supplier access cannot compensate for missing category confirmation', () => {
   const result = evaluateOutreachEligibility(eligibleInput({
     category_procurement_match_status: 'WEAK_CATEGORY_MATCH',
     opportunity_readiness: 'NEEDS_DECISION_MAKER',
@@ -109,7 +109,35 @@ test('supplier access cannot compensate for Product Match or SALES_READY', () =>
   }), { now: NOW });
   assert.equal(result.eligible, false);
   assert.ok(result.reason_codes.includes('CATEGORY_MATCH_CONFIRMATION_REQUIRED'));
-  assert.ok(result.reason_codes.includes('READINESS_NOT_SALES_READY'));
+  assert.ok(!result.reason_codes.includes('READINESS_NOT_SALES_READY'));
+});
+
+test('category opportunity can use a verified official company mailbox without a named buyer or procurement intent', () => {
+  const result = evaluateOutreachEligibility(eligibleInput({
+    buyer_model: 'UNKNOWN',
+    system_recommendation_status: 'RECOMMENDED',
+    business_fit_status: 'FIT',
+    category_procurement_match_status: 'CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE',
+    opportunity_readiness: 'NEEDS_DECISION_MAKER',
+    has_verified_profile_relevant_named_buyer: false,
+    has_active_business_email_route: false,
+    contact: { contact_type: 'GENERIC_BUSINESS_EMAIL', email: 'office@synthetic.invalid',
+      verification_status: 'VALID', last_verified_at: '2026-08-20T00:00:00Z' }
+  }), { now: NOW });
+  assert.equal(result.eligible, true);
+  assert.equal(result.fact_snapshot.readiness, 'NEEDS_DECISION_MAKER');
+});
+
+test('commercial recommendation does not bypass an unverified official mailbox or suppression', () => {
+  const result = evaluateOutreachEligibility(eligibleInput({
+    system_recommendation_status: 'RECOMMENDED', business_fit_status: 'FIT',
+    contact_suppressed: true,
+    contact: { contact_type: 'GENERIC_BUSINESS_EMAIL', email: 'office@synthetic.invalid',
+      verification_status: 'NOT_VERIFIED' }
+  }), { now: NOW });
+  assert.equal(result.eligible, false);
+  assert.ok(result.reason_codes.includes('CONTACT_VERIFICATION_REQUIRED'));
+  assert.ok(result.reason_codes.includes('CONTACT_SUPPRESSED'));
 });
 
 test('existing relationships and both suppression levels remain independent blockers', () => {

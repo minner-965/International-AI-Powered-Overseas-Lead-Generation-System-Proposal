@@ -75,3 +75,16 @@ At the start of every task, complete both checks below before implementation beg
 - Product and historical customer-deal imports are inputs for approved category/profile scope, historical ICP, and customer scoring baselines only.
 - Keep customer-side missing procurement/category evidence as `NEEDS_PRODUCT_EVIDENCE`; keep confirmed out-of-scope categories as `PRODUCT_MISMATCH`.
 - Company-facing wording must use `商品类目评分 / Product Category Score` for this score.
+
+## Opportunity email rule
+
+- A current category-based business opportunity is sufficient commercial justification for an introductory email; do not add a separate proof-of-current-procurement requirement.
+- An observed official company or department mailbox may be used without a named buyer, after mailbox verification, current approval and address-level suppression checks.
+- Automatically verify observed official business mailboxes through Hunter, persist the real result and usage history, and preserve its timestamp when public source records are refreshed.
+- A failed mailbox affects that address only; other valid company addresses remain independently eligible.
+
+## Server workflow and model execution
+
+- Follow `docs/SERVER_WORKFLOW_EXECUTION_RULES.md` for server task execution, application review, operational visibility and economical model routing.
+- Read `docs/LLM_RUNTIME_ACTUAL_STATE.md` before describing model capabilities. Distinguish planned model work from a configured and verified application API integration.
+- Normal company workflow must run through persisted server tasks and application controls; development-time Codex assistance is not the production model runtime.

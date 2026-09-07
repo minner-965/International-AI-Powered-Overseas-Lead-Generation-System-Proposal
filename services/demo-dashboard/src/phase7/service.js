@@ -9,6 +9,8 @@ import {
   classifyInboundReply,
   createInboundProvider,
   createOutboundProvider,
+  stableSmtpMessageId,
+  stableSmtpMessageKey,
   deriveDeliveryState,
   digestCanonical,
   providerRetryDecision,
@@ -26,6 +28,8 @@ import {
   parseCsvUtf8,
   parseXlsxImportBuffer,
   projectExportRow,
+  OUTREACH_EXPORT_LABELS,
+  outreachExportValue,
   resolveExportRequest,
   serializeCsv,
   sha256Bytes,
@@ -39,8 +43,15 @@ function bool(value, fallback = false) {
   return /^(1|true|yes|on)$/i.test(String(value));
 }
 
+function controlledRecipients(env,provider='SMTP'){
+  const value=env.CONTROLLED_TEST_RECIPIENT_ALLOWLIST
+    ||(provider==='SMTP'?env.SMTP_CONTROLLED_RECIPIENT_ALLOWLIST:env.GMAIL_CONTROLLED_RECIPIENT_ALLOWLIST)||'';
+  return[...new Set(String(value).split(',').map(item=>String(item||'').trim().toLowerCase()).filter(Boolean))];
+}
+
 function upper(value) { return String(value || '').trim().toUpperCase(); }
 function text(value, maximum = 500) { return String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, maximum); }
+function messageText(value, maximum = 12000) { return String(value || '').replace(/\r\n?/g,'\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').trim().slice(0,maximum); }
 function arrays(value, maximum = 100) { return [...new Set((Array.isArray(value) ? value : []).map(item => text(item, 160)).filter(Boolean))].slice(0, maximum); }
 function exportBusinessList(value) {
   return [...new Set((Array.isArray(value) ? value : []).map(item => {
@@ -165,24 +176,38 @@ export class Phase7Service {
     this.audit = audit;
     this.exportDir = path.resolve(env.DATA_EXCHANGE_EXPORT_DIR || path.join(process.cwd(), 'runtime', 'phase7-exports'));
     this.importDir = path.resolve(env.DATA_EXCHANGE_STAGING_DIR || path.join(process.cwd(), 'runtime', 'phase7-import-staging'));
+    // Provider selection and sending authorization are intentionally separate:
+    // selecting the company mailbox never opens an outbound gate.
+    const providerName = env.OUTBOUND_EMAIL_PROVIDER || 'NONE';
+    const usingSmtp = upper(providerName) === 'SMTP';
     this.outboundProvider = createOutboundProvider({
-      provider: env.OUTBOUND_EMAIL_PROVIDER || 'NONE',
+      provider: providerName,
       apiKey: env.RESEND_API_KEY || '',
       useCase: env.RESEND_USE_CASE || 'DISABLED',
       endpoint: env.RESEND_API_ENDPOINT || 'https://api.resend.com/emails',
       timeoutMs: Number(env.OUTBOUND_EMAIL_TIMEOUT_MS || 10_000),
-      enabled: env.GMAIL_API_ENABLED,
-      inboundEnabled: env.GMAIL_INBOUND_SYNC_ENABLED,
-      controlledTestMode: env.GMAIL_CONTROLLED_TEST_MODE,
-      useCaseApproved: env.GMAIL_USE_CASE_APPROVED,
+      enabled: usingSmtp ? env.SMTP_ENABLED : env.GMAIL_API_ENABLED,
+      inboundEnabled: usingSmtp ? env.SMTP_IMAP_INBOUND_SYNC_ENABLED : env.GMAIL_INBOUND_SYNC_ENABLED,
+      controlledTestMode: env.CONTROLLED_TEST_MODE ?? (usingSmtp ? env.SMTP_CONTROLLED_TEST_MODE : env.GMAIL_CONTROLLED_TEST_MODE),
+      useCaseApproved: usingSmtp ? env.SMTP_USE_CASE_APPROVED : env.GMAIL_USE_CASE_APPROVED,
       clientId: env.GMAIL_OAUTH_CLIENT_ID || '',
       clientSecret: env.GMAIL_OAUTH_CLIENT_SECRET || '',
       refreshToken: env.GMAIL_OAUTH_REFRESH_TOKEN || '',
-      senderEmail: env.GMAIL_SENDER_EMAIL || '',
-      replyToEmail: env.GMAIL_REPLY_TO_EMAIL || '',
-      unsubscribeEmail: env.GMAIL_UNSUBSCRIBE_EMAIL || '',
-      controlledRecipientAllowlist: env.GMAIL_CONTROLLED_RECIPIENT_ALLOWLIST || '',
-      messageIdDomain: env.GMAIL_MESSAGE_ID_DOMAIN || 'dpvinternational.com'
+      senderEmail: usingSmtp ? (env.SMTP_FROM_EMAIL || '') : (env.GMAIL_SENDER_EMAIL || ''),
+      replyToEmail: usingSmtp ? (env.SMTP_REPLY_TO || '') : (env.GMAIL_REPLY_TO_EMAIL || ''),
+      unsubscribeEmail: usingSmtp ? (env.SMTP_UNSUBSCRIBE_EMAIL || '') : (env.GMAIL_UNSUBSCRIBE_EMAIL || ''),
+      controlledRecipientAllowlist: env.CONTROLLED_TEST_RECIPIENT_ALLOWLIST
+        || (usingSmtp ? (env.SMTP_CONTROLLED_RECIPIENT_ALLOWLIST || '') : (env.GMAIL_CONTROLLED_RECIPIENT_ALLOWLIST || '')),
+      messageIdDomain: usingSmtp ? (env.SMTP_MESSAGE_ID_DOMAIN || 'dpvinternational.com') : (env.GMAIL_MESSAGE_ID_DOMAIN || 'dpvinternational.com'),
+      smtpEnabled: env.SMTP_ENABLED,
+      smtpInboundSyncEnabled: env.SMTP_IMAP_INBOUND_SYNC_ENABLED,
+      smtpControlledTestMode: env.SMTP_CONTROLLED_TEST_MODE,
+      smtpUseCaseApproved: env.SMTP_USE_CASE_APPROVED,
+      smtpHost: env.SMTP_HOST || '', smtpPort: env.SMTP_PORT || 587, smtpSecure: env.SMTP_SECURE,
+      smtpRequireTls: env.SMTP_REQUIRE_TLS, smtpUser: env.SMTP_USER || '', smtpPassword: env.SMTP_PASSWORD || '',
+      imapHost: env.IMAP_HOST || '', imapPort: env.IMAP_PORT || 993, imapTls: env.IMAP_TLS,
+      imapUser: env.IMAP_USER || '', imapPassword: env.IMAP_PASSWORD || '',
+      imapInbox: env.IMAP_INBOX || 'INBOX', imapSentMailbox: env.IMAP_SENT_MAILBOX || 'Sent'
     });
     this.resendInbound = createInboundProvider({
       provider: 'RESEND', webhookSecret: env.RESEND_WEBHOOK_SECRET || '',
@@ -191,6 +216,66 @@ export class Phase7Service {
   }
 
   async getMarketingContext() { return this.repository.getMarketingContext(); }
+
+  async getOutreachOperationsSummary(){
+    const [summary,monitor]=await Promise.all([this.repository.getOutreachOperationsSummary(),this.repository.getOutreachMonitoring()]);
+    const {last_inbound_sync,last_successful_sync,...counts}=monitor;
+    return{...summary,monitoring:{last_inbound_sync,last_successful_sync,
+      smtp_configured:Boolean(this.env.SMTP_HOST&&this.env.SMTP_USER&&this.env.SMTP_PASSWORD),
+      imap_configured:Boolean(this.env.IMAP_HOST&&this.env.IMAP_USER&&this.env.IMAP_PASSWORD),
+      last_error_class:counts.imap_sync_failure?'IMAP_SYNC_FAILURE':null,
+      controlled_sending_open:bool(this.env.OUTREACH_ENABLED)&&upper(this.env.OUTREACH_SEND_SCOPE)==='CONTROLLED_TEST',
+      prospect_pilot_open:bool(this.env.OUTREACH_ENABLED)&&bool(this.env.LIVE_PROSPECT_SEND_APPROVED)&&upper(this.env.OUTREACH_SEND_SCOPE)==='PROSPECT_PILOT',
+      alerts:Object.entries(counts).filter(([,count])=>Number(count)>0).map(([code,count])=>({code:code.toUpperCase(),count:Number(count)}))}};
+  }
+
+  async getOutreachWorkbench(){
+    const [items,context]=await Promise.all([this.repository.listOutreachWorkbench(),this.repository.getMarketingContext()]);
+    const sendingReasons=[];
+    if(!bool(this.env.OUTREACH_ENABLED,false))sendingReasons.push('OUTREACH_DISABLED');
+    if(upper(this.env.OUTREACH_SEND_SCOPE||'DISABLED')!=='PROSPECT_PILOT')sendingReasons.push('PROSPECT_PILOT_SCOPE_REQUIRED');
+    if(!bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false))sendingReasons.push('LIVE_PROSPECT_SEND_NOT_APPROVED');
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')==='SMTP'&&!bool(this.env.SMTP_ENABLED,false))sendingReasons.push('SMTP_DISABLED');
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')==='NONE')sendingReasons.push('OUTBOUND_PROVIDER_NOT_CONFIGURED');
+    const projected=await Promise.all(items.map(async item=>{
+      item={...item,business_contact_status:item.business_contact_status||'NOT_SENT',
+        next_action:item.suppression?'STOP_CONTACT':item.next_action||(item.sent_at?'WAIT_FOR_REPLY':'REVIEW_DRAFT'),
+        activity:[...(item.draft_created_at?[{event_type:'DRAFT_CREATED',occurred_at:item.draft_created_at}]:[]),
+          ...(item.approved_at?[{event_type:'APPROVED',occurred_at:item.approved_at}]:[]),
+          ...(item.sent_at?[{event_type:'SMTP_ACCEPTED',occurred_at:item.sent_at}]:[]),...(item.activity||[])]};
+      if(!item.approval_id||item.draft_status!=='APPROVED')return{...item,send_allowed:false,send_blocked_reasons:['EXACT_VERSION_APPROVAL_REQUIRED']};
+      const approval=await this.repository.getApprovalForEnqueue(item.approval_id);
+      if(!approval)return{...item,send_allowed:false,send_blocked_reasons:['EXACT_VERSION_APPROVAL_REQUIRED']};
+      const gate=await this.currentOutboundGate(approval,approval.provider_purpose||'COLD_OUTREACH');
+      const reasons=[...new Set([...sendingReasons,...gate.reasons,...(item.message_id?['MESSAGE_ALREADY_CREATED']:[])])];
+      return{...item,send_allowed:reasons.length===0,send_blocked_reasons:reasons,
+        retry_allowed:item.retry_before_provider_possible===true&&sendingReasons.length===0&&gate.reasons.length===0};
+    }));
+    return{items:projected,sending_enabled:sendingReasons.length===0,sending_blocked_reasons:sendingReasons,
+      marketing_context:context?{id:context.id,version:context.version,status:context.approval_decision||context.context_status}:null,
+      sender_configured:Boolean(this.env.SMTP_FROM_EMAIL&&this.env.SMTP_REPLY_TO),
+      template:{subject:'Womenswear and general merchandise cooperation',body_text:'Hello,\n\nI am contacting you from DPV. We supply womenswear and Yiwu general merchandise. We would like to explore a potential cooperation based on the product categories relevant to your business.\n\nWould you be open to receiving a brief introduction to our relevant product offering?\n\nIf you prefer not to receive further emails, please reply unsubscribe and we will stop contacting this address.\n\nBest regards,\nDPV Sales Team'}};
+  }
+
+  async prepareWorkbenchDraft(companyId,body,user){
+    requiredUuid(companyId,'company_id');
+    const workbench=await this.getOutreachWorkbench();
+    const row=workbench.items.find(item=>item.company_id===companyId&&item.product_profile===upper(body?.product_profile||'WOMENSWEAR'));
+    if(!row||row.opportunity_status!=='MANAGEMENT_APPROVED'||row.eligibility_status!=='ELIGIBLE'||!row.recipient_id){
+      const error=new Error('Approve the current opportunity and verify its mailbox before preparing a draft');
+      error.code='DRAFT_CURRENT_GATE_BLOCKED';error.status=409;throw error;
+    }
+    if(workbench.marketing_context?.status!=='APPROVED'){
+      const error=new Error('Approved marketing context is required');error.code='MARKETING_CONTEXT_NOT_APPROVED';error.status=409;throw error;
+    }
+    const content={language:'en',subject:body?.subject??workbench.template.subject,
+      body_text:body?.body_text??workbench.template.body_text,followups:[],template_version:'category-cooperation-workbench-v1'};
+    if(row.draft_id)return this.reviseDraft(row.draft_id,content,user);
+    return this.createDraft({...content,eligibility_snapshot_id:row.eligibility_snapshot_id,recipient_id:row.recipient_id,
+      marketing_context_version:workbench.marketing_context.version,input_digest:row.input_digest,
+      evidence:row.evidence_source_id?[{company_source_id:row.evidence_source_id}]:[],
+      used_evidence_ids:row.evidence_source_id?[row.evidence_source_id]:[],products:[],recommended_product_ids:[],approved_claim_ids:[]},user);
+  }
 
   async createMarketingContext(body, user) {
     const content = body?.content && typeof body.content === 'object' && !Array.isArray(body.content) ? body.content : {};
@@ -334,7 +419,7 @@ export class Phase7Service {
       if(usageEventId)await this.pool.query(`INSERT INTO leadgen.contact_verification_events
         (research_job_id,company_id,decision_maker_contact_id,provider_usage_event_id,provider,endpoint,
          verification_status,verification_score,verified_at,captured_at,expires_at,recipient_hash,input_digest,idempotency_key)
-        VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7,$7,$7+($8::int*interval '1 day'),$9,$9,$10)
+        VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7::timestamptz,$7::timestamptz,$7::timestamptz+($8::int*interval '1 day'),$9,$9,$10)
         ON CONFLICT (idempotency_key) DO NOTHING`,[
         contact.research_job_id,contact.company_id,contact.id,usageEventId,result.verification_status,
         result.verification_score,capturedAt,Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),inputDigest,
@@ -368,7 +453,7 @@ export class Phase7Service {
     const evidenceIds=evidence.flatMap(item=>[item.prospect_category_observation_id,item.decision_maker_source_id,item.company_source_id]).filter(Boolean);
     const productIds=products.map(item=>item.product_master_id);
     const output = {
-      language:text(body?.language,12).toLowerCase(),subject:text(body?.subject,240),body_text:text(body?.body_text,12000),
+      language:text(body?.language,12).toLowerCase(),subject:text(body?.subject,240),body_text:messageText(body?.body_text),
       followups:Array.isArray(body?.followups)?body.followups:[],personalization_reason:text(body?.personalization_reason,1000),
       used_evidence_ids:arrays(body?.used_evidence_ids),recommended_product_ids:arrays(body?.recommended_product_ids),
       approved_claim_ids:arrays(body?.approved_claim_ids),template_version:text(body?.template_version,80)||'phase7-manual-v1',
@@ -449,6 +534,8 @@ export class Phase7Service {
       ||new Date(draft.current_eligibility_expires_at)<=new Date()
       ||draft.current_recipient_verification_status!=='VALID'
       ||draft.current_recipient_lifecycle_status!=='ACTIVE'
+      ||!['NAMED_BUYER_EMAIL','OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(draft.recipient_type)
+      ||draft.recipient_domain_verified!==true
       ||!draft.current_recipient_verified_at
       ||Date.now()-new Date(draft.current_recipient_verified_at).getTime()>Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))*86_400_000
       ||draft.current_company_verification_status!=='VERIFIED'||draft.current_company_lifecycle_status!=='ACTIVE'
@@ -480,26 +567,33 @@ export class Phase7Service {
 
   async approveDraft(id, body, user) {
     const checked=await this.#validateStoredDraft(id);const draft=checked.draft;
+    if(!draft.submitted_at){
+      const error=new Error('Submit the current draft before approval');error.code='DRAFT_SUBMISSION_REQUIRED';error.status=409;throw error;
+    }
     if (!['PENDING_REVIEW','APPROVED'].includes(draft.draft_status)) {
       const error=new Error('Draft must be pending review');error.code='DRAFT_APPROVAL_FORBIDDEN';error.status=409;throw error;
     }
     if (!checked.validation.valid||checked.validation.content_hash!==draft.content_hash||buildContentHash(draft) !== draft.content_hash) {
       const error=new Error('Draft content changed after validation');error.code='DRAFT_CONTENT_HASH_MISMATCH';error.status=409;throw error;
     }
-    const fromIdentity=text(body?.from_identity,320);
-    const replyTo=text(body?.reply_to,320).toLowerCase();
+    const fromIdentity=text(body?.from_identity||this.env.SMTP_FROM_EMAIL,320);
+    const replyTo=text(body?.reply_to||this.env.SMTP_REPLY_TO||this.env.SMTP_FROM_EMAIL,320).toLowerCase();
     const claims=draft.authoritative_claim_ids||[];
+    const providerPurpose=upper(body?.provider_purpose||'COLD_OUTREACH');
+    if(!['COLD_OUTREACH','OPT_IN','TRANSACTIONAL'].includes(providerPurpose)){const error=new Error('Unsupported outbound purpose');error.code='OUTREACH_PURPOSE_INVALID';error.status=422;throw error;}
+    const expiresAt=new Date(Date.now()+Math.max(1,Number(this.env.OUTREACH_APPROVAL_TTL_DAYS||7))*86_400_000).toISOString();
+    const recipientRouteSnapshotHash=digestCanonical({recipient_id:draft.recipient_id,normalized_recipient:draft.normalized_recipient,recipient_type:draft.recipient_type,recipient_source_class:draft.recipient_source_class,recipient_domain_verified:draft.recipient_domain_verified,decision_maker_contact_id:draft.decision_maker_contact_id,verified_at:draft.current_recipient_verified_at});
     const evidenceSnapshotHash=digestCanonical({input_digest:draft.input_digest,
       evidence_ids:draft.authoritative_evidence_ids,product_ids:draft.authoritative_product_ids,
       approved_claim_ids:draft.authoritative_claim_ids});
     const digest=buildApprovalDigest({draft_id:draft.id,draft_version:draft.version,...draft,
       recipient_id:draft.recipient_id,normalized_email:draft.normalized_recipient,company_id:draft.company_id,
       product_profile:draft.product_profile,from_identity:fromIdentity,reply_to:replyTo,channel:'EMAIL',
-      approved_claim_ids:claims,evidence_snapshot_hash:evidenceSnapshotHash});
+      approved_claim_ids:claims,evidence_snapshot_hash:evidenceSnapshotHash,provider_purpose:providerPurpose,opportunity_snapshot_id:draft.current_opportunity_snapshot_id,management_event_id:draft.current_management_event_id,recipient_route_snapshot_hash:recipientRouteSnapshotHash,expires_at:expiresAt});
     return this.repository.createDraftApproval({draft_id:id,approval_digest:digest.approval_digest,
       evidence_snapshot_hash:evidenceSnapshotHash,from_identity:fromIdentity,reply_to:replyTo,decision:'APPROVED',
       actor:user.identity,role:user.role,reason:text(body?.reason,1000)||null,
-      verification_ttl_days:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))});
+      verification_ttl_days:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30)),provider_purpose:providerPurpose,opportunity_snapshot_id:draft.current_opportunity_snapshot_id,management_event_id:draft.current_management_event_id,recipient_route_snapshot_hash:recipientRouteSnapshotHash,expires_at:expiresAt});
   }
 
   async rejectDraftApproval(id, body, user) {
@@ -516,14 +610,42 @@ export class Phase7Service {
 
   async currentOutboundGate(approval, purpose) {
     const reasons=[];const provider=upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE');
+    const sendScope=upper(this.env.OUTREACH_SEND_SCOPE||'PROSPECT_PILOT');
     if (!bool(this.env.OUTREACH_ENABLED,false)) reasons.push('OUTREACH_DISABLED');
-    if (!bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false)) reasons.push('LIVE_PROSPECT_SEND_NOT_APPROVED');
+    if(sendScope==='CONTROLLED_TEST'){
+      const controlledMode=bool(this.env.CONTROLLED_TEST_MODE
+        ??(provider==='SMTP'?this.env.SMTP_CONTROLLED_TEST_MODE:this.env.GMAIL_CONTROLLED_TEST_MODE),false);
+      const controlledAllowlist=new Set(String(this.env.CONTROLLED_TEST_RECIPIENT_ALLOWLIST
+        ||(provider==='SMTP'?this.env.SMTP_CONTROLLED_RECIPIENT_ALLOWLIST:this.env.GMAIL_CONTROLLED_RECIPIENT_ALLOWLIST)||'')
+        .split(',').map(value=>String(value||'').trim().toLowerCase()).filter(Boolean));
+      const controlledMax=Math.max(0,Number(this.env.CONTROLLED_TEST_MAX_MESSAGES||0));
+      const controlledRecipient=String(approval.normalized_recipient||'').trim().toLowerCase();
+      if(!controlledMode)reasons.push('CONTROLLED_TEST_MODE_DISABLED');
+      if(bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false))reasons.push('CONTROLLED_TEST_REQUIRES_LIVE_PROSPECT_DISABLED');
+      if(!controlledRecipient||!controlledAllowlist.has(controlledRecipient))reasons.push('CONTROLLED_TEST_RECIPIENT_REQUIRED');
+      if(!controlledMax)reasons.push('CONTROLLED_TEST_CAP_NOT_CONFIGURED');
+      else if(controlledRecipient){
+        const counted=await this.pool.query(`SELECT count(*)::int controlled_reserved_count
+          FROM leadgen.outbound_messages m
+          JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+          WHERE lower(btrim(r.normalized_recipient))=ANY($1::text[])
+            AND m.send_status IN('QUEUED','SENDING','PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS')
+            AND ($2::uuid IS NULL OR m.id<>$2::uuid)`,[[...controlledAllowlist],approval.id||null]);
+        if(Number(counted.rows[0]?.controlled_reserved_count||0)>=controlledMax)reasons.push('CONTROLLED_TEST_CAP_REACHED');
+      }
+    }else if(sendScope==='PROSPECT_PILOT'){
+      if (!bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false)) reasons.push('LIVE_PROSPECT_SEND_NOT_APPROVED');
+    }else reasons.push('OUTREACH_SEND_SCOPE_DISABLED');
     if (approval.approval_decision && approval.approval_decision!=='APPROVED') reasons.push('EXACT_VERSION_APPROVAL_REQUIRED');
     if (approval.draft_status!=='APPROVED') reasons.push('EXACT_VERSION_APPROVAL_REQUIRED');
     if (approval.company_verification_status!=='VERIFIED') reasons.push('COMPANY_NOT_VERIFIED');
     if (approval.company_lifecycle_status!=='ACTIVE') reasons.push('COMPANY_NOT_ACTIVE');
     if (approval.eligibility_status!=='ELIGIBLE'||new Date(approval.eligibility_expires_at)<=new Date()) reasons.push('ELIGIBILITY_EXPIRED_OR_BLOCKED');
     if (approval.recipient_lifecycle_status!=='ACTIVE'||approval.recipient_verification_status!=='VALID') reasons.push('RECIPIENT_NOT_SEND_READY');
+    if(approval.recipient_type!==undefined&&(!['NAMED_BUYER_EMAIL','OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(approval.recipient_type)||approval.recipient_domain_verified!==true)) reasons.push('RECIPIENT_ROUTE_NOT_VERIFIED');
+    if(approval.expires_at&&new Date(approval.expires_at)<=new Date()) reasons.push('APPROVAL_EXPIRED');
+    if(approval.provider_purpose&&approval.provider_purpose!==purpose) reasons.push('APPROVAL_PURPOSE_MISMATCH');
+    if(approval.opportunity_snapshot_id&&((approval.opportunity_snapshot_id!==approval.current_opportunity_snapshot_id)||(approval.management_event_id!==approval.current_management_event_id))) reasons.push('APPROVAL_CONTEXT_STALE');
     const verifiedAt=approval.verified_at?new Date(approval.verified_at):null;
     const ttlDays=Math.max(1,Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||this.env.OUTREACH_VERIFICATION_TTL_DAYS||30));
     if(!verifiedAt||Number.isNaN(verifiedAt.getTime())||Date.now()-verifiedAt.getTime()>ttlDays*86_400_000)reasons.push('CONTACT_VERIFICATION_EXPIRED');
@@ -536,7 +658,9 @@ export class Phase7Service {
       ||approval.current_category_result_id!==approval.category_procurement_match_result_id
       ||String(approval.current_product_result_id||'')!==String(approval.product_opportunity_result_id||'')
       ||approval.current_cooperation_result_id!==approval.cooperation_feasibility_result_id)reasons.push('ELIGIBILITY_FACTS_STALE');
-    if(approval.decision_maker_verification_status!=='VERIFIED'||approval.decision_maker_lifecycle_status!=='ACTIVE')reasons.push('VERIFIED_BUYER_ROUTE_REQUIRED');
+    const officialMailbox=['OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(approval.recipient_type)
+      &&approval.recipient_domain_verified===true;
+    if(!officialMailbox&&(approval.decision_maker_verification_status!=='VERIFIED'||approval.decision_maker_lifecycle_status!=='ACTIVE'))reasons.push('VERIFIED_BUYER_ROUTE_REQUIRED');
     try{
       const claims=(approval.draft_product_claim_sets||[]).flatMap(value=>Array.isArray(value)?value:[]);
       const exact=buildApprovalDigest({draft_id:approval.draft_id,draft_version:approval.draft_version||approval.version,
@@ -544,11 +668,11 @@ export class Phase7Service {
         template_version:approval.template_version,content_hash:approval.content_hash,recipient_id:approval.recipient_id,
         normalized_email:approval.normalized_recipient,company_id:approval.company_id,product_profile:approval.product_profile,
         from_identity:approval.from_identity,reply_to:approval.reply_to,channel:approval.channel||'EMAIL',
-        approved_claim_ids:claims,evidence_snapshot_hash:approval.evidence_snapshot_hash});
+        approved_claim_ids:claims,evidence_snapshot_hash:approval.evidence_snapshot_hash,provider_purpose:approval.provider_purpose,opportunity_snapshot_id:approval.opportunity_snapshot_id,management_event_id:approval.management_event_id,recipient_route_snapshot_hash:approval.recipient_route_snapshot_hash,expires_at:approval.expires_at});
       if(exact.approval_digest!==approval.approval_digest)reasons.push('APPROVAL_DIGEST_MISMATCH');
     }catch{reasons.push('APPROVAL_DIGEST_MISMATCH');}
     const providerPurpose=this.outboundProvider.validatePurpose({purpose,consent_status:approval.consent_status,
-      to:approval.normalized_recipient,normalized_recipient:approval.normalized_recipient});
+      to:approval.normalized_recipient,normalized_recipient:approval.normalized_recipient,send_scope:sendScope});
     if(!providerPurpose.allowed)reasons.push(providerPurpose.code);
     const rateFacts=approval.sent_today===undefined?await this.#rateFacts(approval.company_id):approval;
     const minuteCap=Math.max(0,Number(this.env.OUTREACH_MAX_SENDS_PER_MINUTE||0));
@@ -556,7 +680,7 @@ export class Phase7Service {
     const companyCap=Math.max(0,Number(this.env.OUTREACH_MAX_SENDS_PER_COMPANY_30D||0));
     if(!minuteCap||!dayCap||!companyCap)reasons.push('SEND_RATE_CAP_NOT_CONFIGURED');
     else if(Number(rateFacts.sent_last_minute)>=minuteCap||Number(rateFacts.sent_today)>=dayCap||Number(rateFacts.company_sent_30d)>=companyCap)reasons.push('SEND_RATE_CAP_BLOCKED');
-    return {provider,purpose,reasons:[...new Set(reasons)]};
+    return {provider,purpose,send_scope:sendScope,reasons:[...new Set(reasons)]};
   }
 
   async #rateFacts(companyId){const result=await this.pool.query(`SELECT
@@ -569,25 +693,40 @@ export class Phase7Service {
     if(!approval)throw notFound('Approved exact draft not found','OUTREACH_APPROVAL_NOT_FOUND');
     const purpose=upper(body?.provider_purpose||'COLD_OUTREACH');const gate=await this.currentOutboundGate(approval,purpose);
     const idempotencyKey=buildOutboundIdempotencyKey({approval_id:approval.id,approved_content_hash:approval.content_hash,
-      recipient:approval.normalized_recipient,from_identity:approval.from_identity});
+      recipient:approval.normalized_recipient,from_identity:approval.from_identity,provider_identity:`${gate.provider}:${gate.send_scope}`});
     const message=await this.repository.createOutboundMessage({company_id:approval.company_id,recipient_id:approval.recipient_id,
       approval_id:approval.id,provider:gate.provider,provider_purpose:purpose,idempotency_key:idempotencyKey,
+      message_key_header:gate.provider==='SMTP'?stableSmtpMessageKey(idempotencyKey):null,
+      rfc_message_id:gate.provider==='SMTP'?stableSmtpMessageId(idempotencyKey,String(this.env.SMTP_MESSAGE_ID_DOMAIN||approval.from_identity.split('@')[1]||'localhost')):null,
       send_status:gate.reasons.length?'BLOCKED':'QUEUED',reason_codes:gate.reasons});
     let queueJobId=null;
     if(!gate.reasons.length)queueJobId=await this.queue.enqueue('send-outreach-email',{message_id:message.id},{singletonKey:`phase7:send:${message.id}`});
     return {message,queue_job_id:queueJobId,network_calls:0};
   }
 
+  async retryBlockedMessage(id){
+    const current=await this.repository.getOutboundMessage(requiredUuid(id,'message_id'));
+    if(!current)throw notFound('Outbound message not found','OUTBOUND_MESSAGE_NOT_FOUND');
+    const gate=await this.currentOutboundGate(current,current.provider_purpose);
+    if(gate.reasons.length){const error=new Error('Current message requirements are not satisfied');error.code='OUTBOUND_RETRY_GATE_BLOCKED';error.status=409;error.details={reasons:gate.reasons};throw error;}
+    const message=await this.repository.retryBlockedOutboundBeforeProvider(id,current.approval_id);
+    const queueJobId=await this.queue.enqueue('send-outreach-email',{message_id:message.id},{singletonKey:`phase7:send:${message.id}`});
+    return{message,queue_job_id:queueJobId,network_calls:0};
+  }
+
   async sendMessageWork({message_id}) {
     const message=await this.repository.getOutboundMessage(message_id);if(!message)throw notFound('Message not found','OUTBOUND_MESSAGE_NOT_FOUND');
+    if(message.send_status==='CANCELLED')return{status:'CANCELLED',reason_codes:message.reason_codes,network_calls:0,outbound_attempt_delta:0};
     if(message.send_status==='BLOCKED')return {status:'BLOCKED',reason_codes:message.reason_codes,network_calls:0};
     if(message.send_status==='AMBIGUOUS'){
+      if(message.provider==='SMTP')return{status:'AMBIGUOUS',code:'SMTP_MANUAL_HOLD_REQUIRED',network_calls:0};
       const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
         {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
       return{status:'AMBIGUOUS',code:'GMAIL_RECONCILIATION_REQUIRED',reconcile_queue_job_id:queueJobId,network_calls:0};
     }
     const gate=await this.currentOutboundGate(message,message.provider_purpose);
     if(gate.reasons.length){
+      if(gate.reasons.some(reason=>['COMPANY_SUPPRESSED','CONTACT_SUPPRESSED'].includes(reason))){await this.repository.blockOutboundWithoutAttempt(message.id,gate.reasons);return{status:'BLOCKED',reason_codes:gate.reasons,network_calls:0,outbound_attempt_delta:0};}
       const attempt=await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:false});
       await this.repository.completeOutboundAttempt({messageId:message.id,attemptId:attempt.id,attemptStatus:'BLOCKED',sendStatus:'BLOCKED',reasonCodes:gate.reasons});
       return {status:'BLOCKED',reason_codes:gate.reasons,network_calls:0};
@@ -596,12 +735,24 @@ export class Phase7Service {
     if(!health.ready){const attempt=await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:false});
       await this.repository.completeOutboundAttempt({messageId:message.id,attemptId:attempt.id,attemptStatus:'BLOCKED',sendStatus:'BLOCKED',reasonCodes:['PROVIDER_NOT_CONFIGURED']});
       return{status:'BLOCKED',code:'PROVIDER_NOT_CONFIGURED',network_calls:0};}
-    const attempt=await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:true});
+    const rfcMessageId=message.rfc_message_id||(message.provider==='SMTP'?stableSmtpMessageId(message.idempotency_key,String(this.env.SMTP_MESSAGE_ID_DOMAIN||message.from_identity.split('@')[1]||'localhost')):null);
+    const attempt=typeof this.pool.connect==='function'
+      ?await this.repository.reserveOutboundAttempt(message.id,{rfcMessageId,leaseSeconds:Number(this.env.OUTBOUND_SEND_LEASE_SECONDS||120)})
+      :await this.repository.beginOutboundAttempt(message.id,{providerCallStarted:true});
     if(attempt.idempotent_replay)return{status:'PROVIDER_ACCEPTED',code:'IDEMPOTENT_REPLAY',provider_message_id:attempt.provider_message_id,network_calls:0};
+    if(attempt.suppression_blocked)return{status:'BLOCKED',code:'SUPPRESSED_BEFORE_PROVIDER_CALL',network_calls:0,outbound_attempt_delta:0};
+    if(attempt.ambiguous_hold||attempt.send_in_progress){
+      await this.repository.recordOutboundAmbiguousEvent(message.id,{provider:message.provider,eventType:'MANUAL_HOLD',rfcMessageId:attempt.rfc_message_id||rfcMessageId});
+      return{status:'AMBIGUOUS',code:'SMTP_MANUAL_HOLD_REQUIRED',network_calls:0};
+    }
+    if(typeof this.pool.connect==='function'){
+      const started=await this.repository.markOutboundProviderCallStarted(message.id,attempt.id);
+      if(started?.suppression_blocked)return{status:'CANCELLED',code:'SUPPRESSED_BEFORE_PROVIDER_CALL',network_calls:0};
+    }
     let result;
     try{result=await this.outboundProvider.send({from:message.from_identity,to:message.normalized_recipient,
       reply_to:message.reply_to,subject:message.subject,body_text:message.body_text,purpose:message.provider_purpose,
-      consent_status:message.consent_status},message.idempotency_key);}catch(error){result={status:'FAILED',code:'PROVIDER_NETWORK_ERROR',error_type:'NETWORK_ERROR',network_calls:1};}
+      consent_status:message.consent_status,send_scope:gate.send_scope},message.idempotency_key);}catch(error){result={status:'FAILED',code:'PROVIDER_NETWORK_ERROR',error_type:'NETWORK_ERROR',network_calls:1};}
     const accepted=result.status==='PROVIDER_ACCEPTED';const blocked=result.status==='BLOCKED';const ambiguous=result.status==='AMBIGUOUS';
     const retryDecision=providerRetryDecision({http_status:result.http_status,error_type:result.error_type,
       attempt:attempt.attempt_number,max_attempts:Number(this.env.OUTREACH_PROVIDER_MAX_ATTEMPTS||3)});
@@ -611,6 +762,10 @@ export class Phase7Service {
       sendStatus:accepted?'PROVIDER_ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable?'QUEUED':'FAILED',reasonCodes:[result.code],
       responseCode:result.code,responseDigest:responseDigest(result),providerMessageId:result.provider_message_id,
       providerThreadId:result.provider_thread_id,rfcMessageId:result.rfc_message_id,sendExecutionKey:result.send_execution_key});
+    if(ambiguous&&message.provider==='SMTP'){
+      await this.repository.recordOutboundAmbiguousEvent(message.id,{provider:'SMTP',eventType:'AMBIGUOUS',rfcMessageId:result.rfc_message_id||rfcMessageId,providerMessageId:result.provider_message_id});
+      return{...result,code:'SMTP_MANUAL_HOLD_REQUIRED'};
+    }
     if(ambiguous){await this.repository.recordGmailAmbiguousEvent(message.id,{eventType:'AMBIGUOUS',rfcMessageId:result.rfc_message_id});
       const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
         {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
@@ -623,6 +778,149 @@ export class Phase7Service {
   async gmailHealth({verify_oauth=false}={}){
     if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='GMAIL_API')return{provider:'GMAIL_API',configured:false,enabled:false,ready:false,code:'GMAIL_PROVIDER_NOT_SELECTED',network_calls:0};
     return this.outboundProvider.healthCheck({verifyOAuth:verify_oauth===true});
+  }
+
+  async smtpHealth({verify_connection=false}={}){
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='SMTP')return{provider:'SMTP',configured:false,enabled:false,ready:false,code:'SMTP_PROVIDER_NOT_SELECTED',network_calls:0};
+    return this.outboundProvider.healthCheck({verifyConnection:verify_connection===true});
+  }
+
+  #controlledRuntime(recipientHash=null){
+    const provider=upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE');
+    const recipients=controlledRecipients(this.env,provider);
+    const recipient=recipientHash?recipients.find(value=>sha256(value)===recipientHash):null;
+    const maxMessages=Math.max(0,Math.min(2,Number(this.env.CONTROLLED_TEST_MAX_MESSAGES||0)));
+    const reasons=[];
+    if(upper(this.env.OUTREACH_SEND_SCOPE||'DISABLED')!=='CONTROLLED_TEST')reasons.push('CONTROLLED_TEST_SCOPE_DISABLED');
+    if(!bool(this.env.CONTROLLED_TEST_MODE??this.env.SMTP_CONTROLLED_TEST_MODE,false))reasons.push('CONTROLLED_TEST_MODE_DISABLED');
+    if(!bool(this.env.OUTREACH_ENABLED,false))reasons.push('OUTREACH_DISABLED');
+    if(bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false))reasons.push('CONTROLLED_TEST_REQUIRES_LIVE_PROSPECT_DISABLED');
+    if(provider!=='SMTP')reasons.push('CONTROLLED_TEST_SMTP_REQUIRED');
+    if(!maxMessages)reasons.push('CONTROLLED_TEST_CAP_NOT_CONFIGURED');
+    if(recipientHash&&!recipient)reasons.push('CONTROLLED_TEST_RECIPIENT_REQUIRED');
+    return{provider,recipients,recipient,max_messages:maxMessages,reasons};
+  }
+
+  async createControlledApplicationContext(body,user){
+    const runtime=this.#controlledRuntime();
+    const requestedRecipient=text(body?.recipient,320).toLowerCase();
+    const recipient=requestedRecipient||(runtime.recipients.length===1?runtime.recipients[0]:'');
+    if(!recipient||!runtime.recipients.includes(recipient)){const error=new Error('Recipient must match the local controlled-test allowlist');error.code='CONTROLLED_TEST_RECIPIENT_REQUIRED';error.status=422;throw error;}
+    const purpose=upper(body?.provider_purpose||'COLD_OUTREACH');if(!['COLD_OUTREACH','OPT_IN','TRANSACTIONAL'].includes(purpose)){const error=new Error('Controlled test purpose is invalid');error.code='CONTROLLED_TEST_PURPOSE_INVALID';error.status=422;throw error;}
+    const sender=text(this.env.SMTP_FROM_EMAIL,320).toLowerCase();const replyTo=text(this.env.SMTP_REPLY_TO||sender,320).toLowerCase();
+    if(!sender||!replyTo){const error=new Error('Controlled test sender is not configured');error.code='CONTROLLED_TEST_SENDER_NOT_CONFIGURED';error.status=409;throw error;}
+    const recipientHash=sha256(recipient);const maxMessages=Math.max(1,Math.min(2,Number(body?.max_messages||runtime.max_messages||1)));
+    const snapshotHash=digestCanonical({scope:'CONTROLLED_TEST',recipient_hash:recipientHash,provider:'SMTP',provider_purpose:purpose,sender_identity:sender,reply_to:replyTo,max_messages:maxMessages});
+    return this.repository.createControlledApplicationContext({context_label:text(body?.context_label||'OQ10 controlled application E2E',120),recipient_hash:recipientHash,provider_purpose:purpose,sender_identity:sender,reply_to:replyTo,max_messages:maxMessages,snapshot_hash:snapshotHash,created_by:user.identity});
+  }
+
+  async listControlledApplicationContexts(query={}){return this.repository.listControlledApplicationContexts(query.limit);}
+  controlledApplicationRuntimeStatus(){
+    const runtime=this.#controlledRuntime();
+    return{ready:runtime.reasons.length===0,send_scope:upper(this.env.OUTREACH_SEND_SCOPE||'DISABLED'),
+      controlled_test_mode:bool(this.env.CONTROLLED_TEST_MODE??this.env.SMTP_CONTROLLED_TEST_MODE,false),
+      max_messages:runtime.max_messages,recipient_configured:runtime.recipients.length===1,
+      outreach_enabled:bool(this.env.OUTREACH_ENABLED,false),live_prospect_enabled:bool(this.env.LIVE_PROSPECT_SEND_APPROVED,false),
+      reason_codes:[...new Set(runtime.reasons)]};
+  }
+  async getControlledApplicationContext(id){const row=await this.repository.getControlledApplicationContext(id);if(!row)throw notFound('Controlled application context not found','CONTROLLED_CONTEXT_NOT_FOUND');return{...row,crm:await this.repository.getControlledCrmState(id)};}
+
+  async replayControlledCrm(contextId){
+    await this.getControlledApplicationContext(requiredUuid(contextId,'controlled_context_id'));
+    const result=await this.repository.enqueueControlledCrmEffects(contextId);
+    for(const item of result.items)if(item.sync_status!=='SYNCED')await this.queue.enqueue('sync-outreach-to-crm',{outbox_id:item.id},{singletonKey:`phase11:controlled-crm:${item.id}`});
+    return{status:'QUEUED',created:result.created,total:result.items.length,automatic_send_allowed:false};
+  }
+
+  async approveControlledApplicationContext(id,body,user){
+    const context=await this.getControlledApplicationContext(id);const decision=upper(body?.decision||'APPROVED');if(!['APPROVED','REJECTED'].includes(decision)){const error=new Error('Controlled management decision is invalid');error.code='CONTROLLED_APPROVAL_INVALID';error.status=422;throw error;}
+    return this.repository.approveControlledApplicationContext(id,{binding_digest:context.snapshot_hash,decision,approver_identity:user.identity,approver_role:user.role,reason:text(body?.reason,1000)||null});
+  }
+
+  async createControlledApplicationDraft(id,body,user){
+    const context=await this.getControlledApplicationContext(id);if(context.context_status!=='MANAGEMENT_APPROVED'&&context.context_status!=='DRAFT_PENDING'){const error=new Error('Management approval is required');error.code='CONTROLLED_MANAGEMENT_APPROVAL_REQUIRED';error.status=409;throw error;}
+    const subject=text(body?.subject,240);const bodyText=sanitizeInboundText(body?.body_text,12000);if(!subject||!bodyText){const error=new Error('Controlled subject and body are required');error.code='CONTROLLED_DRAFT_INVALID';error.status=422;throw error;}
+    const contentHash=digestCanonical({context_id:context.id,snapshot_hash:context.snapshot_hash,subject,body_text:bodyText});
+    return this.repository.createControlledApplicationDraft(id,{subject,body_text:bodyText,content_hash:contentHash,created_by:user.identity});
+  }
+
+  async approveControlledApplicationDraft(contextId,draftId,body,user){
+    const context=await this.getControlledApplicationContext(contextId);const draft=context.drafts.find(item=>item.id===draftId);if(!draft)throw notFound('Controlled draft not found','CONTROLLED_DRAFT_NOT_FOUND');
+    const decision=upper(body?.decision||'APPROVED');if(!['APPROVED','REJECTED'].includes(decision)){const error=new Error('Controlled draft decision is invalid');error.code='CONTROLLED_DRAFT_APPROVAL_INVALID';error.status=422;throw error;}
+    const bindingDigest=digestCanonical({context_id:context.id,context_snapshot_hash:context.snapshot_hash,draft_id:draft.id,draft_version:draft.version,content_hash:draft.content_hash});
+    return this.repository.approveControlledApplicationDraft(contextId,draftId,{binding_digest:bindingDigest,decision,approver_identity:user.identity,approver_role:user.role,reason:text(body?.reason,1000)||null});
+  }
+
+  async enqueueControlledApplicationMessage(contextId,draftId){
+    const context=await this.getControlledApplicationContext(contextId);const draft=context.drafts.find(item=>item.id===draftId);if(!draft)throw notFound('Controlled draft not found','CONTROLLED_DRAFT_NOT_FOUND');
+    const runtime=this.#controlledRuntime(context.recipient_hash);const reasons=[...runtime.reasons];if(context.suppressed)reasons.push('CONTROLLED_RECIPIENT_SUPPRESSED');
+    if(reasons.length){const error=new Error('Controlled send gate is closed');error.code='CONTROLLED_SEND_GATE_BLOCKED';error.status=409;error.details={reasons};throw error;}
+    const draftBinding=digestCanonical({context_id:context.id,context_snapshot_hash:context.snapshot_hash,draft_id:draft.id,draft_version:draft.version,content_hash:draft.content_hash});
+    const key=digestCanonical({scope:'CONTROLLED_TEST',context_id:context.id,draft_id:draft.id,content_hash:draft.content_hash,recipient_hash:context.recipient_hash,provider:'SMTP'});
+    const result=await this.repository.createControlledApplicationMessage(contextId,draftId,{draft_binding_digest:draftBinding,idempotency_key:key,rfc_message_id:stableSmtpMessageId(key,this.env.SMTP_MESSAGE_ID_DOMAIN||context.sender_identity.split('@')[1]),message_key_header:stableSmtpMessageKey(key)});
+    let queueJobId=null;if(!result.reasons.length)queueJobId=await this.queue.enqueue('send-controlled-application-email',{message_id:result.message.id},{singletonKey:`phase11:controlled-send:${result.message.id}`});
+    return{...result,queue_job_id:queueJobId,network_calls:0};
+  }
+
+  async sendControlledApplicationWork({message_id}){
+    const message=await this.repository.getControlledApplicationMessage(message_id);if(!message)return{status:'MISSING',network_calls:0};
+    if(message.send_status==='PROVIDER_ACCEPTED')return{status:'PROVIDER_ACCEPTED',code:'IDEMPOTENT_REPLAY',network_calls:0};
+    const runtime=this.#controlledRuntime(message.recipient_hash);if(message.suppressed)runtime.reasons.push('CONTROLLED_RECIPIENT_SUPPRESSED');
+    if(runtime.reasons.length)return{status:'BLOCKED',reason_codes:[...new Set(runtime.reasons)],network_calls:0};
+    const policy=this.outboundProvider.validatePurpose({to:runtime.recipient,purpose:message.provider_purpose,send_scope:'CONTROLLED_TEST'});if(!policy.allowed)return{status:'BLOCKED',reason_codes:[policy.code],network_calls:0};
+    const health=await this.outboundProvider.health();if(!health.ready)return{status:'BLOCKED',reason_codes:['PROVIDER_NOT_CONFIGURED'],network_calls:0};
+    const attempt=await this.repository.reserveControlledApplicationAttempt(message.id);if(attempt.idempotent_replay)return{status:'PROVIDER_ACCEPTED',code:'IDEMPOTENT_REPLAY',network_calls:0};
+    if(attempt.suppression_blocked)return{status:'CANCELLED',code:'CONTROLLED_RECIPIENT_SUPPRESSED',network_calls:0};
+    if(attempt.ambiguous_hold)return{status:'AMBIGUOUS',code:'CONTROLLED_SEND_MANUAL_HOLD',network_calls:0};
+    if(attempt.send_in_progress)return{status:'SENDING',code:'CONTROLLED_SEND_IN_PROGRESS',network_calls:0};
+    if(attempt.blocked)return{status:'BLOCKED',network_calls:0};
+    const started=await this.repository.markControlledApplicationProviderCallStarted(message.id,attempt.id);if(started?.suppression_blocked)return{status:'CANCELLED',code:'CONTROLLED_RECIPIENT_SUPPRESSED',network_calls:0};if(started?.blocked)return{status:'BLOCKED',network_calls:0};
+    let result;try{result=await this.outboundProvider.send({from:message.sender_identity,to:runtime.recipient,reply_to:message.reply_to,subject:message.subject,body_text:message.body_text,purpose:message.provider_purpose,send_scope:'CONTROLLED_TEST'},message.idempotency_key);}catch{result={status:'FAILED',code:'PROVIDER_NETWORK_ERROR',network_calls:1};}
+    await this.repository.completeControlledApplicationAttempt(message.id,attempt.id,result);return result;
+  }
+
+  async syncControlledApplicationInboundWork(){
+    const runtime=this.#controlledRuntime();if(runtime.reasons.some(reason=>!['OUTREACH_DISABLED'].includes(reason)))return{status:'BLOCKED',reason_codes:runtime.reasons,messages:0,network_calls:0};
+    if(!bool(this.env.SMTP_IMAP_INBOUND_SYNC_ENABLED,false))return{status:'DISABLED',code:'IMAP_INBOUND_SYNC_DISABLED',messages:0,network_calls:0};
+    let recoveredAlias=false;
+    if(this.outboundProvider.reconcileControlledSent){
+      const pending=await this.pool.query(`SELECT m.id,m.sent_at,d.subject,d.body_text,c.sender_identity,c.recipient_hash
+        FROM leadgen.controlled_application_messages m JOIN leadgen.controlled_application_drafts d ON d.id=m.draft_id
+        JOIN leadgen.controlled_application_contexts c ON c.id=m.context_id
+        WHERE m.send_status='PROVIDER_ACCEPTED' AND NOT (m.reason_codes @> ARRAY['CONTROLLED_SENT_EXACT_CONTENT_MATCH']::text[])
+        ORDER BY m.created_at DESC LIMIT 2`);
+      for(const message of pending.rows){
+        const exactRuntime=this.#controlledRuntime(message.recipient_hash);if(!exactRuntime.recipient)continue;
+        const found=await this.outboundProvider.reconcileControlledSent({...message,from:message.sender_identity,to:exactRuntime.recipient});
+        if(found.status!=='MATCHED'||!found.provider_message_id)continue;
+        await this.pool.query(`UPDATE leadgen.controlled_application_messages SET provider_message_id=$2,
+          reason_codes=array_append(reason_codes,'CONTROLLED_SENT_EXACT_CONTENT_MATCH'),updated_at=now()
+          WHERE id=$1 AND NOT (reason_codes @> ARRAY['CONTROLLED_SENT_EXACT_CONTENT_MATCH']::text[])`,[message.id,found.provider_message_id]);
+        recoveredAlias=true;
+      }
+    }
+    const mailbox=String(this.env.IMAP_USER||'').trim().toLowerCase();const mailboxHash=sha256(mailbox);const folder=String(this.env.IMAP_INBOX||'INBOX');const checkpoint=recoveredAlias?null:await this.repository.getControlledImapCheckpoint(mailboxHash,folder);
+    const changes=await this.outboundProvider.readMailboxChanges({folder,checkpoint,rescanWindow:Number(this.env.IMAP_UIDVALIDITY_RESCAN_WINDOW||100)});if(changes.status!=='COMPLETED')return{...changes,messages:0};
+    let matched=0,queued=0;for(const item of changes.messages){
+      const references=[item.in_reply_to,item.references].filter(Boolean).flatMap(value=>String(value).match(/<[^>]+>|[^\s,]+/g)||[]);
+      const outbound=await this.repository.findControlledMessageByHeaders({messageKey:item.message_key,references});if(!outbound)continue;
+      const senderRaw=String(item.from||'').trim().toLowerCase();const sender=(senderRaw.match(/<([^<>@\s]+@[^<>\s]+)>/)?.[1]||senderRaw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+/i)?.[0]||'').toLowerCase();
+      const fromHash=sha256(sender);const dsnRecipient=String(item.dsn_details?.recipient||'').trim().toLowerCase();const dsnRecipientHash=dsnRecipient?sha256(dsnRecipient):null;
+      if(item.dsn===true?dsnRecipientHash!==outbound.recipient_hash:fromHash!==outbound.recipient_hash)continue;
+      const stored=await this.repository.recordControlledInbound({context_id:outbound.context_id,outbound_message_id:outbound.id,mailbox_identity_hash:mailboxHash,folder_path:folder,imap_uidvalidity:item.uidvalidity,imap_uid:item.uid,internet_message_id:item.message_id||null,from_address_hash:fromHash,dsn_recipient_hash:dsnRecipientHash,subject_sanitized:sanitizeInboundText(item.subject,500),body_text_sanitized:sanitizeInboundText(item.body_text,20000),classification_input:{automatic:item.automatic===true,out_of_office:item.out_of_office===true,dsn:item.dsn===true,dsn_details:item.dsn_details||null},received_at:item.date||new Date().toISOString()});
+      if(stored.rejected)continue;matched+=1;if(!stored.replay){await this.queue.enqueue('process-controlled-application-inbound',{inbound_message_id:stored.row.id},{singletonKey:`phase11:controlled-inbound:${stored.row.id}`});queued+=1;}
+    }
+    await this.repository.saveControlledImapCheckpoint({mailbox_identity_hash:mailboxHash,folder_path:folder,uidvalidity:changes.uidvalidity,last_processed_uid:changes.last_processed_uid});
+    return{status:'COMPLETED',messages:changes.messages.length,matched,queued,network_calls:changes.network_calls};
+  }
+
+  async processControlledApplicationInboundWork({inbound_message_id}){
+    const row=(await this.pool.query(`SELECT * FROM leadgen.controlled_application_inbound_messages WHERE id=$1`,[requiredUuid(inbound_message_id,'controlled_inbound_id')])).rows[0];if(!row)return{status:'MISSING'};
+    const flags=row.classification_input||{};const classified=classifyInboundReply({subject:row.subject_sanitized,body_text:row.body_text_sanitized,automatic:flags.automatic,out_of_office:flags.out_of_office,dsn:flags.dsn});
+    const activityType=classified.reply_category==='OPT_OUT'?'OPT_OUT':classified.reply_category==='BOUNCE_DSN'?'BOUNCE_DSN':classified.reply_category==='AUTO_REPLY'?'AUTO_REPLY':classified.reply_category==='OUT_OF_OFFICE'?'OUT_OF_OFFICE':classified.reply_category==='UNKNOWN_REVIEW'?'REVIEW':'HUMAN_REPLY';
+    const idempotencyKey=digestCanonical({controlled_inbound_id:row.id,classification_revision:1,activity_type:activityType});const applied=await this.repository.applyControlledInbound({inbound_message_id:row.id,reply_category:classified.reply_category,classification_revision:1,activity_type:activityType,idempotency_key:idempotencyKey});
+    const crm=await this.replayControlledCrm(row.context_id);
+    return{status:applied.replay?'REPLAY_NO_DELTA':'ACTIVITY_RECORDED',reply_category:classified.reply_category,activity_created:Boolean(applied.activity),suppression_created:Boolean(applied.suppression),crm_outbox_created:crm.created,automatic_send_allowed:false};
   }
 
   async reconcileGmailAmbiguousSendWork({message_id}){
@@ -654,6 +952,31 @@ export class Phase7Service {
     }
     await this.repository.saveGmailCheckpoint(mailbox,{historyId:changes.history_id,status:'COMPLETED'});
     return{status:'COMPLETED',messages:changes.messages.length,queued,history_id_advanced:Boolean(changes.history_id),network_calls:changes.network_calls};
+  }
+
+  async syncInboundEmailWork(){
+    if(upper(this.env.OUTREACH_SEND_SCOPE)==='CONTROLLED_TEST')return this.syncControlledApplicationInboundWork();
+    const provider=upper(this.env.INBOUND_EMAIL_PROVIDER||'');
+    if(provider==='GMAIL_API')return this.syncGmailInboundWork();
+    if(provider!=='IMAP'||upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='SMTP')return{status:'DISABLED',code:'INBOUND_PROVIDER_NOT_SELECTED',messages:0,network_calls:0};
+    const mailbox=String(this.env.IMAP_USER||'').trim().toLowerCase();const folder=String(this.env.IMAP_INBOX||'INBOX');
+    const checkpoint=await this.repository.getImapCheckpoint(mailbox,folder);
+    const changes=await this.outboundProvider.readMailboxChanges({folder,checkpoint,rescanWindow:Number(this.env.IMAP_UIDVALIDITY_RESCAN_WINDOW||100)});
+    if(changes.status!=='COMPLETED')return{...changes,messages:0};
+    let queued=0;for(const item of changes.messages){
+      const providerEventId=`imap:${sha256(mailbox)}:${folder}:${item.uidvalidity}:${item.uid}`;
+      const payload={provider:'SMTP',provider_event_id:providerEventId,provider_message_id:item.message_id||providerEventId,event_type:'INBOUND_RECEIVED',direction:'INBOUND',occurred_at:item.date||new Date().toISOString(),
+        metadata:{from:item.from,to:[item.to],subject:item.subject},subject:sanitizeInboundText(item.subject,500),body_text:sanitizeInboundText(item.body_text,20000),from:text(item.from,320),
+        in_reply_to:item.in_reply_to||null,references:item.references||null,message_key:item.message_key||null,automatic:item.automatic===true,out_of_office:item.out_of_office===true,dsn:item.dsn===true,dsn_details:item.dsn_details||null,
+        mailbox_identity_hash:sha256(mailbox),folder_path:folder,imap_uidvalidity:item.uidvalidity,imap_uid:item.uid,internet_message_id:item.message_id||null,
+        header_classification:{auto_submitted:item.auto_submitted||'',precedence:item.precedence||'',x_auto_response_suppress:item.x_auto_response_suppress||'',return_path:item.return_path||''},attachment_status:'NONE'};
+      const row=await this.repository.persistWebhook({provider:'SMTP',provider_event_id:providerEventId,signature_status:'VERIFIED',event_type:'INBOUND_RECEIVED',raw_body_digest:digestCanonical(payload),sanitized_payload:payload,processing_status:'RECEIVED'});
+      const receipt=await this.repository.recordImapReceipt({mailbox_identity_hash:payload.mailbox_identity_hash,folder_path:folder,uidvalidity:item.uidvalidity,uid:item.uid,internet_message_id:item.message_id,webhook_inbox_id:row.id});
+      if(receipt.replay)continue;
+      await this.queue.enqueue('process-inbound-message',{webhook_id:row.id},{singletonKey:`phase11:imap-inbound:${providerEventId}`});queued+=1;
+    }
+    const saved=await this.repository.saveImapCheckpoint(mailbox,{folder,uidvalidity:changes.uidvalidity,lastProcessedUid:changes.last_processed_uid,highestModseq:changes.highest_modseq,status:'COMPLETED'});
+    return{status:'COMPLETED',messages:changes.messages.length,queued,uidvalidity_changed:saved.uidvalidity_changed,last_processed_uid:saved.last_processed_uid,network_calls:changes.network_calls};
   }
 
   async acceptWebhook(providerName, rawBody, headers) {
@@ -718,15 +1041,21 @@ export class Phase7Service {
     const webhook=await this.repository.getWebhook(webhook_id);if(!webhook)return{status:'MISSING'};const payload=webhook.sanitized_payload||{};
     const senderRaw=String(payload.from||payload.metadata?.from||'').trim().toLowerCase();
     const sender=(senderRaw.match(/<([^<>@\s]+@[^<>\s]+)>/)?.[1]||senderRaw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+/i)?.[0]||'').toLowerCase();
-    const references=[payload.in_reply_to,payload.references].filter(Boolean).flatMap(value=>String(value).match(/<[^>]+>|[^\s,]+/g)||[]);
-    const correlated=await this.repository.findInboundThread({references,replyToken:payload.reply_to_token,sender});
+    const references=[payload.references].filter(Boolean).flatMap(value=>String(value).match(/<[^>]+>|[^\s,]+/g)||[]);
+    const correlated=await this.repository.findInboundThread({inReplyTo:payload.in_reply_to,references,messageKey:payload.message_key,providerThreadId:payload.provider_thread_id});
     const inbound=await this.repository.createInboundMessage({provider:webhook.provider,provider_message_id:payload.provider_message_id||webhook.provider_event_id,
       webhook_inbox_id:webhook.id,thread_id:correlated?.id||null,correlation_status:correlated?'MATCHED':'REVIEW',from_address_hash:sha256(sender),
       subject_sanitized:sanitizeInboundText(payload.subject,500),body_text_sanitized:sanitizeInboundText(payload.body_text,20000),
-      attachment_status:payload.attachment_status||'NONE',received_at:payload.occurred_at||webhook.received_at});
+      attachment_status:payload.attachment_status||'NONE',received_at:payload.occurred_at||webhook.received_at,
+      mailbox_identity_hash:payload.mailbox_identity_hash,folder_path:payload.folder_path,imap_uidvalidity:payload.imap_uidvalidity,imap_uid:payload.imap_uid,internet_message_id:payload.internet_message_id,
+      header_classification:payload.header_classification,correlation_outbound_message_id:correlated?.outbound_message_id,correlation_method:correlated?.correlation_method||'REVIEW',
+      correlation_evidence_digest:digestCanonical({in_reply_to:payload.in_reply_to||null,references,message_key:payload.message_key||null,provider_thread_id:payload.provider_thread_id||null,matched:correlated?.outbound_message_id||null})});
     if(payload.dsn===true&&payload.dsn_details?.status){
-      const outbound=await this.repository.findOutboundByRfcReferences(references);
-      if(outbound){const eventType=String(payload.dsn_details.status).startsWith('5.')?'HARD_BOUNCED':'SOFT_BOUNCED';
+      const dsnReferences=[...references,payload.dsn_details.original_message_id].filter(Boolean);
+      const outbound=await this.repository.findOutboundByRfcReferences(dsnReferences);
+      const dsnRecipient=String(payload.dsn_details.recipient||'').trim().toLowerCase();
+      const recipientMatches=Boolean(outbound&&dsnRecipient&&dsnRecipient===String(outbound.normalized_recipient||'').trim().toLowerCase());
+      if(recipientMatches&&/^[45]\.\d+\.\d+$/.test(String(payload.dsn_details.status))){const eventType=String(payload.dsn_details.status).startsWith('5.')?'HARD_BOUNCED':'SOFT_BOUNCED';
         const event=await this.repository.recordProviderEvent({outbound_message_id:outbound.id,webhook_inbox_id:webhook.id,event_type:eventType,
           occurred_at:payload.occurred_at||webhook.received_at,provider_sequence:payload.provider_event_id,
           event_digest:digestCanonical({provider:webhook.provider,id:webhook.provider_event_id,type:eventType})});
@@ -741,19 +1070,19 @@ export class Phase7Service {
   async classifyInboundWork({inbound_message_id}){
     const result=await this.pool.query(`SELECT i.*,
       coalesce((w.sanitized_payload->'company_wide')='true'::jsonb,false) company_wide_opt_out,
-      coalesce((w.sanitized_payload->'automatic')='true'::jsonb,false) gmail_automatic,
-      coalesce((w.sanitized_payload->'dsn')='true'::jsonb,false) gmail_dsn
+      coalesce((w.sanitized_payload->'automatic')='true'::jsonb,false) is_automatic,
+      coalesce((w.sanitized_payload->'out_of_office')='true'::jsonb,false) is_out_of_office,
+      coalesce((w.sanitized_payload->'dsn')='true'::jsonb,false) is_dsn
       FROM leadgen.inbound_messages i LEFT JOIN leadgen.email_webhook_inbox w ON w.id=i.webhook_inbox_id
       WHERE i.id=$1`,[requiredUuid(inbound_message_id,'inbound_message_id')]);
     if(!result.rowCount)return{status:'MISSING'};const inbound=result.rows[0];
-    const classified=inbound.gmail_automatic?{intent:'AUTO_REPLY',confidence:0.99,confidence_basis:'GMAIL_AUTOMATIC_HEADER',actions:[]}
-      :inbound.gmail_dsn?{intent:'IRRELEVANT',confidence:0.99,confidence_basis:'STRUCTURED_DSN',actions:[]}
-      :classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized});
+    const classified=classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized,
+      automatic:inbound.is_automatic,out_of_office:inbound.is_out_of_office,dsn:inbound.is_dsn,headers:inbound.header_classification||{}});
     const stored=await this.repository.createReplyClassification({inbound_message_id:inbound.id,intent:mapReplyIntent(classified.intent),
-      confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v1',reason_codes:[classified.confidence_basis]});
+      confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v2',reason_codes:[classified.confidence_basis],reply_category:classified.reply_category,classification_revision:1});
     if(stored.intent==='OPT_OUT')await this.repository.suppressRecipientForInbound(inbound.id,
       {companyWide:inbound.company_wide_opt_out===true});
-    let queueJobId=null;if(classified.actions?.some(action=>action.action==='CREATE_SALES_TASK'))queueJobId=await this.queue.enqueue('create-sales-followup',{inbound_message_id:inbound.id},{singletonKey:`phase7:sales-followup:${inbound.id}`});
+    let queueJobId=null;if(inbound.thread_id)queueJobId=await this.queue.enqueue('create-sales-followup',{inbound_message_id:inbound.id},{singletonKey:`phase11:crm-effects:${inbound.id}:1`});
     return{status:'CLASSIFIED',classification_id:stored.id,intent:stored.intent,automatic_send_allowed:false,queue_job_id:queueJobId};
   }
 
@@ -766,17 +1095,15 @@ export class Phase7Service {
         sanitized_subject:inbound.subject_sanitized,sanitized_body_text:inbound.body_text_sanitized},
       company_id:inbound.company_id,thread_id:inbound.thread_id,message_id:inbound.id
     });
-    if(!built.create_task)return{status:'NO_TASK_REQUIRED',intent:inbound.intent,automatic_send_allowed:false};
-    const type=({CATALOGUE:'FOLLOW_UP',SAMPLE:'SAMPLE',QUOTATION:'QUOTATION',MEETING:'MEETING',DEFER:'FOLLOW_UP',REVIEW:'REPLY_REVIEW'})[built.task.intent]||'REPLY_REVIEW';
-    const task=await this.repository.createSalesTask({company_id:inbound.company_id,thread_id:inbound.thread_id,
-      inbound_message_id:inbound.id,task_type:type,owner:null,due_at:built.task.due_at,details:built.task});
-    const crm=await this.repository.createCrmOutbox({company_id:inbound.company_id,task_id:task.id,operation:'CREATE_TASK',
-      payload:validateCrmPayload('CREATE_TASK',{task_id:task.id,task_type:task.task_type,due_at:task.due_at,source:'PHASE7_INBOUND_FOLLOWUP'}),
-      idempotency_key:digestCanonical({operation:'CREATE_TASK',task_id:task.id})});
-    let crmQueueJobId=null;
-    if(this.queue){try{crmQueueJobId=await this.queue.enqueue('sync-outreach-to-crm',{outbox_id:crm.outbox.id},{singletonKey:`phase7:crm:${crm.outbox.id}`});}catch(error){this.audit('phase7_crm_enqueue_pending',{outbox_id:crm.outbox.id,error:String(error?.message||error).slice(0,240)});}}
-    return{status:'TASK_CREATED',task_id:task.id,task_type:task.task_type,automatic_send_allowed:false,
-      crm_outbox_id:crm.outbox.id,crm_sync_status:crm.outbox.sync_status,crm_queue_job_id:crmQueueJobId};
+    const type=built.create_task?({CATALOGUE:'FOLLOW_UP',SAMPLE:'SAMPLE',QUOTATION:'QUOTATION',MEETING:'MEETING',DEFER:'FOLLOW_UP',DECLINE:'REPLY_REVIEW',REVIEW:'REPLY_REVIEW'})[built.task.intent]||'REPLY_REVIEW':null;
+    const replyCategory=inbound.reply_category||'UNKNOWN_REVIEW';const activityType=replyCategory==='OPT_OUT'?'OPTED_OUT':replyCategory==='BOUNCE_DSN'?'BOUNCED':['AUTO_REPLY','OUT_OF_OFFICE'].includes(replyCategory)?'AUTO_REPLY':'REPLIED';
+    const funnelStatus=activityType==='OPTED_OUT'?'OPTED_OUT':activityType==='BOUNCED'?'BOUNCED':'REPLIED';
+    const dueAt=built.create_task?built.task.due_at:null;const effectKey=digestCanonical({inbound_message_id:inbound.id,classification_revision:inbound.classification_revision||1,opportunity_id:inbound.opportunity_snapshot_id||null});
+    const effects=await this.repository.applyInboundCrmEffects({effect_key:effectKey,company_id:inbound.company_id,thread_id:inbound.thread_id,inbound_message_id:inbound.id,classification_id:inbound.classification_id,
+      opportunity_snapshot_id:inbound.opportunity_snapshot_id,activity_type:activityType,funnel_status:funnelStatus,owner:inbound.owner_identity,due_at:dueAt,next_action:built.task?.next_action||null,
+      close_followups:replyCategory==='OPT_OUT',details:{reply_category:replyCategory,intent:inbound.intent},task:built.create_task?{task_type:type,details:built.task}:null});
+    const queueJobs=[];for(const outbox of effects.outboxes){try{queueJobs.push(await this.queue.enqueue('sync-outreach-to-crm',{outbox_id:outbox.id},{singletonKey:`phase11:crm:${outbox.id}`}));}catch(error){this.audit('phase11_crm_enqueue_pending',{outbox_id:outbox.id,error:String(error?.message||error).slice(0,240)});}}
+    return{status:effects.replay?'REPLAY_NO_DELTA':effects.task?'TASK_CREATED':'ACTIVITY_RECORDED',task_id:effects.task?.id||null,activity_id:effects.activity?.id||null,owner:inbound.owner_identity||null,due_at:dueAt,automatic_send_allowed:false,crm_outbox_ids:effects.outboxes.map(row=>row.id),crm_queue_job_ids:queueJobs};
   }
 
   async createCrmOutbox(body) {
@@ -803,6 +1130,8 @@ export class Phase7Service {
     return{status:'QUEUED',outbox_id:row.id,sync_status:row.sync_status,queue_job_id:queueJobId};}
 
   async processCrmSyncWork({outbox_id}){
+    const current=await this.repository.getCrmOutbox(outbox_id);
+    if(current?.record_scope==='CONTROLLED')return this.repository.processControlledCrmOutbox(outbox_id);
     const claim=await this.repository.claimCrmOutbox(outbox_id);
     if(!claim.claimed)return{status:claim.outbox.sync_status,outbox_id:claim.outbox.id,replay:claim.outbox.sync_status==='SYNCED',network_calls:0};
     let outboundPayload;
@@ -972,7 +1301,10 @@ export class Phase7Service {
     }
     if(['LEAD_MASTER_INTERNAL','SALES_OPPORTUNITY'].includes(resolved.exportType)){
       if(!this.opportunityQuery)throw new Error('Opportunity query is not configured');const rows=await this.opportunityQuery(resolved.filters);
+      const outreachRows=typeof this.repository.listOutreachWorkbench==='function'?await this.repository.listOutreachWorkbench():[];
+      const outreachByCompany=new Map(outreachRows.map(row=>[`${row.company_id}:${row.product_profile}`,row]));
       return rows.filter(row=>resolved.mode!=='SELECTED_ROWS'||resolved.selectedEntityIds.includes(row.company_id)).map(row=>{
+        const outreach=outreachByCompany.get(`${row.company_id}:${row.product_profile}`)||{};
         const {sku_readiness_status:_skuReadiness,catalog_enrichment_required:_catalogEnrichment,
           product_opportunity_status:_productOpportunityStatus,product_opportunity_count:_productOpportunityCount,
           top_product_opportunity:_topProductOpportunity,...businessRow}=row;
@@ -1005,7 +1337,13 @@ export class Phase7Service {
         decision_maker:row.buyer_name,buying_department:row.buyer_department,business_contact:row.best_contact,
         contact_verification:row.contact_verification,management_baseline_match:row.customer_match,
         mexico_historical_reference_match:row.historical_customer_match,last_assessed_at:row.feasibility_calculated_at,
-        source_reference_urls:row.contact_source_url||''
+        source_reference_urls:row.contact_source_url||'',
+        recipient:outreach.recipient_email||'',recipient_type:outreach.recipient_type||'',recipient_source:outreach.recipient_source||'',
+        email_send_eligibility:outreach.eligibility_status||'',management_approval:outreach.opportunity_status==='MANAGEMENT_APPROVED'?'APPROVED':'PENDING_REVIEW',
+        draft_status:outreach.draft_status||'',business_contact_status:outreach.business_contact_status||'NOT_SENT',
+        transport_status:outreach.transport_status||'NOT_ATTEMPTED',receipt_evidence_status:outreach.receipt_evidence_status||'UNCONFIRMED',
+        sent_at:outreach.sent_at?.toISOString?.()||outreach.sent_at||'',reply_status:outreach.reply_status||(outreach.sent_at?'NO_REPLY_YET':'NOT_SENT'),suppression:outreach.suppression||false,
+        owner:outreach.owner||'NOT_ASSIGNED',next_action:outreach.suppression?'STOP_CONTACT':outreach.next_action||(outreach.sent_at?'WAIT_FOR_REPLY':'REVIEW_DRAFT'),crm_sync:outreach.crm_sync||'NOT_REQUIRED'
       };});
     }
     if(resolved.exportType==='PRODUCT_CATALOG_INTERNAL'){
@@ -1032,8 +1370,10 @@ export class Phase7Service {
     try{const resolved=resolveExportRequest({exportType:row.export_type,format:row.export_format,mode:row.export_mode,
       requesterRole:row.requester_role,requesterIdentity:row.requester_identity,financeAuthorized:row.requester_role==='FINANCE',
       columns:row.applied_columns,filters:row.filters,selectedEntityIds:row.selected_entity_ids});const sourceRows=await this.queryExportRows(resolved);
-      const rows=sourceRows.map(item=>projectExportRow(item,resolved));const bytes=row.export_format==='CSV'
-        ?Buffer.from(serializeCsv(resolved.columns,rows),'utf8'):await buildXlsxExportBuffer({worksheetName:'Export',headers:resolved.columns,rows});
+      const isBusiness=['LEAD_MASTER_INTERNAL','SALES_OPPORTUNITY'].includes(resolved.exportType);
+      const headerLabels=isBusiness?OUTREACH_EXPORT_LABELS:{};
+      const rows=sourceRows.map(item=>projectExportRow(isBusiness?Object.fromEntries(Object.entries(item).map(([key,value])=>[key,OUTREACH_EXPORT_LABELS[key]?outreachExportValue(value,key):value])):item,resolved));const bytes=row.export_format==='CSV'
+        ?Buffer.from(serializeCsv(resolved.columns,rows,headerLabels),'utf8'):await buildXlsxExportBuffer({worksheetName:'Export',headers:resolved.columns,rows,headerLabels});
       await mkdir(this.exportDir,{recursive:true});const extension=row.export_format.toLowerCase();const filePath=path.join(this.exportDir,`${row.id}.${extension}`);await writeFile(filePath,bytes,{flag:'wx'});
       const final=await this.repository.finalizeExport(row.id,{storage_key:path.basename(filePath),row_count:rows.length,file_sha256:digestBuffer(bytes),internal_file_path:filePath});
       return{status:'READY',job:safeExportJob(final)};

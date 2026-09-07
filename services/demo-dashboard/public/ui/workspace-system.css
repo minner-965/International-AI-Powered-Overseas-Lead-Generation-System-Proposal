@@ -851,7 +851,7 @@ body:has(.app-view:not([hidden])) .crm-topbar .crm-page-title { display: none; }
  * The reference layout is mapped to DPV's real modules: compact page heads,
  * top-accent KPI cards, white data panels, formal task lists, and calm tables.
  */
-:root {
+:root:not([data-bs-theme="dark"]) {
   --ws-canvas: #f5f7fb;
   --ws-surface-soft: #f8fafc;
   --ws-border: #e4e9f1;

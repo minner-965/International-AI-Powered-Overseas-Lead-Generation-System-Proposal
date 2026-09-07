@@ -88,11 +88,10 @@ services:
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
-      OUTBOUND_EMAIL_PROVIDER: "NONE"
+      # Provider selection and every send gate come from the ignored local
+      # mailbox configuration; the committed example keeps them closed.
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
-      OUTREACH_ENABLED: "false"
-      LIVE_PROSPECT_SEND_APPROVED: "false"
       RESEND_USE_CASE: "DISABLED"
       DPV_MANAGEMENT_API_TOKEN: ""
       DPV_MANAGEMENT_API_ACTOR: ""
@@ -202,13 +201,12 @@ services:
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_ENABLED: "true"
       PGBOSS_PROCESS_JOBS: "true"
-      OUTBOUND_EMAIL_PROVIDER: "NONE"
+      # Provider selection and every send gate come from the ignored local
+      # mailbox configuration; the committed example keeps them closed.
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
-      OUTREACH_ENABLED: "false"
-      LIVE_PROSPECT_SEND_APPROVED: "false"
       RESEND_USE_CASE: "DISABLED"
-      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,generate-outreach-draft,validate-outreach-draft,send-outreach-email,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,gmail-inbound-sync,reconcile-gmail-ambiguous-send"
+      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,generate-outreach-draft,validate-outreach-draft,send-outreach-email,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       CRM_BASE_URL: ${CRM_BASE_URL:-}

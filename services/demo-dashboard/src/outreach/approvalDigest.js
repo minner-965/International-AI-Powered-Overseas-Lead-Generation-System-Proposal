@@ -22,6 +22,13 @@ function sorted(values) {
   return unique((values || []).map(String)).sort();
 }
 
+function approvalExpiry(value){
+  if(value===undefined||value===null||value==='')return '';
+  const date=value instanceof Date?value:new Date(value);
+  if(Number.isNaN(date.getTime()))throw new TypeError('expires_at must be a valid timestamp');
+  return date.toISOString();
+}
+
 export function buildContentHash(draft = {}) {
   return digestCanonical({
     language: String(draft.language || '').trim().toLowerCase(),
@@ -49,6 +56,11 @@ export function buildApprovalSnapshot(input = {}) {
     from_identity: required(input.from_identity, 'from_identity'),
     reply_to: normalizeEmail(input.reply_to),
     channel: upper(required(input.channel || 'EMAIL', 'channel')),
+    provider_purpose: upper(input.provider_purpose || 'COLD_OUTREACH'),
+    opportunity_snapshot_id: String(input.opportunity_snapshot_id || '').trim(),
+    management_event_id: String(input.management_event_id || '').trim(),
+    recipient_route_snapshot_hash: String(input.recipient_route_snapshot_hash || '').trim().toLowerCase(),
+    expires_at: approvalExpiry(input.expires_at),
     approved_claim_ids: sorted(input.approved_claim_ids || draft.approved_claim_ids),
     evidence_snapshot_hash: required(input.evidence_snapshot_hash, 'evidence_snapshot_hash')
   };
@@ -84,11 +96,12 @@ export function matchesApproval(approval = {}, current = {}) {
   }
 }
 
-export function buildOutboundIdempotencyKey({ approval_id, approved_content_hash, recipient, from_identity } = {}) {
+export function buildOutboundIdempotencyKey({ approval_id, approved_content_hash, recipient, from_identity, provider_identity = 'SMTP' } = {}) {
   return digestCanonical({
     approval_id: required(approval_id, 'approval_id'),
     approved_content_hash: required(approved_content_hash, 'approved_content_hash'),
     recipient: required(normalizeEmail(recipient), 'recipient'),
-    from_identity: required(from_identity, 'from_identity')
+    from_identity: required(from_identity, 'from_identity'),
+    provider_identity: required(provider_identity, 'provider_identity')
   });
 }

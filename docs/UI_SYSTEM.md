@@ -1,5 +1,9 @@
 # DPV Frontend UI System
 
+## Phase 11 approved extension (2026-09-07)
+
+Contact Queue now includes the versioned Email Review & Sending workspace. Preserve the native dialog, read-only sent content, current approval gates, conservative before-provider retry and separate controlled/prospect totals. Overview includes live task and outreach stage controls, not invented charts. Current mail provider/runtime facts are defined by `CURRENT_PROJECT_STATUS.md`; the Phase 8 disabled-provider baseline below is historical, not the current SMTP capability. See `PHASE11_OUTREACH_WORKBENCH_RESULT.md` for actual acceptance.
+
 版本：Phase 8
 日期：2026-08-31
 状态：公司工作台前端 Source of Truth

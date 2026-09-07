@@ -26,6 +26,10 @@ export const PHASE5_QUEUES = Object.freeze({
   PROCESS_EMAIL_PROVIDER_EVENT: 'process-email-provider-event',
   PROCESS_INBOUND_MESSAGE: 'process-inbound-message',
   GMAIL_INBOUND_SYNC: 'gmail-inbound-sync',
+  INBOUND_EMAIL_SYNC: 'inbound-email-sync',
+  SEND_CONTROLLED_APPLICATION_EMAIL: 'send-controlled-application-email',
+  CONTROLLED_APPLICATION_INBOUND_SYNC: 'controlled-application-inbound-sync',
+  PROCESS_CONTROLLED_APPLICATION_INBOUND: 'process-controlled-application-inbound',
   RECONCILE_GMAIL_AMBIGUOUS_SEND: 'reconcile-gmail-ambiguous-send',
   CLASSIFY_INBOUND_REPLY: 'classify-inbound-reply',
   CREATE_SALES_FOLLOWUP: 'create-sales-followup',
@@ -68,6 +72,10 @@ function queuePolicy(name) {
       PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT,
       PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE,
       PHASE5_QUEUES.GMAIL_INBOUND_SYNC,
+      PHASE5_QUEUES.INBOUND_EMAIL_SYNC,
+      PHASE5_QUEUES.SEND_CONTROLLED_APPLICATION_EMAIL,
+      PHASE5_QUEUES.CONTROLLED_APPLICATION_INBOUND_SYNC,
+      PHASE5_QUEUES.PROCESS_CONTROLLED_APPLICATION_INBOUND,
       PHASE5_QUEUES.RECONCILE_GMAIL_AMBIGUOUS_SEND,
       PHASE5_QUEUES.PARSE_REFERENCE_IMPORT,
       PHASE5_QUEUES.COMMIT_REFERENCE_IMPORT,
@@ -192,9 +200,11 @@ export function createPhase5Queue({
         boss.on('error', error => audit('phase5_queue_error', { message: String(error?.message || error).slice(0, 240) }));
         await boss.start();
         for (const name of PHASE5_QUEUE_NAMES) await registerQueue(name);
-        if (booleanEnv(env.GMAIL_INBOUND_SYNC_ENABLED, false) && typeof boss.schedule === 'function') {
-          const minutes=Math.max(1,Math.min(59,Number(env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
-          await boss.schedule(PHASE5_QUEUES.GMAIL_INBOUND_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });
+        const inboundProvider=String(env.INBOUND_EMAIL_PROVIDER||'').trim().toUpperCase();
+        const inboundEnabled=inboundProvider==='IMAP'?booleanEnv(env.SMTP_IMAP_INBOUND_SYNC_ENABLED,false):inboundProvider==='GMAIL_API'&&booleanEnv(env.GMAIL_INBOUND_SYNC_ENABLED,false);
+        if (inboundEnabled && typeof boss.schedule === 'function') {
+          const minutes=Math.max(1,Math.min(59,Number(env.INBOUND_EMAIL_SYNC_INTERVAL_MINUTES||env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
+          await boss.schedule(PHASE5_QUEUES.INBOUND_EMAIL_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });
         }
         for (const name of workerQueueNames) {
           if (!processJobs) continue;

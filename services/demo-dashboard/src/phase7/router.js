@@ -53,10 +53,32 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
     asyncRoute(async(req,res)=>res.status(201).json(await service.recordManualOfficialRouteAction(req.params.id,req.body,req.managementUser))));
 
   router.get('/api/outreach/marketing-context', ...read, asyncRoute(async(_req,res)=>res.json(await service.getMarketingContext())));
+  router.get('/api/outreach/workbench', ...read, asyncRoute(async(_req,res)=>res.json(await service.getOutreachWorkbench())));
+  router.get('/api/outreach/operations-summary', ...read, asyncRoute(async(_req,res)=>res.json(await service.getOutreachOperationsSummary())));
+  router.post('/api/outreach/workbench/:companyId/prepare', ...draftWrite, asyncRoute(async(req,res)=>res.status(201).json(await service.prepareWorkbenchDraft(req.params.companyId,req.body,req.managementUser))));
   router.get('/api/outreach/gmail/health', ...read, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth())));
   router.post('/api/outreach/gmail/health-check', ...dataWrite, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth({verify_oauth:true}))));
+  router.get('/api/outreach/smtp/health', ...read, asyncRoute(async(_req,res)=>res.json(await service.smtpHealth())));
+  router.post('/api/outreach/smtp/health-check', ...dataWrite, asyncRoute(async(_req,res)=>res.json(await service.smtpHealth({verify_connection:true}))));
   router.post('/api/outreach/gmail/inbound-sync', ...dataWrite, asyncRoute(async(_req,res)=>{
     const queueJobId=await queue.enqueue(PHASE5_QUEUES.GMAIL_INBOUND_SYNC,{}, {singletonKey:'phase10:gmail-inbound:manual'});
+    res.status(202).json({status:'QUEUED',queue_job_id:queueJobId});
+  }));
+  router.post('/api/outreach/inbound-sync', ...dataWrite, asyncRoute(async(_req,res)=>{
+    const queueJobId=await queue.enqueue(PHASE5_QUEUES.INBOUND_EMAIL_SYNC,{}, {singletonKey:'phase11:inbound-email-sync:manual'});
+    res.status(202).json({status:'QUEUED',queue_job_id:queueJobId});
+  }));
+  router.get('/api/outreach/controlled-tests', ...read, asyncRoute(async(req,res)=>res.json(await service.listControlledApplicationContexts(req.query))));
+  router.get('/api/outreach/controlled-tests/runtime', ...read, asyncRoute(async(_req,res)=>res.json(service.controlledApplicationRuntimeStatus())));
+  router.post('/api/outreach/controlled-tests', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.createControlledApplicationContext(req.body,req.managementUser))));
+  router.get('/api/outreach/controlled-tests/:id', ...read, asyncRoute(async(req,res)=>res.json(await service.getControlledApplicationContext(req.params.id))));
+  router.post('/api/outreach/controlled-tests/:id/crm-replay', ...dataWrite, asyncRoute(async(req,res)=>res.status(202).json(await service.replayControlledCrm(req.params.id))));
+  router.post('/api/outreach/controlled-tests/:id/management-approve', ...managementApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.approveControlledApplicationContext(req.params.id,req.body,req.managementUser))));
+  router.post('/api/outreach/controlled-tests/:id/drafts', ...draftWrite, asyncRoute(async(req,res)=>res.status(201).json(await service.createControlledApplicationDraft(req.params.id,req.body,req.managementUser))));
+  router.post('/api/outreach/controlled-tests/:id/drafts/:draftId/approve', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.approveControlledApplicationDraft(req.params.id,req.params.draftId,req.body,req.managementUser))));
+  router.post('/api/outreach/controlled-tests/:id/drafts/:draftId/enqueue', ...send, asyncRoute(async(req,res)=>res.status(202).json(await service.enqueueControlledApplicationMessage(req.params.id,req.params.draftId))));
+  router.post('/api/outreach/controlled-tests/inbound-sync', ...dataWrite, asyncRoute(async(_req,res)=>{
+    const queueJobId=await queue.enqueue(PHASE5_QUEUES.CONTROLLED_APPLICATION_INBOUND_SYNC,{}, {singletonKey:'phase11:controlled-inbound-sync'});
     res.status(202).json({status:'QUEUED',queue_job_id:queueJobId});
   }));
   router.post('/api/outreach/marketing-context/versions', ...outreachApprove, asyncRoute(async(req,res)=>res.status(201).json(await service.createMarketingContext(req.body,req.managementUser))));
@@ -76,6 +98,7 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   router.post('/api/outreach/drafts/:id/supersede', ...draftWrite, asyncRoute(async(req,res)=>res.json(await service.supersedeDraft(req.params.id))));
 
   router.post('/api/outreach/messages/:id/enqueue', ...send, asyncRoute(async(req,res)=>res.status(202).json(await service.enqueueMessage(req.params.id,req.body))));
+  router.post('/api/outreach/messages/:id/retry-before-provider', ...send, asyncRoute(async(req,res)=>res.status(202).json(await service.retryBlockedMessage(req.params.id))));
   router.get('/api/outreach/messages/:id', ...read, asyncRoute(async(req,res)=>{
     const message=await service.repository.getOutboundMessage(req.params.id);if(!message)return res.status(404).json({error:'Message not found',code:'OUTBOUND_MESSAGE_NOT_FOUND'});res.json(message);
   }));

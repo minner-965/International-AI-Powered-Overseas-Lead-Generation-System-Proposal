@@ -31,6 +31,12 @@ export const PHASE10_CATEGORY_DRIVEN_CONTEXT_MIGRATION_KEY = '048_phase10_catego
 export const PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY = '049_phase10_1_category_contact_simplification.sql';
 export const PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY = '050_phase10_1_category_status_compatibility.sql';
 export const PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY = '051_phase10_2_category_readiness_compatibility.sql';
+export const PHASE11_OQUMAIL_OUTBOUND_SAFETY_MIGRATION_KEY = '052_phase11_oqumail_outbound_safety.sql';
+export const PHASE11_OQUMAIL_INBOUND_CRM_MIGRATION_KEY = '053_phase11_oqumail_inbound_crm.sql';
+export const PHASE11_SUPPRESSION_CLOSED_LOOP_MIGRATION_KEY = '054_phase11_suppression_closed_loop.sql';
+export const PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY = '055_phase11_controlled_application_context.sql';
+export const PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY = '056_phase11_version_payload_guard_rowtype.sql';
+export const PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY = '057_phase11_controlled_shared_crm.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -60,6 +66,11 @@ const phase10CategoryDrivenContextPath = path.resolve(projectRoot, 'database/mig
 const phase10CategoryContactSimplificationPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_CONTACT_SIMPLIFICATION_MIGRATION_KEY);
 const phase10CategoryStatusCompatibilityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_1_CATEGORY_STATUS_COMPATIBILITY_MIGRATION_KEY);
 const phase10CategoryReadinessCompatibilityPath = path.resolve(projectRoot, 'database/migrations', PHASE10_2_CATEGORY_READINESS_COMPATIBILITY_MIGRATION_KEY);
+const phase11OqumailOutboundSafetyPath = path.resolve(projectRoot, 'database/migrations', PHASE11_OQUMAIL_OUTBOUND_SAFETY_MIGRATION_KEY);
+const phase11OqumailInboundCrmPath = path.resolve(projectRoot, 'database/migrations', PHASE11_OQUMAIL_INBOUND_CRM_MIGRATION_KEY);
+const phase11SuppressionClosedLoopPath = path.resolve(projectRoot, 'database/migrations', PHASE11_SUPPRESSION_CLOSED_LOOP_MIGRATION_KEY);
+const phase11ControlledApplicationPath = path.resolve(projectRoot, 'database/migrations', PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY);
+const phase11VersionPayloadGuardPath = path.resolve(projectRoot, 'database/migrations', PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -663,14 +674,62 @@ export async function applyPhase7Migrations(options = {}) {
   const phase10CategoryReadinessCompatibility=await applyPhase7Migration({...options,
     migrationPath:options.phase10CategoryReadinessCompatibilityMigrationPath||phase10CategoryReadinessCompatibilityPath,
     appliedBy:options.appliedBy||'dpv-phase10.2-explicit-migration-runner'});
+  const phase11OqumailOutboundSafety=await applyPhase7Migration({...options,
+    migrationPath:options.phase11OqumailOutboundSafetyMigrationPath||phase11OqumailOutboundSafetyPath,
+    appliedBy:options.appliedBy||'dpv-phase11-oq03-oq05-migration-runner'});
+  const phase11OqumailInboundCrm=await applyPhase7Migration({...options,
+    migrationPath:options.phase11OqumailInboundCrmMigrationPath||phase11OqumailInboundCrmPath,
+    appliedBy:options.appliedBy||'dpv-phase11-oq06-oq08-migration-runner'});
+  const phase11SuppressionClosedLoop=await applyPhase7Migration({...options,
+    migrationPath:options.phase11SuppressionClosedLoopMigrationPath||phase11SuppressionClosedLoopPath,
+    appliedBy:options.appliedBy||'dpv-phase11-oq09-migration-runner'});
+  const phase11ControlledApplication=await applyPhase7Migration({...options,
+    migrationPath:options.phase11ControlledApplicationMigrationPath||phase11ControlledApplicationPath,
+    appliedBy:options.appliedBy||'dpv-phase11-oq10-migration-runner'});
+  const phase11VersionPayloadGuard=await applyPhase7Migration({...options,
+    migrationPath:options.phase11VersionPayloadGuardMigrationPath||phase11VersionPayloadGuardPath,
+    appliedBy:options.appliedBy||'dpv-phase11-oq11-migration-runner'});
+  const phase11ControlledSharedCrm=await applyPhase7Migration({...options,
+    migrationPath:options.phase11ControlledSharedCrmMigrationPath||path.resolve(projectRoot,'database/migrations',PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY),
+    appliedBy:options.appliedBy||'dpv-phase11-shared-crm-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
     phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,phase10CategoryDrivenContext,
-    phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,phase10CategoryReadinessCompatibility,
-    status:phase10CategoryReadinessCompatibility.status,database:phase10CategoryReadinessCompatibility.database};
+    phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,phase10CategoryReadinessCompatibility,phase11OqumailOutboundSafety,phase11OqumailInboundCrm,phase11SuppressionClosedLoop,phase11ControlledApplication,
+    phase11VersionPayloadGuard,phase11ControlledSharedCrm,status:phase11ControlledSharedCrm.status,database:phase11ControlledSharedCrm.database};
+}
+
+export async function verifyPhase11ControlledSharedCrmMigration(client){
+  const result=await client.query(`SELECT count(*)::int n FROM pg_constraint WHERE connamespace='leadgen'::regnamespace
+    AND conname IN('crm_outbox_scope_check','crm_activity_scope_check','crm_task_scope_check','crm_outbox_controlled_inbound_fk','crm_activity_controlled_inbound_fk','crm_task_controlled_inbound_fk')`);
+  if(result.rows[0]?.n!==6)throw new Error('Controlled shared CRM scope constraints missing');
+  return{controlled_shared_crm:'SCOPED_SHARED_ENTITIES'};
+}
+
+export async function verifyPhase11VersionPayloadGuardMigration(client){
+  const result=await client.query("SELECT pg_get_functiondef('leadgen.protect_phase7_version_payload()'::regprocedure) definition");
+  const definition=result.rows[0]?.definition||'';
+  if(!definition.includes('jsonb_each(to_jsonb(NEW))')||!definition.includes('revision_payload')
+    ||!definition.includes('content_hash'))throw new Error('Phase 11 immutable version guard verification failed');
+  return {version_payload_guard:'ROWTYPE_SAFE_IMMUTABLE'};
+}
+
+export async function verifyPhase11ControlledApplicationMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.tables WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+      'controlled_application_contexts','controlled_application_approvals','controlled_application_drafts',
+      'controlled_application_messages','controlled_application_attempts','controlled_application_inbound_messages',
+      'controlled_application_activities','controlled_application_suppressions','controlled_application_imap_checkpoints'])) controlled_tables,
+    NOT EXISTS(SELECT 1 FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name=tc.constraint_name AND ccu.constraint_schema=tc.constraint_schema
+      WHERE tc.table_schema='leadgen' AND tc.table_name LIKE 'controlled_application_%' AND tc.constraint_type='FOREIGN KEY'
+        AND ccu.table_name IN('companies','business_opportunity_decision_snapshots','opportunity_crm_states','crm_sync_outbox')) production_links,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='controlled_application_inbound_messages' AND column_name='from_address_hash') sender_hash`);
+  const row=result.rows[0]||{};if(Number(row.controlled_tables)!==9||!row.production_links||!row.sender_hash)throw new Error('Phase 11 controlled application migration verification failed');
+  return{controlled_application_tables_verified:9,production_data_isolation_verified:true,controlled_sender_hash_verified:true};
 }
 
 export async function applyPhase7Migration({
@@ -713,7 +772,13 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===PHASE7_HARDENING_MIGRATION_KEY
+      const verification = migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
+        ?await verifyPhase11ControlledSharedCrmMigration(client)
+        :migrationKey===PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY
+        ?await verifyPhase11VersionPayloadGuardMigration(client)
+        :migrationKey===PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY
+        ?await verifyPhase11ControlledApplicationMigration(client)
+        :migrationKey===PHASE7_HARDENING_MIGRATION_KEY
         ? await verifyPhase7HardeningMigration(client)
         :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
           ?await verifyPhase7RoleHardeningMigration(client)
@@ -781,7 +846,13 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, appliedBy]
     );
-    const verification = migrationKey===PHASE7_HARDENING_MIGRATION_KEY
+    const verification = migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
+      ?await verifyPhase11ControlledSharedCrmMigration(client)
+      :migrationKey===PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY
+      ?await verifyPhase11VersionPayloadGuardMigration(client)
+      :migrationKey===PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY
+      ?await verifyPhase11ControlledApplicationMigration(client)
+      :migrationKey===PHASE7_HARDENING_MIGRATION_KEY
       ? await verifyPhase7HardeningMigration(client)
       :migrationKey===PHASE7_ROLE_HARDENING_MIGRATION_KEY
         ?await verifyPhase7RoleHardeningMigration(client)

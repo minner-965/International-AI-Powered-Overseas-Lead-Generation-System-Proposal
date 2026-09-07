@@ -18,8 +18,8 @@
     "branch": {"type":"string","minLength":1},
     "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
     "dirty_at_snapshot": {"type":"boolean"},
-    "latest_released_phase": {"const":"Phase 9"},
-    "current_active_phase": {"const":"Phase 10"},
+    "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)"]},
+    "current_active_phase": {"enum":["Phase 10","Phase 11"]},
     "phase_state": {
       "type":"array",
       "minItems":4,
@@ -27,12 +27,12 @@
       "allOf":[
         {"contains":{"const":"Phase 1–9 complete"}},
         {"contains":{"const":"Phase 10 code/migration/UI/automation verified"}},
-        {"contains":{"const":"Phase 10 final acceptance incomplete"}},
+        {"contains":{"const":"Phase 10 pre-email final acceptance passed"}},
         {"contains":{"const":"WP-U00–U14 complete"}}
       ]
     },
-    "final_acceptance_state": {"const":"INCOMPLETE"},
-    "business_result_state": {"const":"NO"},
+    "final_acceptance_state": {"enum":["PASS","INCOMPLETE"]},
+    "business_result_state": {"enum":["YES","NO"]},
     "applied_migrations": {
       "type":"array",
       "items":{
@@ -54,8 +54,82 @@
       "properties":{"status":{"enum":["ACTIVE","STALE","MISSING"]},"observed_at":{"type":["string","null"]}}
     },
     "provider_configuration":{"type":"object"},
+    "phase10_1_acceptance":{"type":"object"},
+    "phase10_2_acceptance":{"type":"object"},
+    "phase10_3_acceptance":{"type":"object"},
+    "phase10_4_acceptance":{"type":"object"},
+    "phase10_5_acceptance":{"type":"object"},
+    "phase11_readiness":{
+      "type":"object",
+      "required":["scope","wp_oq00","wp_oq01","wp_oq02","wp_oq03","wp_oq04","wp_oq05","wp_oq06","wp_oq07","wp_oq08","wp_oq09","wp_oq10","wp_oq11","wp_oq12","wp_oq13","wp_oq14","wp_oq15","wp_oq16","git_baseline","evidence_summary"],
+      "properties":{
+        "scope":{"const":["WP-OQ00","WP-OQ01","WP-OQ02","WP-OQ03","WP-OQ04","WP-OQ05","WP-OQ06","WP-OQ07","WP-OQ08","WP-OQ09","WP-OQ10","WP-OQ11","WP-OQ12","WP-OQ13","WP-OQ14","WP-OQ15","WP-OQ16"]},
+        "wp_oq00":{"const":"PASS"},
+        "wp_oq01":{"const":"PASS"},
+        "wp_oq02":{"const":"PASS"},
+        "wp_oq03":{"const":"PASS"},
+        "wp_oq04":{"const":"PASS"},
+        "wp_oq05":{"const":"PASS"},
+        "wp_oq06":{"const":"PASS"},
+        "wp_oq07":{"const":"PASS"},
+        "wp_oq08":{"enum":["PASS","ISOLATED_PERSISTENCE_PASS_REAL_CRM_INCOMPLETE"]},
+        "wp_oq09":{"const":"PASS"},
+        "wp_oq10":{"enum":["REAL_E2E_PENDING","CONTROLLED_SUBSYSTEM_PASS_CRM_INCOMPLETE","PASS"]},
+        "wp_oq11":{"enum":["BLOCKED_BEFORE_SEND","APPROVED_PENDING_SINGLE_SEND","SINGLE_SEND_ACCEPTED_AWAITING_REPLY","PASS"]},
+        "wp_oq12":{"enum":["IMPLEMENTED_BROWSER_VERIFIED","PASS"]},
+        "wp_oq13":{"enum":["CSV_XLSX_STRUCTURE_PASS","PASS"]},
+        "wp_oq14":{"enum":["ISOLATED_PASS_LIVE_FAULTS_UNPROVEN","REGRESSION_PASS_FAULT_FIXTURES","PASS"]},
+        "wp_oq15":{"enum":["PARTIAL_DEMO_CRM_INCOMPLETE","FINAL_BROWSER_REVIEW_PENDING","PASS"]},
+        "wp_oq16":{"enum":["DOCUMENTS_READY_RELEASE_NOT_EXECUTED","PASS"]},
+        "git_baseline":{
+          "type":"object",
+          "required":["commit","dirty"],
+          "properties":{
+            "commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+            "dirty":{"const":false}
+          }
+        },
+        "evidence_summary":{"type":"object","minProperties":1}
+      }
+    },
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"const":"Gmail controlled acceptance"},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
-  }
+  },
+  "allOf":[
+    {
+      "if":{"properties":{"current_active_phase":{"const":"Phase 10"}}},
+      "then":{
+        "properties":{
+          "final_acceptance_state":{"const":"PASS"},
+          "business_result_state":{"const":"YES"},
+          "next_allowed_work_package":{"const":"POST_PHASE10_EMAIL_CONFIGURATION"}
+        },
+        "not":{"required":["phase11_readiness"]}
+      },
+      "else":{
+        "required":["phase11_readiness"],
+        "properties":{
+          "final_acceptance_state":{"enum":["INCOMPLETE","PASS"]},
+          "business_result_state":{"const":"NO"},
+          "effective_runtime_flags":{
+            "required":["outbound_email_enabled","gmail_api_enabled","gmail_inbound_sync_enabled"],
+            "properties":{
+              "outbound_email_enabled":{"const":false},
+              "gmail_api_enabled":{"const":false},
+              "gmail_inbound_sync_enabled":{"const":false}
+            }
+          },
+          "provider_configuration":{
+            "required":["outbound_email_provider","inbound_email_provider","mail_provider_vendor"],
+            "properties":{
+              "outbound_email_provider":{"const":"SMTP"},
+              "inbound_email_provider":{"const":"IMAP"},
+              "mail_provider_vendor":{"const":"OQUMAIL"}
+            }
+          }
+        }
+      }
+    }
+  ]
 }

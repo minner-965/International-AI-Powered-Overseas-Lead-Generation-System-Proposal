@@ -47,6 +47,16 @@ const messagePolicy = {
   ]
 };
 
+test('approval expiry digest survives PostgreSQL Date roundtrip without relaxing exact expiry',()=>{
+  const expires_at='2026-09-14T03:24:56.789Z';
+  const original=buildApprovalDigest({...approvalInput(),expires_at});
+  const restored=buildApprovalDigest({...approvalInput(),expires_at:new Date(expires_at)});
+  assert.equal(restored.approval_digest,original.approval_digest);
+  assert.equal(buildApprovalDigest({...approvalInput(),expires_at:'2026-09-14T11:24:56.789+08:00'}).approval_digest,original.approval_digest);
+  assert.notEqual(buildApprovalDigest({...approvalInput(),expires_at:'2026-09-14T03:24:56.790Z'}).approval_digest,original.approval_digest);
+  assert.throws(()=>buildApprovalDigest({...approvalInput(),expires_at:'invalid'}),/valid timestamp/);
+});
+
 test('marketing context projects only allowlisted verified facts and resolves exact IDs', () => {
   const result = buildMarketingContext({
     company_id: IDS.company,
