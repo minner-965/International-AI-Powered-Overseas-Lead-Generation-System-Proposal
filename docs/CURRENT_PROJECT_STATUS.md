@@ -5,12 +5,12 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-07T12:09:53+08:00",
+  "generated_updated_at": "2026-09-07T12:17:54+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "ce5696e2586cd5e47c8284a6192af992d33ed835",
-  "dirty_at_snapshot": true,
-  "latest_released_phase": "Phase 10 (Pre-email)",
+  "commit": "781f1e837508fc990325b9bb377d880c5ea148a9",
+  "dirty_at_snapshot": false,
+  "latest_released_phase": "Phase 11 (Controlled outreach)",
   "current_active_phase": "Phase 11",
   "phase_state": [
     "Phase 1–9 complete",
@@ -65,9 +65,9 @@ This file is the single source of truth for current execution state. Historical 
     "WP-OQ13 real CSV and XLSX exports generated and structurally verified",
     "WP-OQ14 isolated PostgreSQL regression 18 passed; provider fault injection passed without extra live sends",
     "WP-OQ15 application CRM browser demonstration verified on desktop and 390px mobile",
-    "WP-OQ16 evidence documents prepared; commit, push and acceptance tag not executed"
+    "WP-OQ16 implementation commit, remote branch and annotated acceptance tag verified; STOP"
   ],
-  "final_acceptance_state": "INCOMPLETE",
+  "final_acceptance_state": "PASS",
   "business_result_state": "NO",
   "applied_migrations": [
     {"migration_key":"024_phase6_1_category_procurement_match.sql","sha256":"f468b82796e4941a65d81dc37f4a2cc9ca10ca0ccc938abf4ec4ad5a83b4930d"},
@@ -311,7 +311,7 @@ This file is the single source of truth for current execution state. Historical 
     "wp_oq13": "CSV_XLSX_STRUCTURE_PASS",
     "wp_oq14": "REGRESSION_PASS_FAULT_FIXTURES",
     "wp_oq15": "PASS",
-    "wp_oq16": "DOCUMENTS_READY_RELEASE_NOT_EXECUTED",
+    "wp_oq16": "PASS",
     "git_baseline": {"commit":"44f5b65753c4d32008c6637684afb2be1da342b1","dirty":false},
     "evidence_root": "artifacts/phase11-controlled-outreach/2026-09-05T04-15-06-412Z",
     "immutable_baseline_evidence": {
@@ -357,12 +357,12 @@ This file is the single source of truth for current execution state. Historical 
       "application_crm_closure":{"source_scope":"CONTROLLED","source_inbound":2,"crm_outbox":2,"synced_outbox":2,"opportunity_activities":2,"sales_tasks":1,"task_status":"CANCELLED","task_close_reason":"OPT_OUT","owner":"dpv-workspace","historical_due_at":"2026-09-08T02:40:59Z","prospect_crm_rows":0,"external_crm_provider_calls":0,"replay_created":0,"worker_restart_replay_created":0,"status":"PASS"},
       "imap_monitor":{"checkpoint_status":"ACTIVE","last_sync_at":"2026-09-07T03:55:21.721Z","last_success_at":"2026-09-07T03:55:21.721Z"},
       "background_activity":{"manual_research_canary_created":false,"collection_runs_delta":1,"research_jobs_delta":1,"provider_usage_events_delta":140,"note":"Existing automatic research resumed around worker recreation; background writes are not represented as a manually executed acceptance canary."},
-      "release":{"source_head":"44f5b65753c4d32008c6637684afb2be1da342b1","commit":"NOT_EXECUTED","push":"NOT_EXECUTED","acceptance_tag":"NOT_EXECUTED","status":"PENDING_FULL_ACCEPTANCE"}
+      "release":{"source_head":"44f5b65753c4d32008c6637684afb2be1da342b1","commit":"781f1e837508fc990325b9bb377d880c5ea148a9","push":"VERIFIED","remote_branch":"phase10-remove-internal-limits-20260904-112916","remote_branch_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","acceptance_tag":"phase11-oqumail-controlled-outreach-accepted","tag_object":"9b80fc1cb5491a64f20788791e5127715312aec8","tag_peeled_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","status":"VERIFIED","note":"Acceptance tag identifies the tested implementation. A subsequent documentation-only receipt commit records verified release facts without moving the acceptance tag."}
     }
   },
-  "current_blockers": ["PHASE11_RELEASE_NOT_COMPLETE"],
-  "next_allowed_work_package": "PHASE11_REMAINING_ACCEPTANCE",
-  "explicit_stop_boundary": "WP-A16 and WP-OQ09 retain their recorded acceptance. Shared application CRM closure and browser checks now pass; release verification remains pending. STOP additional sending and automatic follow-up; publish the acceptance tag only after final release verification. The single OQ11 pilot remains accepted by SMTP without a claimed prospect reply."
+  "current_blockers": [],
+  "next_allowed_work_package": "STOP_AWAIT_PRODUCTION_POLICY",
+  "explicit_stop_boundary": "WP-A16 and WP-OQ09 retain their recorded acceptance. Phase 11 application acceptance, browser and implementation release are verified. STOP additional sending, automatic follow-up, new providers and approval relaxation. Await the user's production sending policy. The single OQ11 pilot remains accepted by SMTP without a claimed prospect reply or commercial outcome."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
@@ -370,10 +370,10 @@ This file is the single source of truth for current execution state. Historical 
 ## Status interpretation
 
 - Phase 1–9 are complete.
-- Phase 10 pre-email category-driven automation remains accepted with its recorded business result. The top-level INCOMPLETE/NO fields describe unfinished Phase 11 final acceptance and commercial outcome; they do not negate the completed controlled email test.
+- Phase 10 pre-email category-driven automation retains its recorded acceptance. Phase 11 final technical/application acceptance is PASS. The separate business_result_state remains NO because no commercial result, sale or prospect reply has been confirmed; this is not a technical release blocker.
 - WP-OQ00–OQ10 now have the required application-level evidence. Migration 057 links the two existing real controlled replies to the shared CRM outbox, Activity and sales-task entities using explicit CONTROLLED scope, not fake companies. Both outbox rows are SYNCED; the recorded owner/due review task is CANCELLED for opt-out. Repeating protected replay, including after restarting the outreach worker, creates zero entries. External CRM-vendor delivery is not claimed or required for this in-application CRM result. OQ11 remains one approved introduction accepted by SMTP; inbox delivery, prospect reply and commercial outcome are unconfirmed.
-- Current data counts and mail flags were reread at 2026-09-07 11:58:13 +08:00. Earlier Phase 10 canary, n8n workflow and heartbeat sections remain dated historical evidence. No manual search canary was created by this audit; existing automatic background research resumed around worker recreation, adding one research job, one collection run and 140 usage-event rows compared with the earlier snapshot. Current recommendation refresh no longer shows an active management approval; the immutable sent-message approval remains preserved. The latest committed implementation remains `ce5696e...`; source HEAD remains `44f5b657...`, recorded separately from uncommitted Phase 11 work.
-- OQ12 interface and monitoring are implemented and browser checked; OQ13 generated actual CSV/XLSX outputs with structural validation. OQ14 has 18 isolated PostgreSQL checks passed and a final integrated suite of 851 total / 797 passed / 0 failed / 54 skipped. Fault injection uses fixtures to avoid extra live sends; these are not mislabeled live-provider crashes. Updated CRM demonstration passed desktop and 390px mobile browser checks. OQ16 documents are prepared; commit, push and acceptance tag have not been executed. No Phase 11 public release is claimed.
+- General data counts and mail flags were reread at 2026-09-07 11:58:13 +08:00; shared CRM counts were independently reread at 12:09:53 +08:00. Earlier Phase 10 canary, n8n workflow and heartbeat sections remain dated historical evidence. No manual search canary was created by this audit; existing automatic background research resumed around worker recreation, adding one research job, one collection run and 140 usage-event rows compared with the earlier snapshot. Current recommendation refresh no longer shows an active management approval; the immutable sent-message approval remains preserved. The tested implementation is commit `781f1e837508fc990325b9bb377d880c5ea148a9`; `44f5b657...` is the starting source HEAD, not the final release.
+- OQ12 interface and monitoring are implemented and browser checked; OQ13 generated actual CSV/XLSX outputs with structural validation. OQ14 has 18 isolated PostgreSQL checks passed and a final integrated suite of 851 total / 797 passed / 0 failed / 54 skipped. Fault injection uses fixtures to avoid extra live sends; these are not mislabeled live-provider crashes. Updated CRM demonstration passed desktop and 390px mobile browser checks. OQ16 implementation commit and annotated acceptance tag were pushed and independently verified against the remote. The tag remains on the tested implementation; a documentation-only follow-up records the release receipt. This is a Git release, not a claim of deployment to a public server.
 - WP-U00–U14, WP-A05–A16 and WP-B00–B11 are complete. Provider-only research, canonical continuation, category-driven Opportunity decisions, company-level contact deduplication, event-driven scheduling, management UI, XLSX export, zero-send safety, stuck-task convergence and final release verification passed.
 - WP06 provides trustworthy workflow health and QUEUED recovery. WP07 adds the transactional ResearchJob outbox and direct pg-boss execution path while retaining n8n compatibility. WP08 makes `provider_usage_events` the canonical ResearchJob provider-usage source. WP09 separates business strategy attempts, Provider retries and worker recoveries. WP10's historical fair scheduling remains, while WP-A04.2 removes every application-enforced Tavily quantity budget and relies on confirmed Provider account credit state. WP11 expands and validates the verified-company pool. WP12 adds append-only Commercial Product Fit as a non-blocking ranking layer with an independent evidence coverage value. WP13 adds an append-only manual queue for verified official supplier, vendor, procurement and contact routes without granting send or approval permission. WP14 adds an executable GoRules native dependency health check. WP15 adds a gated Gmail API/OAuth provider, stable message identity, database idempotency, ambiguous-send reconciliation, historyId polling, structured DSN handling and existing Phase 7 inbound/CRM reuse.
 - Contact qualification prefers a verified named Buyer but accepts an official company email, business phone, public WhatsApp, or ordinary company contact page as a company-level opportunity route. Missing a person name no longer blocks `RECOMMENDED`; email sending remains independently management-approved and verification-gated.
@@ -383,4 +383,4 @@ This file is the single source of truth for current execution state. Historical 
 
 ## Execution boundary
 
-The single approved OQ11 pilot has been accepted by SMTP. Sending scope, outreach and live-prospect approval are closed; controlled mode is false and its message limit is zero. SMTP configuration and IMAP polling remain enabled. The actual reply-to-shared-application-CRM gap is closed without a new email. Complete release verification before final release PASS. Business category opportunity remains sufficient; no procurement-intent or named-buyer prerequisite is added. Additional sending and automatic follow-up remain outside scope. Commercial outcome remains unconfirmed even after technical acceptance.
+Phase 11 technical/application acceptance and Git release are verified. The single approved pilot is accepted by SMTP. Sending scope, outreach and live-prospect approval are closed; controlled mode is false and its message limit is zero. SMTP configuration and IMAP polling remain enabled. STOP additional sending, automatic follow-up and further phase expansion pending the user's production policy. Business category opportunity remains sufficient; no procurement-intent or named-buyer prerequisite is added. Commercial outcome remains unconfirmed despite technical acceptance.

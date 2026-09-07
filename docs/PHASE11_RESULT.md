@@ -66,9 +66,15 @@ Continuous prospect sending, controlled sending and automatic email follow-up re
 
 ## Release
 
-Technical corrections and actual CRM closure are verified. Final repository checks and release references are recorded below after execution; no acceptance tag is claimed before it exists.
+Release status: PASS — application technical acceptance. Commercial result: unconfirmed.
 
-Release status: PENDING_FINAL_REPOSITORY_CHECKS.
+- Implementation commit: `781f1e837508fc990325b9bb377d880c5ea148a9`.
+- Branch: `phase10-remove-internal-limits-20260904-112916`; push verified against the remote hash.
+- Acceptance tag: `phase11-oqumail-controlled-outreach-accepted`, published and remotely verified; peeled commit equals the implementation commit above.
+- Tag object: `9b80fc1cb5491a64f20788791e5127715312aec8`.
+- Sensitive-value audit: 634 candidate files, eight configured sensitive values checked, zero hits; no non-example environment files tracked.
+- Final documentation-only follow-up records the verified publication without moving the accepted implementation tag.
+- STOP. Continuous sending and automatic email follow-up remain closed. Receipt/reply evidence from the real prospect and any future email require their own actual records and approval.
 
 ## Supporting records
 

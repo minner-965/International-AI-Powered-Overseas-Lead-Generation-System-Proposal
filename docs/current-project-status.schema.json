@@ -93,7 +93,7 @@
       }
     },
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE"]},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   },
   "allOf":[
