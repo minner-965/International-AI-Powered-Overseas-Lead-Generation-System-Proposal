@@ -4,33 +4,38 @@ import test from 'node:test';
 
 const readPublic = name => readFile(new URL(`../public/${name}`, import.meta.url), 'utf8');
 
-test('unified workspace assets load last and cover every application view', async () => {
+test('V3 workspace assets replace the old global layer and retain every application view', async () => {
   const [html, module, css] = await Promise.all([
     readPublic('index.html'),
-    readPublic('ui/workspace-system.js'),
-    readPublic('ui/workspace-system.css')
+    readPublic('crm-shell.js'),
+    readPublic('ui/v3/components.css')
   ]);
-  assert.match(html, /href="\/ui\/workspace-system\.css\?v=20260901-r6"/);
-  assert.match(html, /src="\/ui\/workspace-system\.js\?v=20260901"/);
-  assert.ok(html.indexOf('/ui/workspace-system.css') > html.indexOf('/ui/opportunity-workspace.css'));
-  assert.equal((html.match(/data-app-view="/g) || []).length, 11);
-  assert.match(module, /querySelectorAll\('\[data-app-view\]'\)\.forEach\(decoratePageHeader\)/);
+  assert.doesNotMatch(html, /(?:href|src)="\/ui\/workspace-system\.(?:css|js)/);
+  for (const asset of ['tokens', 'foundation', 'components', 'shell', 'overview']) {
+    assert.match(html, new RegExp(`href="/ui/v3/${asset}\\.css"`));
+  }
+  assert.ok(html.indexOf('/ui/v3/components.css') > html.indexOf('/ui/opportunity-workspace.css'));
+  assert.equal((html.match(/data-app-view="/g) || []).length, 13);
+  assert.match(html,/data-app-nav="replies"/);
+  assert.match(html,/data-app-nav="contact-ready"/);
+  assert.match(module,/views\['contact-ready'\]/);
+  assert.match(module, /querySelectorAll\('\[data-app-view\]'\)/);
+  assert.match(module, /crm:viewchange/);
   for (const view of ['overview', 'companies', 'contact-queue', 'customer-match', 'evidence', 'jobs', 'data-import', 'data-export', 'settings']) {
     assert.match(module, new RegExp(`(?:'${view}'|${view}):`));
   }
-  assert.match(css, /\.crm-panel,[\s\S]*?border-radius:\s*var\(--ws-radius\)/);
-  assert.match(css, /#view-settings \.crm-settings-grid/);
-  assert.match(css, /#view-companies \.ws-page-head > \.filters/);
+  assert.match(css, /\.crm-panel,[\s\S]*?border-radius:\s*var\(--dpv-radius-panel\)/);
+  assert.match(css, /background:\s*var\(--dpv-surface\)/);
 });
 
-test('opportunity status navigation uses stacked bilingual labels and responsive rows', async () => {
-  const css = await readPublic('ui/workspace-system.css');
+test('opportunity status navigation uses stacked bilingual labels and compact phone scrolling', async () => {
+  const css = await readPublic('ui/opportunity-workspace.css');
   assert.match(css, /\.opw-workspace \.crm-status-tabs\s*\{[^}]*display:\s*grid/);
-  assert.match(css, /grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /\.crm-status-tab \.bi\s*\{[^}]*flex-direction:\s*column/);
-  assert.match(css, /@media \(max-width:\s*1300px\)[\s\S]*?repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /@media \(max-width:\s*767px\)[\s\S]*?repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /@media \(max-width:\s*420px\)[\s\S]*?grid-template-columns:\s*1fr/);
+  assert.match(css, /\.opw-workspace \.crm-status-tabs\s*\{[^}]*repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(await readPublic('ui/v3/foundation.css'), /\.bi\s*\{[^}]*flex-direction:\s*column/);
+  assert.match(css, /\.opw-workspace \.crm-status-tab\s*\{[^}]*min-height:\s*52px/);
+  assert.match(css, /@media \(max-width:\s*767px\)[\s\S]*?\.crm-opportunity-table tbody/);
+  assert.match(css, /@media \(max-width:\s*767px\)[\s\S]*?\.crm-status-tabs[^}]*overflow-x:auto/);
 });
 
 test('released interface removes narrative and AI-style decision copy while preserving business status hooks', async () => {
@@ -58,7 +63,7 @@ test('record-heavy views use structured adaptive components instead of legacy wi
     readPublic('index.html'),
     readPublic('app.js'),
     readPublic('ui/phase9-research-workbench.js'),
-    readPublic('ui/workspace-system.css')
+    readPublic('ui/v3/responsive.css')
   ]);
   assert.match(app, /class="crm-op-cell"/);
   assert.match(app, /class="crm-op-cell-details"/);
@@ -69,27 +74,33 @@ test('record-heavy views use structured adaptive components instead of legacy wi
   assert.match(app, /function detailMetric\(/);
   assert.match(app, /company-col-company/);
   assert.match(app, /data-label="相关机会 \/ Related opportunity"/);
-  assert.match(css, /\.opw-workspace \.crm-opportunity-table\s*\{[^}]*min-width:\s*0/);
-  assert.match(css, /@media \(max-width:\s*1450px\)[\s\S]*?#view-companies \.crm-company-table tbody[\s\S]*?grid-template-columns:\s*repeat\(2/);
+  const opportunityCss=await readPublic('ui/opportunity-workspace.css');
+  assert.match(opportunityCss, /\.opw-workspace \.crm-opportunity-table\s*\{[^}]*min-width:\s*1180px/);
+  assert.match(opportunityCss, /@media \(max-width: 767px\)[\s\S]*?\.crm-opportunity-table tbody\s*\{[^}]*min-width:0/);
+  const companyCss = await readPublic('ui/v3/companies.css');
+  assert.match(companyCss, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.crm-company-table tbody[\s\S]*?display:grid/);
   assert.match(css, /\.p8-evidence-row\s*\{[^}]*grid-template-columns/);
-  assert.match(css, /#detail \.crm-detail-header\s*\{[^}]*grid-template-columns/);
+  assert.match(companyCss, /\.v3-company-detail \.crm-detail-header\s*\{[^}]*display:flex/);
   assert.match(css, /\.p9-inline-state:not\(:empty\)/);
-  assert.match(css, /#view-companies \.crm-company-table \.company-col-action\s*\{[\s\S]*?display:\s*grid\s*!important/);
-  assert.match(css, /\.crm-detail-action-buttons\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(companyCss, /\.crm-company-table \.company-col-action\s*\{[^}]*display:block/);
+  assert.match(companyCss, /\.crm-detail-action-buttons\s*\{[^}]*display:flex[^}]*flex-wrap:wrap/);
   assert.match(research, /listPanel\.hidden = true/);
   assert.match(research, /host\.classList\.add\('p9-inline-state'\)/);
   assert.match(research, /host\.classList\.remove\('p9-inline-state','is-error'\)/);
   assert.match(html, /class="table table-vcenter card-table crm-table crm-company-table"/);
 });
 
-test('classic data dashboard language is shared by every operational module', async () => {
-  const css = await readPublic('ui/workspace-system.css');
-  assert.match(css, /Classic data dashboard refinement/);
-  assert.match(css, /\.ws-page-icon\s*\{\s*display:\s*none/);
-  assert.match(css, /\.opw-page-icon\s*\{\s*display:\s*none/);
-  assert.match(css, /border-top:\s*4px solid var\(--metric-accent/);
-  assert.match(css, /\.opw-priority-panel\s*\{[^}]*color:\s*var\(--ws-ink\)[^}]*background:\s*var\(--ws-surface\)/);
-  assert.match(css, /\.crm-table thead\s*\{\s*background:\s*#f8fafc/);
-  assert.match(css, /\.p9-command-header,[\s\S]*?border:\s*0;[\s\S]*?box-shadow:\s*none/);
-  assert.match(css, /@media \(max-width:\s*520px\)[\s\S]*?\.p9-metric-strip\s*\{\s*grid-template-columns:\s*1fr/);
+test('V3 reference colors, bilingual hierarchy and overview proportions replace old visual conventions', async () => {
+  const [tokens, foundation, overview] = await Promise.all([
+    readPublic('ui/v3/tokens.css'), readPublic('ui/v3/foundation.css'), readPublic('ui/v3/overview.css')
+  ]);
+  for (const [name, value] of [['canvas', '#f4f6f8'], ['surface', '#ffffff'], ['sidebar', '#0f172a'], ['primary', '#2563eb']]) {
+    assert.match(tokens, new RegExp(`--dpv-${name}:\\s*${value}`, 'i'));
+  }
+  assert.match(foundation, /\.bi\s*\{[^}]*flex-direction:\s*column/);
+  assert.match(foundation, /\.bi > \[lang="zh-CN"\], \.bi > \[lang="en"\]\s*\{[^}]*font-size:\s*1em[^}]*font-weight:\s*inherit/);
+  assert.match(overview, /grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(overview, /grid-template-columns:\s*minmax\(0,2fr\) minmax\(0,1fr\)/);
+  assert.match(overview, /@media\s*\(max-width:\s*700px\)/);
+  assert.doesNotMatch(`${tokens}\n${foundation}\n${overview}`, /#5146e5|#4338ca|linear-gradient|shimmer/i);
 });

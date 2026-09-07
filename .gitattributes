@@ -19,3 +19,6 @@
 # the source repository's whitespace so directory SHA-256 locks remain valid.
 .agents/vendor/** -text whitespace=-trailing-space
 
+# Preserve the user's archived visual reference byte-for-byte, including whitespace.
+docs/ui/reference/dpv-workspace-reference-dashboard.html -text whitespace=-trailing-space
+

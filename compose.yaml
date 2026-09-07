@@ -78,6 +78,8 @@ services:
         required: false
       - path: .env.phase7-outreach
         required: false
+      - path: .env.phase12-manual-outreach
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,8 +90,8 @@ services:
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
-      # Provider selection and every send gate come from the ignored local
-      # mailbox configuration; the committed example keeps them closed.
+      # Manual API only. Optional local gate file remains absent/closed by default.
+      OUTREACH_MANUAL_SEND_ONLY: "true"
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
       RESEND_USE_CASE: "DISABLED"
@@ -201,8 +203,11 @@ services:
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_ENABLED: "true"
       PGBOSS_PROCESS_JOBS: "true"
-      # Provider selection and every send gate come from the ignored local
-      # mailbox configuration; the committed example keeps them closed.
+      # Background delivery stays closed even when manual API delivery is enabled.
+      OUTREACH_MANUAL_SEND_ONLY: "true"
+      OUTREACH_ENABLED: "false"
+      OUTREACH_SEND_SCOPE: "DISABLED"
+      LIVE_PROSPECT_SEND_APPROVED: "false"
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
       RESEND_USE_CASE: "DISABLED"

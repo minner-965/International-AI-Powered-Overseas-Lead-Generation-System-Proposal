@@ -1,5 +1,14 @@
 # Version Changelog
 
+## phase12-workspace-ui-v3 — 2026-09-07 — implementation handoff
+
+- Consolidated V3 shell, overview, opportunities, research/jobs, company/contact detail, email/replies, records, import/export and settings under the project UI system.
+- Removed superseded visual layers and 259 additional dead selector arms; preserved reachable business modules, APIs, migrations and stable hooks.
+- User-approved performance allowances: resource entries +40% against the fixed freeze baseline, loading medians +20%; byte review line remains +15%.
+- Includes earlier authorized manual-email deployment: manual single-message sending, 50/day, automatic sending off; this release work sends no email.
+- Full-phase visual/accessibility acceptance is not inferred from performance approval. Final executed checks, limitations and Git receipt: `PHASE12_UI_RESULT.md`.
+
+
 ## phase11-oqumail-final-acceptance — 2026-09-07
 
 - Completed explicit email-review navigation and company-to-mail entry; corrected missing legacy review identity and removed the invalid legacy action for records without a review.

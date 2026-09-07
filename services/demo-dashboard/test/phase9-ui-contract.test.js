@@ -28,12 +28,13 @@ test('new research job is a native four-step category-driven dialog with explici
   assert.match(ui,/dialogOpener\.focus\(\{ preventScroll:true \}\)/);
 });
 
-test('Jobs Inbox preserves three tabs, seven decision columns and the simplified six pipeline stages',async()=>{
+test('Jobs Inbox exposes four V3 tabs, seven decision columns and the simplified six pipeline stages',async()=>{
   const [html,ui]=await Promise.all([
     readPublic('index.html'),
     readPublic('ui/phase9-research-workbench.js')
   ]);
-  assert.equal((html.match(/data-jobs-tab=/g)||[]).length,3);
+  assert.equal((html.match(/data-jobs-tab=/g)||[]).length,4);
+  for (const tab of ['research','import','export','outreach']) assert.ok(html.includes(`data-jobs-tab="${tab}"`));
   for(const [zh,en] of [
     ['任务 / 目标','Job / Objective'],['市场 / 产品','Market / Profile'],['阶段 / 状态','Stage / Status'],
     ['进度','Progress'],['结果','Results'],['最近阻断 / 活动','Latest Blocker / Activity'],['操作','Action']

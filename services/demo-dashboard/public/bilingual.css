@@ -13,15 +13,8 @@
 }
 
 .bi > [lang="en"] { color: inherit; opacity: .84; }
-
-.hero .bi > [lang="en"],
-.market-flag .bi > [lang="en"] { opacity: .88; }
-
-.hero h2 .bi { gap: .16em; }
-.hero-description .bi { gap: .38em; }
 .run-status { white-space: pre-line; }
 .actions .bi,
-.hero button .bi,
 #start-research .bi { align-items: center; text-align: center; }
 th .bi { line-height: 1.25; }
 
@@ -51,13 +44,6 @@ th .bi { line-height: 1.25; }
 .tier-a { background: #1f7a55; color: #ffffff; }
 .tier-b { background: #ffd166; color: #463000; }
 .tier-c { background: #a83e32; color: #ffffff; }
-
-.detail-tier-score .tier-score {
-  min-width: 104px;
-  min-height: 56px;
-  padding: 12px 16px;
-  font-size: 24px;
-}
 
 .size-tag {
   display: inline-flex;
@@ -98,8 +84,6 @@ th .bi { line-height: 1.25; }
   font-weight: 700;
   text-decoration: none;
 }
-
-.research-heading { margin-bottom: 18px; }
 
 .research-form {
   display: grid;
@@ -175,13 +159,6 @@ th .bi { line-height: 1.25; }
   background: var(--card-subtle);
 }
 
-.research-job-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
 .research-job h4 {
   margin: 7px 0 0;
   color: var(--ink);
@@ -211,73 +188,6 @@ th .bi { line-height: 1.25; }
 .job-status.status-completed { background: #dff3e8; color: #185a40; }
 .job-status.status-failed { background: var(--red-soft); color: var(--red); }
 
-.research-job-grid {
-  display: grid;
-  grid-template-columns: 1.5fr 1.5fr repeat(3, minmax(100px, .75fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.research-progress {
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-}
-
-.research-progress-copy {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.research-progress-copy b {
-  flex: 0 0 auto;
-  color: var(--color-brand-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.research-progress progress {
-  display: block;
-  width: 100%;
-  height: 10px;
-  overflow: hidden;
-  border: 0;
-  border-radius: 999px;
-  background: var(--line-soft);
-  accent-color: var(--color-brand);
-}
-
-.research-progress progress::-webkit-progress-bar { background: var(--line-soft); }
-.research-progress progress::-webkit-progress-value { background: var(--color-brand); }
-.research-progress progress::-moz-progress-bar { background: var(--color-brand); }
-
-.research-job-grid > div {
-  min-width: 0;
-  min-height: 88px;
-  padding: 11px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 7px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.research-job-grid b {
-  color: var(--ink);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
 .job-error {
   margin: 12px 0 0;
   padding: 10px 12px;
@@ -287,47 +197,6 @@ th .bi { line-height: 1.25; }
   font-size: 13px;
   font-weight: 750;
 }
-
-.job-disclosure { margin-top: 12px; }
-
-.job-disclosure > summary {
-  min-height: 44px;
-  padding: 9px 11px;
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--color-brand-strong);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.job-disclosure[open] > summary { border-radius: 10px 10px 0 0; }
-
-.query-summary {
-  margin-top: 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-}
-
-.query-summary > summary {
-  min-height: 44px;
-  padding: 10px 12px;
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.query-summary > .candidate-table-wrap {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--line-soft);
-  border-radius: 0;
-}
-
-.query-table { min-width: 720px; }
 
 .candidate-head {
   margin-top: 22px;
@@ -349,60 +218,25 @@ th .bi { line-height: 1.25; }
   color: var(--muted);
   font-size: 13px;
 }
-
-.candidate-table-wrap {
-  max-width: 100%;
-  margin-top: 12px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
-  scrollbar-gutter: stable;
-}
-
-.candidate-table {
-  width: 100%;
-  min-width: 980px;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.candidate-table th,
-.candidate-table td {
-  padding: 11px;
-  border-bottom: 1px solid var(--line-soft);
-  text-align: left;
-  vertical-align: top;
-  font-size: 12px;
-}
-
-.candidate-table th { background: var(--color-brand-soft); }
-.candidate-table tbody tr:last-child td { border-bottom: 0; }
-.candidate-table a { color: var(--color-brand); font-weight: 750; }
 .candidate-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
 
 @media (max-width: 1120px) and (min-width: 781px) {
   .research-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-form fieldset { grid-column: 1 / 2; }
-  .research-job-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 780px) {
   .research-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-form fieldset { grid-column: 1 / 3; }
-  .research-job-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .candidate-head { grid-template-columns: 1fr; gap: 10px; }
 }
 
 @media (max-width: 560px) {
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .research-form,
-  .research-job-grid { grid-template-columns: 1fr; }
+  .research-form{ grid-template-columns: 1fr; }
   .research-form fieldset { grid-column: auto; }
   .research-form fieldset label { min-height: 44px; }
   .research-job { padding: 14px; }
-  .research-job-head { flex-direction: column; }
   .job-status { align-self: flex-start; }
   .candidate-head { margin-top: 18px; }
 }

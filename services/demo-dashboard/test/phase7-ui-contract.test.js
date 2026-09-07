@@ -112,13 +112,17 @@ test('Phase 7 customer-facing values use deterministic bilingual mappings', () =
 });
 
 test('Phase 7 responsive CSS keeps dense data inside components and practical actions', async () => {
-  const [html,css] = await Promise.all([read('index.html'),read('phase7.css')]);
-  assert.match(css,/\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns/);
-  assert.match(css,/\.crm-data-row-table\s*\{[^}]*min-width/);
-  assert.match(css,/\.crm-opportunity-readiness-stack\s*\{/);
+  const [html,css,records,ui] = await Promise.all([read('index.html'),read('phase7.css'),read('ui/v3/records.css'),read('phase7-ui.js')]);
+  assert.match(records,/\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns/);
+  assert.match(records,/\.crm-data-row-table\s*\{[^}]*min-width/);
+  assert.doesNotMatch(ui,/crm-opportunity-readiness-stack/);
+  assert.match(ui,/class="crm-phase7-detail-grid"[\s\S]*?class="crm-phase7-summary-card"/);
+  assert.match(ui,/\['联系准备','Contact readiness',statusBadge\(contact\)\]/);
+  assert.match(css,/\.crm-phase7-summary-card\s*\{\s*min-width:\s*0/);
+  assert.match(css,/\.crm-phase7-detail-grid,[\s\S]*?display:\s*grid/);
   assert.match(css,/\.crm-phase7-action-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(css,/@media \(max-width:1023px\)[\s\S]*\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
-  assert.match(css,/@media \(max-width:767px\)[\s\S]*\.crm-data-form\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(records,/@media \(max-width:1023px\)[\s\S]*\.crm-icp-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(records,/\.crm-data-form\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css,/@media \(max-width:767px\)[\s\S]*\.crm-phase7-action-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.doesNotMatch(css,/phase7-management-access|crm-management-form|crm-management-actions/);
   assert.match(css,/\.crm-phase7-inline-actions \.btn[\s\S]*min-height:\s*44px/);

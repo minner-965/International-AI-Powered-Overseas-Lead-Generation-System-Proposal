@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlobalLead AI - 高级可视化工作台</title>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 FontAwesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- 引入 Chart.js 用于渲染真实的图表 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- 引入 Google Fonts: Inter -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { 
+            font-family: 'Inter', -apple-system, sans-serif; 
+            background-color: #F3F4F6; /* 非常柔和的浅灰背景，突出白底卡片 */
+        }
+        
+        /* 隐藏滚动条但保持可滚动 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+
+        /* 自定义美化的滚动条 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        /* 渐变文本和阴影动画 */
+        .text-gradient {
+            background: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hover-scale {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .hover-scale:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563EB', /* SaaS 经典主色蓝 */
+                            700: '#1d4ed8',
+                        },
+                        ai: '#7C3AED', /* AI相关功能的紫罗兰色 */
+                        surface: '#FFFFFF',
+                    },
+                    boxShadow: {
+                        'card': '0px 2px 4px rgba(0, 0, 0, 0.02), 0px 4px 12px rgba(0, 0, 0, 0.03)',
+                        'glow': '0 0 20px rgba(37, 99, 235, 0.25)',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex h-screen overflow-hidden text-slate-800 antialiased">
+
+    <!-- 左侧导航栏 -->
+    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col flex-shrink-0 relative z-20">
+        <!-- Logo Area -->
+        <div class="h-16 flex items-center px-6 border-b border-slate-800">
+            <div class="w-8 h-8 rounded bg-gradient-to-br from-primary-500 to-ai flex items-center justify-center text-white font-bold shadow-lg shadow-primary-500/30 mr-3">
+                GL
+            </div>
+            <span class="text-white font-bold tracking-wide">Global<span class="text-primary-400">Lead</span> AI</span>
+        </div>
+
+        <!-- Navigation Links -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar py-6">
+            <nav class="px-4 space-y-1">
+                <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">主工作台</p>
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary-600/10 text-white font-medium group transition-colors">
+                    <i class="fa-solid fa-chart-pie text-primary-400 w-5 text-center group-hover:scale-110 transition-transform"></i> 总览 Dashboard
+                </a>
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 font-medium group transition-colors">
+                    <i class="fa-solid fa-bullseye w-5 text-center group-hover:scale-110 transition-transform"></i> 销售机会 Opportunities
+                </a>
+
+                <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 mt-6">执行 & 自动化</p>
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 font-medium group transition-colors">
+                    <i class="fa-solid fa-robot text-ai w-5 text-center group-hover:scale-110 transition-transform"></i> AI 寻客任务 <span class="ml-auto bg-ai/20 text-ai px-2 py-0.5 rounded text-xs">2</span>
+                </a>
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 font-medium group transition-colors">
+                    <i class="fa-solid fa-paper-plane w-5 text-center group-hover:scale-110 transition-transform"></i> 邮件序列 Sequences
+                </a>
+                
+                <p class="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 mt-6">数据资产</p>
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 font-medium group transition-colors">
+                    <i class="fa-regular fa-building w-5 text-center group-hover:scale-110 transition-transform"></i> 客户名录 Directory
+                </a>
+            </nav>
+        </div>
+
+        <!-- User Profile -->
+        <div class="p-4 border-t border-slate-800">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors">
+                <img src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff" alt="User" class="w-9 h-9 rounded-full border border-slate-700">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-white truncate">Administrator</p>
+                    <p class="text-xs text-slate-400 truncate">AE & MX Region</p>
+                </div>
+                <i class="fa-solid fa-gear text-slate-500"></i>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-[#F4F6F8]">
+        
+        <!-- 顶部控制栏 (Top Header) -->
+        <header class="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-8 z-10 shadow-sm flex-shrink-0">
+            <!-- 搜索框 -->
+            <div class="relative w-96 hidden md:block">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input type="text" placeholder="搜索公司、联系人或邮箱..." class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow">
+            </div>
+            
+            <!-- 右侧快捷操作 -->
+            <div class="flex items-center gap-4">
+                <button class="relative text-slate-400 hover:text-slate-600 transition-colors p-2 rounded-full hover:bg-slate-50">
+                    <i class="fa-regular fa-bell text-lg"></i>
+                    <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                </button>
+                <div class="h-6 w-px bg-slate-200 mx-1"></div>
+                <!-- 重点主干操作按钮：带发光和渐变的 AI 按钮 -->
+                <button class="bg-gradient-to-r from-primary-600 to-ai text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-glow hover:opacity-90 transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 启动智能获客
+                </button>
+            </div>
+        </header>
+
+        <!-- 核心内容滚动区 -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+            <div class="max-w-7xl mx-auto space-y-6">
+                
+                <!-- 页面标题行 -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900">客户开发总览</h1>
+                        <p class="text-sm text-slate-500 mt-1 flex items-center gap-2">
+                            <i class="fa-regular fa-calendar"></i> 今天是 2026年9月7日, 数据最后更新于 11:29
+                        </p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button class="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium shadow-card hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-cloud-arrow-down text-slate-400"></i> 导出报表
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 第一排：核心数据看板 (带微图表/进度指示器) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    
+                    <!-- 卡片 1: 建议联系 (高亮) -->
+                    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-card hover-scale relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10">
+                            <i class="fa-solid fa-user-plus text-5xl text-primary-500"></i>
+                        </div>
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-sm font-medium text-slate-500">AI 建议联系</p>
+                                <h3 class="text-3xl font-bold text-slate-900 mt-1">124</h3>
+                            </div>
+                            <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded-md flex items-center gap-1">
+                                <i class="fa-solid fa-arrow-trend-up"></i> +12%
+                            </span>
+                        </div>
+                        <!-- CSS 实现的小进度条 -->
+                        <div class="w-full bg-slate-100 rounded-full h-1.5 mt-2">
+                            <div class="bg-primary-500 h-1.5 rounded-full" style="width: 75%"></div>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-2">较上周新增 28 家</p>
+                    </div>
+
+                    <!-- 卡片 2: 当前有效企业 -->
+                    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-card hover-scale relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-sm font-medium text-slate-500">当前有效企业</p>
+                                <h3 class="text-3xl font-bold text-slate-900 mt-1">3,450</h3>
+                            </div>
+                            <div class="w-10 h-10 rounded-full border-4 border-emerald-500 border-l-emerald-100 flex items-center justify-center">
+                                <i class="fa-solid fa-building text-emerald-500 text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <span class="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded">AE: 1.2k</span>
+                            <span class="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded">MX: 2.2k</span>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 3: 邮件送达率 -->
+                    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-card hover-scale relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-sm font-medium text-slate-500">邮件平均送达率</p>
+                                <h3 class="text-3xl font-bold text-slate-900 mt-1">98.2<span class="text-lg text-slate-500">%</span></h3>
+                            </div>
+                            <span class="bg-slate-100 text-slate-600 text-xs font-semibold px-2 py-1 rounded-md flex items-center gap-1">
+                                稳定
+                            </span>
+                        </div>
+                        <!-- 假装有一个 SVG Sparkline (微型折线图) -->
+                        <svg class="w-full h-8 mt-2" viewBox="0 0 100 20" preserveAspectRatio="none">
+                            <path d="M0,15 Q10,5 20,10 T40,5 T60,15 T80,5 T100,10" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M0,15 Q10,5 20,10 T40,5 T60,15 T80,5 T100,10 L100,20 L0,20 Z" fill="url(#blue-gradient)" opacity="0.3"/>
+                            <defs>
+                                <linearGradient id="blue-gradient" x1="0" x2="0" y1="0" y2="1">
+                                    <stop offset="0%" stop-color="#2563EB" />
+                                    <stop offset="100%" stop-color="transparent" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <!-- 卡片 4: 待处理资料 -->
+                    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-card hover-scale relative overflow-hidden">
+                        <div class="absolute left-0 top-0 w-1 h-full bg-amber-400"></div>
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <p class="text-sm font-medium text-slate-500">待处理/缺资料线索</p>
+                                <h3 class="text-3xl font-bold text-slate-900 mt-1">42</h3>
+                            </div>
+                            <button class="text-slate-400 hover:text-amber-500 transition-colors">
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-amber-600 bg-amber-50 inline-block px-2 py-1 rounded border border-amber-100 mt-3">
+                            <i class="fa-solid fa-circle-exclamation mr-1"></i> 需要人工复核邮箱
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 第二排：主体数据分析 (左边漏斗，右边饼图) -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    <!-- 极具视觉化的转化漏斗 (替代原有的散乱文字) -->
+                    <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-card p-6 flex flex-col">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 class="text-base font-bold text-slate-900">自动化触达漏斗</h3>
+                                <p class="text-xs text-slate-500">近30天内，AI挖掘至成单的转化路径</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <span class="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded"><span class="w-2 h-2 rounded-full bg-blue-500"></span> 进行中</span>
+                                <span class="flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded"><span class="w-2 h-2 rounded-full bg-slate-300"></span> 流失/未达</span>
+                            </div>
+                        </div>
+
+                        <!-- 漏斗可视化 UI (基于 CSS flex) -->
+                        <div class="flex-1 flex flex-col justify-center space-y-4 relative">
+                            <!-- 连线背景 -->
+                            <div class="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-100 -z-10"></div>
+                            
+                            <!-- 漏斗层级 1 -->
+                            <div class="flex items-center gap-4 group">
+                                <div class="w-12 h-12 rounded-full bg-slate-50 border-2 border-primary-100 flex items-center justify-center text-primary-600 font-bold z-10 shadow-sm group-hover:border-primary-500 transition-colors">
+                                    <i class="fa-solid fa-filter"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="font-semibold text-slate-700">进入 AI 筛选池</span>
+                                        <span class="font-bold text-slate-900">5,000</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 rounded-sm h-4 overflow-hidden relative">
+                                        <div class="bg-primary-200 h-full w-[100%] absolute left-0 top-0"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 漏斗层级 2 -->
+                            <div class="flex items-center gap-4 group">
+                                <div class="w-12 h-12 rounded-full bg-white border-2 border-primary-200 flex items-center justify-center text-primary-600 font-bold z-10 shadow-sm group-hover:border-primary-500 transition-colors">
+                                    <i class="fa-solid fa-check"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="font-semibold text-slate-700">联系条件通过 <span class="text-xs text-slate-400 font-normal ml-2">转化率 40%</span></span>
+                                        <span class="font-bold text-slate-900">2,000</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 rounded-sm h-4 overflow-hidden relative">
+                                        <div class="bg-primary-400 h-full w-[40%] absolute left-0 top-0"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 漏斗层级 3 -->
+                            <div class="flex items-center gap-4 group">
+                                <div class="w-12 h-12 rounded-full bg-white border-2 border-primary-400 flex items-center justify-center text-white bg-primary-500 font-bold z-10 shadow-md group-hover:bg-primary-600 transition-colors">
+                                    <i class="fa-regular fa-paper-plane"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="font-semibold text-slate-700">开发信已发送 <span class="text-xs text-slate-400 font-normal ml-2">送达率 95%</span></span>
+                                        <span class="font-bold text-slate-900">1,900</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 rounded-sm h-4 overflow-hidden relative">
+                                        <!-- 动态动画效果条 -->
+                                        <div class="bg-primary-600 h-full w-[38%] absolute left-0 top-0 relative overflow-hidden">
+                                            <div class="absolute inset-0 bg-white/20 w-full h-full -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 漏斗层级 4 -->
+                            <div class="flex items-center gap-4 group">
+                                <div class="w-12 h-12 rounded-full bg-white border-2 border-emerald-400 flex items-center justify-center text-emerald-500 font-bold z-10 shadow-sm group-hover:bg-emerald-50 transition-colors">
+                                    <i class="fa-solid fa-reply"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="font-semibold text-slate-700">收到高意向回复 <span class="text-xs text-emerald-500 font-normal ml-2 bg-emerald-50 px-1 rounded">关键节点</span></span>
+                                        <span class="font-bold text-emerald-600">85</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 rounded-sm h-4 overflow-hidden relative">
+                                        <div class="bg-emerald-500 h-full w-[15%] absolute left-0 top-0 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 真正的 Chart.js 图表区：客户特征环形图 -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-card p-6 flex flex-col">
+                        <h3 class="text-base font-bold text-slate-900 mb-1">客户地域分布</h3>
+                        <p class="text-xs text-slate-500 mb-6">入库企业的国家/地区画像</p>
+                        
+                        <!-- Chart.js 容器 -->
+                        <div class="flex-1 relative flex items-center justify-center min-h-[200px]">
+                            <canvas id="geoChart"></canvas>
+                            <!-- 环形图中间的文本 -->
+                            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span class="text-2xl font-bold text-slate-800">3.4k</span>
+                                <span class="text-xs text-slate-400">总企业数</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 自定义图例 -->
+                        <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-[#2563EB]"></span>
+                                <span class="text-slate-600">阿联酋 (UAE) <span class="font-medium text-slate-900">45%</span></span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-[#7C3AED]"></span>
+                                <span class="text-slate-600">墨西哥 (MX) <span class="font-medium text-slate-900">35%</span></span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-[#38BDF8]"></span>
+                                <span class="text-slate-600">沙特 (KSA) <span class="font-medium text-slate-900">15%</span></span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-[#E2E8F0]"></span>
+                                <span class="text-slate-600">其他 <span class="font-medium text-slate-900">5%</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第三排：运营监控 & 最近活动列表 -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8">
+                    
+                    <!-- 模块 A: 运行中的 AI 任务 (带有真实感进度条) -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-card p-6">
+                        <div class="flex justify-between items-center mb-5">
+                            <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-microchip text-ai mr-2"></i>AI 后台执行任务</h3>
+                            <button class="text-sm text-primary-600 hover:text-primary-700 font-medium">查看全部</button>
+                        </div>
+
+                        <div class="space-y-5">
+                            <!-- 任务 1 -->
+                            <div class="group">
+                                <div class="flex justify-between text-sm mb-1.5">
+                                    <span class="font-semibold text-slate-700 flex items-center gap-2">
+                                        <i class="fa-solid fa-spinner fa-spin text-primary-500 text-xs"></i> 墨西哥建材商 LinkedIn 挖掘
+                                    </span>
+                                    <span class="font-bold text-primary-600">68%</span>
+                                </div>
+                                <div class="w-full bg-slate-100 rounded-full h-2">
+                                    <div class="bg-primary-500 h-2 rounded-full transition-all duration-1000 ease-out" style="width: 68%"></div>
+                                </div>
+                                <div class="flex justify-between mt-1 text-[11px] text-slate-400">
+                                    <span>已找到 340 个精准联系人</span>
+                                    <span>预计还需 12 分钟</span>
+                                </div>
+                            </div>
+
+                            <!-- 任务 2 -->
+                            <div class="group">
+                                <div class="flex justify-between text-sm mb-1.5">
+                                    <span class="font-semibold text-slate-700 flex items-center gap-2">
+                                        <i class="fa-solid fa-envelope-circle-check text-emerald-500 text-xs"></i> 域名邮箱批量合法性验证
+                                    </span>
+                                    <span class="font-bold text-emerald-600">95%</span>
+                                </div>
+                                <div class="w-full bg-slate-100 rounded-full h-2">
+                                    <div class="bg-emerald-500 h-2 rounded-full" style="width: 95%"></div>
+                                </div>
+                                <div class="flex justify-between mt-1 text-[11px] text-slate-400">
+                                    <span>清理无效邮箱 45 个</span>
+                                    <span>即将完成</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 运营状态胶囊 -->
+                            <div class="mt-6 p-4 bg-slate-50 border border-slate-100 rounded-lg">
+                                <p class="text-xs font-semibold text-slate-500 mb-3">基础设施监控</p>
+                                <div class="flex flex-wrap gap-3">
+                                    <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-md text-xs font-medium border border-emerald-200">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 发信配置正常
+                                    </span>
+                                    <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-md text-xs font-medium border border-emerald-200">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 收信配置正常
+                                    </span>
+                                    <span class="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md text-xs font-medium border border-rose-200 cursor-help" title="有1封退信需处理">
+                                        <i class="fa-solid fa-triangle-exclamation"></i> 存在发送异常 (1)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模块 B: 高优先级待办/最新线索 (带有头像和操作按钮的列表) -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-card flex flex-col overflow-hidden">
+                        <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-white">
+                            <h3 class="text-base font-bold text-slate-900">需介入的热点线索</h3>
+                            <span class="bg-rose-100 text-rose-600 text-xs font-bold px-2 py-0.5 rounded-full">3 待处理</span>
+                        </div>
+                        
+                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                            <ul class="divide-y divide-slate-100">
+                                <!-- 列表项 1 -->
+                                <li class="p-4 hover:bg-slate-50 transition-colors flex items-start gap-4">
+                                    <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold flex-shrink-0 text-sm">
+                                        AG
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between">
+                                            <h4 class="text-sm font-bold text-slate-900 truncate">Al Ghaith Trading Co.</h4>
+                                            <span class="text-xs text-slate-400">10分钟前</span>
+                                        </div>
+                                        <p class="text-xs text-slate-500 mt-0.5">采购经理回复了第二封开发信，询问产品目录。</p>
+                                        <div class="mt-2 flex gap-2">
+                                            <button class="text-[11px] bg-primary-600 text-white px-2 py-1 rounded font-medium hover:bg-primary-700">立即回复</button>
+                                            <button class="text-[11px] bg-white border border-slate-300 text-slate-600 px-2 py-1 rounded hover:bg-slate-50">转交销售</button>
+                                        </div>
+                                    </div>
+                                </li>
+                                
+                                <!-- 列表项 2 -->
+                                <li class="p-4 hover:bg-slate-50 transition-colors flex items-start gap-4">
+                                    <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+                                        <i class="fa-solid fa-building"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between">
+                                            <h4 class="text-sm font-bold text-slate-900 truncate">Mexico Build Materials S.A.</h4>
+                                            <span class="text-xs text-slate-400">2小时前</span>
+                                        </div>
+                                        <p class="text-xs text-slate-500 mt-0.5"><span class="text-amber-500 font-medium">缺关键资料：</span>AI未找到核心决策人邮箱，需人工校验。</p>
+                                        <div class="mt-2">
+                                            <button class="text-[11px] bg-white border border-slate-300 text-slate-600 px-2 py-1 rounded hover:bg-slate-50">去补充资料 <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i></button>
+                                        </div>
+                                    </div>
+                                </li>
+
+                                <!-- 列表项 3 -->
+                                <li class="p-4 hover:bg-slate-50 transition-colors flex items-start gap-4">
+                                    <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold flex-shrink-0 text-sm">
+                                        <i class="fa-solid fa-check"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between">
+                                            <h4 class="text-sm font-bold text-slate-900 truncate">Dubai Tech Imports</h4>
+                                            <span class="text-xs text-slate-400">昨天</span>
+                                        </div>
+                                        <p class="text-xs text-slate-500 mt-0.5">邮件服务已成功接收 150 封针对此批次客户的草稿。</p>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- 用于支持进度条动画和图表初始化的脚本 -->
+    <style>
+        /* CSS Shimmer 动画 (用于漏斗条) */
+        @keyframes shimmer {
+            100% { transform: translateX(100%); }
+        }
+    </style>
+    <script>
+        // 确保页面加载完成后渲染图表
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('geoChart').getContext('2d');
+            
+            // 初始化 Chart.js 环形图 (Doughnut)
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['阿联酋 (UAE)', '墨西哥 (MX)', '沙特 (KSA)', '其他'],
+                    datasets: [{
+                        data: [45, 35, 15, 5],
+                        backgroundColor: [
+                            '#2563EB', // Blue
+                            '#7C3AED', // Violet
+                            '#38BDF8', // Light blue
+                            '#E2E8F0'  // Slate
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '75%', // 控制环形的粗细
+                    plugins: {
+                        legend: {
+                            display: false // 隐藏默认图例，使用我们自定义的 HTML 图例以更好地控制样式
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleFont: { size: 13, family: 'Inter' },
+                            bodyFont: { size: 12, family: 'Inter' },
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    return ' ' + context.label + ': ' + context.parsed + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

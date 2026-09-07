@@ -16,10 +16,10 @@ const primaryNames = new Set(['status', 'country', 'product_profile', 'sort']);
 const ignoredDefaults = new Map([['status', 'RECOMMENDED'], ['sort', 'category_procurement_desc']]);
 
 const groups = Object.freeze([
-  ['Buyer', ['buyer_business_model', 'buyer_subtype', 'decision_maker_status', 'normalized_role']],
-  ['Product & Access', ['category_procurement_match_band', 'category_procurement_match_status', 'feasibility_band', 'cooperation_matrix', 'product_access_matrix']],
-  ['Contact', ['readiness', 'contact_type', 'contact_verification']],
-  ['History & Reference', ['historical_crm_status', 'management_match_band', 'historical_match_band', 'tier']],
+  [['客户采购','Buyer'], ['buyer_business_model', 'buyer_subtype', 'decision_maker_status', 'normalized_role']],
+  [['类目与准入','Category & access'], ['category_procurement_match_band', 'category_procurement_match_status', 'feasibility_band', 'cooperation_matrix', 'product_access_matrix']],
+  [['联系方式','Contact'], ['readiness', 'contact_type', 'contact_verification']],
+  [['历史与参考','History & reference'], ['historical_crm_status', 'management_match_band', 'historical_match_band', 'tier']],
 ]);
 
 function arrangeFilters() {
@@ -31,7 +31,7 @@ function arrangeFilters() {
   for (const [title, names] of groups) {
     const section = document.createElement('section');
     section.className = 'crm-filter-group';
-    section.innerHTML = `<h4>${title}</h4><div class="crm-filter-group-grid"></div>`;
+    section.innerHTML = `<h4 class="bi"><span lang="zh-CN">${title[0]}</span><span lang="en">${title[1]}</span></h4><div class="crm-filter-group-grid"></div>`;
     const grid = section.querySelector('.crm-filter-group-grid');
     for (const name of names) {
       const control = form.elements.namedItem(name);
@@ -68,7 +68,8 @@ function syncTabs() {
 
 function syncChips() {
   const active = activeControls();
-  const advanced = active.filter(control => !primaryNames.has(control.name));
+  const advanced = active.filter(control => !primaryNames.has(control.name)
+    || (compactFilters.matches && ['country','product_profile','sort'].includes(control.name)));
   if (advancedCount) advancedCount.textContent = String(advanced.length);
   if (!chips) return;
   chips.innerHTML = active.length ? active.map(control => {
@@ -115,6 +116,7 @@ drawer?.addEventListener('click', event => {
 });
 drawer?.addEventListener('close', () => opener?.focus({ preventScroll: true }));
 form?.addEventListener('change', sync);
+form?.addEventListener('reset', () => queueMicrotask(sync));
 
 let searchTimer = 0;
 search?.addEventListener('input', () => {
@@ -123,6 +125,26 @@ search?.addEventListener('input', () => {
 });
 
 arrangeFilters();
+// Compact screens keep search above results; the same live controls move into the drawer.
+const compactFilters = window.matchMedia('(max-width: 767px)');
+const compactScope = document.createElement('section');
+compactScope.className = 'crm-filter-group';
+compactScope.innerHTML = '<h4 class="bi"><span lang="zh-CN">市场与类目</span><span lang="en">Market & category</span></h4><div class="crm-filter-group-grid"></div>';
+advancedHost?.prepend(compactScope);
+function arrangeCompactFilters() {
+  if (!form || !primaryHost) return;
+  compactScope.hidden = !compactFilters.matches;
+  for (const name of ['country','product_profile','sort']) {
+    const label = form.elements.namedItem(name)?.closest('label');
+    if (!label) continue;
+    if (compactFilters.matches) compactScope.querySelector('.crm-filter-group-grid').append(label);
+    else primaryHost.insertBefore(label,openButton);
+  }
+  if (search) search.placeholder = compactFilters.matches ? '搜索公司 / Search company' : '';
+  syncChips();
+}
+compactFilters.addEventListener('change',arrangeCompactFilters);
+arrangeCompactFilters();
 sync();
 
 export const opportunitySearchValue = () => search?.value.trim() || '';

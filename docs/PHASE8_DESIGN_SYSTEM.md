@@ -1,5 +1,7 @@
 # Phase 8 Design System
 
+> SUPERSEDED — Phase 12 [UI_SYSTEM_V3.md](UI_SYSTEM_V3.md) is the visual authority. Retained only as historical evidence; its palette, shell, cards and layout are not directions for new work. Preserve business and interaction behavior, not this visual skin.
+
 版本：1.0
 日期：2026-08-31
 适用范围：DPV 公司工作台全部页面、弹窗、导入/导出 UI 和今后新增功能

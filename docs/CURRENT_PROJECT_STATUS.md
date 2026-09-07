@@ -5,13 +5,20 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-07T12:17:54+08:00",
+  "generated_updated_at": "2026-09-07T17:30:45+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "branch": "phase10-remove-internal-limits-20260904-112916",
-  "commit": "781f1e837508fc990325b9bb377d880c5ea148a9",
-  "dirty_at_snapshot": false,
+  "branch": "phase12-workspace-ui-v3",
+  "commit": "2b639e9e1acfe0c08c78a3803434a6761bb04cda",
+  "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 11 (Controlled outreach)",
-  "current_active_phase": "Phase 11",
+  "current_active_phase": "Phase 12",
+  "phase12_ui": {
+    "scope": ["WP-UI15", "WP-UI16"],
+    "status": "CLEANUP_AND_RELEASE_HANDOFF",
+    "full_phase_acceptance": "NOT_ACCEPTED",
+    "prior_release_acceptance": "PASS",
+    "stop_after": "WP-UI16"
+  },
   "phase_state": [
     "Phase 1–9 complete",
     "Phase 10 code/migration/UI/automation verified",
@@ -67,7 +74,7 @@ This file is the single source of truth for current execution state. Historical 
     "WP-OQ15 application CRM browser demonstration verified on desktop and 390px mobile",
     "WP-OQ16 implementation commit, remote branch and annotated acceptance tag verified; STOP"
   ],
-  "final_acceptance_state": "PASS",
+  "final_acceptance_state": "INCOMPLETE",
   "business_result_state": "NO",
   "applied_migrations": [
     {"migration_key":"024_phase6_1_category_procurement_match.sql","sha256":"f468b82796e4941a65d81dc37f4a2cc9ca10ca0ccc938abf4ec4ad5a83b4930d"},
@@ -115,8 +122,8 @@ This file is the single source of truth for current execution state. Historical 
     "current_opportunities": 32,
     "evidence_required": 28,
     "not_suitable": 2,
-    "recommended": 2,
-    "management_approved": 0,
+    "recommended": 1,
+    "management_approved": 1,
     "decision_makers": 12,
     "decision_maker_contacts": 83,
     "valid_contact_routes": 2,
@@ -126,9 +133,11 @@ This file is the single source of truth for current execution state. Historical 
     "commercial_fit_results": 330,
     "official_route_manual_task_revisions": 10,
     "official_route_manual_tasks_active": 0,
-    "outreach_drafts": 3,
-    "outbound_messages": 1,
-    "outbound_attempts": 2,
+    "outreach_drafts": 9,
+    "outreach_approvals": 9,
+    "outbound_messages": 2,
+    "outbound_attempts": 3,
+    "prospect_real_provider_calls": 2,
     "inbound_messages": 3,
     "crm_sync_outbox": 2,
     "opportunity_activities": 2,
@@ -160,16 +169,18 @@ This file is the single source of truth for current execution state. Historical 
     "local_global_billing_quota_enforcement": false,
     "numeric_max_attempt_blocking": false,
     "company_cooldown_blocking": false,
-    "outbound_email_enabled": false,
+    "outbound_email_enabled": true,
+    "outreach_manual_send_only": true,
+    "outreach_worker_send_enabled": false,
     "gmail_api_enabled": false,
     "gmail_inbound_sync_enabled": false,
-    "outreach_send_scope": "DISABLED",
+    "outreach_send_scope": "PROSPECT_PILOT",
     "controlled_test_mode": false,
     "controlled_test_max_messages": 0,
     "controlled_recipient_allowlist_configured": true,
     "smtp_enabled": true,
     "smtp_imap_inbound_sync_enabled": true,
-    "live_prospect_send_approved": false,
+    "live_prospect_send_approved": true,
     "gmail_controlled_test_mode": true
   },
   "required_n8n_workflow_status": [
@@ -360,15 +371,17 @@ This file is the single source of truth for current execution state. Historical 
       "release":{"source_head":"44f5b65753c4d32008c6637684afb2be1da342b1","commit":"781f1e837508fc990325b9bb377d880c5ea148a9","push":"VERIFIED","remote_branch":"phase10-remove-internal-limits-20260904-112916","remote_branch_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","acceptance_tag":"phase11-oqumail-controlled-outreach-accepted","tag_object":"9b80fc1cb5491a64f20788791e5127715312aec8","tag_peeled_commit":"781f1e837508fc990325b9bb377d880c5ea148a9","status":"VERIFIED","note":"Acceptance tag identifies the tested implementation. A subsequent documentation-only receipt commit records verified release facts without moving the acceptance tag."}
     }
   },
-  "current_blockers": [],
+  "current_blockers": ["PHASE12_COLD_LOAD_COMBINED_SAMPLE_EXCEEDS_20_PERCENT", "PHASE12_FRESH_SAME_VIEWPORT_REFERENCE_COMPARISON_OPEN", "PHASE12_ASSISTIVE_TECHNOLOGY_AND_EXHAUSTIVE_CONTRAST_ASSESSMENT_OPEN"],
   "next_allowed_work_package": "STOP_AWAIT_PRODUCTION_POLICY",
-  "explicit_stop_boundary": "WP-A16 and WP-OQ09 retain their recorded acceptance. Phase 11 application acceptance, browser and implementation release are verified. STOP additional sending, automatic follow-up, new providers and approval relaxation. Await the user's production sending policy. The single OQ11 pilot remains accepted by SMTP without a claimed prospect reply or commercial outcome."
+  "explicit_stop_boundary": "WP-UI15 and WP-UI16 cleanup and release handoff are authorized; STOP after WP-UI16. Full Phase 12 acceptance is NOT_ACCEPTED pending the recorded reference/accessibility assessments; commit/push/tag facts must be recorded only after verification. WP-A16 and WP-OQ09 retain historical acceptance. User-authorized manual single-email sending remains available; automatic sending and automatic follow-up remain closed. This UI work performs zero sends. No further phase expansion."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
 
+- Phase 12 is active for WP-UI15–16 cleanup and release handoff, followed by STOP. Its final acceptance remains INCOMPLETE; full Phase 12 is NOT_ACCEPTED pending fresh same-viewport reference comparison and assistive-technology/exhaustive contrast assessment. The user approved resource growth up to 40% and loading-time growth up to 20% against the fixed frozen baseline, with no 100 ms exemption; API growth remains separately reviewed. The preserved Phase 11 release evidence remains PASS and is validated independently of this UI handoff. Release execution facts are recorded separately only after verification.
+- Current mail counts and dashboard/worker flags are from the read-only WP-UI15 baseline at 2026-09-07T09:30:45.563Z: 9 drafts, 9 approvals, 2 outbound messages, 3 attempts and 2 prospect provider calls. Both sends predate this work; these are not task-originated sends. Recommendation/management counts are 1/1. Other unrefreshed general/provider counts and historical Phase 10/11 evidence retain their earlier observation dates.
 - Phase 1–9 are complete.
 - Phase 10 pre-email category-driven automation retains its recorded acceptance. Phase 11 final technical/application acceptance is PASS. The separate business_result_state remains NO because no commercial result, sale or prospect reply has been confirmed; this is not a technical release blocker.
 - WP-OQ00–OQ10 now have the required application-level evidence. Migration 057 links the two existing real controlled replies to the shared CRM outbox, Activity and sales-task entities using explicit CONTROLLED scope, not fake companies. Both outbox rows are SYNCED; the recorded owner/due review task is CANCELLED for opt-out. Repeating protected replay, including after restarting the outreach worker, creates zero entries. External CRM-vendor delivery is not claimed or required for this in-application CRM result. OQ11 remains one approved introduction accepted by SMTP; inbox delivery, prospect reply and commercial outcome are unconfirmed.
@@ -383,4 +396,8 @@ This file is the single source of truth for current execution state. Historical 
 
 ## Execution boundary
 
-Phase 11 technical/application acceptance and Git release are verified. The single approved pilot is accepted by SMTP. Sending scope, outreach and live-prospect approval are closed; controlled mode is false and its message limit is zero. SMTP configuration and IMAP polling remain enabled. STOP additional sending, automatic follow-up and further phase expansion pending the user's production policy. Business category opportunity remains sufficient; no procurement-intent or named-buyer prerequisite is added. Commercial outcome remains unconfirmed despite technical acceptance.
+Latest user-authorized operational correction (2026-09-07, after the dated release snapshots): manual single-email delivery is enabled in the dashboard only, with 50/day, 1/minute and 1/company/30 days. The outreach worker remains explicitly disabled for sending and rejects queue execution in manual-only mode. No email was sent during this correction. Earlier closed-send flags in historical evidence retain their original observation dates. See `PHASE12_MANUAL_EMAIL_AND_UI_FIX_RESULT.md` for current checks.
+
+Current authorization covers WP-UI15 obsolete asset/copy cleanup and WP-UI16 documentation, commit, push, tag and STOP. The approved performance allowances are 40% resources and 20% loading time against the fixed frozen baseline, without a 100 ms exemption. Full Phase 12 acceptance remains unclaimed while named reference/accessibility assessments remain open. Historical evidence is retained; current release facts must be recorded only after execution and verification.
+
+Phase 11 technical/application acceptance and Git release remain historical verified evidence. The dashboard now allows only authenticated user-triggered single-email sending under the separately approved policy; the background outreach worker remains closed for sending. Controlled mode remains false with limit zero, and IMAP polling remains enabled. This UI task sends no email, performs no approval and starts no research. STOP after WP-UI16; no automatic follow-up or phase expansion. Business category opportunity remains sufficient; no procurement-intent or named-buyer prerequisite is added. Commercial outcome remains unconfirmed despite technical acceptance.

@@ -19,7 +19,18 @@
     "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
     "dirty_at_snapshot": {"type":"boolean"},
     "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)"]},
-    "current_active_phase": {"enum":["Phase 10","Phase 11"]},
+    "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12"]},
+    "phase12_ui": {
+      "type":"object", "additionalProperties":false,
+      "required":["scope","status","full_phase_acceptance","prior_release_acceptance","stop_after"],
+      "properties":{
+        "scope":{"const":["WP-UI15","WP-UI16"]},
+        "status":{"const":"CLEANUP_AND_RELEASE_HANDOFF"},
+        "full_phase_acceptance":{"const":"NOT_ACCEPTED"},
+        "prior_release_acceptance":{"const":"PASS"},
+        "stop_after":{"const":"WP-UI16"}
+      }
+    },
     "phase_state": {
       "type":"array",
       "minItems":4,
@@ -93,10 +104,27 @@
       }
     },
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY"]},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   },
   "allOf":[
+    {
+      "if":{"properties":{"current_active_phase":{"const":"Phase 11"}}},
+      "then":{"properties":{"effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":false}}}}}
+    },
+    {
+      "if":{"properties":{"current_active_phase":{"const":"Phase 12"}}},
+      "then":{
+        "required":["phase12_ui","phase11_readiness"],
+        "properties":{
+          "final_acceptance_state":{"const":"INCOMPLETE"},
+          "latest_released_phase":{"const":"Phase 11 (Controlled outreach)"},
+          "next_allowed_work_package":{"const":"STOP_AWAIT_PRODUCTION_POLICY"},
+          "effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":true},"outreach_manual_send_only":{"const":true},"outreach_worker_send_enabled":{"const":false}}}
+        }
+      },
+      "else":{"not":{"required":["phase12_ui"]}}
+    },
     {
       "if":{"properties":{"current_active_phase":{"const":"Phase 10"}}},
       "then":{
@@ -115,7 +143,7 @@
           "effective_runtime_flags":{
             "required":["outbound_email_enabled","gmail_api_enabled","gmail_inbound_sync_enabled"],
             "properties":{
-              "outbound_email_enabled":{"const":false},
+              "outbound_email_enabled":{"type":"boolean"},
               "gmail_api_enabled":{"const":false},
               "gmail_inbound_sync_enabled":{"const":false}
             }

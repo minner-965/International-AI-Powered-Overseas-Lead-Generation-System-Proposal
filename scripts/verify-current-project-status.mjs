@@ -24,7 +24,21 @@ for (const key of schema.required) assert(Object.hasOwn(status, key), `Missing c
 for (const key of Object.keys(status)) assert(Object.hasOwn(schema.properties, key), `Unknown current status field: ${key}`);
 assert(/^[0-9a-f]{40}$/.test(status.commit), 'Current status commit is invalid');
 assert(schema.properties.latest_released_phase.enum.includes(status.latest_released_phase), 'Latest released phase is invalid');
-assert(['Phase 10', 'Phase 11'].includes(status.current_active_phase), 'Current active phase must be Phase 10 or Phase 11 readiness');
+assert(['Phase 10', 'Phase 11', 'Phase 12'].includes(status.current_active_phase), 'Current active phase must be a supported exact phase');
+const phase12Active = status.current_active_phase === 'Phase 12';
+if (phase12Active) {
+  const ui = status.phase12_ui;
+  assert(ui && typeof ui === 'object' && !Array.isArray(ui), 'Phase 12 UI work-package metadata is required');
+  assert(JSON.stringify(ui.scope) === JSON.stringify(['WP-UI15', 'WP-UI16']), 'Phase 12 authorization is limited to cleanup and release handoff');
+  assert(ui.status === 'CLEANUP_AND_RELEASE_HANDOFF' && ui.full_phase_acceptance === 'NOT_ACCEPTED', 'Phase 12 must not claim final acceptance while recorded assessment gaps remain');
+  assert(ui.prior_release_acceptance === 'PASS' && status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Phase 12 must preserve the accepted Phase 11 release');
+  assert(status.final_acceptance_state === 'INCOMPLETE', 'Active Phase 12 final acceptance remains incomplete');
+  assert(status.next_allowed_work_package === 'STOP_AWAIT_PRODUCTION_POLICY', 'Phase 12 must stop after the authorized release handoff');
+  assert(ui.stop_after === 'WP-UI16' && status.explicit_stop_boundary.includes('WP-UI16'), 'Phase 12 STOP must name WP-UI16');
+  const uiSchema = schema.properties.phase12_ui;
+  for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
+  for (const key of Object.keys(ui)) assert(Object.hasOwn(uiSchema.properties, key), `Unknown Phase 12 UI metadata: ${key}`);
+} else assert(!Object.hasOwn(status, 'phase12_ui'), 'Phase 12 metadata requires Phase 12 to be active');
 if (status.current_active_phase === 'Phase 10') {
   assert(status.final_acceptance_state === 'PASS', 'Phase 10 pre-email final acceptance must pass');
   assert(status.business_result_state === 'YES', 'Phase 10 pre-email business result must be YES');
@@ -64,7 +78,7 @@ if (status.current_active_phase === 'Phase 10') {
   if(readiness.wp_oq16==='DOCUMENTS_READY_RELEASE_NOT_EXECUTED'){
     for(const key of ['commit','push','acceptance_tag'])assert(readiness.evidence_summary?.release?.[key]==='NOT_EXECUTED',`Unreleased state must not fabricate ${key}`);
   }
-  if(status.final_acceptance_state==='PASS'){
+  if(status.final_acceptance_state==='PASS' || phase12Active){
     const release=readiness.evidence_summary?.release;
     assert(readiness.wp_oq15==='PASS'&&readiness.wp_oq16==='PASS','Final PASS requires browser and release acceptance');
     assert(/^[0-9a-f]{40}$/.test(release?.commit)&&release.push==='VERIFIED'&&release.acceptance_tag==='phase11-oqumail-controlled-outreach-accepted'&&release.status==='VERIFIED','Final PASS requires actual release commit, verified push and acceptance tag');
@@ -78,10 +92,15 @@ if (status.current_active_phase === 'Phase 10') {
   assert(readiness.evidence_summary && typeof readiness.evidence_summary === 'object'
     && !Array.isArray(readiness.evidence_summary) && Object.keys(readiness.evidence_summary).length > 0, 'Phase 11 evidence summary is missing');
   if(readiness.wp_oq10==='REAL_E2E_PENDING')assert(status.current_blockers.some(item => /APPLICATION_OUTBOUND_E2E_NOT_YET_VERIFIED/.test(item)), 'Pending OQ10 requires its current blocker');
-  for (const flag of ['outbound_email_enabled', 'gmail_api_enabled', 'gmail_inbound_sync_enabled']) {
+  for (const flag of ['gmail_api_enabled', 'gmail_inbound_sync_enabled']) {
     assert(status.effective_runtime_flags[flag] === false, `Phase 11 readiness flag must remain false: ${flag}`);
   }
-  assert(status.effective_runtime_flags.outreach_send_scope==='DISABLED'&&status.effective_runtime_flags.live_prospect_send_approved===false,'Final partial acceptance must leave prospect sending closed');
+  if (phase12Active) {
+    assert(status.effective_runtime_flags.outbound_email_enabled===true && status.effective_runtime_flags.outreach_manual_send_only===true && status.effective_runtime_flags.outreach_worker_send_enabled===false, 'Phase 12 must preserve user-authorized manual sending with background delivery closed');
+    assert(status.effective_runtime_flags.outreach_send_scope==='PROSPECT_PILOT' && status.effective_runtime_flags.live_prospect_send_approved===true, 'Phase 12 must record actual manual dashboard send scope');
+  } else {
+    assert(status.effective_runtime_flags.outbound_email_enabled===false && status.effective_runtime_flags.outreach_send_scope==='DISABLED'&&status.effective_runtime_flags.live_prospect_send_approved===false,'Phase 11 historical acceptance leaves prospect sending closed');
+  }
   assert(status.effective_runtime_flags.controlled_test_mode===false&&status.effective_runtime_flags.controlled_test_max_messages===0,'Controlled final limit must be zero with controlled mode closed');
   assert(status.provider_configuration.outbound_email_provider === 'SMTP', 'Phase 11 must select the SMTP provider');
   assert(status.provider_configuration.inbound_email_provider === 'IMAP', 'Phase 11 must record IMAP as the inbound protocol');

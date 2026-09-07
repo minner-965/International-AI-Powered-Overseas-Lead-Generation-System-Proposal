@@ -1,12 +1,14 @@
 # DPV Frontend UI System
 
+> SUPERSEDED FOR VISUAL DIRECTION — 2026-09-07. Phase 12 uses [UI_SYSTEM_V3.md](UI_SYSTEM_V3.md) and the archived user HTML as its only visual authority. This document is retained as a historical runtime baseline, not a source of colors, layout or component appearance. Preserve verified business/API/accessibility behavior through V3 contracts; historical disabled-provider statements are not current runtime facts. Existing CSS remains loaded during WP-UI00–02 only; this is not approval to retain its appearance in V3.
+
 ## Phase 11 approved extension (2026-09-07)
 
 Contact Queue now includes the versioned Email Review & Sending workspace. Preserve the native dialog, read-only sent content, current approval gates, conservative before-provider retry and separate controlled/prospect totals. Overview includes live task and outreach stage controls, not invented charts. Current mail provider/runtime facts are defined by `CURRENT_PROJECT_STATUS.md`; the Phase 8 disabled-provider baseline below is historical, not the current SMTP capability. See `PHASE11_OUTREACH_WORKBENCH_RESULT.md` for actual acceptance.
 
 版本：Phase 8
 日期：2026-08-31
-状态：公司工作台前端 Source of Truth
+状态：历史基线；视觉 Source of Truth 已由 UI_SYSTEM_V3.md 替代
 
 本文件定义现在和以后全部公司可见前端的硬规则。详细 tokens 与组件规范见 [PHASE8_DESIGN_SYSTEM.md](./PHASE8_DESIGN_SYSTEM.md)，基线问题见 [PHASE8_VISUAL_AUDIT.md](./PHASE8_VISUAL_AUDIT.md)，第三方采用边界见 [PHASE8_UI_UX_REUSE_RESEARCH.md](./PHASE8_UI_UX_REUSE_RESEARCH.md)。
 

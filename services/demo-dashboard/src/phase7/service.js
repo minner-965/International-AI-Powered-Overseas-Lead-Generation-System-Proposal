@@ -700,6 +700,10 @@ export class Phase7Service {
       rfc_message_id:gate.provider==='SMTP'?stableSmtpMessageId(idempotencyKey,String(this.env.SMTP_MESSAGE_ID_DOMAIN||approval.from_identity.split('@')[1]||'localhost')):null,
       send_status:gate.reasons.length?'BLOCKED':'QUEUED',reason_codes:gate.reasons});
     let queueJobId=null;
+    if(!gate.reasons.length&&bool(this.env.OUTREACH_MANUAL_SEND_ONLY,false)){
+      const execution=await this.sendMessageWork({message_id:message.id},{manual:true});
+      return{message,queue_job_id:null,network_calls:execution.network_calls||0,execution};
+    }
     if(!gate.reasons.length)queueJobId=await this.queue.enqueue('send-outreach-email',{message_id:message.id},{singletonKey:`phase7:send:${message.id}`});
     return {message,queue_job_id:queueJobId,network_calls:0};
   }
@@ -710,16 +714,26 @@ export class Phase7Service {
     const gate=await this.currentOutboundGate(current,current.provider_purpose);
     if(gate.reasons.length){const error=new Error('Current message requirements are not satisfied');error.code='OUTBOUND_RETRY_GATE_BLOCKED';error.status=409;error.details={reasons:gate.reasons};throw error;}
     const message=await this.repository.retryBlockedOutboundBeforeProvider(id,current.approval_id);
+    if(bool(this.env.OUTREACH_MANUAL_SEND_ONLY,false)){
+      const execution=await this.sendMessageWork({message_id:message.id},{manual:true});
+      return{message,queue_job_id:null,network_calls:execution.network_calls||0,execution};
+    }
     const queueJobId=await this.queue.enqueue('send-outreach-email',{message_id:message.id},{singletonKey:`phase7:send:${message.id}`});
     return{message,queue_job_id:queueJobId,network_calls:0};
   }
 
-  async sendMessageWork({message_id}) {
+  async sendMessageWork({message_id},{manual=false}={}) {
+    // Only authenticated single-message API actions pass the second argument.
+    // Queue payloads (including replayed jobs) cannot grant manual execution.
+    if(bool(this.env.OUTREACH_MANUAL_SEND_ONLY,false)&&manual!==true){
+      return{status:'BLOCKED',code:'MANUAL_SEND_REQUIRED',network_calls:0,outbound_attempt_delta:0};
+    }
     const message=await this.repository.getOutboundMessage(message_id);if(!message)throw notFound('Message not found','OUTBOUND_MESSAGE_NOT_FOUND');
     if(message.send_status==='CANCELLED')return{status:'CANCELLED',reason_codes:message.reason_codes,network_calls:0,outbound_attempt_delta:0};
     if(message.send_status==='BLOCKED')return {status:'BLOCKED',reason_codes:message.reason_codes,network_calls:0};
     if(message.send_status==='AMBIGUOUS'){
       if(message.provider==='SMTP')return{status:'AMBIGUOUS',code:'SMTP_MANUAL_HOLD_REQUIRED',network_calls:0};
+      if(manual)return{status:'AMBIGUOUS',code:'MANUAL_HOLD_REQUIRED',network_calls:0};
       const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
         {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
       return{status:'AMBIGUOUS',code:'GMAIL_RECONCILIATION_REQUIRED',reconcile_queue_job_id:queueJobId,network_calls:0};
@@ -752,24 +766,26 @@ export class Phase7Service {
     let result;
     try{result=await this.outboundProvider.send({from:message.from_identity,to:message.normalized_recipient,
       reply_to:message.reply_to,subject:message.subject,body_text:message.body_text,purpose:message.provider_purpose,
-      consent_status:message.consent_status,send_scope:gate.send_scope},message.idempotency_key);}catch(error){result={status:'FAILED',code:'PROVIDER_NETWORK_ERROR',error_type:'NETWORK_ERROR',network_calls:1};}
+      consent_status:message.consent_status,send_scope:gate.send_scope},message.idempotency_key);}catch(error){result={status:manual?'AMBIGUOUS':'FAILED',code:'PROVIDER_NETWORK_ERROR',error_type:'NETWORK_ERROR',network_calls:1};}
     const accepted=result.status==='PROVIDER_ACCEPTED';const blocked=result.status==='BLOCKED';const ambiguous=result.status==='AMBIGUOUS';
     const retryDecision=providerRetryDecision({http_status:result.http_status,error_type:result.error_type,
       attempt:attempt.attempt_number,max_attempts:Number(this.env.OUTREACH_PROVIDER_MAX_ATTEMPTS||3)});
     const retryable=!accepted&&!blocked&&!ambiguous&&retryDecision.retry;
     await this.repository.completeOutboundAttempt({messageId:message.id,attemptId:attempt.id,
       attemptStatus:accepted?'ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable?'RETRYABLE_ERROR':'PERMANENT_ERROR',
-      sendStatus:accepted?'PROVIDER_ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable?'QUEUED':'FAILED',reasonCodes:[result.code],
+      sendStatus:accepted?'PROVIDER_ACCEPTED':blocked?'BLOCKED':ambiguous?'AMBIGUOUS':retryable&&!manual?'QUEUED':'FAILED',reasonCodes:[result.code,...(manual&&retryable?['MANUAL_REVIEW_REQUIRED']:[])],
       responseCode:result.code,responseDigest:responseDigest(result),providerMessageId:result.provider_message_id,
       providerThreadId:result.provider_thread_id,rfcMessageId:result.rfc_message_id,sendExecutionKey:result.send_execution_key});
     if(ambiguous&&message.provider==='SMTP'){
       await this.repository.recordOutboundAmbiguousEvent(message.id,{provider:'SMTP',eventType:'AMBIGUOUS',rfcMessageId:result.rfc_message_id||rfcMessageId,providerMessageId:result.provider_message_id});
       return{...result,code:'SMTP_MANUAL_HOLD_REQUIRED'};
     }
+    if(ambiguous&&manual)return{...result,code:'MANUAL_HOLD_REQUIRED'};
     if(ambiguous){await this.repository.recordGmailAmbiguousEvent(message.id,{eventType:'AMBIGUOUS',rfcMessageId:result.rfc_message_id});
       const queueJobId=await this.queue.enqueue('reconcile-gmail-ambiguous-send',{message_id:message.id},
         {singletonKey:`phase10:gmail-reconcile:${message.id}`,startAfter:Number(this.env.GMAIL_AMBIGUOUS_WAIT_SECONDS||120)});
       return{...result,reconcile_queue_job_id:queueJobId};}
+    if(retryable&&manual)return{...result,status:'FAILED',manual_review_required:true};
     if(retryable){const error=new Error(`Retryable provider failure: ${result.code}`);error.code=result.code;
       error.retry_delay_seconds=retryDecision.next_delay_seconds;throw error;}
     return result;

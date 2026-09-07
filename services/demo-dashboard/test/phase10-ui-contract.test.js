@@ -66,11 +66,11 @@ test('company detail presents category-level opportunity facts without specific 
 test('Commercial Product Fit remains available to the API but stays outside the main category/contact decision surface',async()=>{
   const [app,labels]=await Promise.all([readPublic('app.js'),readPublic('product-match-ui.js')]);
   for(const text of ['商业商品适配','Commercial Product Fit','有意向后沟通','Discuss after interest',
-    '不触发补证','does not trigger enrichment'])assert.ok(app.includes(text));
+    '基于现有资料的商务参考','Commercial reference based on available evidence'])assert.ok(app.includes(text));
   assert.match(app,/\/commercial-product-fit/);
   const mainCard=app.slice(app.indexOf('function productMatchResultCard'),app.indexOf('function wireProductMatchRetry'));
   assert.doesNotMatch(mainCard,/commercialProductFitView|data-commercial-product-fit/);
-  assert.match(app,/does not change the category gate, contact eligibility, approval or send permission/);
+  assert.match(app,/price, specifications and MOQ remain subject to discussion/);
   for(const dimension of ['COMMERCIAL_POSITIONING_PRICE_BAND','MOQ_ORDER_FORMAT_COMPATIBILITY',
     'RECENT_PRODUCT_BUYING_SIGNAL'])assert.ok(labels.includes(dimension));
   assert.doesNotMatch(app,/Commercial Product Fit[\s\S]{0,300}product candidate/i);
@@ -80,7 +80,7 @@ test('new-customer product scoring is visibly category-level in filters, tables,
   const [html,app,css]=await Promise.all([
     readPublic('index.html'),
     readPublic('app.js'),
-    readPublic('ui/workspace-system.css')
+    readPublic('ui/v3/responsive.css')
   ]);
   assert.match(html,/<span lang="zh-CN">匹配类目<\/span><span lang="en">Matched Category<\/span>/);
   assert.match(html,/商品类目评分 \/ Product Category Score/);
@@ -103,7 +103,7 @@ test('Phase 10 responsive UI uses tokens, internal scrolling and safe async cont
   ]);
   assert.match(html,/href="\/ui\/phase10-workbench\.css\?v=20260901"/);
   assert.doesNotMatch(css,/#[0-9a-f]{3,8}\b/i);
-  assert.match(css,/\.p10-workstream-list\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto/);
+  assert.match(await readPublic('ui/opportunity-workspace.css'),/\.p10-workstream-list\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto/);
   assert.match(css,/@media \(max-width: 767px\)/);
   assert.match(css,/prefers-reduced-motion: reduce/);
   assert.match(research,/event\.currentTarget\.disabled=true/);

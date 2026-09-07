@@ -81,36 +81,7 @@
 
 .crm-status-tab[aria-selected="true"] { background: var(--p8-surface); color: var(--p8-primary); box-shadow: 0 1px 3px rgb(23 32 51 / .1); }
 
-.crm-detail-toolbar .detail-close {
-  min-width: var(--p8-control-height);
-  min-height: var(--p8-control-height);
-}
 .crm-status-tab-count { margin-inline-start: .35rem; font-family: var(--font-mono); font-size: .76rem; }
-
-.data-state-badge,
-.p8-status {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  padding: .3rem .55rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: .76rem;
-  font-weight: 700;
-  line-height: 1.15;
-  white-space: normal;
-}
-
-.state-active,
-.p8-status.is-recommended,
-.p8-status.is-approved { background: var(--p8-success-soft); color: var(--p8-success); }
-.state-review,
-.p8-status.is-evidence,
-.p8-status.is-hold { background: var(--p8-warning-soft); color: var(--p8-warning); }
-.state-rejected,
-.p8-status.is-unsuitable,
-.p8-status.is-suppressed { background: var(--p8-danger-soft); color: var(--p8-danger); }
-.state-unknown { background: var(--p8-surface-subtle); color: var(--p8-muted); }
 
 .crm-filter-chip-list { display: flex; flex-wrap: wrap; gap: .45rem; }
 .crm-filter-chip {
@@ -186,16 +157,5 @@
 .metric strong,
 .crm-status-tab-count { font-variant-numeric: tabular-nums; }
 
-.p8-stepper { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
-.p8-stepper li { min-width: 0; padding: .6rem .7rem; border-top: 3px solid var(--p8-border); color: var(--p8-muted); }
-.p8-stepper li[aria-current="step"] { border-color: var(--p8-primary); color: var(--p8-ink); font-weight: 700; }
-.p8-stepper .bi { overflow-wrap: anywhere; }
-
 .crm-operation-status:not(:empty),
 .run-status:not(:empty) { padding: .65rem .75rem; border-left: 3px solid var(--p8-primary); background: var(--p8-surface-subtle); color: var(--p8-ink-soft); }
-
-.crm-skeleton-line {
-  min-height: .85rem;
-  border-radius: .25rem;
-  background: var(--p8-surface-subtle);
-}

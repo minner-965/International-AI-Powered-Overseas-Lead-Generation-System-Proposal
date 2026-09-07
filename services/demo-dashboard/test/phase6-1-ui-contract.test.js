@@ -13,13 +13,13 @@ const opportunities=read('opportunity-ui.js');
 const productMatch=read('product-match-ui.js');
 const css=read('phase5.css');
 
-test('desktop Opportunities exposes the nine category-driven decision columns and preserves V3 detail capabilities',()=>{
+test('desktop Opportunities exposes eight compact decision columns and preserves V3 detail capabilities',()=>{
   for(const className of [
-    'op-col-company','op-col-market','op-col-product-match','op-col-verification','op-col-buyer-model','op-col-buyer','op-col-contact','op-col-status','op-col-action'
+    'op-col-company','op-col-market','op-col-product-match','op-col-contact','op-col-status','op-col-activity','op-col-owner','op-col-action'
   ]) assert.match(html,new RegExp(`class=["'][^"']*${className}`));
-  for(const label of ['Matched Category','Company Verification','Buyer Type','Named Buyer','Official Contact Channels','Status','Next Action']) assert.match(html,new RegExp(label,'i'));
+  for(const label of ['Matched Category','Latest Activity','Owner','Official Contact Channels','Status','Next Action']) assert.match(html,new RegExp(label,'i'));
   for(const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
-  assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']9["']/);
+  assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']8["']/);
 });
 
 test('V3 Opportunities exposes buyer/category/matrix filters with stable IDs',()=>{
@@ -42,19 +42,22 @@ test('Opportunities renderer consumes V3 fields without collapsing independent s
   for(const legacy of ['dpv_score','customer_match','historical_customer_match','cooperation_matrix']) assert.match(source,new RegExp(`\\b${legacy}\\b`));
 });
 
-test('mobile keeps Company, profile, Buyer Model, Product Category Score, Supplier Access and Readiness visible',()=>{
-  const mobileStart=css.indexOf('@media (max-width:560px)');
-  const mobileEnd=css.indexOf('@media',mobileStart+1);
-  const mediaBlocks=css.slice(mobileStart,mobileEnd>mobileStart?mobileEnd:undefined);
+test('mobile prioritizes company/category/status/action and retains secondary facts in detail',()=>{
+  const opportunityCss=read('ui/opportunity-workspace.css');
+  const mobileStart=opportunityCss.indexOf('@media (max-width: 767px)');
+  const mobileEnd=opportunityCss.indexOf('@media',mobileStart+1);
+  const mediaBlocks=opportunityCss.slice(mobileStart,mobileEnd>mobileStart?mobileEnd:undefined);
   assert.ok(mobileStart>=0);
-  for(const className of ['op-col-company','op-col-market-product','op-col-buyer-model','op-col-product-match','op-col-supplier-access','op-col-readiness']) {
-    assert.match(mediaBlocks,new RegExp(`\\.${className}\\b`));
-    assert.doesNotMatch(mediaBlocks,new RegExp(`\\.${className}[^}]*display\\s*:\\s*none`,`i`));
+  const renderer=app.slice(app.indexOf('function renderOpportunityTable'),app.indexOf('async function loadOpportunities'));
+  for(const className of ['op-col-company','op-col-market','op-col-product-match','op-col-contact','op-col-status','op-col-activity','op-col-owner','op-col-action']) {
+    assert.match(renderer,new RegExp(`class="${className}"`));
   }
-  assert.match(css,/@media\s*\([^)]*max-width\s*:\s*(?:560|480|390)px/i);
-  assert.match(css,/grid-template-columns\s*:\s*repeat\(2\s*,\s*minmax\(0\s*,\s*1fr\)\)|grid-template-columns\s*:\s*1fr\s+1fr/i);
-  assert.match(css,/@media \(max-width:420px\)[\s\S]*\.crm-opportunity-table tr\s*\{[^}]*grid-template-columns:\s*minmax\(0,1fr\)/);
-  assert.match(css,/@media \(max-width:420px\)[\s\S]*\.crm-opportunity-table \.data-state-badge\s*\{[^}]*max-width:\s*100%[^}]*white-space:\s*normal/);
+  for(const field of ['op-col-company','op-col-product-match','op-col-status','op-col-action']) assert.match(mediaBlocks,new RegExp(`\\.${field} \\{[^}]*grid-`));
+  assert.match(mediaBlocks,/\.crm-opportunity-table tbody\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(mediaBlocks,/\.crm-opportunity-table td::before\s*\{[^}]*content:none/);
+  for(const preserved of ['opportunityBuyerModelCell','opportunitySupplierAccessCell','opportunityReadinessLabel','detail-panel-product-match'])assert.match(app,new RegExp(preserved));
+  assert.match(app,/function opportunityCategorySummary[\s\S]*Product Category Score/);
+  assert.match(read('ui/v3/components.css'),/\.dpv-badge, \.data-state-badge, \.p8-status\s*\{[^}]*white-space:\s*normal[^}]*word-break:\s*normal/);
 });
 
 test('Company Detail retains the category-score tab and renders both independent product profiles',()=>{

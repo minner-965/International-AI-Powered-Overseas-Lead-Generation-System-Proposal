@@ -1,0 +1,45 @@
+/* Shared primitives. Existing semantic hooks are adapters, not page overrides. */
+.dpv-panel, .crm-panel, .card.crm-panel { border: 1px solid var(--dpv-border); border-radius: var(--dpv-radius-panel); background: var(--dpv-surface); color: var(--dpv-ink); box-shadow: var(--dpv-shadow-panel); min-width: 0; }
+.dpv-panel__head, .crm-panel-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--dpv-border); }
+.dpv-panel__body, .card-body { padding: 24px; }
+.dpv-actions, .dpv-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dpv-button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; min-width: 44px; padding: 8px 16px; border: 1px solid var(--dpv-border-strong); border-radius: var(--dpv-radius-control); background: var(--dpv-surface); color: var(--dpv-ink); font-weight: 600; text-decoration: none; white-space: normal; transition: background-color var(--dpv-motion-fast), border-color var(--dpv-motion-fast); }
+.dpv-button:hover, .btn:hover { background: var(--dpv-surface-subtle); color: var(--dpv-ink); }
+.dpv-button--primary, .btn-primary { background: var(--dpv-primary); border-color: var(--dpv-primary); color: var(--dpv-on-primary); }
+.dpv-button--primary:hover, .btn-primary:hover { background: var(--dpv-primary-hover); border-color: var(--dpv-primary-hover); color: var(--dpv-on-primary); }
+.btn-outline-primary, .btn-ghost-primary { color: var(--dpv-primary); border-color: var(--dpv-primary); }
+.dpv-button--danger, .btn-danger { color: var(--dpv-danger); border-color: var(--dpv-danger); background: var(--dpv-danger-soft); }
+:is(.dpv-button, .btn):disabled, :is(.dpv-button, .btn)[aria-disabled="true"] { cursor: not-allowed; color: var(--dpv-muted); background: var(--dpv-surface-subtle); border-color: var(--dpv-border-strong); opacity: 1; }
+.dpv-field, .form-control, .form-select { min-height: 44px; max-width: 100%; padding: 10px 12px; border: 1px solid var(--dpv-border-strong); border-radius: var(--dpv-radius-control); background: var(--dpv-surface); color: var(--dpv-ink); }
+.dpv-field::placeholder, .form-control::placeholder { color: var(--dpv-muted); opacity: 1; }
+textarea.dpv-field { min-height: 120px; resize: vertical; width: 100%; }
+.dpv-field[aria-invalid="true"] { border-color: var(--dpv-danger); }
+.dpv-badge, .data-state-badge, .p8-status { display: inline-flex; align-items: center; justify-content: flex-start; justify-self: start; width: fit-content; min-width: 0; max-width: 100%; gap: 6px; padding: 7px 10px; border: 1px solid currentColor; border-radius: 6px; color: var(--dpv-primary); background: var(--dpv-surface); font-size: 12px; font-weight: 600; line-height: 1.4; white-space: normal; overflow-wrap: normal; word-break: normal; }
+:is(.dpv-badge, .data-state-badge, .p8-status) .bi { font-size: inherit; line-height: inherit; overflow-wrap: normal; word-break: normal; }
+:is(.dpv-badge, .data-state-badge, .p8-status) .bi > span { white-space: normal; overflow-wrap: normal; word-break: normal; }
+.data-state-badge:is(.state-verified,.state-current), .p8-status.is-approved { color:var(--dpv-success); background:var(--dpv-success-soft); }
+.data-state-badge.state-active, .p8-status.is-recommended { color:var(--dpv-primary); background:var(--dpv-primary-soft); }
+.data-state-badge:is(.state-review,.state-aging,.state-stale), .p8-status:is(.is-evidence,.is-hold) { color:var(--dpv-warning); background:var(--dpv-warning-soft); }
+.data-state-badge:is(.state-rejected,.state-invalid), .p8-status:is(.is-unsuitable,.is-suppressed) { color:var(--dpv-danger); background:var(--dpv-danger-soft); }
+.data-state-badge:is(.state-superseded,.state-duplicate,.state-archived,.state-unknown) { color:var(--dpv-muted); background:var(--dpv-surface-subtle); }
+.dpv-badge--success, .dpv-state[data-state="success"] { color: var(--dpv-success); background: var(--dpv-success-soft); }
+.dpv-badge--warning, .dpv-state:is([data-state="warning"],[data-state="stale"],[data-state="degraded"]) { color: var(--dpv-warning); background: var(--dpv-warning-soft); }
+.dpv-badge--danger, .dpv-state:is([data-state="error"],[data-state="permission-denied"]) { color: var(--dpv-danger); background: var(--dpv-danger-soft); }
+.dpv-badge--info { color: var(--dpv-info); background: var(--dpv-info-soft); }
+.dpv-state { padding: 16px; border: 1px solid var(--dpv-border); border-radius: 8px; color: var(--dpv-muted); background: var(--dpv-surface-subtle); overflow-wrap: anywhere; }
+.dpv-state p:last-child { margin-bottom: 0; }
+.dpv-skeleton { display: block; height: 16px; max-width: 100%; border-radius: 4px; background: var(--dpv-border); }
+.dpv-table-wrap, .table-responsive { max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; }
+.dpv-table { width: 100%; border-collapse: collapse; text-align: left; }
+.dpv-table :is(th,td) { padding: 12px 16px; border-bottom: 1px solid var(--dpv-border); vertical-align: top; overflow-wrap: anywhere; }
+.dpv-table th { background: var(--dpv-surface-subtle); color: var(--dpv-muted); font-size: 12px; font-weight: 600; }
+.dpv-table td { color: var(--dpv-ink); }
+.dpv-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 16px; }
+.dpv-timeline { list-style: none; padding: 0; margin: 0; }
+.dpv-timeline > li { padding: 16px 0; border-bottom: 1px solid var(--dpv-border); }
+.dpv-dialog { padding: 0; border: 1px solid var(--dpv-border); border-radius: 12px; width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--dpv-ink); background: var(--dpv-surface); box-shadow: var(--dpv-shadow-popover); }
+.dpv-dialog[open] { display: flex; flex-direction: column; }
+.dpv-dialog::backdrop { background: var(--dpv-overlay); }
+.dpv-dialog__body { overflow-y: auto; overscroll-behavior: contain; padding: 24px; }
+.dpv-dialog__foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--dpv-border); padding: 16px 24px; }
+@media (max-width: 767px) { .dpv-panel__head, .dpv-panel__body, .card-body, .dpv-dialog__body { padding: 16px; } .dpv-table :is(th,td) { padding: 12px; } }

@@ -53,12 +53,26 @@ At the start of every task, complete both checks below before implementation beg
 
 ## Frontend UI system
 
-- Before changing company-facing frontend files, read `docs/UI_SYSTEM.md` and reuse its tokens, component classes, responsive breakpoints, bilingual pattern, and status mappings.
+- Before changing company-facing frontend files, explicitly use `$dpv-workspace-ui` at `.agents/skills/dpv-workspace-ui/SKILL.md` and read `docs/UI_SYSTEM_V3.md`. `docs/UI_SYSTEM.md` and Phase 8/post-Phase 9 visual conventions are superseded; do not reuse their visual styling.
 - Existing features receive the shared UI without changing their APIs, data semantics, form names or values, request payloads, endpoints, or stable DOM hooks.
 - Future features must extend the same UI system. Reuse an existing component pattern before adding a new visual pattern.
 - Use semantic design tokens for colors, borders, radii, shadows, and states. Do not introduce raw component colors when an existing token covers the role.
 - Company-facing labels use the established `.bi` structure with Chinese above English at equal size and weight. Do not rewrite source evidence or returned business data.
 - Verify frontend changes in the browser at desktop and mobile widths, including keyboard focus, loading, empty, error, long-content, and reduced-motion states.
+
+## DPV user-visible frontend — Phase 12 authority
+
+- User correction (2026-09-07): faithfully reproduce the reference's content layout, proportions, density, spacing, typography hierarchy, cards and chart forms—not merely its shell or colors. Compare reference and implementation at the same viewport, inspect the actual screenshots, and record deviations. A page is not complete before this visual comparison passes. Preserve actual data, original business functionality and equal-size bilingual labels; explicitly document adaptations required by these constraints. Where the supplied reference does not contain a page, extend its exact shared component language rather than claiming an unseen page was reproduced pixel-for-pixel.
+- Mobile correction (2026-09-07): use a compact list-to-detail composition, not every desktop table field stacked into an oversized card. Prioritize company/job identity, main status, essential channel and next action; disclose secondary facts in the existing details, drawers or expandable sections. Keep bilingual labels equal and readable, retain 44px interactive targets and native zoom. Validate actual 375/390px screenshots after transitions and loading finish; an overflow check alone is not visual acceptance.
+
+- Before changing `public/`, frontend templates, workspace CSS, dashboard charts, user-visible labels or interaction flows, use `$dpv-workspace-ui`.
+- The sole visual reference is `docs/ui/reference/dpv-workspace-reference-dashboard.html`. Preserve its dark sidebar, white topbar, light-gray canvas, white rounded business cards, proportions, spacing, hierarchy and operational density. The user's explicit corrections override decorative examples in that file.
+- Retaining the stack means preserving business code, APIs, database, stable hooks, HTML/CSS/JS runtime and mature component interaction capabilities, **not the old UI appearance**. Sidebar, Topbar, colors, cards, KPI, tables, Company Detail, Opportunities, Contact Queue and Settings must all migrate into one V3 product family. No mixed old/new visual acceptance.
+- Do not copy sample companies, fake metrics, AI marketing copy, remote CDN dependencies, Google Fonts, Font Awesome, remote avatars, gradients/glow, shimmer or hardcoded percentages from the reference into production.
+- Preserve Phase 10 research and Phase 11 approval/SMTP/IMAP/reply/suppression/CRM/export semantics, API payloads, stable hooks, accessibility, mobile and keyboard support. UI work does not authorize new emails, approvals, database edits or research jobs.
+- Before adding a production dependency, complete `docs/REUSE_CANDIDATE_REGISTRY.md` using official sources and explain why current Tabler/native capabilities do not satisfy the requirement. Prefer a thin adapter and pinned local dependencies.
+- Every implementation handoff requires actual browser screenshots, console/network checks, keyboard/focus checks, no page-level overflow, no synthetic production data and applicable business regression. Baseline screenshots record old defects; they do not constitute V3 acceptance.
+- Remove replaced old CSS/JS/assets only after HTML, JS, tests and runtime references are all absent and regression passes. Do not add a giant override stylesheet. WP-UI00–02 install rules and preserve the old runtime unchanged; implementation starts only with subsequent authorization.
 
 ## Phase 5+ reuse-first rule
 

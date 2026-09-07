@@ -39,7 +39,7 @@ function render(items){
     return `<article class="crm-contact-queue-row p10-contact-ready-row">
       <div><strong>${esc(item.company_name||'-')}</strong><span class="crm-row-secondary">${esc(item.country_code||'-')}</span></div>
       <div><small>${bi('匹配类目','Matched categories')}</small><span>${categories}</span></div>
-      <div><small>${bi('实名联系人','Named contact')}</small><span>${buyers}</span></div>
+      <details><summary>${bi('联系人资料','Contact details')}</summary><span>${buyers}</span></details>
       <div><small>${bi('官方联系方式','Official contacts')}</small><ul class="p10-contact-route-list">${routes}</ul></div>
       <div><small>${bi('机会状态','Opportunity status')}</small>${phase8StatusMarkup(item.opportunity_status||'RECOMMENDED')}</div>
       <div><button class="btn btn-outline-primary" type="button" data-company-id="${esc(item.company_id)}">${bi('查看公司','View company')}</button></div>

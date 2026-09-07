@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>V3 chart state checks</title>
+<link rel="stylesheet" href="../../public/ui/v3/tokens.css"><link rel="stylesheet" href="../../public/ui/v3/foundation.css"><link rel="stylesheet" href="../../public/ui/v3/components.css"><link rel="stylesheet" href="../../public/ui/v3/overview.css">
+</head><body><main style="max-width:1200px;margin:auto;padding:20px">
+<h1>图表状态检查 / Chart state checks</h1><p>Isolated presentation inputs only. No company records, credentials, API access or business actions.</p>
+<nav class="dpv-actions" aria-label="状态选择 State selection">
+<button type="button" class="dpv-button" data-state="loading">读取中 / Loading</button>
+<button type="button" class="dpv-button" data-state="empty">空结果 / Empty</button>
+<button type="button" class="dpv-button" data-state="error">读取失败 / Error</button>
+<button type="button" class="dpv-button" data-state="partial">部分可用 / Partial</button>
+</nav><p id="scenario" role="status"></p><section id="view-overview"></section></main>
+<script type="module">
+import { mountOverview, renderOverview, markOverviewLoading } from '../../public/ui/v3/overview.js';
+mountOverview();
+const zero={metrics:{verified_active:0},opportunities:[],operations:{prospect:{sent_no_reply:0,pending_management:0,pending_drafts:0,pending_followups:0,pending_contacts:0,smtp_accepted:0,replies:0},monitoring:{alerts:[]}},research:{active_jobs:0,contact_ready_opportunities:0,priority_tasks:[]},jobs:{items:[]},getStatus:()=>'',onCompany:()=>{}};
+const labels={loading:'读取中：保留上次空结果并显示忙碌状态 / Loading: previous empty result retained with busy status',empty:'空结果：已成功读取，当前没有记录 / Empty: successful response with no records',error:'读取失败：缺失值显示 —，市场分布显示重试提示 / Error: unavailable values stay unknown; market offers retry',partial:'部分可用：企业与机会为空；邮件、研究任务暂未读取 / Partial: valid empty company/opportunity results; mail and jobs unavailable'};
+function choose(state){
+  const allMissing={...zero,metrics:null,opportunities:null,operations:null,research:null,jobs:null};
+  renderOverview(state==='error'?allMissing:state==='partial'?{...zero,operations:null,research:null,jobs:null}:zero);
+  if(state==='loading')markOverviewLoading();
+  else document.getElementById('overview-last-refresh').textContent=state==='error'||state==='partial'?'部分信息暂未读取 / Some information unavailable':'状态检查 / State check';
+  document.getElementById('scenario').textContent=labels[state];
+  document.querySelectorAll('[data-state]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.state===state)));
+}
+document.querySelectorAll('[data-state]').forEach(button=>button.addEventListener('click',()=>choose(button.dataset.state)));
+document.getElementById('outreach-operations-refresh').addEventListener('click',()=>choose('empty'));
+choose('empty');
+</script></body></html>

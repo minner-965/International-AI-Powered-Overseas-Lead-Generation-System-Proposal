@@ -13,6 +13,42 @@ const statusMeta = Object.freeze({
   NOT_SUITABLE: { zh: '当前不适合', en: 'Not Suitable', tone: 'danger' }
 });
 
+// These are presentation projections, never opportunity decision statuses.
+export const communicationViews = Object.freeze(['SENT_NO_REPLY', 'REPLIED']);
+const recordKey = item => `${item?.company_id || item?.companyId || item?.id || ''}:${item?.product_profile || ''}`;
+export function filterOpportunityCommunication(items, workbench, view) {
+  if (!communicationViews.includes(view)) return items;
+  if (!workbench || !Array.isArray(workbench.items)) return [];
+  const keys = new Set(workbench.items
+    .filter(row => row.record_scope !== 'CONTROLLED' && row.business_contact_status === view)
+    .map(recordKey));
+  return items.filter(item => keys.has(recordKey(item)));
+}
+export function opportunityCommunicationRecord(item, workbench) {
+  return workbench?.items?.find(row => row.record_scope !== 'CONTROLLED' && recordKey(row) === recordKey(item)) || null;
+}
+export function paginateOpportunityItems(items, page = 1, pageSize = 10) {
+  const size = Math.max(1, Math.min(50, Math.floor(Number(pageSize)) || 10));
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const current = Math.max(1, Math.min(pages, Math.floor(Number(page)) || 1));
+  return { items: items.slice((current - 1) * size, current * size), page: current, pages, total: items.length, pageSize: size };
+}
+export function renderOpportunityPagination(model, onPage) {
+  const host = document.querySelector('#opportunity-pagination');
+  if (!host) return;
+  host.hidden = model.total === 0;
+  const from = model.total ? (model.page - 1) * model.pageSize + 1 : 0;
+  const to = Math.min(model.total, model.page * model.pageSize);
+  host.innerHTML = `<span class="bi"><span lang="zh-CN">${from}–${to} / ${model.total} 条 · 第 ${model.page} / ${model.pages} 页</span><span lang="en">${from}–${to} of ${model.total} · Page ${model.page} of ${model.pages}</span></span><div class="opw-pagination-actions"><button type="button" class="btn btn-outline-secondary" data-opw-page="${model.page - 1}" ${model.page <= 1 ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">上一页</span><span lang="en">Previous</span></span></button><button type="button" class="btn btn-outline-secondary" data-opw-page="${model.page + 1}" ${model.page >= model.pages ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">下一页</span><span lang="en">Next</span></span></button></div>`;
+  host.querySelectorAll('[data-opw-page]').forEach(button => button.addEventListener('click', () => {
+    const direction = Number(button.dataset.opwPage) > model.page ? 1 : -1;
+    onPage(Number(button.dataset.opwPage));
+    const buttons = [...host.querySelectorAll('[data-opw-page]')];
+    const desired = buttons[direction > 0 ? 1 : 0];
+    (desired?.disabled ? buttons.find(node => !node.disabled) : desired)?.focus({ preventScroll: true });
+  }));
+}
+
 const numberValue = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const firstValue = (item, keys, fallback = '') => {
   for (const key of keys) {
@@ -39,7 +75,7 @@ function activateStatus(status) {
   if (!select) return;
   select.value = status;
   select.dispatchEvent(new Event('change', { bubbles: true }));
-  window.setTimeout(() => document.querySelector('.opw-inbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  document.querySelector('.opw-inbox')?.scrollIntoView({ block: 'start' });
 }
 
 function priorityScore(item, getBlocker) {
@@ -119,7 +155,7 @@ function renderChart(counts, total) {
   host.innerHTML = Object.entries(statusMeta).map(([status, meta]) => {
     const count = numberValue(counts[status]);
     const share = total ? Math.round((count / total) * 100) : 0;
-    const relativeWidth = Math.max(count ? 8 : 0, Math.round((count / maximum) * 100));
+    const relativeWidth = Math.round((count / maximum) * 100);
     return `<button class="opw-chart-row is-${meta.tone}" type="button" data-opw-status="${status}" aria-label="${escapeHtml(meta.zh)} ${count}, ${share}%">
       <span class="opw-chart-label"><span>${escapeHtml(meta.zh)}</span><small>${escapeHtml(meta.en)}</small></span>
       <span class="opw-chart-track" aria-hidden="true"><span style="--opw-bar:${relativeWidth}%"></span></span>
@@ -128,14 +164,16 @@ function renderChart(counts, total) {
   }).join('');
 }
 
-export function renderOpportunityWorkspace({ items = [], counts = {}, getStatus, getBlocker, getBlockerLabel, getBlockerAction, onTask } = {}) {
+export function renderOpportunityWorkspace({ items = [], counts = {}, workbench = null, getStatus, getBlocker, getBlockerLabel, getBlockerAction, onTask } = {}) {
   if (typeof getStatus !== 'function' || typeof getBlocker !== 'function') return;
   const total = items.length;
   const summary = document.querySelector('#opportunity-workspace-summary');
   if (summary) summary.setAttribute('aria-busy', 'false');
   document.querySelectorAll('[data-status-count]').forEach(node => {
     const status = node.dataset.statusCount;
-    node.textContent = String(status === 'ALL' ? total : numberValue(counts[status]));
+    node.textContent = communicationViews.includes(status)
+      ? (workbench ? String(filterOpportunityCommunication(items,workbench,status).length) : '—')
+      : String(status === 'ALL' ? total : numberValue(counts[status]));
   });
   renderWorkstreams(items, getStatus, getBlocker, getBlockerLabel, onTask);
   renderChart(counts, total);
@@ -147,6 +185,6 @@ export function renderOpportunityWorkspace({ items = [], counts = {}, getStatus,
 export function setOpportunityResultSummary(count, status) {
   const host = document.querySelector('#opw-result-summary');
   if (!host) return;
-  const meta = statusMeta[status];
+  const meta = statusMeta[status] || ({ SENT_NO_REPLY:{zh:'已发未回复',en:'Sent · no reply'}, REPLIED:{zh:'已回复',en:'Replied'} })[status];
   host.innerHTML = `<strong>${numberValue(count)}</strong><span><span lang="zh-CN">条${meta ? ` · ${meta.zh}` : ''}</span><span lang="en">records${meta ? ` · ${meta.en}` : ''}</span></span>`;
 }

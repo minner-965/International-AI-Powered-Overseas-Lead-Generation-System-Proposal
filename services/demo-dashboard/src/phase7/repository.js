@@ -147,6 +147,27 @@ export class Phase7Repository {
 
   async getOutreachOperationsSummary(){
     const result=await this.pool.query(`SELECT
+      (SELECT count(*)::int FROM leadgen.outbound_messages m
+        JOIN leadgen.outreach_approvals a ON a.id=m.approval_id
+        LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=a.opportunity_snapshot_id
+        LEFT JOIN LATERAL(SELECT rc.reply_category FROM leadgen.inbound_messages i
+          LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x
+            WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)rc ON true
+          WHERE i.correlation_outbound_message_id=m.id AND i.correlation_status='MATCHED'
+          ORDER BY i.received_at DESC LIMIT 1)reply ON true
+        WHERE CASE WHEN crm.funnel_status IN('OPTED_OUT','BOUNCED','REPLIED') THEN crm.funnel_status
+          WHEN m.send_status='HARD_BOUNCED' THEN 'BOUNCED'
+          WHEN reply.reply_category='OPT_OUT' THEN 'OPTED_OUT'
+          WHEN reply.reply_category IN('HUMAN_POSITIVE','HUMAN_NEUTRAL','HUMAN_NEGATIVE') THEN 'REPLIED'
+          ELSE m.business_contact_status END='SENT_NO_REPLY') sent_no_reply,
+      (SELECT count(*)::int FROM leadgen.sales_tasks
+        WHERE record_scope='PROSPECT' AND task_status IN('OPEN','IN_PROGRESS')
+          AND task_type IN('FOLLOW_UP','REPLY_REVIEW','QUOTATION','SAMPLE','MEETING','CRM_HANDOFF')) pending_followups,
+      (SELECT count(*)::int FROM leadgen.business_opportunity_current
+        WHERE display_opportunity_status='RECOMMENDED') pending_management,
+      (SELECT count(*)::int FROM leadgen.business_opportunity_current
+        WHERE business_fit_status='FIT' AND contact_readiness<>'READY'
+          AND display_opportunity_status='EVIDENCE_REQUIRED') pending_contacts,
       (SELECT count(*)::int FROM (SELECT DISTINCT ON(company_id,product_profile) eligibility_status,expires_at
         FROM leadgen.outreach_eligibility_snapshots ORDER BY company_id,product_profile,created_at DESC,id DESC)s
         WHERE eligibility_status='ELIGIBLE' AND expires_at>now()) eligible,
