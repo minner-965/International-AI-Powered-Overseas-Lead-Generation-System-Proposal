@@ -172,7 +172,7 @@ const systemReasonLabels = Object.freeze({
   'Commercial and operational compatibility requires confirmation': pair('商务与运营条件仍需确认', 'Commercial and operational compatibility requires confirmation'),
   'Explicit supplier lock-in evidence found': pair('发现明确的固定供应商约束', 'Explicit supplier lock-in evidence found'),
   'A documented supplier-entry gate exists': pair('存在公开的供应商准入门槛', 'A documented supplier-entry gate exists'),
-  'Published supplier access reduces lock-in concern': pair('公开供应商路径降低了锁定风险', 'Published supplier access reduces lock-in concern'),
+  'Published supplier access reduces lock-in concern': pair('有合作申请渠道', 'Cooperation application channel available'),
   'Supplier lock-in requires confirmation': pair('供应商锁定情况仍需确认', 'Supplier lock-in requires confirmation')
 });
 

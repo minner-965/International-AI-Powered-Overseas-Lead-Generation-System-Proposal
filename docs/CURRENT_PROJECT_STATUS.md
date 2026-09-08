@@ -7,11 +7,11 @@ Persisted intent and actual execution are separate: maintenance pauses execution
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_at": "2026-09-08T19:41:09.086127+08:00",
+  "generated_at": "2026-09-08T21:04:31.277565+08:00",
   "repo": "International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "commit": "be96cd54795ce3be39e4f2e1eb3c71c4c6f7893b",
+  "commit": "70360481e43e8b1f5f3638b7c20bedca3f6eb462",
   "branch": "phase13-cleanup-deai",
-  "current_phase": "Phase 13 cleanup CL07-CL08",
+  "current_phase": "Phase 13 cleanup CL09-CL11",
   "runtime_controls": {
     "persisted": [
       {
@@ -560,14 +560,14 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       }
     ]
   },
-  "next_allowed_work": "STOP_AFTER_CL08_AWAIT_AUTHORIZATION"
+  "next_allowed_work": "STOP_AFTER_CL11_AWAIT_AUTHORIZATION"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Boundary
 
-CL07 and CL08 only. STOP after CL08. Restoration, additional cleanup, push and tag require their later work packages.
+CL09, CL10 and CL11 only. STOP after CL11. Restoration, additional cleanup, push and tag require their later work packages.
 
 ## Historical evidence
 

@@ -377,7 +377,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.deepEqual(categoryProcurementStatusLabel('CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'), ['类目已确认','Category confirmed']);
   assert.deepEqual(productOpportunityStatusLabel('NO_REAL_CANDIDATE'), ['类目评估待更新','Category assessment needs updating']);
   assert.deepEqual(productOpportunityStatusLabel('NOT_REQUIRED'), ['按商品类目评估','Category-level assessment']);
-  assert.deepEqual(supplierAccessBandLabel('LOW_MEDIUM'), ['供应商准入中低','Low-medium supplier access']);
+  assert.deepEqual(supplierAccessBandLabel('LOW_MEDIUM'), ['合作可达性中低','Low-medium cooperation accessibility']);
   assert.deepEqual(productAccessMatrixLabel('DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS'), ['终端买家 · 高类目评分 · 高准入','Direct buyer · high category score · high access']);
   assert.equal(productMatchScore({ score:null,band:'UNKNOWN' }),null);
   assert.equal(productMatchScore({ product_match_score:'72' }),72);

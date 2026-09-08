@@ -23,7 +23,7 @@ async function workspaceRequest(url){
 }
 
 function emptyState(){
-  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系公司','No contact-ready companies')}</h3><p>${bi('已确认类目并找到官方联系方式的业务机会会显示在这里。','Recommended opportunities with an official contact route will appear here.')}</p><button class="btn btn-outline-primary" type="button" data-open-view="opportunities">${bi('查看业务机会','Open Opportunities')}</button></div>`;
+  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系公司','No contact-ready companies')}</h3><p>${bi('请查看业务机会及联系方式。','Review business opportunities and contact details.')}</p><button class="btn btn-outline-primary" type="button" data-open-view="opportunities">${bi('查看业务机会','Open Opportunities')}</button></div>`;
 }
 
 function routeMarkup(route){

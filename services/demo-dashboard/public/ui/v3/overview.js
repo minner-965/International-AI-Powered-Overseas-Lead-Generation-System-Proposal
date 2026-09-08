@@ -23,7 +23,7 @@ export function marketDonut(markets,total) {
 }
 function jobCategory(job) {
   const labels={WOMENSWEAR:['女装','Womenswear'],GENERAL_MERCHANDISE:['百货','General Merchandise'],
-    'BUYER PROCUREMENT ENRICHMENT':['采购联系资料','Buyer & Procurement Evidence'],BUYER_PROCUREMENT_ENRICHMENT:['采购联系资料','Buyer & Procurement Evidence']};
+    'BUYER PROCUREMENT ENRICHMENT':['联系人资料','Contact Evidence'],BUYER_PROCUREMENT_ENRICHMENT:['联系人资料','Contact Evidence']};
   const category=String(job.product_category || '').trim();
   if(labels[category.toUpperCase()])return bi(...labels[category.toUpperCase()]);
   const profiles=(job.product_profiles || []).map(profile=>labels[profile]).filter(Boolean);

@@ -63,11 +63,11 @@ const productOpportunityStatusLabels = Object.freeze({
 });
 
 const supplierAccessBandLabels = Object.freeze({
-  HIGH: pair('供应商准入较高', 'High supplier access'),
-  MEDIUM: pair('供应商准入中等', 'Medium supplier access'),
-  LOW_MEDIUM: pair('供应商准入中低', 'Low-medium supplier access'),
-  LOW: pair('供应商准入较低', 'Low supplier access'),
-  UNKNOWN: pair('供应商准入待确认', 'Supplier access to confirm')
+  HIGH: pair('合作可达性较高', 'High cooperation accessibility'),
+  MEDIUM: pair('合作可达性中等', 'Medium cooperation accessibility'),
+  LOW_MEDIUM: pair('合作可达性中低', 'Low-medium cooperation accessibility'),
+  LOW: pair('合作可达性较低', 'Low cooperation accessibility'),
+  UNKNOWN: pair('合作可达性待确认', 'Cooperation accessibility to confirm')
 });
 
 const typeLabels = Object.freeze({
@@ -95,7 +95,7 @@ const gapTypeLabels = Object.freeze({
 });
 
 const dimensionLabels = Object.freeze({
-  TARGET_CATEGORY_PROCUREMENT_EVIDENCE: pair('目标品类采购依据', 'Target category procurement evidence'),
+  TARGET_CATEGORY_PROCUREMENT_EVIDENCE: pair('目标类目依据', 'Target category evidence'),
   BUYER_BUSINESS_MODEL_FIT: pair('客户采购模式匹配', 'Buyer business model fit'),
   ASSORTMENT_DEPTH_CATEGORY_IMPORTANCE: pair('产品组合深度与品类重要性', 'Assortment depth and category importance'),
   EXTERNAL_SOURCING_IMPORT_EVIDENCE: pair('外部采购与进口依据', 'External sourcing and import evidence'),

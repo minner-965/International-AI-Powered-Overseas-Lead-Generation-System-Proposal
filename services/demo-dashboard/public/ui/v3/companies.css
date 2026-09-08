@@ -34,6 +34,7 @@
 .v3-company-detail .crm-detail-header { padding:20px 24px; display:flex; flex-direction:column; gap:16px; align-items:stretch; border-bottom:1px solid var(--dpv-border); background:var(--dpv-surface); }
 .v3-company-detail .crm-detail-identity { min-width:0; flex:1; }
 .v3-company-detail .crm-detail-meta { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.v3-company-detail .crm-detail-meta > .data-state-badge { align-self:flex-start; }
 .v3-company-detail .crm-detail-website { display:inline-flex; min-height:44px; align-items:center; gap:8px; margin-right:8px; }
 .v3-company-detail .crm-detail-loading { display:grid; min-height:140px; padding:24px; place-items:center; }
 .v3-company-detail .crm-detail-identity h3 { font-size:24px; margin:8px 0 12px; overflow-wrap:anywhere; }

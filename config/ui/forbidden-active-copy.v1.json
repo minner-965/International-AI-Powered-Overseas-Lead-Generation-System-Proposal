@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "scope": "App-owned HTML and JavaScript under services/demo-dashboard/public; original company, evidence and message content is preserved.",
+  "excluded": "Non-rendered dictionary lookup keys and comments; historical documentation and migrations are outside the active surface.",
+  "patterns": [
+    "\\bAI\\b", "AI-powered", "artificial intelligence", "\\bsmart\\b", "\\bintelligent\\b", "\\brobot\\b", "\\bwand\\b", "\\bsparkle\\b",
+    "智能", "AI建议", "AI推荐", "AI理解", "AI判断", "AI分析", "AI解释", "AI摘要", "AI任务", "模型认为", "系统认为", "建议您",
+    "官方采购路径", "品类采购资料", "Buying evidence", "Procurement evidence", "Supplier access", "Start review", "Dispatch pending", "Email contact authorization pending"
+  ]
+}

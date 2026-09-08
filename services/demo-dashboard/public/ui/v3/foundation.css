@@ -19,7 +19,7 @@ img, svg, canvas { max-width: 100%; }
 .crm-content, .app-view, .crm-panel, .card-body, .table-responsive, .crm-detail-body { min-width: 0; }
 .container-xl.crm-content { width: 100%; max-width: 1280px; padding: 24px 32px; }
 .app-view { display: grid; gap: var(--dpv-page-gap); }
-[hidden], .app-view[hidden] { display: none !important; } .crm-helper, .dpv-meta { color: var(--dpv-muted); font-size: 12px; overflow-wrap: anywhere; }
+[hidden], .app-view[hidden] { display: none !important; } .crm-helper { color: var(--dpv-muted); font-size: 12px; overflow-wrap: anywhere; }
 .crm-context { color: var(--dpv-muted); font-size: 12px; font-weight: 600; }
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
 @media (max-width: 767px) { .container-xl.crm-content { padding: 20px 16px; } input, select, textarea { font-size: 16px; } }

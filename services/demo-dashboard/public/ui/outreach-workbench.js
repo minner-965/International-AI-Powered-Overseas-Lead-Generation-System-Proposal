@@ -9,7 +9,7 @@ const labels={DRAFT:['草稿','Draft'],PENDING_REVIEW:['待审核','Pending revi
 Object.assign(labels,{AMBIGUOUS:['发送结果待核对','Send result needs review'],HARD_BOUNCED:['永久退信','Permanent bounce'],SOFT_BOUNCED:['临时退信','Temporary bounce'],CANCELLED:['已取消','Cancelled']});
 Object.assign(labels,{VALID:['已核验','Verified'],ELIGIBLE:['条件通过','Eligible'],VERIFICATION_REQUIRED:['待核验','Verification required']});
 Object.assign(labels,{NO_VERIFIED_EMAIL:['未找到可发送邮箱','No verified email found']});
-Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待授权邮件联系','Email contact authorization pending'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
+Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待批准人工发信','Manual send approval required'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
 const status=value=>{const tone=['APPROVED','VALID','ELIGIBLE','REPLIED','DELIVERED'].includes(value)?'current':['FAILED','REJECTED','OPTED_OUT','BOUNCED','HARD_BOUNCED'].includes(value)?'rejected':['SENT','SENT_NO_REPLY','PROVIDER_ACCEPTED','READY_TO_SEND'].includes(value)?'active':'review';return `<span class="data-state-badge state-${tone}">${bi(...(labels[value]||['待准备','Not prepared']))}</span>`;};
 const category=value=>bi(...(value==='GENERAL_MERCHANDISE'?['日用百货','General merchandise']:['女装','Womenswear']));
 const businessStatus=row=>contactProgressStatus(row)?status(contactProgressStatus(row)):row.business_contact_status&&row.business_contact_status!=='NOT_SENT'?status(row.business_contact_status):row.opportunity_status!=='MANAGEMENT_APPROVED'?status('NEEDS_MANAGEMENT_APPROVAL'):row.eligibility_status!=='ELIGIBLE'?status('NEEDS_RECIPIENT_REVIEW'):status(row.send_status||row.draft_status||'NEEDS_DRAFT');
@@ -103,11 +103,11 @@ function readiness(row){
   if(state.data?.read_failed)return bi('状态更新未完成，请刷新后再发送。','Status refresh is incomplete. Refresh before sending.');
   if(state.dirty)return bi('正文有未保存修改，请先保存并重新审核。','The message has unsaved changes. Save and review the new version.');
   if(!state.data?.sending_enabled&&row.draft_status==='APPROVED')return sendBlockExplanation(row);
-  if(row.retry_allowed)return bi('上次提交在邮件服务调用前停止，可重新提交同一封邮件。','The last submission stopped before contacting the mail service. This same email can be resubmitted.');
+  if(row.retry_allowed)return bi('尚未发送，可重新提交。','Not sent. Ready to resubmit.');
   if(['AMBIGUOUS','SEND_AMBIGUOUS'].includes(row.send_status))return bi('发送结果待核对，请先检查发件箱。','The send result needs review. Check the Sent folder first.');
   if(row.send_status==='FAILED')return bi('本次发送失败，请联系管理员核对发送记录。','This send failed. Ask your administrator to review the send record.');
   if(row.message_id)return bi('此邮件已有发送记录，请查看当前状态。','This email has a send record. Check its current status.');
-  if(row.opportunity_status!=='MANAGEMENT_APPROVED')return bi('邮件联系授权待批准。','Email contact authorization is pending.');
+  if(row.opportunity_status!=='MANAGEMENT_APPROVED')return bi('人工发信待批准。','Manual sending requires approval.');
   if(row.eligibility_status!=='ELIGIBLE')return bi('请先补齐当前联系条件并核验邮箱。','Complete contact requirements and verify the mailbox first.');
   if(row.draft_status!=='APPROVED')return bi('发送前请完成当前草稿审核。','Approve the current draft before sending.');
   if(!state.data?.sending_enabled||!row.send_allowed)return sendBlockExplanation(row);

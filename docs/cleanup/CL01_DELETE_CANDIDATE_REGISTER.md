@@ -68,3 +68,10 @@ CL01 does not perform the later deletion, UI rewrite, dependency removal, curren
 - CL08: removed four orphan handler/queue declarations and corresponding compose allowlists: generate-outreach-draft, validate-outreach-draft, parse-reference-import, refresh-opportunity-exception-queue. Current producers, pending jobs, schedules and outbox references were checked; registered queues and historical records remain untouched.
 - Category workflow export display name is now Target Category Validation. Internal identity, webhook, version and graph remain unchanged; no persisted instance import occurred.
 - Referenced Gmail, external CRM and repair/reconciliation mechanisms remain. See CL07_REPLY_CRM_CLEANUP.md and CL08_ORCHESTRATION_CLEANUP.md. STOP after CL08, without CL09 or final push/tag.
+
+## Subsequent authorized CL09–CL11 disposition (2026-09-08)
+
+- CL09: 160 routes inventoried; none met all-consumer-zero retirement prerequisites. Existing 410 boundaries and role protections tested; current/admin/history compatibility retained.
+- CL10: replaced obsolete app-owned labels and internal narrative with concise bilingual business wording; added full public HTML/JS copy regression. Original business evidence and correspondence remain verbatim.
+- CL11: removed zero-caller contact table styles and preparatory component aliases. Current/dynamic selectors, linked assets and reference HTML with current test dependency retained. Fixed content-sized verification badge alignment.
+- Detailed evidence is in CL09_API_SERVICE_CLEANUP.md, CL09_ROUTE_INVENTORY.md, CL10_UI_DEAI_RESULT.md and CL11_UI_ASSET_CLEANUP.md. STOP after CL11; no CL12 activation or final push/tag.
