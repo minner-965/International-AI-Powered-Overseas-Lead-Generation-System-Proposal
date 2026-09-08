@@ -92,6 +92,14 @@ At the start of every task, complete both checks below before implementation beg
 
 ## Opportunity email rule
 
+## Phase 13 rule-reading and dry-run boundary
+
+- Before Phase 13 business/category/contact work, read `docs/rules/PHASE13_BUSINESS_SCOPE.md`, `docs/rules/PHASE13_OPPORTUNITY_POOL_RULES.md` and `docs/rules/PHASE13_CONTACT_READINESS_RULES.md`.
+- V2.1 MC03 is the opportunity-pool read-only comparison, superseding the old MC03 search-shadow numbering. Do not redo MC00–02. MC03 does not activate rules, call providers or send mail; preserve current business rows and stop for review before MC04.
+- Keep rule documentation, standalone implementation and tests consistent. Later work packages need their own explicit activation and applicable rule files; a broad future plan is not permission to run later work.
+
+## Existing opportunity email behavior
+
 - A current category-based business opportunity is sufficient commercial justification for an introductory email; do not add a separate proof-of-current-procurement requirement.
 - An observed official company or department mailbox may be used without a named buyer, after mailbox verification, current approval and address-level suppression checks.
 - Automatically verify observed official business mailboxes through Hunter, persist the real result and usage history, and preserve its timestamp when public source records are refreshed.

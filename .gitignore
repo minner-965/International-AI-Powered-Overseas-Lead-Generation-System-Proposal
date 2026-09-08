@@ -88,6 +88,7 @@ docs/PHASE5_V2_DATA_VERIFICATION_STATUS.md
 # Office temporary files
 # Private Phase 12 baseline screenshots and read-only business snapshots
 artifacts/phase12-ui-baseline/
+artifacts/phase13-mc03/
 
 ~$*
 *.tmp

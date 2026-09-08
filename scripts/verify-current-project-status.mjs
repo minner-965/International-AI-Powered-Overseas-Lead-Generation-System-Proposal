@@ -31,7 +31,17 @@ if(phase13Active){
   const phase=status.phase13_search;
   assert(phase && JSON.stringify(phase.scope)===JSON.stringify(['WP-MC00','WP-MC01','WP-MC02']),'Phase13 scope is limited to MC00 through MC02');
   assert(phase.wp_mc00==='PASS' && ['IN_PROGRESS','PASS'].includes(phase.wp_mc01) && ['IN_PROGRESS','PASS'].includes(phase.wp_mc02),'Phase13 must retain actual work-package states');
-  assert(phase.stop_after==='WP-MC02' && status.explicit_stop_boundary.includes('WP-MC02'),'Phase13 must stop at MC02');
+  assert(phase.stop_after==='WP-MC02','Historical search scope must retain its MC02 boundary');
+  if(status.phase13_mc03){
+    const dry=status.phase13_mc03;
+    assert(dry.scope==='WP-MC03' && dry.status==='DRY_RUN_COMPLETE_AWAITING_REVIEW','MC03 is a completed comparison, not production acceptance');
+    assert(dry.provider_calls===0 && dry.email_sends===0 && dry.business_mutations===0 && dry.applied===false,'MC03 must preserve its read-only boundary');
+    assert(dry.stop_after==='WP-MC03' && status.explicit_stop_boundary.includes('WP-MC03'),'MC03 must stop for review');
+    assert(existsSync(join(root,dry.result_report)),'MC03 result report required');
+    const bands=['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'];
+    assert(JSON.stringify(Object.keys(dry.band_counts).sort())===JSON.stringify([...bands].sort()) && bands.every(b=>Number.isInteger(dry.band_counts[b])&&dry.band_counts[b]>=0),'MC03 requires five actual nonnegative band counts');
+    assert(dry.company_count===Object.values(dry.band_counts).reduce((a,b)=>a+b,0),'MC03 band totals must reconcile');
+  }else assert(status.explicit_stop_boundary.includes('WP-MC02'),'Search-only Phase13 must stop at MC02');
   assert(status.phase12_ui?.full_phase_acceptance==='PASS' && status.latest_released_phase==='Phase 12 (Workspace UI)','Phase13 requires accepted released Phase12');
   assert(existsSync(join(root,'docs/PHASE13_MC00_RESULT.md')),'Phase13 baseline report required');
   if(phase.wp_mc01==='PASS' && phase.wp_mc02==='PASS'){
@@ -69,7 +79,7 @@ if (phase12Active) {
     assert(status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Unaccepted Phase 12 must preserve the accepted Phase 11 release');
     assert(status.final_acceptance_state === 'INCOMPLETE', 'Unaccepted Phase 12 final acceptance remains incomplete');
   }
-  assert(status.next_allowed_work_package === (phase13Active?'WP_MC02_STOP':'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
   assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);

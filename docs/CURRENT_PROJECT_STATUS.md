@@ -5,14 +5,15 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-07T19:03:55+08:00",
+  "generated_updated_at": "2026-09-08T11:25:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
   "commit": "e3cf16f05bd2ea460eb537a9909d67592959c1b8",
-  "dirty_at_snapshot": false,
+  "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 12 (Workspace UI)",
   "current_active_phase": "Phase 13",
   "phase13_search":{"scope":["WP-MC00","WP-MC01","WP-MC02"],"wp_mc00":"PASS","wp_mc01":"PASS","wp_mc02":"PASS","runtime_activation":"NOT_ACTIVATED_PENDING_CONFIG","live_brave_test":"NOT_RUN","brave_configured":false,"storage_rights_confirmed":false,"result_report":"docs/PHASE13_MC00_02_RESULT.md","stop_after":"WP-MC02"},
+  "phase13_mc03":{"scope":"WP-MC03","status":"DRY_RUN_COMPLETE_AWAITING_REVIEW","provider_calls":0,"email_sends":0,"business_mutations":0,"applied":false,"company_count":138,"band_counts":{"PRECISION":4,"RELEVANT":2,"GENERAL_RELEVANT":22,"EXPLORATORY":101,"NOT_SUITABLE":9},"result_report":"docs/PHASE13_MC03_OPPORTUNITY_POOL_DRY_RUN_RESULT.md","stop_after":"WP-MC03"},
   "phase12_ui": {
     "scope": ["WP-UI15", "WP-UI16"],
     "status": "ACCEPTANCE_COMPLETION",
@@ -376,8 +377,8 @@ This file is the single source of truth for current execution state. Historical 
     }
   },
   "current_blockers": [],
-  "next_allowed_work_package": "WP_MC02_STOP",
-  "explicit_stop_boundary": "Phase12 scoped acceptance and its verified Git/data freeze are complete. Phase13 authorization is limited to WP-MC00 through WP-MC02; STOP after WP-MC02. Do not implement MC03 shadow cohorts, trial monitoring or sales-channel workflows. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance, manual single-email policy and closed automatic email/follow-up. No email is sent by these search-adapter work packages."
+  "next_allowed_work_package": "WP_MC03_REVIEW_STOP",
+  "explicit_stop_boundary": "Phase13 V2.1 WP-MC03 opportunity-pool DRY-RUN completed, STOP for user review before MC04. MC00 through WP-MC02 remain historical completed search-code work; do not redo them or activate Brave. No production application, provider call, email or business mutation in MC03. Proposed bands retain documented attribution/type risks, not production rule acceptance. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance, manual single-email policy and closed automatic email/follow-up."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->

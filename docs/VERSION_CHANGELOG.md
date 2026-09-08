@@ -1,5 +1,12 @@
 # Version Changelog
 
+## Phase13 V2.1 MC03 — 2026-09-08 — read-only comparison
+
+- Evaluated all 138 stored companies with five proposed business bands, independent contact readiness and descriptive email gates. No runtime rule, API, UI, provider or business-data change.
+- Added three rule documents, pure offline classifiers/tests and enforced-read-only snapshot/report scripts. MC00–02 were not repeated.
+- 129 business tables retain identical counts and content hashes; existing IMAP checkpoint polling is reported separately.
+- Result and unresolved attribution/type calibration: `PHASE13_MC03_OPPORTUNITY_POOL_DRY_RUN_RESULT.md` and `PHASE13_MC03_BOUNDARY_REVIEW.md`. Stop for review before MC04; no Phase13 push or tag.
+
 ## Phase12 accepted freeze / WP-MC00 — 2026-09-07
 
 - Verified implementation `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0`, remote branch and new tag `phase12-workspace-ui-v3-accepted-20260907`; prior tag unchanged.
