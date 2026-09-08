@@ -1,5 +1,7 @@
 # DPV Current Project Status
 
+Maintenance overlay (2026-09-08, CL00–CL01): execution containers are intentionally stopped under the cleanup maintenance guard; PostgreSQL and persisted automation ON settings remain intact. The MC07 JSON below is the accepted pre-cleanup snapshot, not a claim that application/IMAP processes are currently running. Current frozen counts and restore checks are in `docs/cleanup/CL00_BASELINE.md`; inventory is in `docs/cleanup/CL01_REPO_INVENTORY.md`. The authorized maintenance boundary is STOP after CL01. Consolidating this historical/current document is reserved for CL02.
+
 This file is the single source of truth for current execution state. Historical plans and context files remain reference-only when they conflict with this snapshot.
 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->

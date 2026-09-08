@@ -1,0 +1,10 @@
+import {execFileSync} from 'node:child_process';
+const executionServices=['demo-dashboard','outreach-worker','category-worker','data-worker','n8n'];
+const run=args=>execFileSync('docker',['compose',...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+if(process.argv.includes('--apply'))run(['stop',...executionServices]);
+const rows=run(['ps','--all','--format','json']).split('\n').filter(Boolean).map(x=>JSON.parse(x));
+const active=rows.filter(r=>executionServices.includes(r.Service)&&r.State==='running').map(r=>r.Service);
+const missing=executionServices.filter(s=>!rows.some(r=>r.Service===s));
+const database=rows.find(r=>r.Service==='postgres');
+console.log(JSON.stringify({guard:'EXECUTION_CONTAINERS_STOPPED',pass:active.length===0&&missing.length===0&&database?.State==='running',active_execution_services:active,missing_services:missing,postgres:database?.State,persisted_controls_modified:false,workspace_access:'PAUSED_DURING_MAINTENANCE'},null,2));
+if(active.length||missing.length||database?.State!=='running')process.exitCode=1;

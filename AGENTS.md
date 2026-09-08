@@ -1,5 +1,16 @@
 # DPV Company-Facing Copy Rules
 
+## Cleanup maintenance boundary — CL00/CL01
+
+- The authorized cleanup scope is CL00 freeze/backup and CL01 inventory only. Record deletion candidates; perform zero deletions. Continue later cleanup packages only when requested.
+- Never delete or rewrite an applied migration.
+- Never delete business/audit history merely because its rule is retired.
+- Never delete source/evidence lineage referenced by current or historical decisions.
+- Never delete outbound/inbound/suppression/Activity/SalesTask history.
+- Never delete a queue/table just because its current count is zero without proving zero runtime/FK/audit references.
+- Never treat a historical name as permission to edit immutable history.
+- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL00/CL01. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md.
+
 These rules apply to every company-facing page, spreadsheet, report, slide, export, screenshot, and presentation in this repository.
 
 ## Required tone
