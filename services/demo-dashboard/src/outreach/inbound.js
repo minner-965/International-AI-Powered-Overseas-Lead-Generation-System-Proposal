@@ -1,4 +1,4 @@
-import { REPLY_INTENTS, unique, upper } from './constants.js';
+import { REPLY_INTENTS } from './constants.js';
 
 const ENTITY_MAP = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
 const INTENT_PATTERNS = Object.freeze({
@@ -48,7 +48,7 @@ export function classifyInboundReply(input = {}) {
   const subject = sanitizeInboundText(input.subject, 500);
   const sourceBody=input.body_text || input.text || input.html;const body = sanitizeInboundText(sourceBody, 20_000);
   const actionableBody=sanitizeInboundText(unquotedReplyText(sourceBody),20_000);const text = `${subject}\n${actionableBody}`;
-  const headers=input.headers||{};const headerAutomatic=input.automatic===true;const textAutomatic=INTENT_PATTERNS.AUTO_REPLY.test(text);const outOfOffice=input.out_of_office===true||/out of (?:the )?office|away from (?:my )?email|fuera de (?:la )?oficina/i.test(text);
+  const headerAutomatic=input.automatic===true;const textAutomatic=INTENT_PATTERNS.AUTO_REPLY.test(text);const outOfOffice=input.out_of_office===true||/out of (?:the )?office|away from (?:my )?email|fuera de (?:la )?oficina/i.test(text);
   const dsn=input.dsn===true;let intent = 'REVIEW';
   if(dsn)intent='IRRELEVANT';else if(headerAutomatic||outOfOffice)intent='AUTO_REPLY';else if(INTENT_PATTERNS.OPT_OUT.test(text))intent='OPT_OUT';else if(textAutomatic)intent='AUTO_REPLY';
   for (const candidate of (intent!=='REVIEW')?[]:['DECLINE','DEFER','QUOTATION','SAMPLE','MEETING','CATALOGUE']) {
@@ -71,27 +71,6 @@ export function classifyInboundReply(input = {}) {
     automatic_send_allowed: false,
     commercial_commitment_allowed: false
   };
-}
-
-function headerValues(headers, name) {
-  const value = Object.entries(headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
-  return Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
-}
-
-export function correlateInboundReply(input = {}, lookup = {}) {
-  const references = unique([
-    ...headerValues(input.headers, 'in-reply-to'),
-    ...headerValues(input.headers, 'references')
-  ].flatMap(value => value.match(/<[^>]+>|[^\s,]+/g) || []).map(value => value.replace(/[<>]/g, '')));
-  for (const reference of references) {
-    const thread = lookup.by_provider_message_id?.[reference];
-    if (thread) return { status: 'MATCHED', method: 'MESSAGE_HEADERS', thread_id: thread };
-  }
-  const token = String(input.reply_to_token || '').trim();
-  if (token && lookup.by_reply_token?.[token]) return { status: 'MATCHED', method: 'REPLY_TO_TOKEN', thread_id: lookup.by_reply_token[token] };
-  const sender = String(input.sender_email || input.from || '').trim().toLowerCase();
-  if (sender && lookup.by_sender_email?.[sender]) return { status: 'MATCHED', method: 'SENDER_ACTIVE_THREAD', thread_id: lookup.by_sender_email[sender] };
-  return { status: 'NEEDS_REVIEW', method: 'UNMATCHED', thread_id: null };
 }
 
 export function isolateAttachments(attachments = [], { maximumCount = 5, maximumBytes = 10_000_000 } = {}) {

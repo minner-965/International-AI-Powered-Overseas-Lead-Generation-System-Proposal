@@ -7,7 +7,6 @@ import {
   ResendProvider,
   buildSalesTaskFromReply,
   classifyInboundReply,
-  correlateInboundReply,
   createInboundProvider,
   createOutboundProvider,
   deduplicateProviderEvents,
@@ -242,18 +241,6 @@ test('reply classifier persists numeric confidence with an explainable basis', (
   assert.equal(typeof classified.confidence, 'number');
   assert.ok(classified.confidence >= 0 && classified.confidence <= 1);
   assert.equal(classified.confidence_basis, 'RULE_MATCH');
-});
-
-test('reply correlation uses headers, token, sender, then review in strict order', () => {
-  const lookup = {
-    by_provider_message_id: { 'message-1@synthetic.invalid': 'thread-header' },
-    by_reply_token: { 'secret-token': 'thread-token' },
-    by_sender_email: { 'buyer@synthetic.invalid': 'thread-sender' }
-  };
-  assert.equal(correlateInboundReply({ headers: { 'In-Reply-To': '<message-1@synthetic.invalid>' }, reply_to_token: 'secret-token', sender_email: 'buyer@synthetic.invalid' }, lookup).method, 'MESSAGE_HEADERS');
-  assert.equal(correlateInboundReply({ reply_to_token: 'secret-token', sender_email: 'buyer@synthetic.invalid' }, lookup).method, 'REPLY_TO_TOKEN');
-  assert.equal(correlateInboundReply({ sender_email: 'buyer@synthetic.invalid' }, lookup).method, 'SENDER_ACTIVE_THREAD');
-  assert.equal(correlateInboundReply({}, lookup).status, 'NEEDS_REVIEW');
 });
 
 test('sales task helper creates human-review work only for allowed reply intents', () => {

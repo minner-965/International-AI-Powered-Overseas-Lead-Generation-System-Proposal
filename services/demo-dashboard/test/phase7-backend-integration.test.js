@@ -226,7 +226,8 @@ test('Compose assigns the Phase 7 queues and prepares writable private exchange 
   const compose = await textFile('compose.yaml');
   assert.match(compose,/phase7-runtime-init:/);
   assert.match(compose,/mkdir -p \/app\/runtime\/phase7\/staging \/app\/runtime\/phase7\/exports/);
-  assert.match(compose,/recalculate-business-opportunities,refresh-opportunity-exception-queue/);
+  assert.match(compose,/recalculate-business-opportunities/);
+  assert.doesNotMatch(compose,/refresh-opportunity-exception-queue/);
   assert.match(compose,/DATA_EXCHANGE_STAGING_DIR: \/app\/runtime\/phase7\/staging/);
   assert.match(compose,/DATA_EXCHANGE_EXPORT_DIR: \/app\/runtime\/phase7\/exports/);
 });

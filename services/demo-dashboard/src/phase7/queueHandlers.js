@@ -11,13 +11,6 @@ export function createPhase7QueueHandlers({ service }) {
   if (!service) throw new TypeError('Phase7 service is required');
   return Object.freeze({
     [PHASE5_QUEUES.VERIFY_OUTREACH_CONTACT]: data => service.verifyContactWork(data),
-    [PHASE5_QUEUES.GENERATE_OUTREACH_DRAFT]: async data => ({
-      status:'MANUAL_DRAFT_REQUIRED',company_id:data.company_id||null,provider_calls:0
-    }),
-    [PHASE5_QUEUES.VALIDATE_OUTREACH_DRAFT]: async data => {
-      const draft=await service.repository.getDraft(data.draft_id);
-      return {status:draft?.draft_status||'MISSING',draft_id:data.draft_id};
-    },
     [PHASE5_QUEUES.SEND_OUTREACH_EMAIL]: data => service.sendMessageWork(data),
     [PHASE5_QUEUES.RECONCILE_GMAIL_AMBIGUOUS_SEND]: data => service.reconcileGmailAmbiguousSendWork(data),
     [PHASE5_QUEUES.GMAIL_INBOUND_SYNC]: () => service.syncGmailInboundWork(),
@@ -54,7 +47,6 @@ export function createPhase7QueueHandlers({ service }) {
       return result;
     },
     [PHASE5_QUEUES.DISCOVER_SHARED_IMPORT_FILES]: data => service.discoverSharedImportFilesWork(data),
-    [PHASE5_QUEUES.PARSE_REFERENCE_IMPORT]: async data => service.getImport(data.import_id),
     [PHASE5_QUEUES.COMMIT_REFERENCE_IMPORT]: data => service.commitImportWork(data),
     [PHASE5_QUEUES.EXPORT_BUSINESS_DATA]: data => service.processExportWork(data),
     [PHASE5_QUEUES.RECALCULATE_AFTER_IMPORT]: async data => ({
@@ -66,14 +58,6 @@ export function createPhase7QueueHandlers({ service }) {
         ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0};
       return {...result,auto_evidence_schedule_job_id:await scheduleAutoEvidence(service,
         `opportunity-recalculated:${data.resource_id||'all'}`,{
-          company_id:data.company_id||null,resource_id:data.resource_id||null,product_profile:data.product_profile||null
-        })};
-    },
-    [PHASE5_QUEUES.REFRESH_OPPORTUNITY_EXCEPTION_QUEUE]: async data => {
-      const result={status:'EXCEPTION_QUEUE_REFRESHED',resource_id:data.resource_id||null,
-        ...(await service.repository.refreshOpportunityDecisions({ttlDays:Number(service.env.OUTREACH_ELIGIBILITY_TTL_DAYS||7)})),provider_calls:0};
-      return {...result,auto_evidence_schedule_job_id:await scheduleAutoEvidence(service,
-        `opportunity-exception:${data.resource_id||'all'}`,{
           company_id:data.company_id||null,resource_id:data.resource_id||null,product_profile:data.product_profile||null
         })};
     }

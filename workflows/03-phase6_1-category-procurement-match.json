@@ -1,5 +1,5 @@
 {
-  "name": "DPV Phase 6.1 Category Procurement Match",
+  "name": "DPV Target Category Validation",
   "nodes": [
     {
       "parameters": {"httpMethod":"POST","path":"dpv-phase6-1-category-procurement-match","responseMode":"onReceived","options":{}},

@@ -152,7 +152,7 @@ services:
       PORT: 3000
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_PROCESS_JOBS: "true"
-      PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,refresh-opportunity-exception-queue,schedule-auto-evidence,discover-opportunity-evidence,normalize-opportunity-category,refresh-category-scope-match,find-profile-buyer,verify-profile-buyer-email,refresh-business-opportunity-v3,refresh-auto-evidence-exception,execute-research-job"
+      PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,schedule-auto-evidence,discover-opportunity-evidence,normalize-opportunity-category,refresh-category-scope-match,find-profile-buyer,verify-profile-buyer-email,refresh-business-opportunity-v3,refresh-auto-evidence-exception,execute-research-job"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       POSTGRES_HOST: postgres
@@ -211,7 +211,7 @@ services:
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
       RESEND_USE_CASE: "DISABLED"
-      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,generate-outreach-draft,validate-outreach-draft,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send"
+      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       CRM_BASE_URL: ${CRM_BASE_URL:-}
@@ -250,7 +250,7 @@ services:
       PORT: 3000
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_PROCESS_JOBS: "true"
-      PGBOSS_QUEUE_ALLOWLIST: "discover-shared-import-files,parse-reference-import,commit-reference-import,export-business-data,recalculate-after-import"
+      PGBOSS_QUEUE_ALLOWLIST: "discover-shared-import-files,commit-reference-import,export-business-data,recalculate-after-import"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       POSTGRES_HOST: postgres

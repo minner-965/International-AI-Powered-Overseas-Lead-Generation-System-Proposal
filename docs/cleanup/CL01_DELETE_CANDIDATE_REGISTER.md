@@ -61,3 +61,10 @@ CL01 does not perform the later deletion, UI rewrite, dependency removal, curren
 - CL05: removed the three-mailbox verification cutoff; retained freshness, evidence, suppression and real provider capacity safeguards.
 - CL06: corrected unselected Gmail reconciliation isolation; nonzero route/worker dependencies keep Gmail/Resend and manual fallback in REVIEW_REQUIRED. Configuration comments distinguish these from Phase13 automation; values remain unchanged.
 - Details and evidence: CL04_SEARCH_PROVIDER_CLEANUP.md, CL05_CONTACT_HUNTER_CLEANUP.md, CL06_EMAIL_LEGACY_CLEANUP.md. No CL07 work is authorized in this handoff.
+
+## Subsequent authorized CL07–CL08 disposition (2026-09-08)
+
+- CL07: removed the unused in-memory reply correlator and sender-only fallback; retained current RFC correlation, shared classifier, Activity, CRM outbox, SalesTask, suppression and bounce handling.
+- CL08: removed four orphan handler/queue declarations and corresponding compose allowlists: generate-outreach-draft, validate-outreach-draft, parse-reference-import, refresh-opportunity-exception-queue. Current producers, pending jobs, schedules and outbox references were checked; registered queues and historical records remain untouched.
+- Category workflow export display name is now Target Category Validation. Internal identity, webhook, version and graph remain unchanged; no persisted instance import occurred.
+- Referenced Gmail, external CRM and repair/reconciliation mechanisms remain. See CL07_REPLY_CRM_CLEANUP.md and CL08_ORCHESTRATION_CLEANUP.md. STOP after CL08, without CL09 or final push/tag.
