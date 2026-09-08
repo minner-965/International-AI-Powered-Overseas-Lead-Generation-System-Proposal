@@ -967,6 +967,8 @@ export class Phase7Service {
   }
 
   async reconcileGmailAmbiguousSendWork({message_id}){
+    // Historical Gmail work must never be reconciled against the selected SMTP mailbox.
+    if(upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='GMAIL_API')return{status:'DISABLED',code:'GMAIL_PROVIDER_NOT_SELECTED',network_calls:0};
     const message=await this.repository.getOutboundMessage(message_id);if(!message)return{status:'MISSING',network_calls:0};
     if(message.provider!=='GMAIL_API'||message.send_status!=='AMBIGUOUS')return{status:message.send_status,code:'GMAIL_RECONCILE_NOT_REQUIRED',network_calls:0};
     const result=await this.outboundProvider.reconcileAmbiguousSend({rfcMessageId:message.rfc_message_id});

@@ -1,15 +1,15 @@
 # DPV Company-Facing Copy Rules
 
-## Cleanup maintenance boundary — CL02/CL03
+## Cleanup maintenance boundary — CL04/CL05/CL06
 
-- CL00/CL01 are accepted at checkpoint `2b9d344`. The current authorization is CL02 current-state consolidation and CL03 legacy business semantics removal only. Preserve MC04 classification rules and immutable history. STOP after CL03; no CL04 or final push/tag.
+- CL02/CL03 are checkpointed at `c314da7`. The current authorization is CL04 search/provider, CL05 contact/Hunter and CL06 email/outreach legacy cleanup only. Preserve MC04 rules, MC07 first-touch behavior and immutable history. STOP after CL06; no CL07 or final push/tag.
 - Never delete or rewrite an applied migration.
 - Never delete business/audit history merely because its rule is retired.
 - Never delete source/evidence lineage referenced by current or historical decisions.
 - Never delete outbound/inbound/suppression/Activity/SalesTask history.
 - Never delete a queue/table just because its current count is zero without proving zero runtime/FK/audit references.
 - Never treat a historical name as permission to edit immutable history.
-- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL02/CL03. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md. Use isolated data and intercepted requests for write/browser tests.
+- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL04–CL06. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md. Use isolated data and intercepted requests for write/browser tests. Migration 063 remains pending production restoration.
 
 These rules apply to every company-facing page, spreadsheet, report, slide, export, screenshot, and presentation in this repository.
 

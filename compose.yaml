@@ -90,7 +90,7 @@ services:
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
-      # Manual API only. Optional local gate file remains absent/closed by default.
+      # Legacy manual API gate; Phase13 automatic delivery uses its separate policy.
       OUTREACH_MANUAL_SEND_ONLY: "true"
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
@@ -203,7 +203,7 @@ services:
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_ENABLED: "true"
       PGBOSS_PROCESS_JOBS: "true"
-      # Background delivery stays closed even when manual API delivery is enabled.
+      # Legacy send queues stay closed; Phase13 first-touch has independent policy gates.
       OUTREACH_MANUAL_SEND_ONLY: "true"
       OUTREACH_ENABLED: "false"
       OUTREACH_SEND_SCOPE: "DISABLED"

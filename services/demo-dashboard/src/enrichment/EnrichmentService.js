@@ -510,7 +510,6 @@ export class EnrichmentService {
       seen.add(email);
       if(contact.verification_recorded && contact.verification_provider==='HUNTER' && ['VALID','ACCEPT_ALL','INVALID','UNKNOWN'].includes(contact.verification_status)
         && Date.parse(contact.last_verified_at)>Date.now()-ttl*86400000)continue;
-      if(calls>=3)break;
       let result;
       const persist=async(results,{capturedAt})=>{
         const verified=results?.[0];
@@ -656,7 +655,7 @@ export class EnrichmentService {
         return { calls,used_units:usedUnits,mode:this.hunter.mode,valid_contact_found:true,decision_maker_id:named.id };
       }
       // ACCEPT_ALL, UNKNOWN/NOT_VERIFIED and INVALID are evidence, but not a send-ready route.
-      // Continue through the bounded, already verified candidate list before opening a human exception.
+      // Continue through observed candidates; provider budgets and transient-error handling remain authoritative.
     }
     return { calls,used_units:usedUnits,mode:this.hunter.mode,alternatives_exhausted:namedCandidates.length > 0 };
   }

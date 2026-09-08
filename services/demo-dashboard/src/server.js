@@ -1767,54 +1767,12 @@ app.get('/api/research/candidates/:candidateId/verification', async (req, res, n
   } catch (error) { next(error); }
 });
 
-app.post('/api/internal/research/jobs/:id/generate-queries', requireInternalToken, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    const jobResult = await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1', [req.params.id]);
-    if (!jobResult.rowCount) return res.status(404).json({ error: 'Research job not found' });
-    await client.query('BEGIN');
-    const queries = await persistGeneratedQueries(client, jobResult.rows[0], searchConfig);
-    await client.query('COMMIT');
-    res.json({
-      job_id: req.params.id,
-      query_count: queries.length,
-      queries: queries.map(query => ({
-        id: query.id, query: query.query_text, query_type: query.query_type,
-        buyer_type: query.buyer_type, provider: query.provider, status: query.status
-      }))
-    });
-  } catch (error) {
-    try { await client.query('ROLLBACK'); } catch {}
-    next(error);
-  } finally { client.release(); }
+app.post('/api/internal/research/jobs/:id/generate-queries', requireInternalToken, (req, res) => {
+  res.status(410).json({code:'RETIRED_SEARCH_PATH',error:'Use the persisted research plan workflow.'});
 });
 
-app.post('/api/internal/research/jobs/:id/discover', requireInternalToken, async (req, res, next) => {
-  try {
-    const result = await telemetry.withSpan('phase5.external.search', {
-      research_job_id: req.params.id,
-      provider: searchProviderRouter.route('COMPANY_DISCOVERY').provider,
-      operation: 'candidate_discovery'
-    }, async span => {
-      const discovered = await discoverResearchCandidates(pool, req.params.id, searchConfig,{tavilyUsageConfig});
-      span.setAttribute('result_count', discovered.candidates_found || 0);
-      span.setAttribute('credits', discovered.credits_used || 0);
-      return discovered;
-    });
-    audit('SEARCH_DISCOVERY_COMPLETED', {
-      job_id: req.params.id,
-      provider: result.provider,
-      successful_requests: result.successful_requests,
-      failed_requests: result.failed_requests,
-      candidates_found: result.candidates_found,
-      candidates_checked: result.candidates_checked,
-      contactable_candidates: result.contactable_candidates
-    });
-    res.json(result);
-  } catch (error) {
-    audit('SEARCH_DISCOVERY_FAILED', { job_id: req.params.id, code: error.code || 'SEARCH_DISCOVERY_ERROR' });
-    next(error);
-  }
+app.post('/api/internal/research/jobs/:id/discover', requireInternalToken, (req, res) => {
+  res.status(410).json({code:'RETIRED_SEARCH_PATH',error:'Use the persisted research plan workflow.'});
 });
 
 app.post('/api/internal/research/jobs/:id/check-contacts', requireInternalToken, async (req, res, next) => {

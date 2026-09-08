@@ -4,7 +4,7 @@ import {
   getMarketProfile, listConfiguredMarkets, marketProfileForJob, marketProviderLocationName,
   marketSearchLanguage
 } from '../src/market/marketProfiles.js';
-import { generateResearchQueries, searchCountryCode } from '../src/search/queryGenerator.js';
+import { searchCountryCode } from '../src/market/searchCountryCode.js';
 import { mergeSearchCandidates } from '../src/search/resultFilter.js';
 import { TavilySearchProvider } from '../src/search/TavilySearchProvider.js';
 import { BraveSearchProvider } from '../src/search/BraveSearchProvider.js';
@@ -39,41 +39,9 @@ test('AE, MX, BD and unknown-country GENERIC profiles resolve without core rewri
   assert.deepEqual(listConfiguredMarkets().map(item => item.country_code), ['AE', 'MX', 'BD']);
 });
 
-test('query generation exposes the full distinct strategy set in every market', () => {
-  for (const job of [
-    researchJob('AE', 'United Arab Emirates', 'Dubai'),
-    researchJob('BD', 'Bangladesh', 'Dhaka'),
-    researchJob('MX', 'Mexico', 'Mexico City')
-  ]) {
-    const queries = generateResearchQueries(job);
-    assert.ok(queries.length > 5);
-    for(const type of ['sme_regional','buyer_category','general_trading','strategic_account']) {
-      assert.ok(queries.some(item=>item.query_type===type));
-    }
-    assert.equal(new Set(queries.map(item=>item.query_text.toLowerCase())).size,queries.length);
-    assert.ok(queries.every(item => item.country_code === job.country_code));
-  }
-});
-
-test('BD and GENERIC queries include their selected market without token leakage', () => {
-  const bd = generateResearchQueries(researchJob('BD', 'Bangladesh', 'Dhaka', { preferred_language: 'bn' }));
-  assert.ok(bd.every(item => /Bangladesh/.test(item.query_text)));
-  assert.ok(bd.every(item => /Dhaka/.test(item.query_text)));
-  assert.ok(bd.every(item => !/Dubai|UAE|United Arab Emirates|\+971|\.ae\b/i.test(item.query_text)));
-  assert.ok(bd.every(item => item.market_profile === 'BD' && item.preferred_language === 'bn'));
-
-  const generic = generateResearchQueries(researchJob('XX', 'Example Market', null, { region: 'Example Region' }));
-  assert.ok(generic.every(item => /Example Market/.test(item.query_text)));
-  assert.ok(generic.every(item => /Example Region/.test(item.query_text)));
-  assert.ok(generic.every(item => item.market_profile === 'GENERIC'));
-  assert.ok(generic.every(item => !/Bangladesh|Dhaka|Dubai|UAE|United Arab Emirates/i.test(item.query_text)));
-});
-
 test('city is optional and provider location/language follow the active market', () => {
   const job = researchJob('BD', 'Bangladesh', null, { preferred_language: 'bn' });
   const profile = marketProfileForJob(job);
-  const queries = generateResearchQueries(job);
-  assert.ok(queries.every(item => item.city === null && /Bangladesh/.test(item.query_text)));
   assert.equal(marketProviderLocationName(job, profile), 'Bangladesh');
   assert.equal(marketSearchLanguage(job, profile), 'bn');
   assert.equal(searchCountryCode('Bangladesh'), 'BD');
@@ -82,17 +50,12 @@ test('city is optional and provider location/language follow the active market',
 
 test('blank optional geography searches the country while supplied region and city narrow the market',()=>{
   const countryJob=researchJob('MX','Mexico',null,{region:null});
-  assert.ok(generateResearchQueries(countryJob).every(item=>/Mexico/.test(item.query_text)
-    &&!/Jalisco|Guadalajara/.test(item.query_text)));
   assert.equal(marketProviderLocationName(countryJob,marketProfileForJob(countryJob)),'Mexico');
 
   const regionJob=researchJob('MX','Mexico',null,{region:'Jalisco'});
-  assert.ok(generateResearchQueries(regionJob).every(item=>/Jalisco/.test(item.query_text)&&/Mexico/.test(item.query_text)));
   assert.equal(marketProviderLocationName(regionJob,marketProfileForJob(regionJob)),'Jalisco,Mexico');
 
   const cityJob=researchJob('MX','Mexico','Guadalajara',{region:'Jalisco'});
-  assert.ok(generateResearchQueries(cityJob).every(item=>/Guadalajara/.test(item.query_text)
-    &&/Jalisco/.test(item.query_text)&&/Mexico/.test(item.query_text)));
   assert.equal(marketProviderLocationName(cityJob,marketProfileForJob(cityJob)),'Guadalajara,Jalisco,Mexico');
 });
 

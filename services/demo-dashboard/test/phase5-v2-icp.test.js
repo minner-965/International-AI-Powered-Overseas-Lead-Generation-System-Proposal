@@ -14,7 +14,6 @@ import {
   PREFERRED_ORGANIZATION_TYPES, classifyManagementOrganization,
   normalizeManagementProductScope
 } from '../src/matching/managementIcpProfiles.js';
-import { generateResearchQueries } from '../src/search/queryGenerator.js';
 import { normalizeCompanyName } from '../src/verification/verificationRules.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -58,20 +57,6 @@ test('MX MarketProfile has Spanish search, Mexico suffix and phone behavior with
   assert.equal(normalizeCompanyName('Grupo Moda S.A.P.I. de C.V.', mx), 'grupo moda');
   assert.equal(normalizePhoneWithContext('55 1234 5678', mx).normalized_value, '+525512345678');
   assert.equal(getMarketProfile('XX', 'Example Market').profileKey, 'GENERIC');
-});
-
-test('MX organized-buyer queries use profile vocabulary and retain the selected market', () => {
-  const queries = generateResearchQueries({
-    country_code: 'MX', country_name: 'Mexico', city: 'Monterrey',
-    preferred_language: 'es', product_category: 'General Merchandise',
-    buyer_types: ['Department Store', 'Supermarket', 'Large Retail Group']
-  }, { maxQueries: 8 });
-  assert.ok(queries.every(item => item.market_profile === 'MX' && item.preferred_language === 'es'));
-  assert.ok(queries.every(item => /Mexico/.test(item.query_text) && /Monterrey/.test(item.query_text)));
-  assert.ok(queries.some(item => /tienda departamental/i.test(item.query_text)));
-  assert.ok(queries.some(item => /supermercado/i.test(item.query_text)));
-  assert.ok(queries.some(item => /grupo de distribución|grupo minorista|cadena regional minorista/i.test(item.query_text)));
-  assert.ok(queries.every(item => !/Dubai|Dhaka|Bangladesh|United Arab Emirates/i.test(item.query_text)));
 });
 
 test('management profiles preserve priority/expansion markets, scopes and target-role preferences', () => {

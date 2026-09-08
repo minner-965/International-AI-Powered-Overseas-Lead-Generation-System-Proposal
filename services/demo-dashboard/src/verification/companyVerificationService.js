@@ -2,7 +2,7 @@ import { htmlService } from '../platform/HtmlService.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { createPurposeSearchProvider } from '../search/SearchProviderRouter.js';
 import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
-import { searchCountryCode } from '../search/queryGenerator.js';
+import { searchCountryCode } from '../market/searchCountryCode.js';
 import { extractRootDomain, normalizeUrl } from '../search/resultNormalizer.js';
 import { marketLocationText, marketProfileForJob, marketSearchLanguage } from '../market/marketProfiles.js';
 import {

@@ -32,17 +32,31 @@ test('official generic mailbox is verified without a named buyer and keeps its o
   assert.doesNotMatch(update.sql,/SET.*(?:evidence_origin|source_url|contact_type)/s);
   assert.ok(queries.some(q=>q.sql.includes('INSERT INTO leadgen.contact_verification_events')));
 });
-test('fresh verification, foreign source domains, duplicate routes and bounded volume avoid unnecessary calls',async()=>{
+test('fresh verification, foreign source domains and duplicate routes avoid calls without truncating observed candidates',async()=>{
   const routes=[{...route,verification_provider:'HUNTER',verification_status:'VALID',verification_recorded:true,last_verified_at:new Date()},
     {...route,contact_value_normalized:'wrong@buyer.example',source_url:'https://elsewhere.example'},
-    ...Array.from({length:5},(_,i)=>({...route,id:String(i),contact_value_normalized:`team${i}@buyer.example`}))];
+    ...Array.from({length:7},(_,i)=>({...route,id:String(i),contact_value_normalized:`team${i}@buyer.example`}))];
   routes.push(routes[2]);
   const {service,calls}=fixture(routes);
   await service.verifyOfficialMailboxes(job,company);
-  assert.equal(calls.length,3);
-  assert.equal(new Set(calls).size,3);
+  assert.equal(calls.length,7);
+  assert.equal(new Set(calls).size,7);
   assert.ok(!calls.includes('info@buyer.example'));
   assert.ok(!calls.includes('wrong@buyer.example'));
+});
+
+test('provider credit capacity still stops official mailbox verification before the next call',async()=>{
+  const routes=Array.from({length:7},(_,i)=>({...route,id:String(i),contact_value_normalized:`team${i}@buyer.example`}));
+  const {service,calls}=fixture(routes);
+  const verify=service.hunter.verifyEmail;
+  service.hunter.verifyEmail=async input=>{
+    if(calls.length===4)throw Object.assign(new Error('fixture capacity'),{code:'HUNTER_CREDIT_CAP'});
+    return verify(input);
+  };
+  const result=await service.verifyOfficialMailboxes(job,company);
+  assert.equal(calls.length,4);
+  assert.equal(result.stop_reason,'HUNTER_BUDGET_CAP');
+  assert.equal(result.budget_reached,true);
 });
 test('invalid official mailbox retains invalid result and creates suppression',async()=>{
   const {service,queries}=fixture([route],'INVALID');

@@ -17,7 +17,7 @@ export function validateCurrentState(s){
  assert(s.search_state.completed>=0&&s.search_state.remaining>=0,'Search counts must be nonnegative');
  assert(s.provider_state.search_runtime_state===s.search_state.runtime_state,'Duplicate provider/search truth differs');
  assert(Array.isArray(s.runtime_controls.persisted)&&s.runtime_controls.persisted.every(c=>typeof c.enabled==='boolean'&&c.revision>0),'Controls invalid');
- assert(s.next_allowed_work==='STOP_AFTER_CL03_AWAIT_AUTHORIZATION','Cleanup boundary invalid');
+ assert(s.next_allowed_work==='STOP_AFTER_CL06_AWAIT_AUTHORIZATION','Cleanup boundary invalid');
  return true;
 }
 export function assertCurrentProjectionMatches(state,actual){
@@ -55,7 +55,7 @@ export function collectCurrentState(){
  const account=db.accounts?.find(a=>a.provider===selected);
  const paused=services.filter(v=>v.service!=='postgres').every(v=>v.state!=='running');
  const runtime=!control?.enabled?'PAUSED_AUTOMATION_OFF':account?.status==='CREDIT_EXHAUSTED'?'PAUSED_PROVIDER_CAPACITY':paused?'PAUSED_MAINTENANCE':'NOT_ASSESSED';
- const state={generated_at:db.observed_at,repo:path.basename(root),commit:run('git',['rev-parse','HEAD']),branch:run('git',['branch','--show-current']),current_phase:'Phase 13 cleanup CL02-CL03',
+ const state={generated_at:db.observed_at,repo:path.basename(root),commit:run('git',['rev-parse','HEAD']),branch:run('git',['branch','--show-current']),current_phase:'Phase 13 cleanup CL04-CL06',
  runtime_controls:{persisted:db.controls,execution_services:services,maintenance_active:paused},
  provider_state:{selected_provider:selected,configured:Boolean(selected&&dashboard[`${selected}_API_KEY`]),account_state:account?.status||'NOT_CHECKED',search_runtime_state:runtime,last_checked:account?.checked_at||null},
  search_state:{runtime_state:runtime,total:db.search.total,completed:db.completed,remaining:db.search.total-db.completed,parent_plans:db.search.parent_plans,execution_status_counts:db.executions},
@@ -63,7 +63,7 @@ export function collectCurrentState(){
  email_state:{provider:mail.OUTBOUND_EMAIL_PROVIDER||null,smtp_configured:Boolean(mail.SMTP_HOST&&mail.SMTP_USER&&mail.SMTP_PASSWORD),smtp_enabled:mail.SMTP_ENABLED==='true',execution_paused:paused,policy:db.policy,outbound_status_counts:db.outbound,reservation_status_counts:db.reservations},
  reply_state:{...db.reply,imap_configured:Boolean(mail.IMAP_HOST&&mail.IMAP_USER&&mail.IMAP_PASSWORD),monitor_enabled:mail.SMTP_IMAP_INBOUND_SYNC_ENABLED==='true',execution_paused:paused},
  blockers:[...(paused?['MAINTENANCE_EXECUTION_PAUSED']:[]),...(runtime==='PAUSED_PROVIDER_CAPACITY'?['PROVIDER_CAPACITY_EXHAUSTED']:[])],
- migrations:{files:readdirSync(path.join(root,'database/migrations')).filter(v=>v.endsWith('.sql')).sort().map(name=>({name,sha256:createHash('sha256').update(readFileSync(path.join(root,'database/migrations',name))).digest('hex')})),operational_ledger:db.migration_ledger},next_allowed_work:'STOP_AFTER_CL03_AWAIT_AUTHORIZATION'};
+ migrations:{files:readdirSync(path.join(root,'database/migrations')).filter(v=>v.endsWith('.sql')).sort().map(name=>({name,sha256:createHash('sha256').update(readFileSync(path.join(root,'database/migrations',name))).digest('hex')})),operational_ledger:db.migration_ledger},next_allowed_work:'STOP_AFTER_CL06_AWAIT_AUTHORIZATION'};
  validateCurrentState(state);return state;
 }
 export function parseCurrentState(text){const m=text.match(/<!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- CURRENT_PROJECT_STATUS_JSON:END -->/);if(!m)throw new Error('Current state block missing');return JSON.parse(m[1]);}

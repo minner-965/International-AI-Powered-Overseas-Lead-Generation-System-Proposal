@@ -1,55 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import pg from 'pg';
-import { CATEGORY_SYNONYMS, generateResearchQueries } from '../src/search/queryGenerator.js';
 import { normalizeUrl, extractRootDomain, normalizeSearchResult } from '../src/search/resultNormalizer.js';
 import { classifySearchResult, mergeSearchCandidates } from '../src/search/resultFilter.js';
 import { BraveSearchProvider } from '../src/search/BraveSearchProvider.js';
 import { DataForSeoSearchProvider } from '../src/search/DataForSeoSearchProvider.js';
 import { TavilySearchProvider } from '../src/search/TavilySearchProvider.js';
-import { discoverResearchCandidates } from '../src/search/discoveryService.js';
 import { getMarketProfile } from '../src/market/marketProfiles.js';
-
-test('query generation depends on category, market and buyer inputs', () => {
-  const beauty = generateResearchQueries({
-    country: 'United Arab Emirates', city: 'Dubai', product_category: 'Beauty & Personal Care',
-    buyer_types: ['Importer', 'Wholesaler', 'Distributor']
-  });
-  const bags = generateResearchQueries({
-    country: 'United Arab Emirates', city: 'Dubai', product_category: 'Bags',
-    buyer_types: ['Importer', 'Wholesaler', 'Distributor']
-  });
-  assert.ok(beauty.length > 5);
-  assert.ok(bags.length > 5);
-  assert.ok(beauty.some(item => /cosmetics|beauty products|skincare/.test(item.query_text)));
-  assert.ok(bags.some(item => /bags|handbags|fashion bags/.test(item.query_text)));
-  assert.ok(beauty.every(item => /Dubai|UAE/.test(item.query_text)));
-  assert.ok(beauty.some(item => /importer/.test(item.query_text)));
-  assert.ok(beauty.some(item => /wholesaler/.test(item.query_text)));
-  assert.ok(beauty.some(item => /distributor/.test(item.query_text)));
-  assert.ok(beauty.some(item => /general trading/.test(item.query_text)));
-  assert.equal(new Set(beauty.map(item => item.query_text.toLowerCase())).size, beauty.length);
-  assert.ok(CATEGORY_SYNONYMS["Women's Apparel"].includes("women's clothing"));
-  const uk = generateResearchQueries({
-    country: 'United Kingdom', city: 'London', product_category: 'Household Goods',
-    buyer_types: ['Importer', 'Wholesaler', 'Distributor']
-  });
-  assert.ok(uk.length > 5);
-  assert.ok(uk.every(item => /London|United Kingdom/.test(item.query_text)));
-  assert.ok(uk.every(item => !/UAE|site:\.ae/.test(item.query_text)));
-});
-
-test('dynamic discovery service is isolated from legacy fixed candidate arrays', async () => {
-  const source = await readFile(new URL('../src/search/discoveryService.js', import.meta.url), 'utf8');
-  assert.equal(source.includes('verifiedCompanySources'), false);
-  assert.equal(source.includes('publicBusinessProfiles'), false);
-});
 
 test('research target is not reduced by legacy search, contact or verification candidate caps', async () => {
   const [server,discovery,contacts,verification]=await Promise.all([
     readFile(new URL('../src/server.js',import.meta.url),'utf8'),
-    readFile(new URL('../src/search/discoveryService.js',import.meta.url),'utf8'),
+    readFile(new URL('../src/search/FrozenSearchPlanExecutor.js',import.meta.url),'utf8'),
     readFile(new URL('../src/contact/researchContactService.js',import.meta.url),'utf8'),
     readFile(new URL('../src/verification/companyVerificationService.js',import.meta.url),'utf8')
   ]);
@@ -200,74 +162,4 @@ test('DataForSEO provider reports missing credentials, 401, verification, API er
   await assert.rejects(() => apiError.search({query:'test'}), error => error.code === 'PROVIDER_ERROR');
   const timedOut = new DataForSeoSearchProvider({login:'x',password:'y',fetchImpl:async()=>{throw new DOMException('timeout','TimeoutError')}});
   await assert.rejects(() => timedOut.search({query:'test'}), error => error.code === 'TIMEOUT');
-});
-
-const databaseConfigured = Boolean(process.env.POSTGRES_HOST && process.env.POSTGRES_PASSWORD);
-const { Pool } = pg;
-
-async function withResearchJob(callback) {
-  const pool = new Pool({
-    host: process.env.POSTGRES_HOST,
-    port: Number(process.env.POSTGRES_PORT || 5432),
-    database: process.env.POSTGRES_DB,
-    user: process.env.POSTGRES_USER,
-    password: process.env.POSTGRES_PASSWORD
-  });
-  const created = await pool.query(`
-    INSERT INTO leadgen.research_jobs (country,country_code,country_name,market_profile,city,product_category,buyer_types,max_results,status,started_at)
-    VALUES ('United Arab Emirates','AE','United Arab Emirates','AE','Dubai','Beauty & Personal Care',ARRAY['Importer','Wholesaler','Distributor'],5,'DISCOVERING',now())
-    RETURNING id`);
-  try { await callback(pool, created.rows[0].id); }
-  finally {
-    await pool.query('DELETE FROM leadgen.research_jobs WHERE id=$1', [created.rows[0].id]);
-    await pool.end();
-  }
-}
-
-test('mock discovery tolerates partial query failure, merges duplicates and updates counters', {skip:!databaseConfigured}, async () => {
-  await withResearchJob(async (pool, jobId) => {
-    let calls = 0;
-    const provider = {
-      name:'mock',
-      async search() {
-        calls += 1;
-        if (calls === 1) throw new Error('mock timeout');
-        return {provider:'mock',results:[
-          {title:'Supplier LLC',url:'https://supplier.ae/?utm_source=test',snippet:'Beauty products distributor in Dubai UAE',rank:1},
-          {title:'Supplier duplicate',url:'https://supplier.ae/?utm_campaign=duplicate',snippet:'Beauty products distributor in Dubai UAE',rank:2},
-          {title:'Second LLC',url:'https://second.ae',snippet:'Beauty products wholesaler in Dubai UAE',rank:3},
-          {title:'Third LLC',url:'https://third.ae',snippet:'Cosmetics importer in Dubai UAE',rank:4},
-          {title:'Fourth LLC',url:'https://fourth.ae',snippet:'Personal care distributor in Dubai UAE',rank:5},
-          {title:'Fifth LLC',url:'https://fifth.ae',snippet:'Skincare wholesaler in Dubai UAE',rank:6},
-          {title:'Pinterest',url:'https://pinterest.com/example',snippet:'ideas',rank:7}
-        ]};
-      }
-    };
-    const result = await discoverResearchCandidates(pool, jobId, {
-      provider:'mock',storageRightsConfirmed:true,timeoutMs:1000
-    }, {provider});
-    assert.equal(result.api_requests, 2);
-    assert.equal(result.successful_requests, 1);
-    assert.equal(result.failed_requests, 1);
-    assert.equal(result.candidates_found, 5);
-    assert.equal(result.completion_reason, 'TARGET_REACHED');
-    assert.ok(result.noise_rejected >= 1);
-    assert.ok(result.duplicates_removed >= 1);
-    const job = await pool.query('SELECT candidates_found,error_count,search_raw_results FROM leadgen.research_jobs WHERE id=$1', [jobId]);
-    assert.deepEqual(job.rows[0], {candidates_found:5,error_count:1,search_raw_results:7});
-  });
-});
-
-test('mock discovery rejects all-query failure and persists no candidates', {skip:!databaseConfigured}, async () => {
-  await withResearchJob(async (pool, jobId) => {
-    const provider = {name:'mock',async search(){throw new Error('mock provider unavailable')}};
-    await assert.rejects(() => discoverResearchCandidates(pool, jobId, {
-      provider:'mock',storageRightsConfirmed:true,timeoutMs:1000
-    }, {provider}), error => error.code === 'ALL_SEARCH_QUERIES_FAILED');
-    const candidates = await pool.query('SELECT count(*)::int AS count FROM leadgen.research_candidates WHERE research_job_id=$1', [jobId]);
-    assert.equal(candidates.rows[0].count, 0);
-    const job = await pool.query('SELECT error_count,search_failed_requests FROM leadgen.research_jobs WHERE id=$1', [jobId]);
-    const expectedQueries=generateResearchQueries({country:'United Arab Emirates',country_code:'AE',country_name:'United Arab Emirates',market_profile:'AE',city:'Dubai',product_category:'Beauty & Personal Care',buyer_types:['Importer','Wholesaler','Distributor'],max_results:5}).length;
-    assert.deepEqual(job.rows[0], {error_count:expectedQueries,search_failed_requests:expectedQueries});
-  });
 });

@@ -53,4 +53,11 @@ Each route and database object has its own inventory classification in CL01_RUNT
 | 23 import/export; 24 DB objects | Data exchange routes and DB catalog/dependency inventory |
 | 27 tests/fixtures; 30 routes/dialogs/mobile | Baseline regression and static UI inventory; interactive CL15 checks deferred while maintenance is active |
 
-CL01 does not perform the later deletion, UI rewrite, dependency removal, current-state consolidation or browser acceptance packages. STOP after CL01.
+CL01 does not perform the later deletion, UI rewrite, dependency removal, current-state consolidation or browser acceptance packages. Its original boundary was STOP after CL01.
+
+## Subsequent CL04–CL06 disposition (2026-09-08)
+
+- CL04: retired the unreferenced synchronous discovery and hardcoded query generator; retained required country conversion. Old internal endpoints now return authenticated HTTP 410 without side effects. Current frozen planning and provider adapters remain.
+- CL05: removed the three-mailbox verification cutoff; retained freshness, evidence, suppression and real provider capacity safeguards.
+- CL06: corrected unselected Gmail reconciliation isolation; nonzero route/worker dependencies keep Gmail/Resend and manual fallback in REVIEW_REQUIRED. Configuration comments distinguish these from Phase13 automation; values remain unchanged.
+- Details and evidence: CL04_SEARCH_PROVIDER_CLEANUP.md, CL05_CONTACT_HUNTER_CLEANUP.md, CL06_EMAIL_LEGACY_CLEANUP.md. No CL07 work is authorized in this handoff.
