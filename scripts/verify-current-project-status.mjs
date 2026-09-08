@@ -230,7 +230,6 @@ if(status.phase13_mc04){
   const name='058_phase13_opportunity_pool.sql';
   assert(migrationMap.get(name)===createHash('sha256').update(readFileSync(join(root,'database','migrations',name))).digest('hex'),'MC04 migration checksum mismatch');
 }
-
 verifyStatusGitSnapshot(root, status);
 
 const credentialAssignment = /(?:PASSWORD|API_KEY|CLIENT_SECRET|REFRESH_TOKEN|PRIVATE_KEY)\s*[:=]\s*["']?[^\s"'<]+/i;
