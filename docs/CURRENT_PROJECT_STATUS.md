@@ -8,7 +8,7 @@ This file is the single source of truth for current execution state. Historical 
   "generated_updated_at": "2026-09-07T19:03:55+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
-  "commit": "1b9c7c4d12dd6610b8b494b6a4c62b1d188a81dc",
+  "commit": "6403dd3fb4e82ea757636c8a59cb7edf29f5beb0",
   "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 11 (Controlled outreach)",
   "current_active_phase": "Phase 12",
@@ -381,6 +381,8 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+CI verification correction (2026-09-08): `commit` records the existing Git baseline at snapshot authoring; `dirty_at_snapshot` records the historical authoring worktree, not the cleanliness of a later CI checkout. The verifier checks that the baseline exists in the committed snapshot's ancestry and that the latest implementation commit is included in that snapshot's history. Code and its status update may therefore be committed together, while a later implementation commit without an updated status still fails. Full Git history remains required. This correction changes Git verification only; the business acceptance and runtime evidence below retain their recorded scope and dates. Five isolated Git regression fixtures passed, covering same-commit updates, stale receipts, invalid ancestry, historical dirty flags and shallow history. Remote CI success is not claimed by this authoring note.
 
 Current acceptance completion (2026-09-07 19:03 +08:00): Phase 12 implementation acceptance is PASS for the executed reference-layout, automated/browser accessibility and regression scope in PHASE12_ACCEPTANCE_COMPLETION.md. Human screen-reader listening remains NOT_TESTED and no WCAG certification is asserted. The user accepted the specific +37.48% performance result; measured evidence remains unchanged. Final contact-progress regression: 966 total / 912 passed / 0 failed / 54 skipped, targeted12/12 and isolated projection/aggregate9/9, browser9/9 and draft22/22. Existing real email totals remain unchanged by this work. Git freeze/commit/push/tag for these follow-up changes have not yet executed; latest_released_phase therefore remains Phase 11, and the existing Phase12 implementation-only tag is not rewritten. The older NOT_ACCEPTED/STOP descriptions below are preserved historical checkpoints, superseded by this current scoped acceptance. Phase13 implementation is not yet recorded as started; its MC00 freeze gate is next after actual Git/data checks.
 

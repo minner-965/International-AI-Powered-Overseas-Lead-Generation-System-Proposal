@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { verifyStatusGitSnapshot } from './current-project-status-git.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -182,13 +182,7 @@ for (const name of [
   assert(migrationMap.get(name) === digest, `Migration checksum mismatch: ${name}`);
 }
 
-const git = (...args) => execFileSync('git', [
-  '-c', `safe.directory=${root.replaceAll('\\', '/')}`, '-C', root, ...args
-], { encoding: 'utf8' }).trim();
-const implementationHead = git('log', '-1', '--format=%H', '--', '.', ':(exclude)docs/**');
-const dirty = git('status', '--porcelain').length > 0;
-assert(status.commit === implementationHead, 'Current status commit does not match the latest implementation commit');
-assert(status.dirty_at_snapshot === dirty, 'Current status dirty flag does not match the worktree');
+verifyStatusGitSnapshot(root, status);
 
 const credentialAssignment = /(?:PASSWORD|API_KEY|CLIENT_SECRET|REFRESH_TOKEN|PRIVATE_KEY)\s*[:=]\s*["']?[^\s"'<]+/i;
 assert(!credentialAssignment.test(statusText), 'Current status contains a credential-like assignment');

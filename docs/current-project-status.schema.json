@@ -16,8 +16,8 @@
     "generated_updated_at": {"type":"string","format":"date-time"},
     "repository": {"type":"string","minLength":1},
     "branch": {"type":"string","minLength":1},
-    "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
-    "dirty_at_snapshot": {"type":"boolean"},
+    "commit": {"type":"string","pattern":"^[0-9a-f]{40}$","description":"Existing Git baseline when the snapshot was authored; must be an ancestor of the committed status snapshot."},
+    "dirty_at_snapshot": {"type":"boolean","description":"Historical worktree state at snapshot authoring, independent of a later checkout's cleanliness."},
     "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
     "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12"]},
     "phase12_ui": {
