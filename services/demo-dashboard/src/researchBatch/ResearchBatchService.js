@@ -91,6 +91,7 @@ export function buildScopeSnapshot(input,options,now=new Date()) {
     market_code:m.market_code,country_code:m.market_code,country_name:m.country_name,market_profile:m.market_profile,
     category_scope_id:c.id,scope_revision_id:c.scope_revision_id,category_code:c.category_code,
     product_category:c.category_code,product_profile:c.product_profile,
+    ...(c.approved_aliases ? {approved_aliases:structuredClone(c.approved_aliases),parent_category:c.parent_category||null} : {}),
     languages:[...m.languages],preferred_language:m.languages[0],buyer_types:input.buyer_types||[...m.buyer_types],
     max_results:input.max_results,city:input.city,region:input.region
   })));
@@ -116,9 +117,10 @@ function configurationDiffers(scope,job) {
 }
 
 export class ResearchBatchService {
-  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000}={}) {
+  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null}={}) {
     if(!pool)throw new Error('ResearchBatchService requires a PostgreSQL pool');
     this.pool=pool;this.directDispatch=directDispatch;this.ensureCanCreate=ensureCanCreate;this.runBudgetCapUnits=runBudgetCapUnits;
+    this.planning=planning;
   }
   async options(queryable=this.pool) {
     const markets=await queryable.query(`SELECT *,market_code country_code FROM leadgen.research_market_registry
@@ -127,10 +129,23 @@ export class ResearchBatchService {
       normalized_category category_code,normalized_category label,product_profile,scope_status,approval_status,revision
       FROM leadgen.dpv_product_category_scope_current WHERE scope_status='ACTIVE' AND approval_status='APPROVED'
       ORDER BY product_profile,normalized_category,id`);
+    if(this.planning&&categories.rows.length){
+      const context=await queryable.query(`SELECT c.id,p.normalized_category parent_category,
+        coalesce((SELECT jsonb_agg(jsonb_build_object('normalized_alias',a.normalized_alias,'language',a.language,
+          'market_code',a.market_code,'alias_type',a.alias_type) ORDER BY a.language,a.normalized_alias,a.alias_type,a.market_code)
+          FROM leadgen.dpv_product_category_scope_aliases a WHERE a.scope_id=c.id
+          AND a.scope_revision_id=c.scope_revision_id AND a.status='ACTIVE'),'[]'::jsonb) approved_aliases
+        FROM leadgen.dpv_product_category_scopes c LEFT JOIN leadgen.dpv_product_category_scopes p
+        ON p.id=c.parent_scope_id AND p.scope_revision_id=c.scope_revision_id AND p.scope_status='ACTIVE'
+        WHERE c.id=ANY($1::uuid[])`,[categories.rows.map(c=>c.id)]);
+      const byId=new Map(context.rows.map(c=>[c.id,c]));
+      for(const category of categories.rows)Object.assign(category,byId.get(category.id)||{approved_aliases:[],parent_category:null});
+    }
     return {markets:markets.rows.filter(m=>isMarketVisible(m.market_code)),categories:categories.rows,buyer_types:[...BUYERS]};
   }
   async preview(input={}) {
-    return previewResponse(buildScopeSnapshot(normalizeBatchInput(input),await this.options()));
+    const result=previewResponse(buildScopeSnapshot(normalizeBatchInput(input),await this.options()));
+    return this.planning?{...result,search_plan:this.planning.preview(result.research_scope_snapshot)}:result;
   }
   async create(input={},actor={}) {
     const identity=clean(actor.identity||actor.requested_by);
@@ -153,6 +168,7 @@ export class ResearchBatchService {
         // SHARE prevents concurrent edits; immutable approved revisions remain unchanged.
         await client.query('LOCK TABLE leadgen.research_market_registry IN SHARE MODE');
         await client.query('LOCK TABLE leadgen.dpv_product_category_scope_revisions,leadgen.dpv_product_category_scopes IN SHARE MODE');
+        if(this.planning)await client.query('LOCK TABLE leadgen.dpv_product_category_scope_aliases IN SHARE MODE');
         const snapshot=buildScopeSnapshot(normalized,await this.options(client));
         const scopeDigest=digest(snapshot.scopes);
         const same=await client.query(`SELECT b.* FROM leadgen.research_batches b
@@ -184,6 +200,7 @@ export class ResearchBatchService {
             VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)`,[batchId,canonicalResearchScope(scope),child.id,scope.market_code,scope.category_scope_id,
             JSON.stringify({requested_scope:scope,effective_job_scope:effectiveJobScope(child),configuration_reused:!child.inserted&&configurationDiffers(scope,child)}),!child.inserted]);
           await client.query('SELECT leadgen.refresh_research_batch_status($1)',[batchId]);
+          if(this.planning)await this.planning.freezeBatch(client,batchId,snapshot,children);
         }
         await client.query(`INSERT INTO leadgen.research_batch_requests(idempotency_key,request_digest,requested_by,batch_id)
           VALUES($1,$2,$3,$4)`,[key,requestDigest,identity,batchId]);
@@ -204,7 +221,8 @@ export class ResearchBatchService {
       JOIN leadgen.research_jobs j ON j.id=c.research_job_id WHERE c.batch_id=$1
       ORDER BY c.market_code,c.scope_key`,[id]);
     const row=result.rows[0];
-    return {...row,batch_id:row.id,...previewResponse(row.research_scope_snapshot),children:children.rows};
+    const detail={...row,batch_id:row.id,...previewResponse(row.research_scope_snapshot),children:children.rows};
+    return this.planning?{...detail,search_plan:await this.planning.forBatch(detail)}:detail;
   }
   async list({limit=50}={}) {
     const result=await this.pool.query(`SELECT * FROM leadgen.research_batches ORDER BY created_at DESC,id DESC LIMIT $1`,

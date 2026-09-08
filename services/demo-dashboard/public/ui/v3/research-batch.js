@@ -3,7 +3,7 @@ import {productTaxonomyLabel} from '../../product-match-ui.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const STORAGE = 'dpv.research-batch.selection.v1';
-let api, options, preview, timer, sequence=0, creating=false, loaded=false, selection={}, batchOpener;
+let api, options, preview, timer, sequence=0, creating=false, loaded=false, selection={}, batchOpener, searchPlanState='ready';
 const checked = name => $$(`input[name="${name}"]:checked`).map(input=>input.value);
 const unique = values => [...new Set(values.flat().filter(Boolean))];
 const categoryId = item => item.category_scope_id || item.id;
@@ -13,6 +13,29 @@ const categoryLabel = item => {
   const labels=extra[code]||productTaxonomyLabel(code);return labels[1]==='To confirm'?[item.label||code,item.label||code]:labels;
 };
 const status = html => { const host=$('#research-create-status'); if(host)host.innerHTML=html; };
+export function searchPlanViewModel(plan){
+  const number=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;
+  const summary=plan?.summary||{};
+  return {status:'PLANNED',version:plan?.strategy_version||'—',scopes:number(summary.scopes),
+    precisionStrategies:number(summary.precision_strategies),coverageStrategies:number(summary.coverage_strategies),
+    planned:number(summary.planned_query_count),precision:number(summary.precision_planned),coverage:number(summary.coverage_planned),
+    languages:Array.isArray(summary.languages)?summary.languages:[],
+    samples:['PRECISION_LANE','COVERAGE_LANE'].map(id=>({id,queries:(Array.isArray(plan?.samples?.[id])?plan.samples[id]:[]).slice(0,5)}))};
+}
+function searchPlanMarkup(plan){
+  if(!plan)return `<p class="crm-helper">${api.bi('查询计划待更新','Search plan pending')}</p>`;
+  const model=searchPlanViewModel(plan);
+  const facts=[['研究范围','Scopes',model.scopes],['精准查询策略','Precision strategies',model.precisionStrategies],['覆盖查询策略','Coverage strategies',model.coverageStrategies],['计划查询总数','Planned queries',model.planned],['精准计划数','Precision planned',model.precision],['覆盖计划数','Coverage planned',model.coverage],['研究语言','Languages',model.languages.join(' · ')||'—'],['搜索策略版本','Search strategy version',model.version]];
+  return `<header class="v3-search-plan-header"><h5>${api.bi('查询计划','Search Plan')}</h5><span class="data-state-badge state-unknown">${api.bi('已规划','Planned')}</span></header><div class="v3-search-plan-facts">${facts.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value??'—')}</strong></div>`).join('')}</div><details class="v3-search-samples"><summary>${api.bi('查看查询示例','View sample queries')}</summary><div class="v3-search-sample-lanes">${model.samples.map(({id,queries},index)=>`<section data-search-lane="${id}"><h6>${api.bi(index?'覆盖查询':'精准查询',index?'Coverage lane':'Precision lane')}</h6>${queries.length?`<ol>${queries.map(query=>`<li><span lang="${api.esc(query.language||'en')}" dir="auto">${api.esc(query.normalized_query||'')}</span></li>`).join('')}</ol>`:`<p>${api.bi('暂无查询示例','No sample queries')}</p>`}</section>`).join('')}</div></details>`;
+}
+function renderSearchPlan(state=searchPlanState){
+  searchPlanState=state;
+  const host=$('#research-search-plan');if(!host)return;
+  host.setAttribute('aria-busy',String(state==='loading'));
+  if(state==='loading'){host.innerHTML=`<p role="status">${api.bi('正在准备查询计划','Preparing search plan')}</p>`;return;}
+  if(state==='error'){host.innerHTML=`<p role="status">${api.bi('查询计划读取未完成','Search plan could not be loaded')}</p><button type="button" class="btn btn-outline-secondary" data-search-plan-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-search-plan-retry]').addEventListener('click',()=>void loadPreview());return;}
+  host.innerHTML=searchPlanMarkup(preview?.search_plan);
+}
 function save() {
   selection={...selection,market_codes:checked('market_code'),category_scope_ids:checked('product_category'),
     buyer_types:checked('buyer_type'),max_results:Number($('#research-limit')?.value||5),city:$('#research-city')?.value||'',region:$('#research-region')?.value||''};
@@ -36,19 +59,22 @@ function updateCounts() {
 }
 function changed() {
   sequence++;selection.idempotency_key=null;preview=null;save();updateCounts();
+  renderSearchPlan('loading');
   clearTimeout(timer);timer=setTimeout(()=>void loadPreview(),160);
 }
 async function loadPreview() {
   const requestId=++sequence;
-  if(!counts().total){preview=null;$('#research-catalog-summary').innerHTML=api.bi('请选择可用市场与目标类目','Select an available market and target category');batchScopeReview();return;}
+  if(!counts().total){preview=null;searchPlanState='ready';$('#research-catalog-summary').innerHTML=api.bi('请选择可用市场与目标类目','Select an available market and target category');batchScopeReview();return;}
   $('#research-catalog-summary').innerHTML=api.bi('正在核对研究范围','Checking research scope');
+  renderSearchPlan('loading');
   try {
     const result=await api.request('/api/research/batches/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});
     if(requestId!==sequence)return;
-    preview=result;$('#research-catalog-summary').innerHTML=api.bi('研究范围已就绪','Research scope ready');
+    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=api.bi('研究范围已就绪','Research scope ready');
     batchScopeReview();updateCounts();
   }catch{
     if(requestId!==sequence)return;preview=null;updateCounts();
+    renderSearchPlan('error');
     $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
@@ -62,6 +88,7 @@ export function batchScopeReview(){
     ['客户类型','Buyer types',(preview?.buyer_types||checked('buyer_type')).join(' · ')],
     ['研究语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5]];
   $('#research-scope-review').innerHTML=fields.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('');
+  renderSearchPlan();
 }
 export function batchValidateScope(){
   if(!loaded||!counts().total){status(api.bi('请选择至少一个市场和一个目标类目','Select at least one market and one target category'));$('#research-market-all')?.focus();return false;}
@@ -128,6 +155,8 @@ async function openBatch(id,{replace=false}={}){
     const stateBadge=document.createElement('span');stateBadge.className='data-state-badge state-unknown';stateBadge.innerHTML=api.bi(...stateLabel);host.querySelector('.card-title').after(stateBadge);
     const refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-outline-secondary';refresh.innerHTML=api.bi('刷新','Refresh');refresh.addEventListener('click',()=>void openBatch(id,{replace:true}));host.querySelector('.card-header').append(refresh);
     const frozen=document.createElement('details');frozen.className='v3-research-details';frozen.innerHTML=`<summary>${api.bi('创建范围详情','Scope at creation')}</summary><div class="p9-catalog-facts">${[['市场','Markets',snapshot.markets?.length??0],['类目','Categories',snapshot.categories?.length??0],['客户类型','Buyer types',unique((snapshot.scopes||[]).map(scope=>scope.buyer_types||[])).join(' · ')],['研究语言','Languages',unique((snapshot.scopes||[]).map(scope=>scope.languages||[])).join(' · ')]].map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('')}</div>`;host.querySelector('.v3-batch-children').before(frozen);
+    const searchPlan=document.createElement('section');searchPlan.id='batch-search-plan';searchPlan.className='v3-search-plan';searchPlan.innerHTML=searchPlanMarkup(batch.search_plan);frozen.after(searchPlan);
+    for(const [from,to] of [['h5','h4'],['h6','h5']])searchPlan.querySelectorAll(from).forEach(heading=>{const replacement=document.createElement(to);replacement.innerHTML=heading.innerHTML;heading.replaceWith(replacement);});
     host.querySelectorAll('[data-batch-child]').forEach(button=>{
       const child=batch.children.find(item=>item.job_id===button.dataset.batchChild);
       const category=snapshot.categories?.find(item=>categoryId(item)===child?.category_scope_id);if(category)button.closest('article').querySelector('div>span').innerHTML=api.bi(...categoryLabel(category));
@@ -146,6 +175,7 @@ export function initializeResearchBatch(dependencies){
   first.id='research-registry-options';
   first.innerHTML=`<label hidden for="research-country"><select id="research-country" name="country"><option value=""></option></select></label><fieldset id="research-markets"><legend>${api.bi('市场','Markets')}</legend><label class="p9-category-all"><input id="research-market-all" type="checkbox" class="form-check-input"><span>${api.bi('全选已启用市场','Select all active markets')}</span></label><div id="research-market-options" class="v3-registry-options"></div></fieldset><fieldset id="research-category"><legend>${api.bi('目标类目','Target Categories')}</legend><label class="p9-category-all"><input id="research-category-all" type="checkbox" class="form-check-input"><span>${api.bi('全选已批准类目','Select all approved categories')}</span></label><div id="research-category-options" class="v3-registry-options"></div></fieldset>`;
   const counter=document.createElement('div');counter.id='research-selection-counts';counter.className='v3-scope-counts';counter.setAttribute('role','status');counter.setAttribute('aria-live','polite');counter.setAttribute('aria-atomic','true');$('#research-job-steps').after(counter);
+  const searchPlan=document.createElement('section');searchPlan.id='research-search-plan';searchPlan.className='v3-search-plan';$('#research-scope-review').after(searchPlan);
   $('#research-product-profile')?.closest('label')?.setAttribute('hidden','');
   $('#research-product-profile').disabled=true;
   $('#research-step-three-title').innerHTML=api.bi('可选条件','Optional filters');

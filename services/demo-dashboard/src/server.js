@@ -37,6 +37,7 @@ import { createResearchRouter } from './research/router.js';
 import { OrchestratorHealthService } from './orchestration/OrchestratorHealthService.js';
 import { ResearchDirectDispatchService,ResearchJobDirectExecutor } from './research/ResearchDirectDispatchService.js';
 import {ResearchBatchService,createOrReuseResearchJob} from './researchBatch/ResearchBatchService.js';
+import {SearchPlanService} from './searchPlanning/SearchPlanService.js';
 import {createResearchBatchRouter} from './research/researchBatchRouter.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
@@ -499,7 +500,8 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   }
 }});
 researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,audit});
-const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,
+const searchPlanService=new SearchPlanService({pool});
+const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,planning:searchPlanService,
   ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
   runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
 
@@ -553,6 +555,14 @@ function requireInternalToken(req, res, next) {
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
+app.get('/api/research/jobs/:id/search-plan',managementAuth.authenticate,
+  managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'),async(req,res,next)=>{
+    try{
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id))
+        return res.status(400).json({code:'RESEARCH_JOB_ID_INVALID'});
+      res.json(await searchPlanService.forJob(req.params.id));
+    }catch(error){next(error);}
+  });
 
 const categoryScopeRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
 const categoryScopeWrite=[managementAuth.authenticate,

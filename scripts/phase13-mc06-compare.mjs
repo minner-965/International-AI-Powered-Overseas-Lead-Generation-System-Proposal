@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {dirname,join} from 'node:path';
+const [beforePath,afterPath]=process.argv.slice(2);
+assert.ok(beforePath&&afterPath,'Provide before and after baseline.json paths');
+const before=JSON.parse(readFileSync(beforePath,'utf8')),after=JSON.parse(readFileSync(afterPath,'utf8'));
+assert.deepEqual(after.migration_hashes_001_059,before.migration_hashes_001_059,'Old migrations changed');
+const mc04Only=map=>Object.fromEntries(Object.entries(map).filter(([name])=>name.includes('/opportunityPool/')));
+assert.deepEqual(mc04Only(after.mc04_rule_hashes),mc04Only(before.mc04_rule_hashes),'MC04 rule implementation changed');
+assert.deepEqual(after.pool_distribution,before.pool_distribution,'MC04 distribution changed');
+assert.deepEqual(after.tables.opportunity_pool_decisions,before.tables.opportunity_pool_decisions,'MC04 decision history changed');
+const changed=Object.entries(before.tables).filter(([key,row])=>JSON.stringify(row)!==JSON.stringify(after.tables[key])).map(([table,row])=>({table,before:row,after:after.tables[table]}));
+const added=Object.keys(after.tables).filter(key=>!Object.hasOwn(before.tables,key));
+const allowedChanged=new Set(['schema_migrations','orchestrator_heartbeats','imap_mailbox_checkpoints','controlled_application_imap_checkpoints']);
+const unexpected=changed.filter(row=>!allowedChanged.has(row.table));
+const report={old_migrations_unchanged:true,mc04_rules_unchanged:true,mc04_decisions_unchanged:true,changed_tables:changed,added_tables:added,unexpected_changes:unexpected};
+writeFileSync(join(dirname(afterPath),'comparison.json'),JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify(report));assert.equal(unexpected.length,0,'Investigate unexpected existing-table changes');

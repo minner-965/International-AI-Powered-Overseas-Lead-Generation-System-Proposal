@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "lanes": [
+    {
+      "id": "PRECISION_LANE",
+      "weight": 1,
+      "enabled": true
+    },
+    {
+      "id": "COVERAGE_LANE",
+      "weight": 1,
+      "enabled": true
+    }
+  ],
+  "scheduling": "WEIGHTED_ROUND_ROBIN_WORK_CONSERVING",
+  "hard_api_share_cap": false
+}

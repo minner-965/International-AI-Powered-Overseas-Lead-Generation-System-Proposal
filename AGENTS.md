@@ -107,6 +107,15 @@ At the start of every task, complete both checks below before implementation beg
 
 ## Existing opportunity email behavior
 
+## MC06 execution boundary — 2026-09-08
+
+- MC05 accepted working tree is checkpointed at `cf559d6db0b7b4baa68cc41af54a246b3fba97e0`. This explicit authorization supersedes the historical MC05 STOP only for MC06.
+- Implement deterministic frozen-scope query planning, Precision/Coverage lanes, versioned domain policy, discovery corroboration and V3 planning previews. Preserve MC04 classifications and MC05 batch/fan-out/idempotency semantics.
+- No live Brave/Tavily search, Hunter, SMTP, LLM, automatic outreach or production QA batch creation. Report existing startup metadata probes separately from search calls.
+- Preserve migrations 001–059. Any needed schema is latest + 1. Complete isolated/database/browser regression, result documents and local checkpoint; no push/tag. STOP before MC07.
+
+## Existing opportunity email behavior (continued)
+
 - A current category-based business opportunity is sufficient commercial justification for an introductory email; do not add a separate proof-of-current-procurement requirement.
 - An observed official company or department mailbox may be used without a named buyer, after mailbox verification, current approval and address-level suppression checks.
 - Automatically verify observed official business mailboxes through Hunter, persist the real result and usage history, and preserve its timestamp when public source records are refreshed.

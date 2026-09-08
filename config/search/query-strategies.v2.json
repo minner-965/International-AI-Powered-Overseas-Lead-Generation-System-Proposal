@@ -1,0 +1,331 @@
+{
+  "version": "2.0.0",
+  "schema_version": 1,
+  "description": "Deterministic lexical search planning; configuration terms are search vocabulary, not category approval or identity evidence.",
+  "locales": {
+    "en": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "daily use goods", "DRESSES": "dresses", "GENERAL_MERCHANDISE": "general merchandise",
+        "HOMEWARE": "homeware", "HOME_AND_LIVING": "home and living", "HOUSEHOLD_GOODS": "household goods",
+        "KNITWEAR": "knitwear", "NON_FOOD": "non-food products", "OUTERWEAR": "outerwear", "SKIRTS": "skirts",
+        "TOPS": "tops", "TROUSERS": "trousers", "WOMENSWEAR": "womenswear"
+      },
+      "importer": "importer",
+      "wholesaler": "wholesaler",
+      "distributor": "distributor",
+      "retailer": "retailer",
+      "retail_group": "retail group",
+      "department_store": "department store",
+      "trading_company": "trading company",
+      "fashion_group": "fashion group",
+      "lifestyle_group": "lifestyle retailer",
+      "general_trading": "general trading company",
+      "general_merchandise": "general merchandise distributor",
+      "multi_category_retail": "multi-category retailer",
+      "consumer_goods_importer": "consumer goods importer",
+      "regional_retail_group": "regional retail group"
+    },
+    "es": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "artículos de uso diario", "DRESSES": "vestidos", "GENERAL_MERCHANDISE": "mercancía general",
+        "HOMEWARE": "artículos para el hogar", "HOME_AND_LIVING": "hogar y decoración", "HOUSEHOLD_GOODS": "artículos domésticos",
+        "KNITWEAR": "prendas de punto", "NON_FOOD": "productos no alimentarios", "OUTERWEAR": "ropa de abrigo", "SKIRTS": "faldas",
+        "TOPS": "prendas superiores", "TROUSERS": "pantalones", "WOMENSWEAR": "ropa de mujer"
+      },
+      "importer": "importador",
+      "wholesaler": "mayorista",
+      "distributor": "distribuidor",
+      "retailer": "minorista",
+      "retail_group": "grupo minorista",
+      "department_store": "tienda departamental",
+      "trading_company": "empresa comercializadora",
+      "fashion_group": "grupo de moda",
+      "lifestyle_group": "tienda de estilo de vida",
+      "general_trading": "comercializadora general",
+      "general_merchandise": "distribuidor de mercancía general",
+      "multi_category_retail": "minorista multicategoría",
+      "consumer_goods_importer": "importador de bienes de consumo",
+      "regional_retail_group": "grupo minorista regional"
+    },
+    "ar": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "سلع الاستخدام اليومي", "DRESSES": "فساتين", "GENERAL_MERCHANDISE": "بضائع عامة",
+        "HOMEWARE": "أدوات منزلية", "HOME_AND_LIVING": "المنزل والمعيشة", "HOUSEHOLD_GOODS": "سلع منزلية",
+        "KNITWEAR": "ملابس محبوكة", "NON_FOOD": "منتجات غير غذائية", "OUTERWEAR": "ملابس خارجية", "SKIRTS": "تنانير",
+        "TOPS": "ملابس علوية", "TROUSERS": "سراويل", "WOMENSWEAR": "ملابس نسائية"
+      },
+      "importer": "مستورد",
+      "wholesaler": "تاجر جملة",
+      "distributor": "موزع",
+      "retailer": "متجر تجزئة",
+      "retail_group": "مجموعة تجزئة",
+      "department_store": "متجر متعدد الأقسام",
+      "trading_company": "شركة تجارية",
+      "fashion_group": "مجموعة أزياء",
+      "lifestyle_group": "متجر نمط الحياة",
+      "general_trading": "شركة تجارة عامة",
+      "general_merchandise": "موزع بضائع عامة",
+      "multi_category_retail": "متجر متعدد الفئات",
+      "consumer_goods_importer": "مستورد سلع استهلاكية",
+      "regional_retail_group": "مجموعة تجزئة إقليمية"
+    }
+  },
+  "strategies": [
+    {
+      "id": "P01_EXACT_CATEGORY_IMPORTER",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Importer",
+      "applicable_buyer_types": [
+        "Importer"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "importer",
+      "priority": 1
+    },
+    {
+      "id": "P02_EXACT_CATEGORY_WHOLESALER",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Wholesaler",
+      "applicable_buyer_types": [
+        "Wholesaler"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "wholesaler",
+      "priority": 2
+    },
+    {
+      "id": "P03_EXACT_CATEGORY_DISTRIBUTOR",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Distributor",
+      "applicable_buyer_types": [
+        "Distributor"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "distributor",
+      "priority": 3
+    },
+    {
+      "id": "P04_EXACT_CATEGORY_RETAILER",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Retailer",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Supermarket"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "CITY_OR_MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "retailer",
+      "priority": 4
+    },
+    {
+      "id": "P05_CATEGORY_RETAIL_GROUP",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Retail Group",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "retail_group",
+      "priority": 5
+    },
+    {
+      "id": "P06_CATEGORY_DEPARTMENT_STORE",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Department Store",
+      "applicable_buyer_types": [
+        "Department Store"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "department_store",
+      "priority": 6
+    },
+    {
+      "id": "P07_CATEGORY_TRADING_COMPANY",
+      "lane": "PRECISION_LANE",
+      "enabled": true,
+      "buyer_type": "Trading Company",
+      "applicable_buyer_types": [
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "category_mode": "EXACT_AND_APPROVED_ALIAS",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{category}\" {buyer_term} \"{city_or_market}\"",
+      "term_key": "trading_company",
+      "priority": 7
+    },
+    {
+      "id": "C01_PARENT_CATEGORY_RETAIL",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Retailer",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Supermarket"
+      ],
+      "category_mode": "PARENT",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "\"{parent_category}\" {buyer_term} \"{market}\"",
+      "term_key": "retailer",
+      "priority": 1
+    },
+    {
+      "id": "C02_FASHION_OR_LIFESTYLE_GROUP",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Lifestyle Group",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Department Store"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "fashion_or_lifestyle",
+      "priority": 2
+    },
+    {
+      "id": "C03_GENERAL_TRADING",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Trading Company",
+      "applicable_buyer_types": [
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "general_trading",
+      "priority": 3
+    },
+    {
+      "id": "C04_GENERAL_MERCHANDISE",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Distributor",
+      "applicable_buyer_types": [
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "general_merchandise",
+      "priority": 4
+    },
+    {
+      "id": "C05_MULTI_CATEGORY_RETAIL",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Retailer",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Supermarket"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "multi_category_retail",
+      "priority": 5
+    },
+    {
+      "id": "C06_DEPARTMENT_STORE_BROAD",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Department Store",
+      "applicable_buyer_types": [
+        "Department Store"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "department_store",
+      "priority": 6
+    },
+    {
+      "id": "C07_CONSUMER_GOODS_IMPORTER",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Importer",
+      "applicable_buyer_types": [
+        "Importer"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "consumer_goods_importer",
+      "priority": 7
+    },
+    {
+      "id": "C08_REGIONAL_RETAIL_GROUP",
+      "lane": "COVERAGE_LANE",
+      "enabled": true,
+      "buyer_type": "Retail Group",
+      "applicable_buyer_types": [
+        "Large Retail Group",
+        "Regional Retail Chain"
+      ],
+      "category_mode": "BROAD",
+      "market_term_mode": "FROZEN_COUNTRY",
+      "city_mode": "MARKET",
+      "language_mode": "ALL_FROZEN_LANGUAGES",
+      "template": "{buyer_term} \"{market}\"",
+      "term_key": "regional_retail_group",
+      "priority": 8
+    }
+  ]
+}

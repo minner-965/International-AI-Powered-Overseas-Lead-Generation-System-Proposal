@@ -1,5 +1,12 @@
 # Version Changelog
 
+## Phase13 V2.1 MC06 — 2026-09-08 — deterministic search planning
+
+- MC05 accepted checkpoint: `cf559d6db0b7b4baa68cc41af54a246b3fba97e0`. Versioned Precision/Coverage matrix, multilingual frozen scope, fingerprints and work-conserving fair lanes added without provider execution.
+- Additive 060 preserves immutable plans and candidate-linked corroboration. Distinct discovery counts do not change MC04 bands or contact/email rules. Existing MC05 batch transaction freezes plans without replacing reused child settings.
+- V3 preview and batch detail show Planned summaries and bounded samples. Results: `PHASE13_MC06_QUERY_MATRIX_RESULT.md`, `PHASE13_MC06_DOMAIN_POLICY_RESULT.md`, `PHASE13_MC06_UI_RESULT.md`.
+- No live search, Hunter, mail, LLM, push or tag. Local checkpoint and STOP before MC07.
+
 ## Phase13 V2.1 MC05 — 2026-09-08 — registry-based ResearchBatch
 
 - Preserved accepted MC04 in local checkpoint `69b55bcb247459b085ca6e784207d6616692eac7` before implementation.

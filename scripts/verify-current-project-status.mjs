@@ -92,7 +92,14 @@ if (phase12Active) {
     assert(/^[a-f0-9]{40}$/.test(mc.checkpoint_commit),'MC05 checkpoint required');
     if(mc.status==='PASS')assert(existsSync(join(root,mc.result_report))&&existsSync(join(root,mc.ui_report)),'MC05 reports required');
   }
-  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc05?'WP_MC05_STOP':status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  if(status.phase13_mc06){
+    const mc=status.phase13_mc06;
+    assert(status.phase13_mc05?.status==='PASS'&&mc.scope==='WP-MC06'&&['IN_PROGRESS','PASS'].includes(mc.status),'MC06 requires accepted MC05');
+    assert(mc.search_calls===0&&mc.email_sends===0&&mc.mc07_started===false&&mc.stop_after==='WP-MC06','MC06 planning-only boundary');
+    assert(/^[a-f0-9]{40}$/.test(mc.checkpoint_commit),'MC06 checkpoint required');
+    if(mc.status==='PASS')for(const key of ['result_report','domain_report','ui_report'])assert(existsSync(join(root,mc[key])),'MC06 result required');
+  }
+  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc06?'WP_MC06_STOP':status.phase13_mc05?'WP_MC05_STOP':status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
   assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
