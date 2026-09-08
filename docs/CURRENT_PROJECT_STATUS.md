@@ -5,7 +5,7 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-08T12:53:00+08:00",
+  "generated_updated_at": "2026-09-08T13:09:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
   "commit": "cf559d6db0b7b4baa68cc41af54a246b3fba97e0",
@@ -390,6 +390,8 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+Emergency Git synchronization receipt (2026-09-08): remote CI correction `a78b7c5` was merged without discarding the accepted Phase13 work. The merge keeps the current MC06 STOP boundary and does not include local credentials, databases, exports or ignored evidence. Repository visibility is public, so private operational material requires a separate encrypted backup.
 
 CI verification correction (2026-09-08): the recorded commit and dirty flag describe the authoring snapshot. Verification requires that the recorded baseline exists in the snapshot's ancestry and that the latest implementation commit is included in the status snapshot's history. Commit implementation changes and their status update together; a later implementation without an updated status remains an error. Full Git history is required. The standalone CI repair is committed on the remote Phase 12 branch; these same verification changes are integrated locally alongside the ongoing Phase 13 work without publishing that work.
 
