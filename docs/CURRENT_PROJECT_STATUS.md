@@ -5,14 +5,15 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-08T13:09:00+08:00",
+  "generated_updated_at": "2026-09-08T16:56:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
-  "commit": "cf559d6db0b7b4baa68cc41af54a246b3fba97e0",
+  "commit": "ad3dd1754b882209198b4b21d8ce677e4665271c",
   "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 12 (Workspace UI)",
   "current_active_phase": "Phase 13",
   "phase13_search":{"scope":["WP-MC00","WP-MC01","WP-MC02"],"wp_mc00":"PASS","wp_mc01":"PASS","wp_mc02":"PASS","runtime_activation":"NOT_ACTIVATED_PENDING_CONFIG","live_brave_test":"NOT_RUN","brave_configured":false,"storage_rights_confirmed":false,"result_report":"docs/PHASE13_MC00_02_RESULT.md","stop_after":"WP-MC02"},
+  "phase13_mc07":{"scope":"MC07_FULL_AUTOMATION","status":"PASS","automation_master":true,"search_automation":true,"search_runtime_status":"PAUSED_PROVIDER_CAPACITY","opportunity_auto_pool":true,"contact_research_automation":true,"auto_first_touch_email":true,"inbound_reply_monitor":true,"auto_email_followup_sequence":false,"phone_whatsapp_automation":false,"provider_spend_mode":"NO_NEW_PAID_SPEND","provider_order":["tavily"],"search_batch_id":"d4ded788-6738-4fff-bb92-ce5a3944642d","search_scopes":26,"planned_queries":579,"completed_queries":30,"remaining_queries":549,"live_search_started":true,"template_set":"DPV_FIRST_TOUCH_V1","sender_display_name":"Simon","auto_sent":2,"duplicate_sends":0,"result_report":"docs/PHASE13_MC07_FULL_AUTOMATION_RESULT.md","stop_after":"MC07"},
   "phase13_mc03":{"scope":"WP-MC03","status":"DRY_RUN_COMPLETE_AWAITING_REVIEW","provider_calls":0,"email_sends":0,"business_mutations":0,"applied":false,"company_count":138,"band_counts":{"PRECISION":4,"RELEVANT":2,"GENERAL_RELEVANT":22,"EXPLORATORY":101,"NOT_SUITABLE":9},"result_report":"docs/PHASE13_MC03_OPPORTUNITY_POOL_DRY_RUN_RESULT.md","stop_after":"WP-MC03"},
   "phase12_ui": {
     "scope": ["WP-UI15", "WP-UI16"],
@@ -119,21 +120,23 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"058_phase13_opportunity_pool.sql","sha256":"544d7f2f8567900a4cbd36a35f6ab24e610cbe065f2fad3192342215333ef0be"},
     {"migration_key":"059_phase13_research_batches.sql","sha256":"0255ae85545d71e8c59a076c0cb5aaaf1beb3ad6cb3875f48da9dc8fd7ed342e"},
     {"migration_key":"060_phase13_search_planning_corroboration.sql","sha256":"634224360d327be3cc730ff663f3d009621abf5c9fd3c324f2ab12cc974d59e9"}
+    ,{"migration_key":"061_phase13_automation_control_query_execution.sql","sha256":"a38b8cc7731e8384d7c275e0209a65f27cb0e8aa7f1972eeb2a3098301cc2a3e"}
+    ,{"migration_key":"062_phase13_auto_first_touch_reply_bridge.sql","sha256":"f3583ad2b90a1e3d0aeed1b161efd1a7dd3e7f9085a0c8f425aae872a7024459"}
   ],
   "current_real_data_counts": {
-    "companies": 129,
-    "sources": 364,
-    "contacts": 113,
+    "companies": 145,
+    "sources": 498,
+    "contacts": 169,
     "lead_reviews": 93,
     "collection_runs": 14,
-    "research_jobs": 426,
+    "research_jobs": 494,
     "current_opportunities": 32,
     "evidence_required": 28,
     "not_suitable": 2,
     "recommended": 1,
     "management_approved": 1,
     "decision_makers": 12,
-    "decision_maker_contacts": 83,
+    "decision_maker_contacts": 132,
     "valid_contact_routes": 2,
     "company_contact_routes": 83,
     "auto_evidence_tasks": 109,
@@ -143,12 +146,12 @@ This file is the single source of truth for current execution state. Historical 
     "official_route_manual_tasks_active": 0,
     "outreach_drafts": 9,
     "outreach_approvals": 9,
-    "outbound_messages": 2,
+    "outbound_messages": 4,
     "outbound_attempts": 3,
     "prospect_real_provider_calls": 2,
     "inbound_messages": 3,
-    "crm_sync_outbox": 2,
-    "opportunity_activities": 2,
+    "crm_sync_outbox": 4,
+    "opportunity_activities": 4,
     "sales_tasks": 1,
     "prospect_crm_sync_outbox": 0,
     "prospect_opportunity_activities": 0,
@@ -178,8 +181,16 @@ This file is the single source of truth for current execution state. Historical 
     "numeric_max_attempt_blocking": false,
     "company_cooldown_blocking": false,
     "outbound_email_enabled": true,
-    "outreach_manual_send_only": true,
-    "outreach_worker_send_enabled": false,
+    "outreach_manual_send_only": false,
+    "outreach_worker_send_enabled": true,
+    "automated_acquisition": true,
+    "search_automation": true,
+    "contact_research_automation": true,
+    "auto_first_touch_email": true,
+    "inbound_reply_monitor": true,
+    "auto_email_followup_sequence": false,
+    "phone_whatsapp_automation": false,
+    "provider_spend_mode": "NO_NEW_PAID_SPEND",
     "gmail_api_enabled": false,
     "gmail_inbound_sync_enabled": false,
     "outreach_send_scope": "PROSPECT_PILOT",
@@ -383,13 +394,15 @@ This file is the single source of truth for current execution state. Historical 
   "phase13_mc04":{"scope":"WP-MC04","status":"PASS","user_approved_mc03_bands":true,"provider_calls":0,"email_sends":0,"migration":"058_phase13_opportunity_pool.sql","company_count":138,"active_business_opportunities":28,"result_report":"docs/PHASE13_MC04_OPPORTUNITY_POOL_RESULT.md","stop_after":"WP-MC04"},
   "phase13_mc05":{"scope":"WP-MC05","status":"PASS","checkpoint_commit":"69b55bcb247459b085ca6e784207d6616692eac7","mc04_rule_changes":0,"provider_calls":0,"provider_calls_scope":"Search execution only; existing startup account-usage metadata refresh occurred without consumption change","email_sends":0,"result_report":"docs/PHASE13_MC05_RESEARCH_BATCH_RESULT.md","ui_report":"docs/PHASE13_MC05_UI_RESULT.md","stop_after":"WP-MC05"},
   "phase13_mc06":{"scope":"WP-MC06","status":"PASS","checkpoint_commit":"cf559d6db0b7b4baa68cc41af54a246b3fba97e0","search_calls":0,"email_sends":0,"mc07_started":false,"result_report":"docs/PHASE13_MC06_QUERY_MATRIX_RESULT.md","domain_report":"docs/PHASE13_MC06_DOMAIN_POLICY_RESULT.md","ui_report":"docs/PHASE13_MC06_UI_RESULT.md","stop_after":"WP-MC06"},
-  "next_allowed_work_package": "WP_MC06_STOP",
-  "explicit_stop_boundary": "Phase13 V2.1 WP-MC06 only: MC05 checkpoint preserved; MC04 rules and MC05 frozen-scope semantics unchanged. Deterministic query planning, domain policy, corroboration and V3 preview only. STOP after WP-MC06; do not begin MC07, enable Brave, run actual search, call Hunter/LLM or send email. Prior WP-MC05 STOP is historical. Preserve WP-A16 and WP-OQ09 acceptance, existing manual mail policy, Phase12 human screen-reader NOT_TESTED and no WCAG certification."
+  "next_allowed_work_package": "MC07_STOP",
+  "explicit_stop_boundary": "MC07 Full Automation is implemented and accepted. The automation master remains ON; Tavily Search is paused at confirmed provider capacity after 30 of 579 frozen queries, with 549 preserved and no new paid provider activated. Automatic first touch remains ON with DPV_FIRST_TOUCH_V1 and Simon. Automatic follow-up and Phone/WhatsApp automation remain OFF. Preserve completed WP-A16 and Phase 11 suppression controls. STOP after MC07."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+Current MC07 receipt (2026-09-08): Full Automation is PASS. The persisted master enables Search, Opportunity Auto Pool, Contact Research, Auto First-touch and IMAP Reply Monitor. The approved sender display name is Simon and the only automatic template set is `DPV_FIRST_TOUCH_V1`. The MC06 2-market × 13-category scope is frozen as ResearchBatch `d4ded788-6738-4fff-bb92-ce5a3944642d`; 30 of its 579 distinct Tavily queries completed before the provider confirmed exhausted capacity, and all 549 remaining queries are preserved. Search is paused independently; the other automation subsystems continue. The exactly-one deployment canary was accepted, after which normal automation sent one additional eligible company; two automatic messages total, zero duplicates. Automatic follow-up and Phone/WhatsApp automation remain OFF. See the six `PHASE13_MC07_*_RESULT.md` reports. STOP after MC07. Historical MC06 and manual-only boundaries below are superseded by this receipt.
 
 Emergency Git synchronization receipt (2026-09-08): remote CI correction `a78b7c5` was merged without discarding the accepted Phase13 work. The merge keeps the current MC06 STOP boundary and does not include local credentials, databases, exports or ignored evidence. Repository visibility is public, so private operational material requires a separate encrypted backup.
 

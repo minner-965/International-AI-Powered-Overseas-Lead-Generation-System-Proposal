@@ -88,7 +88,7 @@ if (phase12Active) {
   if(status.phase13_mc05){
     const mc=status.phase13_mc05;
     assert(status.phase13_mc04?.status==='PASS'&&mc.scope==='WP-MC05'&&['IN_PROGRESS','PASS'].includes(mc.status),'MC05 requires accepted MC04');
-    assert(mc.mc04_rule_changes===0&&mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC05'&&status.explicit_stop_boundary.includes('WP-MC05'),'MC05 must preserve accepted rules and STOP');
+    assert(mc.mc04_rule_changes===0&&mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC05'&&(status.phase13_mc06||status.phase13_mc07||status.explicit_stop_boundary.includes('WP-MC05')),'MC05 must preserve accepted rules and historical STOP');
     assert(/^[a-f0-9]{40}$/.test(mc.checkpoint_commit),'MC05 checkpoint required');
     if(mc.status==='PASS')assert(existsSync(join(root,mc.result_report))&&existsSync(join(root,mc.ui_report)),'MC05 reports required');
   }
@@ -99,7 +99,18 @@ if (phase12Active) {
     assert(/^[a-f0-9]{40}$/.test(mc.checkpoint_commit),'MC06 checkpoint required');
     if(mc.status==='PASS')for(const key of ['result_report','domain_report','ui_report'])assert(existsSync(join(root,mc[key])),'MC06 result required');
   }
-  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc06?'WP_MC06_STOP':status.phase13_mc05?'WP_MC05_STOP':status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  if(status.phase13_mc07){
+    const mc=status.phase13_mc07;
+    assert(status.phase13_mc06?.status==='PASS'&&mc.scope==='MC07_FULL_AUTOMATION'&&mc.status==='PASS','MC07 requires accepted MC06');
+    assert(mc.automation_master&&mc.search_automation&&mc.opportunity_auto_pool&&mc.contact_research_automation&&mc.auto_first_touch_email&&mc.inbound_reply_monitor,'MC07 enabled subsystem state is incomplete');
+    assert(mc.auto_email_followup_sequence===false&&mc.phone_whatsapp_automation===false&&mc.provider_spend_mode==='NO_NEW_PAID_SPEND','MC07 disabled automation and spend boundaries must remain explicit');
+    assert(mc.search_scopes===26&&mc.planned_queries===579&&mc.live_search_started===true,'MC07 must record the frozen live search plan');
+    assert(mc.completed_queries+mc.remaining_queries===mc.planned_queries,'MC07 search progress must reconcile to the frozen plan');
+    assert(['HEALTHY','PAUSED_PROVIDER_CAPACITY'].includes(mc.search_runtime_status),'MC07 search runtime state is invalid');
+    assert(mc.template_set==='DPV_FIRST_TOUCH_V1'&&mc.sender_display_name==='Simon'&&mc.auto_sent>=1&&mc.duplicate_sends===0,'MC07 first-touch acceptance facts are incomplete');
+    assert(mc.stop_after==='MC07'&&existsSync(join(root,mc.result_report)),'MC07 result and STOP boundary required');
+  }
+  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc07?'MC07_STOP':status.phase13_mc06?'WP_MC06_STOP':status.phase13_mc05?'WP_MC05_STOP':status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
   assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
@@ -162,7 +173,8 @@ if (status.current_active_phase === 'Phase 10') {
     assert(status.effective_runtime_flags[flag] === false, `Phase 11 readiness flag must remain false: ${flag}`);
   }
   if (phase12Active) {
-    assert(status.effective_runtime_flags.outbound_email_enabled===true && status.effective_runtime_flags.outreach_manual_send_only===true && status.effective_runtime_flags.outreach_worker_send_enabled===false, 'Phase 12 must preserve user-authorized manual sending with background delivery closed');
+    if(status.phase13_mc07)assert(status.effective_runtime_flags.outbound_email_enabled===true&&status.effective_runtime_flags.automated_acquisition===true&&status.effective_runtime_flags.auto_first_touch_email===true&&status.effective_runtime_flags.outreach_worker_send_enabled===true,'MC07 must record enabled automatic first touch');
+    else assert(status.effective_runtime_flags.outbound_email_enabled===true && status.effective_runtime_flags.outreach_manual_send_only===true && status.effective_runtime_flags.outreach_worker_send_enabled===false, 'Phase 12 must preserve user-authorized manual sending with background delivery closed');
     assert(status.effective_runtime_flags.outreach_send_scope==='PROSPECT_PILOT' && status.effective_runtime_flags.live_prospect_send_approved===true, 'Phase 12 must record actual manual dashboard send scope');
   } else {
     assert(status.effective_runtime_flags.outbound_email_enabled===false && status.effective_runtime_flags.outreach_send_scope==='DISABLED'&&status.effective_runtime_flags.live_prospect_send_approved===false,'Phase 11 historical acceptance leaves prospect sending closed');
@@ -171,7 +183,7 @@ if (status.current_active_phase === 'Phase 10') {
   assert(status.provider_configuration.outbound_email_provider === 'SMTP', 'Phase 11 must select the SMTP provider');
   assert(status.provider_configuration.inbound_email_provider === 'IMAP', 'Phase 11 must record IMAP as the inbound protocol');
   assert(status.provider_configuration.mail_provider_vendor === 'OQUMAIL', 'Phase 11 must record the selected company mailbox vendor');
-  assert(status.explicit_stop_boundary.includes('WP-OQ09'), 'Phase 11 STOP must name the completed suppression boundary');
+  assert(status.phase13_mc07||status.explicit_stop_boundary.includes('WP-OQ09'), 'Phase 11 STOP must name the completed suppression boundary');
 }
 assert(status.explicit_stop_boundary.includes('STOP'), 'Explicit STOP boundary is missing');
 assert(status.explicit_stop_boundary.includes('WP-A16'), 'STOP boundary must record completion through WP-A16');

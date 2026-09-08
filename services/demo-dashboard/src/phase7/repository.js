@@ -95,14 +95,17 @@ export class Phase7Repository {
   async listOutreachWorkbench(){
     const result=await this.pool.query(`SELECT c.id company_id,c.company_name,o.product_profile,
       o.id opportunity_id,o.display_opportunity_status opportunity_status,
-      s.id eligibility_snapshot_id,s.eligibility_status,s.input_digest,
-      r.id recipient_id,coalesce(r.normalized_recipient,contact.contact_value_normalized) recipient_email,
-      coalesce(r.verification_status,contact.verification_status) verification_status,
-      coalesce(r.verified_at,contact.last_verified_at) verified_at,
-      coalesce(r.verification_provider,contact.verification_provider) verification_provider,contact.evidence_origin verification_source,
-      d.id draft_id,d.draft_status,d.subject,d.body_text,d.version draft_version,d.submitted_at,
+      s.id eligibility_snapshot_id,CASE WHEN auto_r.id IS NOT NULL THEN 'ELIGIBLE' ELSE s.eligibility_status END eligibility_status,s.input_digest,
+      r.id recipient_id,coalesce(r.normalized_recipient,contact.contact_value_normalized,auto_r.normalized_recipient) recipient_email,
+      coalesce(r.verification_status,contact.verification_status,auto_contact.verification_status) verification_status,
+      coalesce(r.verified_at,contact.last_verified_at,auto_contact.last_verified_at) verified_at,
+      coalesce(r.verification_provider,contact.verification_provider,auto_contact.verification_provider) verification_provider,
+      coalesce(contact.evidence_origin,auto_contact.evidence_origin) verification_source,
+      d.id draft_id,d.draft_status,coalesce(d.subject,auto_r.subject) subject,coalesce(d.body_text,auto_r.body_text) body_text,d.version draft_version,d.submitted_at,
       a.id approval_id,m.id message_id,m.send_status,src.id evidence_source_id,
-      r.recipient_type,contact.source_url recipient_source,m.transport_status,m.receipt_evidence_status,
+      coalesce(r.recipient_type,auto_contact.contact_type) recipient_type,coalesce(contact.source_url,auto_contact.source_url) recipient_source,
+      m.transport_status,m.receipt_evidence_status,auto_r.id first_touch_reservation_id,auto_r.template_key,
+      (auto_r.id IS NOT NULL) automated_first_touch,
       CASE WHEN crm.funnel_status IN('OPTED_OUT','BOUNCED','REPLIED') THEN crm.funnel_status
         WHEN m.send_status='HARD_BOUNCED' THEN 'BOUNCED'
         WHEN reply.reply_category='OPT_OUT' THEN 'OPTED_OUT'
@@ -112,14 +115,17 @@ export class Phase7Repository {
       crm.next_action,reply.received_at last_reply_at,reply.reply_category reply_status,
       coalesce(sync.sync_status,'NOT_REQUIRED') crm_sync,
       EXISTS(SELECT 1 FROM leadgen.contact_suppressions x WHERE x.lifted_at IS NULL AND x.company_id=c.id AND
-        (x.contact_id=r.contact_id OR x.decision_maker_contact_id=r.decision_maker_contact_id OR
-        x.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(r.normalized_recipient)),'UTF8')),'hex'))) suppression,
+        (x.contact_id=r.contact_id OR x.decision_maker_contact_id=coalesce(r.decision_maker_contact_id,auto_r.decision_maker_contact_id) OR
+        x.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(coalesce(r.normalized_recipient,auto_r.normalized_recipient))),'UTF8')),'hex'))) suppression,
       coalesce(activity.events,'[]'::jsonb) activity,
       (m.send_status='BLOCKED' AND m.sent_at IS NULL AND m.provider_message_id IS NULL AND m.ambiguous_since IS NULL
         AND NOT EXISTS(SELECT 1 FROM leadgen.outbound_message_attempts x WHERE x.outbound_message_id=m.id AND x.provider_call_started_at IS NOT NULL)) retry_before_provider_possible
       FROM leadgen.business_opportunity_current o JOIN leadgen.companies c ON c.id=o.company_id
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_eligibility_snapshots x
         WHERE x.company_id=o.company_id AND x.product_profile=o.product_profile ORDER BY created_at DESC,id DESC LIMIT 1)s ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.phase13_first_touch_reservations x
+        WHERE x.company_id=o.company_id AND x.eligibility_snapshot->>'product_profile'=o.product_profile
+        ORDER BY x.created_at DESC,x.id DESC LIMIT 1)auto_r ON true
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_drafts x JOIN leadgen.outreach_eligibility_snapshots ds ON ds.id=x.eligibility_snapshot_id
         WHERE x.company_id=o.company_id AND ds.product_profile=o.product_profile ORDER BY x.created_at DESC,x.version DESC,x.id DESC LIMIT 1)d ON true
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_recipients x
@@ -128,9 +134,13 @@ export class Phase7Repository {
         AND x.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
         AND (r.decision_maker_contact_id IS NULL OR x.id=r.decision_maker_contact_id)
         ORDER BY (x.verification_status='VALID') DESC,x.last_verified_at DESC NULLS LAST,x.id LIMIT 1)contact ON true
+      LEFT JOIN leadgen.decision_maker_contacts auto_contact ON auto_contact.id=auto_r.decision_maker_contact_id
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outreach_approvals x WHERE x.draft_id=d.id
         AND x.content_hash=d.content_hash AND x.decision='APPROVED' ORDER BY approved_at DESC,id DESC LIMIT 1)a ON true
-      LEFT JOIN leadgen.outbound_messages m ON m.approval_id=a.id
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.outbound_messages x
+        WHERE (a.id IS NOT NULL AND x.approval_id=a.id)
+          OR (auto_r.id IS NOT NULL AND x.first_touch_reservation_id=auto_r.id)
+        ORDER BY x.queued_at DESC,x.id DESC LIMIT 1)m ON true
       LEFT JOIN leadgen.contact_work_queue q ON q.company_id=c.id AND q.product_profile=o.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
       LEFT JOIN leadgen.business_opportunity_management_events me ON me.id=q.management_event_id
       LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=o.id
@@ -141,7 +151,7 @@ export class Phase7Repository {
       LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('event_type',x.activity_type,'occurred_at',x.created_at) ORDER BY x.created_at) events
         FROM leadgen.opportunity_activities x WHERE x.record_scope='PROSPECT' AND x.company_id=c.id AND x.opportunity_snapshot_id=o.id)activity ON true
       LEFT JOIN LATERAL(SELECT x.id FROM leadgen.sources x WHERE x.company_id=c.id ORDER BY x.id LIMIT 1)src ON true
-      WHERE o.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED') OR d.id IS NOT NULL
+      WHERE o.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED') OR d.id IS NOT NULL OR auto_r.id IS NOT NULL
       ORDER BY c.company_name,o.product_profile LIMIT 100`);
     return attachContactProgress(this.pool,result.rows);
   }
@@ -149,8 +159,12 @@ export class Phase7Repository {
   async getOutreachOperationsSummary(){
     const result=await this.pool.query(`SELECT
       (SELECT count(*)::int FROM leadgen.outbound_messages m
-        JOIN leadgen.outreach_approvals a ON a.id=m.approval_id
-        LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=a.opportunity_snapshot_id
+        LEFT JOIN leadgen.outreach_approvals a ON a.id=m.approval_id
+        LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=coalesce(a.opportunity_snapshot_id,
+          (SELECT current.id FROM leadgen.business_opportunity_current current
+           JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.company_id=current.company_id
+            AND reservation.id=m.first_touch_reservation_id
+           WHERE current.product_profile=reservation.eligibility_snapshot->>'product_profile' LIMIT 1))
         LEFT JOIN LATERAL(SELECT rc.reply_category FROM leadgen.inbound_messages i
           LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x
             WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)rc ON true
@@ -1138,6 +1152,34 @@ export class Phase7Repository {
   }
 
   async getOutboundMessage(id) {
+    const messageId=requiredUuid(id,'message_id');
+    const automated=await this.pool.query(`SELECT m.*,reservation.normalized_recipient,reservation.sender_identity from_identity,
+      reservation.reply_to,reservation.subject,reservation.body_text,reservation.content_hash,reservation.template_set_key template_version,
+      reservation.template_key,reservation.policy_revision,reservation.eligibility_snapshot,
+      'en'::text language,'AUTO_APPROVED'::text draft_status,'APPROVED'::text approval_decision,
+      recipient.verification_status recipient_verification_status,recipient.verified_at,
+      recipient.lifecycle_status recipient_lifecycle_status,recipient.recipient_type,
+      recipient.recipient_source_class,recipient.recipient_domain_verified,recipient.contact_id,recipient.decision_maker_contact_id,
+      company.verification_status company_verification_status,company.lifecycle_status company_lifecycle_status,
+      opportunity.id opportunity_pool_decision_id,opportunity.opportunity_pool_band,
+      opportunity.is_active_business_opportunity,opportunity.profile_results,
+      EXISTS(SELECT 1 FROM leadgen.company_suppressions suppression WHERE suppression.company_id=m.company_id AND suppression.lifted_at IS NULL) company_suppressed,
+      (EXISTS(SELECT 1 FROM leadgen.outreach_recipient_suppressions suppression
+        WHERE suppression.company_id=m.company_id AND suppression.normalized_recipient_hash=encode(sha256(convert_to(lower(btrim(reservation.normalized_recipient)),'UTF8')),'hex') AND suppression.lifted_at IS NULL)
+       OR EXISTS(SELECT 1 FROM leadgen.contact_suppressions suppression WHERE suppression.company_id=m.company_id
+        AND suppression.lifted_at IS NULL AND ((recipient.contact_id IS NOT NULL AND suppression.contact_id=recipient.contact_id)
+          OR (recipient.decision_maker_contact_id IS NOT NULL AND suppression.decision_maker_contact_id=recipient.decision_maker_contact_id)))) contact_suppressed,
+      (SELECT count(*)::int FROM leadgen.outbound_messages x WHERE x.send_status IN('PROVIDER_ACCEPTED','DELIVERED') AND x.sent_at>=now()-interval '1 minute') sent_last_minute,
+      (SELECT count(*)::int FROM leadgen.outbound_messages x WHERE x.send_status IN('PROVIDER_ACCEPTED','DELIVERED') AND x.sent_at>=date_trunc('day',now())) sent_today,
+      (SELECT count(*)::int FROM leadgen.outbound_messages x WHERE x.company_id=m.company_id AND x.id<>m.id
+        AND x.send_status IN('PROVIDER_ACCEPTED','DELIVERED') AND x.sent_at>=now()-interval '30 days') company_sent_30d
+      FROM leadgen.outbound_messages m
+      JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=m.first_touch_reservation_id
+      JOIN leadgen.companies company ON company.id=m.company_id
+      LEFT JOIN leadgen.outreach_recipients recipient ON recipient.id=m.recipient_id
+      LEFT JOIN leadgen.opportunity_pool_current opportunity ON opportunity.company_id=m.company_id
+      WHERE m.id=$1`,[messageId]);
+    if(automated.rowCount)return automated.rows[0];
     const result = await this.pool.query(`SELECT m.*,a.draft_id,a.draft_version,a.normalized_recipient,a.from_identity,a.reply_to,
       a.opportunity_snapshot_id,a.management_event_id,a.recipient_route_snapshot_hash,a.expires_at,
       a.approval_digest,a.content_hash,a.evidence_snapshot_hash,a.product_profile,a.channel,a.decision approval_decision,
@@ -1175,7 +1217,7 @@ export class Phase7Repository {
       LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=m.company_id AND o.product_profile=a.product_profile
       LEFT JOIN leadgen.decision_makers dm ON dm.id=s.decision_maker_id
       LEFT JOIN leadgen.contact_work_queue q ON q.company_id=m.company_id AND q.product_profile=a.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
-      WHERE m.id=$1`, [requiredUuid(id, 'message_id')]);
+      WHERE m.id=$1`, [messageId]);
     return result.rows[0] || null;
   }
 
@@ -1386,8 +1428,10 @@ export class Phase7Repository {
       const bare=clean.replace(/^<|>$/g,'');return[clean,bare,`<${bare}>`];
     }))];
     if(!values.length)return null;
-    const result=await this.pool.query(`SELECT m.*,r.normalized_recipient FROM leadgen.outbound_messages m
-      JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+    const result=await this.pool.query(`SELECT m.*,coalesce(r.normalized_recipient,reservation.normalized_recipient) normalized_recipient
+      FROM leadgen.outbound_messages m
+      LEFT JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+      LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=m.first_touch_reservation_id
       WHERE m.rfc_message_id=ANY($1::text[]) ORDER BY m.created_at DESC LIMIT 1`,[values]);
     return result.rows[0]||null;
   }
@@ -1578,7 +1622,7 @@ export class Phase7Repository {
       attempt_count=attempt_count+1,last_error=$2,updated_at=now() WHERE id=$1 RETURNING *`,[id,String(error||'QUEUE_DISPATCH_FAILED').slice(0,1000)])).rows[0];
   }
 
-  async findInboundThread({ inReplyTo = null, references = [], messageKey = null, providerThreadId = null } = {}) {
+  async findInboundThread({ inReplyTo = null, references = [], messageKey = null, providerThreadId = null, normalizedSender = null } = {}) {
     const variants=value=>{const bare=String(value||'').replace(/[<>]/g,'').trim();return bare?[bare,`<${bare}>`]:[];};
     const replyValues=[...new Set(variants(inReplyTo))];const referenceValues=[...new Set((references||[]).flatMap(variants))];
     const result = await this.pool.query(`SELECT t.id,t.company_id,t.recipient_id,m.id outbound_message_id,
@@ -1586,25 +1630,33 @@ export class Phase7Repository {
            WHEN m.rfc_message_id=ANY($2::text[]) THEN 'REFERENCES'
            WHEN m.message_key_header=$3 THEN 'MESSAGE_KEY'
            WHEN m.provider_thread_id=$4 THEN 'PROVIDER_THREAD' END correlation_method
-      FROM leadgen.outreach_threads t
-      JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
-      LEFT JOIN leadgen.outbound_messages m ON m.company_id=t.company_id AND m.recipient_id=t.recipient_id
-      WHERE t.thread_status IN('OPEN','REPLIED','MANUAL_TAKEOVER') AND (
+      FROM leadgen.outbound_messages m
+      JOIN leadgen.outreach_threads t ON t.company_id=m.company_id AND (
+        (t.recipient_id IS NOT NULL AND t.recipient_id=m.recipient_id)
+        OR (t.first_touch_reservation_id IS NOT NULL AND t.first_touch_reservation_id=m.first_touch_reservation_id))
+      LEFT JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
+      LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=t.first_touch_reservation_id
+      WHERE t.thread_status IN('OPEN','REPLIED','MANUAL_TAKEOVER')
+      AND ($5::text='' OR lower(coalesce(r.normalized_recipient,reservation.normalized_recipient))=lower($5)) AND (
         m.rfc_message_id=ANY($1::text[]) OR m.rfc_message_id=ANY($2::text[]) OR m.message_key_header=$3 OR m.provider_thread_id=$4)
-      ORDER BY CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 1 WHEN m.rfc_message_id=ANY($2::text[]) THEN 2 WHEN m.message_key_header=$3 THEN 3 ELSE 4 END,t.updated_at DESC LIMIT 1`,[replyValues,referenceValues,messageKey||null,providerThreadId||null]);
+      ORDER BY CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 1 WHEN m.rfc_message_id=ANY($2::text[]) THEN 2 WHEN m.message_key_header=$3 THEN 3 ELSE 4 END,t.updated_at DESC LIMIT 1`,[replyValues,referenceValues,messageKey||null,providerThreadId||null,String(normalizedSender||'').trim().toLowerCase()]);
     return result.rows[0] || null;
   }
 
   async getInboundForTask(id) {
-    const result = await this.pool.query(`SELECT i.*,t.company_id,t.recipient_id,t.thread_status,
+    const result = await this.pool.query(`SELECT i.*,coalesce(t.company_id,m.company_id) company_id,t.recipient_id,t.thread_status,
       c.id classification_id,c.intent,c.reply_category,c.classification_revision,c.confidence,c.reason_codes classification_reason_codes,
       o.id opportunity_snapshot_id,coalesce(q.owner_identity,me.actor_identity) owner_identity
       FROM leadgen.inbound_messages i
       LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
+      LEFT JOIN leadgen.outbound_messages m ON m.id=i.correlation_outbound_message_id
       LEFT JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
       LEFT JOIN leadgen.outreach_eligibility_snapshots s ON s.id=r.eligibility_snapshot_id
-      LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=t.company_id AND o.product_profile=s.product_profile
-      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=t.company_id AND q.product_profile=s.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
+      LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=coalesce(t.first_touch_reservation_id,m.first_touch_reservation_id)
+      LEFT JOIN leadgen.business_opportunity_current o ON o.company_id=coalesce(t.company_id,m.company_id)
+        AND o.product_profile=coalesce(s.product_profile,reservation.eligibility_snapshot->>'product_profile')
+      LEFT JOIN leadgen.contact_work_queue q ON q.company_id=coalesce(t.company_id,m.company_id)
+        AND q.product_profile=o.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
       LEFT JOIN leadgen.business_opportunity_management_events me ON me.id=q.management_event_id
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x
         WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)c ON true
@@ -1625,20 +1677,25 @@ export class Phase7Repository {
     const companyId = company_id ? requiredUuid(company_id,'company_id') : null;
     const result = await this.pool.query(`SELECT i.id,i.provider,i.provider_message_id,i.thread_id,i.correlation_status,
       i.subject_sanitized,i.body_text_sanitized,i.attachment_status,i.received_at,
-      c.intent,c.confidence,c.review_status,t.company_id,t.thread_status
+      c.intent,c.confidence,c.review_status,coalesce(t.company_id,m.company_id) company_id,t.thread_status
       FROM leadgen.inbound_messages i
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)c ON true
       LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
-      WHERE ($2::uuid IS NULL OR t.company_id=$2)
+      LEFT JOIN leadgen.outbound_messages m ON m.id=i.correlation_outbound_message_id
+      WHERE ($2::uuid IS NULL OR coalesce(t.company_id,m.company_id)=$2)
       ORDER BY i.received_at DESC LIMIT $1`, [Math.max(1, Math.min(500, Number(limit) || 100)),companyId]);
     return result.rows;
   }
 
   async suppressRecipientForMessage(messageId, suppressionType, sourceEventId, { companyWide = false } = {}) {
     return this.transaction(async client => {
-      const recipient = await client.query(`SELECT m.company_id,r.contact_id,r.decision_maker_contact_id,r.normalized_recipient
-        FROM leadgen.outbound_messages m JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
-        WHERE m.id=$1 FOR UPDATE OF r`, [messageId]);
+      const recipient = await client.query(`SELECT m.company_id,r.contact_id,
+          coalesce(r.decision_maker_contact_id,reservation.decision_maker_contact_id) decision_maker_contact_id,
+          coalesce(r.normalized_recipient,reservation.normalized_recipient) normalized_recipient
+        FROM leadgen.outbound_messages m
+        LEFT JOIN leadgen.outreach_recipients r ON r.id=m.recipient_id
+        LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=m.first_touch_reservation_id
+        WHERE m.id=$1 FOR UPDATE OF m`, [messageId]);
       if (!recipient.rowCount) return null;
       const row=recipient.rows[0];
       const result=await client.query(`INSERT INTO leadgen.contact_suppressions
@@ -1681,9 +1738,15 @@ export class Phase7Repository {
 
   async suppressRecipientForInbound(inboundMessageId, { companyWide = false } = {}) {
     return this.transaction(async client => {
-      const recipient=await client.query(`SELECT t.company_id,r.contact_id,r.decision_maker_contact_id,r.normalized_recipient,t.id thread_id
-        FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
-        JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id WHERE i.id=$1 FOR UPDATE OF t,r`, [inboundMessageId]);
+      const recipient=await client.query(`SELECT coalesce(t.company_id,m.company_id) company_id,r.contact_id,
+          coalesce(r.decision_maker_contact_id,reservation.decision_maker_contact_id) decision_maker_contact_id,
+          coalesce(r.normalized_recipient,reservation.normalized_recipient) normalized_recipient,t.id thread_id
+        FROM leadgen.inbound_messages i
+        LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
+        LEFT JOIN leadgen.outbound_messages m ON m.id=i.correlation_outbound_message_id
+        LEFT JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
+        LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=coalesce(t.first_touch_reservation_id,m.first_touch_reservation_id)
+        WHERE i.id=$1 FOR UPDATE OF i`, [inboundMessageId]);
       if(!recipient.rowCount)return null;
       const row=recipient.rows[0];
       const inserted=await client.query(`INSERT INTO leadgen.contact_suppressions
@@ -1694,7 +1757,7 @@ export class Phase7Repository {
       await client.query(`INSERT INTO leadgen.outreach_recipient_suppressions(company_id,normalized_recipient_hash,suppression_type,source_inbound_message_id,recorded_by) VALUES($1,$2,'OPT_OUT',$3,'INBOUND_REPLY') ON CONFLICT DO NOTHING`,[row.company_id,recipientHash,inboundMessageId]);
       if(companyWide)await client.query(`INSERT INTO leadgen.company_suppressions(company_id,suppression_type,reason)
         VALUES($1,'OPT_OUT','Explicit company-wide opt-out') ON CONFLICT DO NOTHING`,[row.company_id]);
-      await client.query(`UPDATE leadgen.outreach_threads SET thread_status='SUPPRESSED',updated_at=now() WHERE id=$1`,[row.thread_id]);
+      if(row.thread_id)await client.query(`UPDATE leadgen.outreach_threads SET thread_status='SUPPRESSED',updated_at=now() WHERE id=$1`,[row.thread_id]);
       await client.query(`UPDATE leadgen.outreach_recipients SET lifecycle_status='SUPPRESSED',consent_status='OPTED_OUT',updated_at=now() WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)`,[row.company_id,row.normalized_recipient]);
       await client.query(`UPDATE leadgen.outreach_drafts SET draft_status='CANCELLED',updated_at=now() WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)) AND draft_status IN('DRAFT','INVALID_DRAFT','PENDING_REVIEW','NEEDS_CHANGES','APPROVED')`,[row.company_id,row.normalized_recipient]);
       await client.query(`UPDATE leadgen.outbound_messages SET send_status='CANCELLED',reason_codes=ARRAY(SELECT DISTINCT unnest(reason_codes||ARRAY['OPT_OUT_SUPPRESSED']::text[])),updated_at=now() WHERE recipient_id IN(SELECT id FROM leadgen.outreach_recipients WHERE company_id=$1 AND lower(normalized_recipient)=lower($2)) AND send_status IN('QUEUED','BLOCKED')`,[row.company_id,row.normalized_recipient]);

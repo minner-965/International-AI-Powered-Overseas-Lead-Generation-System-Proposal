@@ -70,9 +70,11 @@ import { contactProgressLabel, contactNextAction, initialContactPending } from '
 import { subscribeCommunicationChanges } from './ui/communication-sync.js';
 import { mountRecordViews } from './ui/v3/records.js';
 import { upgradeCompanyDetail, mountContactReady, mountCompanyFilters } from './ui/v3/companies.js';
+import { mountAutomationControl } from './ui/v3/automation-control.js';
 
 mountOverview();
 mountRecordViews();
+mountAutomationControl();
 const contactReadyView=mountContactReady(document.querySelector('#view-contact-ready'),{request:managementRequest,openCompany:id=>showLead(id),openReview:companyId=>document.dispatchEvent(new CustomEvent('crm:openoutreach',{detail:{companyId}}))});
 document.addEventListener('crm:viewchange',event=>{if(event.detail?.view==='contact-ready')void contactReadyView?.refresh();});
 if(location.hash==='#contact-ready')void contactReadyView?.refresh();

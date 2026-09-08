@@ -24,7 +24,8 @@ test('pending counts typed action units with separate breakdown, not evidence to
 test('operations projection remains read-only and keeps controlled rows separate',async()=>{
   let sql='';const repo=new Phase7Repository({pool:{query:async text=>{sql=text;return{rows:[{sent_no_reply:1,pending_followups:2,controlled_sent:4,controlled_contexts:1,controlled_inbound:3,controlled_suppressed:1}]};}}});
   const result=await repo.getOutreachOperationsSummary();assert.equal(result.prospect.sent_no_reply,1);assert.equal(result.controlled.sent,4);
-  assert.match(sql,/record_scope='PROSPECT'/);assert.match(sql,/crm\.opportunity_snapshot_id=a\.opportunity_snapshot_id/);
+  assert.match(sql,/record_scope='PROSPECT'/);assert.match(sql,/crm\.opportunity_snapshot_id=coalesce\(a\.opportunity_snapshot_id/);
+  assert.match(sql,/reservation\.id=m\.first_touch_reservation_id/);
   assert.match(sql,/i\.correlation_outbound_message_id=m\.id/);assert.match(sql,/ELSE m\.business_contact_status END='SENT_NO_REPLY'/);
   assert.doesNotMatch(sql,/\b(UPDATE|INSERT|DELETE)\b/);assert.doesNotMatch(sql.split('sent_no_reply,')[0],/controlled_application/);
 });

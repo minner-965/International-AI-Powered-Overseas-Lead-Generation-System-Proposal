@@ -9,7 +9,7 @@ export function searchRequestFingerprint({provider,researchJobId,companyId=null,
 // Unfinished claims are
 // deliberately held for investigation rather than automatically repeated/billed.
 export class SearchUsageAudit{
-  constructor({provider,pool=null,now=()=>new Date()}={}){this.provider=provider;this.pool=pool;this.now=now;this.local=new Map();}
+  constructor({provider,pool=null,now=()=>new Date(),retrySafeFailures=false}={}){this.provider=provider;this.pool=pool;this.now=now;this.local=new Map();this.retrySafeFailures=retrySafeFailures;}
   async search({researchJobId,companyId=null,productProfile=null,purpose,budgetPool='DISCOVERY',request,persistResults=null,loadPersistedResults=null}){
     if(!researchJobId||!purpose)throw Object.assign(new Error('Research job and purpose are required'),{code:'SEARCH_AUDIT_CONTEXT_REQUIRED'});
     const provider=String(this.provider.name).toUpperCase();
@@ -27,6 +27,10 @@ export class SearchUsageAudit{
       event=inserted.rows[0]||(await this.pool.query('SELECT * FROM leadgen.provider_usage_events WHERE provider=$1 AND request_fingerprint=$2',[provider,fingerprint])).rows[0];
     }else{
       event=this.local.get(fingerprint);if(!event){event={id:randomUUID(),status:'RESERVED',result_payload:{audit}};this.local.set(fingerprint,event);claimed=true;}
+    }
+    if(!claimed&&this.retrySafeFailures&&['RATE_LIMITED','CREDIT_EXHAUSTED','AUTHENTICATION_FAILED','AUTH_ERROR','MISSING_API_KEY'].includes(event?.error_code)&&Number(event.used_units||0)===0){
+      if(this.pool){const retried=await this.pool.query(`UPDATE leadgen.provider_usage_events SET status='RESERVED',error_code=NULL,completed_at=NULL WHERE id=$1 AND status IN('FAILED','TEMPORARY_ERROR') AND used_units=0 RETURNING *`,[event.id]);claimed=retried.rowCount>0;event=retried.rows[0]||event;}
+      else if(['FAILED','TEMPORARY_ERROR'].includes(event.status)){claimed=true;event.status='RESERVED';}
     }
     if(!claimed){
       if(['COMPLETED','NOT_FOUND'].includes(event?.status)){
@@ -50,10 +54,12 @@ export class SearchUsageAudit{
         await save('RESERVED');
       }});
       audit.result_count=response.results.length;
+      audit.provider_used_units=Number(response.credits||0);
       audit.results=response.results.slice(0,20).map(row=>({title:String(row.title||'').slice(0,500),url:String(row.url||'').slice(0,2000),snippet:String(row.snippet||'').slice(0,2000),rank:row.rank}));
       const persisted=await persistResults?.(response.results)||{};
       audit.reference_ids=(persisted.referenceIds||[]).map(String).slice(0,20);
       await save(response.results.length?'COMPLETED':'NOT_FOUND');
+      if(this.pool&&Number.isFinite(audit.provider_used_units))await this.pool.query('UPDATE leadgen.provider_usage_events SET used_units=$2 WHERE id=$1',[event.id,audit.provider_used_units]);
     }catch(error){
       // A provider result followed by a persistence failure must never be silently replayed.
       await save(error.retryable?'TEMPORARY_ERROR':'FAILED',response?'RESULT_PERSIST_FAILED':String(error.code||'SEARCH_ERROR').slice(0,120));

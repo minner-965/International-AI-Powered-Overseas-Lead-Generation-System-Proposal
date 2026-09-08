@@ -96,7 +96,12 @@ test('explicit migration runner applies Phase 10 migrations in order through cat
   assert.ok(runner.indexOf('phase11ControlledApplication=await applyPhase7Migration')>runner.indexOf('phase11SuppressionClosedLoop=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase11VersionPayloadGuard=await applyPhase7Migration')>runner.indexOf('phase11ControlledApplication=await applyPhase7Migration'));
   assert.ok(runner.indexOf('phase11ControlledSharedCrm=await applyPhase7Migration')>runner.indexOf('phase11VersionPayloadGuard=await applyPhase7Migration'));
-  assert.match(runner,/status:phase11ControlledSharedCrm\.status/);
+  assert.ok(runner.indexOf('phase13OpportunityPool=await applyPhase7Migration')>runner.indexOf('phase11ControlledSharedCrm=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase13ResearchBatch=await applyPhase7Migration')>runner.indexOf('phase13OpportunityPool=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase13SearchPlanning=await applyPhase7Migration')>runner.indexOf('phase13ResearchBatch=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase13AutomationControl=await applyPhase7Migration')>runner.indexOf('phase13SearchPlanning=await applyPhase7Migration'));
+  assert.ok(runner.indexOf('phase13AutoReplyBridge=await applyPhase7Migration')>runner.indexOf('phase13AutomationControl=await applyPhase7Migration'));
+  assert.match(runner,/status:phase13AutoReplyBridge\.status/);
 });
 
 test('048 moves automatic evidence identity to target category scope while preserving legacy profile metadata',()=>{

@@ -366,7 +366,7 @@ export class EnrichmentService {
     const existing=await client.query(`WITH target AS (
       SELECT company_id FROM leadgen.decision_makers WHERE id=$1
     ), locked AS (
-      SELECT pg_advisory_xact_lock(hashtextextended(concat_ws('|',(SELECT company_id::text FROM target),$2,lower(btrim($3))),0))
+      SELECT pg_advisory_xact_lock(hashtextextended(concat_ws('|',(SELECT company_id::text FROM target),$2::text,lower(btrim($3::text))),0))
     )
     SELECT dc.* FROM leadgen.decision_maker_contacts dc
     JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
@@ -828,6 +828,9 @@ export class EnrichmentService {
       ]);
       return { company_id:company.id,status:partial?'PARTIAL':'COMPLETE',pages,findings,hunter,feasibility };
     } catch (error) {
+      this.audit('PHASE6_COMPANY_ENRICHMENT_FAILED',{job_id:job.id,company_id:company.id,
+        code:error?.code||'ENRICHMENT_ERROR',position:error?.position||null,routine:error?.routine||null,
+        stack:clean(error?.stack||error?.message,1600)});
       await this.pool.query(`UPDATE leadgen.enrichment_job_companies SET attempt_status='FAILED',last_error=$3,completed_at=now(),updated_at=now() WHERE research_job_id=$1 AND company_id=$2`,[
         job.id,company.id,clean(error.message,500)
       ]);

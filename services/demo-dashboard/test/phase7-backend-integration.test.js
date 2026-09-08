@@ -234,7 +234,7 @@ test('repository keeps immutable conflicts insert-only, filters inbox by company
   const repository=await textFile('services/demo-dashboard/src/phase7/repository.js');
   assert.doesNotMatch(repository,/business_opportunity_management_events[\s\S]{0,800}ON CONFLICT\(idempotency_key\) DO UPDATE/);
   assert.doesNotMatch(repository,/email_message_events[\s\S]{0,500}ON CONFLICT\(event_digest\) DO UPDATE/);
-  assert.match(repository,/WHERE \(\$2::uuid IS NULL OR t\.company_id=\$2\)/);
+  assert.match(repository,/WHERE \(\$2::uuid IS NULL OR coalesce\(t\.company_id,m\.company_id\)=\$2\)/);
   assert.match(repository,/refreshOpportunityDecisions/);
   assert.match(repository,/INSERT INTO leadgen\.business_opportunity_decision_snapshots/);
   assert.match(repository,/INSERT INTO leadgen\.outreach_eligibility_snapshots/);

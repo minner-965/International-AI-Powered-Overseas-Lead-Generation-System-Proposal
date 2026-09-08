@@ -12,10 +12,10 @@ export function isNonRetryableResearchInputError(error){
 }
 
 export class ResearchDirectDispatchService {
-  constructor({pool,queue,executor=null,audit=()=>{}}={}) {
+  constructor({pool,queue,executor=null,audit=()=>{},isEnabled=async()=>true}={}) {
     if(!pool)throw new Error('ResearchDirectDispatchService requires a PostgreSQL pool');
     if(!queue)throw new Error('ResearchDirectDispatchService requires a queue');
-    this.pool=pool;this.queue=queue;this.executor=executor;this.audit=audit;
+    this.pool=pool;this.queue=queue;this.executor=executor;this.audit=audit;this.isEnabled=isEnabled;
   }
 
   async createAtomic(createJob) {
@@ -34,6 +34,7 @@ export class ResearchDirectDispatchService {
   }
 
   async dispatch(researchJobId) {
+    if(!await this.isEnabled())return {state:'PAUSED_AUTOMATION_OFF',queue_job_id:null};
     let result=await this.pool.query(`SELECT o.*,j.status job_status FROM leadgen.research_job_dispatch_outbox o
       JOIN leadgen.research_jobs j ON j.id=o.research_job_id WHERE o.research_job_id=$1`,[researchJobId]);
     if(!result.rowCount){
@@ -95,6 +96,14 @@ export class ResearchJobDirectExecutor {
     await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET checkpoint=$2,updated_at=now() WHERE research_job_id=$1`,[jobId,name]);
   }
 
+  async pause(jobId,status) {
+    await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='RETRY_PENDING',
+      last_error_code=$2,next_attempt_at=now()+interval '10 minutes',updated_at=now() WHERE research_job_id=$1`,[jobId,status]);
+    await this.pool.query(`UPDATE leadgen.research_jobs SET blocked_reason=$2,dispatch_state='WORKFLOW_INACTIVE',
+      next_dispatch_attempt_at=now()+interval '10 minutes' WHERE id=$1`,[jobId,status]);
+    return {research_job_id:jobId,status,paused:true};
+  }
+
   async setStatus(jobId,status,{terminal=false}={}) {
     await this.pool.query(`UPDATE leadgen.research_jobs SET status=$2,
       started_at=CASE WHEN $2='DISCOVERING' THEN coalesce(started_at,now()) ELSE started_at END,
@@ -121,7 +130,11 @@ export class ResearchJobDirectExecutor {
     const done=name=>order.indexOf(checkpoint)>=order.indexOf(name);
     try{
       if(!done('QUERIES_GENERATED')){await this.setStatus(jobId,'DISCOVERING');await this.stages.generateQueries?.(jobId);await this.checkpoint(jobId,'QUERIES_GENERATED');checkpoint='QUERIES_GENERATED';}
-      if(!done('DISCOVERY_COMPLETED')){await this.stages.discover?.(jobId);await this.checkpoint(jobId,'DISCOVERY_COMPLETED');checkpoint='DISCOVERY_COMPLETED';}
+      if(!done('DISCOVERY_COMPLETED')){
+        const discovery=await this.stages.discover?.(jobId);
+        if(discovery?.paused)return this.pause(jobId,discovery.status||'PAUSED_SEARCH_REVIEW');
+        await this.checkpoint(jobId,'DISCOVERY_COMPLETED');checkpoint='DISCOVERY_COMPLETED';
+      }
       if(!done('CONTACTS_CHECKED')){await this.stages.checkContacts?.(jobId);await this.checkpoint(jobId,'CONTACTS_CHECKED');checkpoint='CONTACTS_CHECKED';}
       if(!done('COMPANIES_VERIFIED')){await this.setStatus(jobId,'CRAWLING');await this.stages.verify?.(jobId);await this.setStatus(jobId,'QUALIFYING');await this.checkpoint(jobId,'COMPANIES_VERIFIED');checkpoint='COMPANIES_VERIFIED';}
       if(!done('SCORING_COMPLETED')){await this.setStatus(jobId,'SCORING');await this.stages.score?.(jobId,executionKey);await this.checkpoint(jobId,'SCORING_COMPLETED');checkpoint='SCORING_COMPLETED';}

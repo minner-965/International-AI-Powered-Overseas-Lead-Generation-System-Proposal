@@ -4,7 +4,6 @@ import pg from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { load } from 'cheerio';
 import { resolveMx } from 'node:dns/promises';
-import { persistGeneratedQueries, discoverResearchCandidates } from './search/discoveryService.js';
 import { checkResearchCandidateContacts } from './contact/researchContactService.js';
 import { verifyResearchCandidates } from './verification/companyVerificationService.js';
 import { getMarketProfile, listConfiguredMarkets } from './market/marketProfiles.js';
@@ -41,6 +40,13 @@ import {SearchPlanService} from './searchPlanning/SearchPlanService.js';
 import {createResearchBatchRouter} from './research/researchBatchRouter.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
+import {CurrentCapacityRouter} from './search/CurrentCapacityRouter.js';
+import {FrozenSearchPlanExecutor} from './search/FrozenSearchPlanExecutor.js';
+import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
+import {AutomationControlService} from './automation/AutomationControlService.js';
+import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
+import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
+import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
 
 const { Pool } = pg;
 const app = express();
@@ -114,6 +120,14 @@ const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:sea
   timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
 const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
 const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState});
+const automationControls=new AutomationControlService({pool});
+const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,
+  providerState:()=>tavilyProviderAccountState.getState(),providerOrder:['tavily'],audit});
+const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,
+  getOrder:()=>phase13Automation.currentProviderOrder(),
+  getStates:async()=>({tavily:await tavilyProviderAccountState.getState()})});
+const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
+  isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -415,6 +429,8 @@ const enqueueAutoEvidenceEvent=(eventKey,payload={})=>phase5Queue.enqueue(PHASE5
 
 let researchDirectDispatchService;
 let researchDirectExecutor;
+let searchPlanService;
+let autoFirstTouchService;
 
 const phase5Queue = createPhase5Queue({
   telemetry,
@@ -462,6 +478,7 @@ const phase5Queue = createPhase5Queue({
     [PHASE5_QUEUES.RECALCULATE_COOPERATION_V3]: recalculateCooperationV3Work,
     ...autoEvidenceQueueHandlers,
     ...phase7QueueHandlers,
+    [PHASE5_QUEUES.SEND_AUTO_FIRST_TOUCH]:data=>autoFirstTouchService.sendReservation(data.reservation_id),
     [PHASE5_QUEUES.EXECUTE_RESEARCH_JOB]:data=>researchDirectDispatchService.execute(data)
   }
 });
@@ -471,10 +488,24 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
     const client=await pool.connect();
     try{await client.query('BEGIN');const job=await client.query('SELECT * FROM leadgen.research_jobs WHERE id=$1',[jobId]);
       if(!job.rowCount)throw Object.assign(new Error('Research job not found'),{code:'RESEARCH_JOB_NOT_FOUND'});
-      await persistGeneratedQueries(client,job.rows[0],searchConfig);await client.query('COMMIT');
+      const existing=await client.query('SELECT id FROM leadgen.research_query_plans WHERE research_job_id=$1',[jobId]);
+      if(!existing.rowCount){
+        const j=job.rows[0];
+        const category=await client.query(`SELECT id,normalized_category,product_profile FROM leadgen.dpv_product_category_scope_current
+          WHERE id=$1 OR normalized_category=lower($2) ORDER BY (id=$1) DESC LIMIT 1`,[j.target_category_scope_id,j.product_category]);
+        if(!category.rowCount)throw Object.assign(new Error('Approved target category scope is required'),{code:'TARGET_CATEGORY_REQUIRED',retryable:false});
+        await searchPlanService.store(client,{jobId,snapshot:{version:1,scopes:[{
+          market_code:j.country_code,country_code:j.country_code,country_name:j.country_name||j.country,
+          category_scope_id:category.rows[0].id,category_code:category.rows[0].normalized_category,
+          product_category:category.rows[0].normalized_category,product_profile:category.rows[0].product_profile,
+          buyer_types:j.buyer_types||[],languages:j.preferred_language?[j.preferred_language]:[],
+          preferred_language:j.preferred_language,city:j.city,region:j.region,max_results:j.max_results
+        }]}});
+      }
+      await client.query('COMMIT');
     }catch(error){try{await client.query('ROLLBACK');}catch{}throw error;}finally{client.release();}
   },
-  discover:jobId=>discoverResearchCandidates(pool,jobId,searchConfig,{tavilyUsageConfig}),
+  discover:jobId=>frozenSearchExecutor.executeJob(jobId),
   checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
   verify:async jobId=>{
     const verified=await verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true});
@@ -499,11 +530,16 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
     return downstream;
   }
 }});
-researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,audit});
-const searchPlanService=new SearchPlanService({pool});
+researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,audit,
+  isEnabled:()=>phase13Automation.isSearchEnabled()});
+searchPlanService=new SearchPlanService({pool});
 const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,planning:searchPlanService,
   ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
   runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
+autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
+  automationControl:phase13Automation,
+  loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
+  env:process.env});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -553,6 +589,29 @@ function requireInternalToken(req, res, next) {
 }
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
+const automationRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
+const automationWrite=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN')];
+app.get('/api/automation/control',...automationRead,async(_req,res,next)=>{
+  try{res.json(await phase13Automation.getState());}catch(error){next(error);}
+});
+app.get('/api/automation/status',...automationRead,async(_req,res,next)=>{
+  try{res.json(await phase13Automation.status());}catch(error){next(error);}
+});
+app.put('/api/automation/control',...automationWrite,async(req,res,next)=>{
+  try{
+    if(typeof req.body?.enabled!=='boolean')return res.status(400).json({code:'AUTOMATION_ENABLED_REQUIRED'});
+    const result=await phase13Automation.setMaster({enabled:req.body.enabled,actor:req.managementUser.identity,
+      reason:req.body.enabled?'Management enabled automated acquisition':'Management paused automated acquisition',
+      idempotencyKey:String(req.get('idempotency-key')||randomUUID())});
+    if(req.body.enabled){await researchDirectDispatchService.reconcile({limit:25});await reconcileContactResearch({limit:5});await reconcileAutoFirstTouch({limit:1});}
+    res.json(result.state);
+  }catch(error){next(error);}
+});
+app.post('/api/automation/reconcile',...automationWrite,async(req,res,next)=>{
+  try{res.status(202).json({search:await researchDirectDispatchService.reconcile({limit:25}),
+    contact_research:await reconcileContactResearch({limit:Math.max(1,Math.min(10,Number(req.body?.contact_limit)||5))}),
+    email:await reconcileAutoFirstTouch({limit:Math.max(1,Math.min(50,Number(req.body?.limit)||1))})});}catch(error){next(error);}
+});
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
 app.get('/api/research/jobs/:id/search-plan',managementAuth.authenticate,
@@ -2465,6 +2524,110 @@ app.patch('/api/leads/:id/approval', managementAuth.authenticate,
   } catch (e) { next(e); }
 });
 
+async function reconcileAutoFirstTouch({limit=1}={}){
+  const state=await phase13Automation.getState();
+  if(!state.auto_first_touch_email)return{status:'PAUSED',reason:'PAUSED_AUTOMATION_OFF',reserved:0};
+  const recovered=await autoFirstTouchService.recoverStalledReservations();
+  const replayed=await autoFirstTouchService.dispatchPending();
+  const candidates=await pool.query(`SELECT p.company_id FROM leadgen.opportunity_pool_current p
+    JOIN leadgen.companies c ON c.id=p.company_id
+    WHERE p.is_active_business_opportunity=true
+      AND p.opportunity_pool_band=ANY($1::text[])
+      AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id)
+    ORDER BY CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
+      p.observed_at DESC,p.company_id LIMIT 50`,[state.allowed_bands]);
+  const outcomes=[];let reserved=0;
+  for(const row of candidates.rows){
+    try{
+      const result=await autoFirstTouchService.reserve(row.company_id);
+      outcomes.push({company_id:row.company_id,status:result.reservation?.status||result.queue_status,
+        reason_codes:result.eligibility?.reason_codes||[]});
+      if(result.reservation&&++reserved>=Math.max(1,Number(limit)||1))break;
+    }catch(error){
+      const code=String(error?.code==='P0001'&&error?.message?error.message:(error?.code||error?.message||'FIRST_TOUCH_RECONCILE_ERROR')).slice(0,160);
+      outcomes.push({company_id:row.company_id,status:'HELD',reason_codes:[code]});
+      if(/MINUTE_LIMIT|DAY_LIMIT|OUTSIDE_BUSINESS_WINDOW|SENDER|AUTOMATION_DISABLED/.test(code))break;
+    }
+  }
+  return{status:'COMPLETED',reserved,recovered,replayed,evaluated:outcomes.length,outcomes};
+}
+
+async function reconcileContactResearch({limit=5}={}){
+  const state=await phase13Automation.getState();
+  if(!state.contact_research_automation)return{status:'PAUSED',reason:'PAUSED_AUTOMATION_OFF',created:0};
+  const orphaned=await pool.query(`UPDATE leadgen.research_jobs j SET status='FAILED',completed_at=now(),
+      error_count=error_count+1,last_error='WORKER_RESTART_RECOVERY'
+    WHERE j.created_by_identity='phase13-automation'
+      AND j.job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
+      AND j.status IN('DISCOVERING','RESOLVING','VERIFYING','PERSISTING')
+      AND NOT EXISTS(SELECT 1 FROM pgboss.job work
+        WHERE work.name=$1 AND work.data->>'research_job_id'=j.id::text
+          AND work.state IN('created','retry','active'))
+    RETURNING j.id,j.error_count`,[PHASE5_QUEUES.ENRICH_DECISION_MAKERS]);
+  for(const job of orphaned.rows)await phase5Queue.enqueue(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,
+    {research_job_id:job.id},{singletonKey:`phase13-contact-research-recovery:${job.id}:${job.error_count}`});
+  const selected=await pool.query(`SELECT p.company_id,c.country_code,
+      coalesce((SELECT item->>'product_profile' FROM jsonb_array_elements(coalesce(p.profile_results,'[]'::jsonb)) item
+        WHERE item->>'band' IN('PRECISION','RELEVANT','GENERAL_RELEVANT')
+        ORDER BY CASE item->>'band' WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END LIMIT 1),'WOMENSWEAR') product_profile,
+      EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+        WHERE dm.company_id=c.id AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
+          AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED') has_official_email_candidate
+    FROM leadgen.opportunity_pool_current p JOIN leadgen.companies c ON c.id=p.company_id
+    WHERE p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[])
+      AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=c.id)
+      AND NOT EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+        WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dc.verification_status='VALID'
+          AND dc.last_verified_at>=now()-($2::int*interval '1 day'))
+      AND NOT EXISTS(SELECT 1 FROM leadgen.enrichment_job_companies e
+        WHERE e.company_id=c.id AND e.updated_at>=now()-interval '24 hours')
+      AND NOT EXISTS(SELECT 1 FROM leadgen.research_jobs j
+        WHERE c.id=ANY(coalesce(j.requested_company_ids,'{}'::uuid[]))
+          AND j.job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
+          AND j.status IN('QUEUED','DISCOVERING','RESOLVING','VERIFYING','PERSISTING'))
+    ORDER BY has_official_email_candidate DESC,
+      CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
+      p.observed_at DESC,p.company_id LIMIT $3`,[state.allowed_bands,
+      Number(process.env.CONTACT_VERIFICATION_TTL_DAYS||30),Math.max(1,Math.min(10,Number(limit)||5))]);
+  if(!selected.rowCount)return{status:'WAITING_CONTACT_RESEARCH_WORK',created:0,company_count:0,recovered:orphaned.rowCount};
+  try{
+    await searchProviderRouter.ensureCanCreate('CONTACT_DISCOVERY');
+  }catch(error){
+    const code=String(error?.code||'CONTACT_RESEARCH_PROVIDER_UNAVAILABLE').slice(0,160);
+    if(['TAVILY_ACCOUNT_CREDITS_EXHAUSTED','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR',
+      'PROVIDER_RATE_LIMITED','SEARCH_PROVIDER_UNAVAILABLE'].includes(code)){
+      return{status:'PAUSED_PROVIDER_CAPACITY',reason:code,created:0,company_count:selected.rowCount,
+        recovered:orphaned.rowCount};
+    }
+    throw error;
+  }
+  const companyIds=selected.rows.map(row=>row.company_id);
+  const marketCodes=[...new Set(selected.rows.map(row=>String(row.country_code||'').toUpperCase()).filter(Boolean))];
+  const productProfiles=[...new Set(selected.rows.map(row=>String(row.product_profile||'WOMENSWEAR').toUpperCase()))];
+  const requestPayload={market_codes:marketCodes,product_profiles:productProfiles,company_ids:companyIds,max_results:companyIds.length,
+    automation_revision:'MC07_CONTACT_RESEARCH_V1'};
+  const digest=canonicalDigest(requestPayload);
+  const day=new Date().toISOString().slice(0,10);
+  const inserted=await pool.query(`INSERT INTO leadgen.research_jobs
+    (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
+     buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
+     idempotency_key,request_digest,created_by_identity,created_by_role,run_budget_cap_units)
+    VALUES('Automated active opportunities','XX','Automated active opportunities','en','MULTI_MARKET',
+      'Buyer / Procurement Enrichment',$1,$2,$3,'QUEUED','DECISION_MAKER_ENRICHMENT',$4,$5,$6,$7,$8,
+      'phase13-automation','SYSTEM',$9)
+    ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL
+    DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,(xmax=0) inserted`,[
+      productProfiles[0]||'WOMENSWEAR',['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],
+      companyIds.length,marketCodes,productProfiles,companyIds,`phase13-contact-research:${day}:${digest}`,digest,
+      Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)]);
+  const job=inserted.rows[0];
+  if(job.inserted)await phase5Queue.enqueue(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,{research_job_id:job.id},{singletonKey:`phase13-contact-research:${job.id}`});
+  return{status:job.inserted?'QUEUED':'REUSED',created:job.inserted?1:0,company_count:companyIds.length,
+    research_job_id:job.id,recovered:orphaned.rowCount};
+}
+
 app.use((error, _req, res, _next) => {
   console.error(error);
   const badRequestCodes = new Set([
@@ -2502,11 +2665,21 @@ async function start() {
   }
   await phase5Queue.start();
   let researchOutboxTimer=null;
+  let autoFirstTouchTimer=null;
+  let contactResearchTimer=null;
   if(httpListenEnabled){
     await researchDirectDispatchService.reconcile({limit:25});
     researchOutboxTimer=setInterval(()=>researchDirectDispatchService.reconcile({limit:25})
       .catch(error=>audit('RESEARCH_DIRECT_OUTBOX_RECONCILE_FAILED',{code:error?.code||'QUEUE_UNAVAILABLE'})),30000);
     researchOutboxTimer.unref?.();
+    await reconcileContactResearch({limit:5}).catch(error=>audit('CONTACT_RESEARCH_RECONCILE_FAILED',{code:error?.code||'CONTACT_RESEARCH_ERROR'}));
+    contactResearchTimer=setInterval(()=>reconcileContactResearch({limit:5})
+      .catch(error=>audit('CONTACT_RESEARCH_RECONCILE_FAILED',{code:error?.code||'CONTACT_RESEARCH_ERROR'})),30000);
+    contactResearchTimer.unref?.();
+    await reconcileAutoFirstTouch({limit:1}).catch(error=>audit('AUTO_FIRST_TOUCH_RECONCILE_FAILED',{code:error?.code||'FIRST_TOUCH_RECONCILE_ERROR'}));
+    autoFirstTouchTimer=setInterval(()=>reconcileAutoFirstTouch({limit:1})
+      .catch(error=>audit('AUTO_FIRST_TOUCH_RECONCILE_FAILED',{code:error?.code||'FIRST_TOUCH_RECONCILE_ERROR'})),30000);
+    autoFirstTouchTimer.unref?.();
   }
   const server = httpListenEnabled
     ? app.listen(port, '0.0.0.0', () => console.log(`DPV workspace listening on ${port}`))
@@ -2516,6 +2689,8 @@ async function start() {
     audit('application_shutdown', { signal });
     server?.close();
     if(researchOutboxTimer)clearInterval(researchOutboxTimer);
+    if(autoFirstTouchTimer)clearInterval(autoFirstTouchTimer);
+    if(contactResearchTimer)clearInterval(contactResearchTimer);
     await phase5Queue.stop();
     await telemetry.shutdown();
     await pool.end();

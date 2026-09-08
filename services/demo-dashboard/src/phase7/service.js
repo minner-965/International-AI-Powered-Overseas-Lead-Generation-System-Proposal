@@ -246,7 +246,7 @@ export class Phase7Service {
         next_action:item.suppression?'STOP_CONTACT':item.next_action||(item.sent_at?'WAIT_FOR_REPLY':'REVIEW_DRAFT'),
         activity:[...(item.draft_created_at?[{event_type:'DRAFT_CREATED',occurred_at:item.draft_created_at}]:[]),
           ...(item.approved_at?[{event_type:'APPROVED',occurred_at:item.approved_at}]:[]),
-          ...(item.sent_at?[{event_type:'SMTP_ACCEPTED',occurred_at:item.sent_at}]:[]),...(item.activity||[])]};
+          ...(item.sent_at&&!(item.activity||[]).some(event=>event.event_type==='CONTACTED')?[{event_type:'SMTP_ACCEPTED',occurred_at:item.sent_at}]:[]),...(item.activity||[])]};
       if(!item.approval_id||item.draft_status!=='APPROVED')return{...item,send_allowed:false,send_blocked_reasons:['EXACT_VERSION_APPROVAL_REQUIRED']};
       const approval=await this.repository.getApprovalForEnqueue(item.approval_id);
       if(!approval)return{...item,send_allowed:false,send_blocked_reasons:['EXACT_VERSION_APPROVAL_REQUIRED']};
@@ -1085,7 +1085,7 @@ export class Phase7Service {
     const senderRaw=String(payload.from||payload.metadata?.from||'').trim().toLowerCase();
     const sender=(senderRaw.match(/<([^<>@\s]+@[^<>\s]+)>/)?.[1]||senderRaw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+/i)?.[0]||'').toLowerCase();
     const references=[payload.references].filter(Boolean).flatMap(value=>String(value).match(/<[^>]+>|[^\s,]+/g)||[]);
-    const correlated=await this.repository.findInboundThread({inReplyTo:payload.in_reply_to,references,messageKey:payload.message_key,providerThreadId:payload.provider_thread_id});
+    const correlated=await this.repository.findInboundThread({inReplyTo:payload.in_reply_to,references,messageKey:payload.message_key,providerThreadId:payload.provider_thread_id,normalizedSender:sender});
     const inbound=await this.repository.createInboundMessage({provider:webhook.provider,provider_message_id:payload.provider_message_id||webhook.provider_event_id,
       webhook_inbox_id:webhook.id,thread_id:correlated?.id||null,correlation_status:correlated?'MATCHED':'REVIEW',from_address_hash:sha256(sender),
       subject_sanitized:sanitizeInboundText(payload.subject,500),body_text_sanitized:sanitizeInboundText(payload.body_text,20000),
@@ -1125,14 +1125,14 @@ export class Phase7Service {
       confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v2',reason_codes:[classified.confidence_basis],reply_category:classified.reply_category,classification_revision:1});
     if(stored.intent==='OPT_OUT')await this.repository.suppressRecipientForInbound(inbound.id,
       {companyWide:inbound.company_wide_opt_out===true});
-    let queueJobId=null;if(inbound.thread_id)queueJobId=await this.queue.enqueue('create-sales-followup',{inbound_message_id:inbound.id},{singletonKey:`phase11:crm-effects:${inbound.id}:1`});
+    let queueJobId=null;if(inbound.thread_id||inbound.correlation_outbound_message_id)queueJobId=await this.queue.enqueue('create-sales-followup',{inbound_message_id:inbound.id},{singletonKey:`phase11:crm-effects:${inbound.id}:1`});
     return{status:'CLASSIFIED',classification_id:stored.id,intent:stored.intent,automatic_send_allowed:false,queue_job_id:queueJobId};
   }
 
   async createSalesFollowupWork({inbound_message_id}) {
     const inbound=await this.repository.getInboundForTask(inbound_message_id);
     if(!inbound)return{status:'MISSING',automatic_send_allowed:false};
-    if(!inbound.company_id||!inbound.thread_id)return{status:'REVIEW_REQUIRED',reason:'UNMATCHED_INBOUND',automatic_send_allowed:false};
+    if(!inbound.company_id||(!inbound.thread_id&&!inbound.correlation_outbound_message_id))return{status:'REVIEW_REQUIRED',reason:'UNMATCHED_INBOUND',automatic_send_allowed:false};
     const built=buildSalesTaskFromReply({
       classification:{intent:mapReplyIntent(inbound.intent),confidence:Number(inbound.confidence||0),
         sanitized_subject:inbound.subject_sanitized,sanitized_body_text:inbound.body_text_sanitized},

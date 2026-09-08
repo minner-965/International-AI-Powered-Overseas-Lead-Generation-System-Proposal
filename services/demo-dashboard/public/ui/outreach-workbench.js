@@ -8,10 +8,33 @@ const bi=(zh,en)=>`<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span la
 const labels={DRAFT:['草稿','Draft'],PENDING_REVIEW:['待审核','Pending review'],APPROVED:['已批准','Approved'],REJECTED:['已拒绝','Rejected'],INVALID_DRAFT:['需要修改','Changes required'],NEEDS_CHANGES:['需要修改','Changes required'],SUPERSEDED:['已替换','Superseded'],QUEUED:['等待发送','Waiting to send'],SENDING:['发送中','Sending'],PROVIDER_ACCEPTED:['已提交邮件服务','Accepted by mail service'],SENT:['已发送','Sent'],FAILED:['发送失败','Send failed'],BLOCKED:['待处理','Action required'],SEND_AMBIGUOUS:['发送结果待核对','Send result needs review'],DELIVERED:['已送达','Delivered'],BOUNCED:['已退信','Bounced']};
 Object.assign(labels,{AMBIGUOUS:['发送结果待核对','Send result needs review'],HARD_BOUNCED:['永久退信','Permanent bounce'],SOFT_BOUNCED:['临时退信','Temporary bounce'],CANCELLED:['已取消','Cancelled']});
 Object.assign(labels,{VALID:['已核验','Verified'],ELIGIBLE:['条件通过','Eligible'],VERIFICATION_REQUIRED:['待核验','Verification required']});
+Object.assign(labels,{NO_VERIFIED_EMAIL:['未找到可发送邮箱','No verified email found']});
 Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待授权邮件联系','Email contact authorization pending'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
 const status=value=>{const tone=['APPROVED','VALID','ELIGIBLE','REPLIED','DELIVERED'].includes(value)?'current':['FAILED','REJECTED','OPTED_OUT','BOUNCED','HARD_BOUNCED'].includes(value)?'rejected':['SENT','SENT_NO_REPLY','PROVIDER_ACCEPTED','READY_TO_SEND'].includes(value)?'active':'review';return `<span class="data-state-badge state-${tone}">${bi(...(labels[value]||['待准备','Not prepared']))}</span>`;};
 const category=value=>bi(...(value==='GENERAL_MERCHANDISE'?['日用百货','General merchandise']:['女装','Womenswear']));
 const businessStatus=row=>contactProgressStatus(row)?status(contactProgressStatus(row)):row.business_contact_status&&row.business_contact_status!=='NOT_SENT'?status(row.business_contact_status):row.opportunity_status!=='MANAGEMENT_APPROVED'?status('NEEDS_MANAGEMENT_APPROVAL'):row.eligibility_status!=='ELIGIBLE'?status('NEEDS_RECIPIENT_REVIEW'):status(row.send_status||row.draft_status||'NEEDS_DRAFT');
+const autoMode=()=>document.documentElement.dataset.acquisitionMode==='auto';
+const independentStates=row=>{
+  const opportunity=String(row.business_opportunity_status||row.opportunity_pool_status||row.opportunity_status||'').toUpperCase();
+  const readiness=String(row.contact_readiness_status||row.contact_status||'').toUpperCase();
+  const eligibility=String(row.email_eligibility_status||row.eligibility_status||'').toUpperCase();
+  const active=['ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY','RECOMMENDED','MANAGEMENT_APPROVED'].includes(opportunity);
+  const ready=['READY','CONTACT_READY','ELIGIBLE'].includes(readiness);
+  const eligible=eligibility==='ELIGIBLE';
+  const badge=(zh,en,value,tone)=>`<span class="v3-email-dimension"><small>${bi(zh,en)}</small><strong class="${tone}">${bi(...value)}</strong></span>`;
+  return `<div class="v3-email-dimensions" aria-label="业务机会、联系方式和邮件资格 Business opportunity, contact readiness and email eligibility">${badge('业务机会','Business Opportunity',active?['有效','Active']:['待确认','Pending'],active?'is-ready':'is-pending')}${badge('联系方式','Contact Readiness',ready?['就绪','Ready']:['待完善','Pending'],ready?'is-ready':'is-pending')}${badge('邮件资格','Email Eligibility',eligible?['通过','Eligible']:['未通过','Not eligible'],eligible?'is-ready':'is-blocked')}</div>`;
+};
+const automaticEmailState=row=>{
+  const progress=String(contactProgressStatus(row)||row.business_contact_status||row.send_status||'').toUpperCase();
+  if(['OPTED_OUT','DO_NOT_CONTACT'].includes(progress)||row.suppressed)return status('OPTED_OUT');
+  if(['HARD_BOUNCED','BOUNCED'].includes(progress))return status('HARD_BOUNCED');
+  if(['SENT_NO_REPLY','SMTP_ACCEPTED','SENT','PROVIDER_ACCEPTED'].includes(progress))return status('SENT_NO_REPLY');
+  if(progress==='REPLIED')return status('REPLIED');
+  if(row.verification_status!=='VALID')return status(row.recipient_email?'VERIFICATION_REQUIRED':'NO_VERIFIED_EMAIL');
+  if(row.eligibility_status!=='ELIGIBLE')return status('NEEDS_RECIPIENT_REVIEW');
+  if(['QUEUED','SENDING'].includes(progress))return status(progress);
+  return status('READY_TO_SEND');
+};
 labels.DO_NOT_CONTACT=['停止联系','Do Not Contact'];
 const nextAction=value=>{
   const progressAction=contactNextAction(state.row);
@@ -24,7 +47,7 @@ const nextAction=value=>{
   }
   return bi(...({STOP_CONTACT:['停止联系','Stop contact'],WAIT_FOR_REPLY:['等待回复','Wait for reply'],REVIEW_DRAFT:['审核草稿','Review draft'],FOLLOW_UP_REQUIRED:['安排跟进','Arrange follow-up']}[value]||['待安排','To be arranged']));
 };
-const activityLabels={DRAFT_CREATED:['草稿已建立','Draft created'],APPROVED:['草稿已批准','Draft approved'],SMTP_ACCEPTED:['已发送','Sent'],HUMAN_REPLY:['收到回复','Reply received'],OPT_OUT:['收到退订','Opt-out received'],AUTO_REPLY:['收到自动回复','Automatic reply received'],OUT_OF_OFFICE:['收到休假回复','Out-of-office reply received'],CRM_SYNCED:['跟进记录已同步','Follow-up record synced']};
+const activityLabels={DRAFT_CREATED:['草稿已建立','Draft created'],APPROVED:['草稿已批准','Draft approved'],SMTP_ACCEPTED:['已发送','Sent'],CONTACTED:['已发送','Sent'],HUMAN_REPLY:['收到回复','Reply received'],OPT_OUT:['收到退订','Opt-out received'],AUTO_REPLY:['收到自动回复','Automatic reply received'],OUT_OF_OFFICE:['收到休假回复','Out-of-office reply received'],CRM_SYNCED:['跟进记录已同步','Follow-up record synced']};
 const date=value=>value?esc(new Date(value).toLocaleString()):'—';
 const state={data:null,row:null,busy:false,opener:null,dirty:false};
 const post=(url,body={})=>managementRequest(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -139,7 +162,14 @@ function renderList(){
   const host=q('outreach-workbench-list');if(!host)return;
   const items=state.data?.items||[];
   const companies=new Map();items.forEach((row,index)=>{if(!companies.has(row.company_id))companies.set(row.company_id,[]);companies.get(row.company_id).push({row,index});});
-  host.innerHTML=items.length?[...companies.values()].map(group=>`<article class="p11-outreach-row"><div class="v3-email-identity"><span class="v3-email-avatar" aria-hidden="true">${esc(group[0].row.company_name?.slice(0,1)||'—')}</span><div><strong>${esc(group[0].row.company_name)}</strong><p>${esc(group[0].row.recipient_email||'—')}</p></div></div><div class="p11-category-actions">${group.map(({row,index})=>`<div><span class="v3-email-category">${category(row.product_profile)}</span><span class="v3-email-state">${businessStatus(row)}</span><button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${contactProgressStatus(row)?bi('查看邮件记录','View mail record'):bi('审核与发送','Review & send')}</button></div>`).join('')}</div></article>`).join(''):`<div class="p8-empty-state">${bi('暂无可准备开发信的公司，请先检查业务机会与邮箱。','No companies are ready for draft preparation. Review opportunities and mailboxes first.')}</div>`;
+  const autoAction=(row,index)=>{
+    if(row.message_id||contactProgressStatus(row))return `<button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${bi('查看邮件记录','View mail record')}</button>`;
+    if(!row.recipient_email)return `<a class="btn btn-outline-primary" href="#contact-ready">${bi('继续查找联系方式','Continue contact research')}</a>`;
+    if(row.verification_status!=='VALID')return `<a class="btn btn-outline-primary" href="#contact-ready">${bi('查看邮箱核验','Review email verification')}</a>`;
+    if(row.eligibility_status!=='ELIGIBLE')return `<a class="btn btn-outline-primary" href="#contact-ready">${bi('查看联系条件','Review contact requirements')}</a>`;
+    return `<button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${bi('查看联系状态','View contact status')}</button>`;
+  };
+  host.innerHTML=items.length?[...companies.values()].map(group=>`<article class="p11-outreach-row"><div class="v3-email-identity"><span class="v3-email-avatar" aria-hidden="true">${esc(group[0].row.company_name?.slice(0,1)||'—')}</span><div><strong>${esc(group[0].row.company_name)}</strong><p>${esc(group[0].row.recipient_email||'—')}</p></div></div><div class="p11-category-actions">${group.map(({row,index})=>`<div><span class="v3-email-category">${category(row.product_profile)}</span><span class="v3-email-state">${autoMode()?automaticEmailState(row):businessStatus(row)}</span>${autoMode()?autoAction(row,index):`<button class="btn btn-outline-primary" type="button" data-outreach-index="${index}">${contactProgressStatus(row)?bi('查看邮件记录','View mail record'):bi('审核与发送','Review & send')}</button>`}</div>${independentStates(row)}`).join('')}</div></article>`).join(''):`<div class="p8-empty-state">${bi('暂无可准备开发信的公司，请先检查业务机会与邮箱。','No companies are ready for draft preparation. Review opportunities and mailboxes first.')}</div>`;
   host.querySelectorAll('[data-outreach-index]').forEach(button=>button.addEventListener('click',()=>{state.opener=button;state.row=items[Number(button.dataset.outreachIndex)];q('outreach-review-feedback').textContent='';renderDialog();dialog.showModal();q('outreach-review-title').focus();}));
 }
 async function load(){
@@ -204,6 +234,7 @@ document.addEventListener('crm:openoutreach',async event=>{
     else{q('outreach-workbench-list')?.scrollIntoView({block:'start'});}
   }catch{/* The workspace already presents its retry action. */}
 });
+document.addEventListener('dpv:automationchange',()=>{renderList();controls();});
 async function loadOperations(){
   const host=q('outreach-operations');if(!host || host.dataset.v3Overview==='true')return;host.setAttribute('aria-busy','true');
   try{const [data,research]=await Promise.all([managementRequest('/api/outreach/operations-summary'),managementRequest('/api/research/workbench-summary').catch(()=>null)]);const p=data.prospect||{};

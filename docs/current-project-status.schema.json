@@ -113,7 +113,8 @@
     },
     "current_blockers":{"type":"array","items":{"type":"string"}},
     "phase13_mc06":{"type":"object","required":["scope","status","checkpoint_commit","search_calls","email_sends","mc07_started","result_report","domain_report","ui_report","stop_after"],"properties":{"scope":{"const":"WP-MC06"},"status":{"enum":["IN_PROGRESS","PASS"]},"search_calls":{"const":0},"email_sends":{"const":0},"mc07_started":{"const":false},"stop_after":{"const":"WP-MC06"}}},
-    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION","WP_MC02_STOP","WP_MC03_REVIEW_STOP","WP_MC04_STOP","WP_MC05_STOP","WP_MC06_STOP"]},
+    "phase13_mc07":{"type":"object","additionalProperties":false,"required":["scope","status","automation_master","search_automation","search_runtime_status","opportunity_auto_pool","contact_research_automation","auto_first_touch_email","inbound_reply_monitor","auto_email_followup_sequence","phone_whatsapp_automation","provider_spend_mode","provider_order","search_batch_id","search_scopes","planned_queries","completed_queries","remaining_queries","live_search_started","template_set","sender_display_name","auto_sent","duplicate_sends","result_report","stop_after"],"properties":{"scope":{"const":"MC07_FULL_AUTOMATION"},"status":{"const":"PASS"},"automation_master":{"const":true},"search_automation":{"const":true},"search_runtime_status":{"enum":["HEALTHY","PAUSED_PROVIDER_CAPACITY"]},"opportunity_auto_pool":{"const":true},"contact_research_automation":{"const":true},"auto_first_touch_email":{"const":true},"inbound_reply_monitor":{"const":true},"auto_email_followup_sequence":{"const":false},"phone_whatsapp_automation":{"const":false},"provider_spend_mode":{"const":"NO_NEW_PAID_SPEND"},"provider_order":{"const":["tavily"]},"search_batch_id":{"type":"string","format":"uuid"},"search_scopes":{"const":26},"planned_queries":{"const":579},"completed_queries":{"type":"integer","minimum":0,"maximum":579},"remaining_queries":{"type":"integer","minimum":0,"maximum":579},"live_search_started":{"const":true},"template_set":{"const":"DPV_FIRST_TOUCH_V1"},"sender_display_name":{"const":"Simon"},"auto_sent":{"type":"integer","minimum":1},"duplicate_sends":{"const":0},"result_report":{"const":"docs/PHASE13_MC07_FULL_AUTOMATION_RESULT.md"},"stop_after":{"const":"MC07"}}},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION","WP_MC02_STOP","WP_MC03_REVIEW_STOP","WP_MC04_STOP","WP_MC05_STOP","WP_MC06_STOP","MC07_STOP"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   },
   "allOf":[
@@ -128,8 +129,8 @@
         "properties":{
           "final_acceptance_state":{"enum":["INCOMPLETE","PASS"]},
           "latest_released_phase":{"enum":["Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
-          "next_allowed_work_package":{"enum":["STOP_AWAIT_PRODUCTION_POLICY","WP_MC02_STOP"]},
-          "effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":true},"outreach_manual_send_only":{"const":true},"outreach_worker_send_enabled":{"const":false}}}
+          "next_allowed_work_package":{"enum":["STOP_AWAIT_PRODUCTION_POLICY","WP_MC02_STOP","WP_MC03_REVIEW_STOP","WP_MC04_STOP","WP_MC05_STOP","WP_MC06_STOP","MC07_STOP"]},
+          "effective_runtime_flags":{"properties":{"outbound_email_enabled":{"const":true}}}
         }
       },
       "else":{"not":{"required":["phase12_ui"]}}

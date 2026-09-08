@@ -37,6 +37,11 @@ export const PHASE11_SUPPRESSION_CLOSED_LOOP_MIGRATION_KEY = '054_phase11_suppre
 export const PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY = '055_phase11_controlled_application_context.sql';
 export const PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY = '056_phase11_version_payload_guard_rowtype.sql';
 export const PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY = '057_phase11_controlled_shared_crm.sql';
+export const PHASE13_OPPORTUNITY_POOL_MIGRATION_KEY = '058_phase13_opportunity_pool.sql';
+export const PHASE13_RESEARCH_BATCH_MIGRATION_KEY = '059_phase13_research_batches.sql';
+export const PHASE13_SEARCH_PLANNING_MIGRATION_KEY = '060_phase13_search_planning_corroboration.sql';
+export const PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY = '061_phase13_automation_control_query_execution.sql';
+export const PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY = '062_phase13_auto_first_touch_reply_bridge.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -71,6 +76,11 @@ const phase11OqumailInboundCrmPath = path.resolve(projectRoot, 'database/migrati
 const phase11SuppressionClosedLoopPath = path.resolve(projectRoot, 'database/migrations', PHASE11_SUPPRESSION_CLOSED_LOOP_MIGRATION_KEY);
 const phase11ControlledApplicationPath = path.resolve(projectRoot, 'database/migrations', PHASE11_CONTROLLED_APPLICATION_MIGRATION_KEY);
 const phase11VersionPayloadGuardPath = path.resolve(projectRoot, 'database/migrations', PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY);
+const phase13OpportunityPoolPath = path.resolve(projectRoot,'database/migrations',PHASE13_OPPORTUNITY_POOL_MIGRATION_KEY);
+const phase13ResearchBatchPath = path.resolve(projectRoot,'database/migrations',PHASE13_RESEARCH_BATCH_MIGRATION_KEY);
+const phase13SearchPlanningPath = path.resolve(projectRoot,'database/migrations',PHASE13_SEARCH_PLANNING_MIGRATION_KEY);
+const phase13AutomationControlPath = path.resolve(projectRoot,'database/migrations',PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY);
+const phase13AutoReplyBridgePath = path.resolve(projectRoot,'database/migrations',PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -600,6 +610,75 @@ export async function verifyPhase10CategoryReadinessCompatibilityMigration(clien
   return{phase10_2_category_readiness_compatibility_verified:true};
 }
 
+export async function verifyPhase13OpportunityPoolMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.opportunity_pool_decisions') decisions,
+    to_regclass('leadgen.opportunity_pool_current') current_view,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.opportunity_pool_decisions'::regclass
+      AND tgname='opportunity_pool_history_immutable' AND NOT tgisinternal) immutable_history`);
+  const row=result.rows[0]||{};
+  if(!row.decisions||!row.current_view||!row.immutable_history)throw new Error('Phase 13 opportunity pool migration verification failed');
+  return{phase13_opportunity_pool_verified:true};
+}
+
+export async function verifyPhase13ResearchBatchMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.tables WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+      'research_market_registry','research_batches','research_batch_requests','research_job_scope_requests','research_batch_children'])) tables,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.research_batches'::regclass
+      AND tgname='research_batch_snapshot_immutable' AND NOT tgisinternal) immutable_snapshot,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.research_jobs'::regclass
+      AND tgname='research_job_batch_status' AND NOT tgisinternal) status_projection`);
+  const row=result.rows[0]||{};
+  if(Number(row.tables)!==5||!row.immutable_snapshot||!row.status_projection)throw new Error('Phase 13 research batch migration verification failed');
+  return{phase13_research_batch_tables_verified:5};
+}
+
+export async function verifyPhase13SearchPlanningMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.research_query_plans') plans,
+    to_regclass('leadgen.research_search_hit_provenance') provenance,
+    to_regclass('leadgen.search_discovery_corroboration') corroboration,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.research_query_plans'::regclass
+      AND tgname='research_query_plan_immutable' AND NOT tgisinternal) immutable_plan`);
+  const row=result.rows[0]||{};
+  if(!row.plans||!row.provenance||!row.corroboration||!row.immutable_plan)throw new Error('Phase 13 search planning migration verification failed');
+  return{phase13_search_planning_verified:true};
+}
+
+export async function verifyPhase13AutomationControlMigration(client){
+  const result=await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.tables WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+      'automation_controls','automation_control_events','research_query_executions','phase13_first_touch_controls','phase13_first_touch_reservations'])) tables,
+    (SELECT count(*)::int FROM leadgen.automation_controls WHERE control_key IN('RESEARCH_PROVIDER_EXECUTION','PHASE13_AUTO_FIRST_TOUCH')) controls,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='leadgen.automation_control_events'::regclass
+      AND tgname='automation_control_event_immutable' AND NOT tgisinternal) immutable_control_events,
+    EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='leadgen'::regnamespace AND proname='reserve_phase13_first_touch') reservation_function,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.outbound_messages'::regclass
+      AND conname='outbound_messages_authorization_source_check') outbound_xor`);
+  const row=result.rows[0]||{};
+  // The migration seeds both controls OFF, but a later replay must also verify an
+  // intentionally enabled persisted runtime. Requiring enabled=false here would
+  // make a healthy, activated installation fail every subsequent migration run.
+  if(Number(row.tables)!==5||Number(row.controls)!==2||!row.immutable_control_events||!row.reservation_function||!row.outbound_xor)
+    throw new Error('Phase 13 automation control migration verification failed');
+  return{phase13_automation_control_tables_verified:5,phase13_automation_controls_fail_closed:true};
+}
+
+export async function verifyPhase13AutoReplyBridgeMigration(client){
+  const result=await client.query(`SELECT
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='outreach_threads' AND column_name='first_touch_reservation_id') reservation_column,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen'
+      AND table_name='outreach_threads' AND column_name='recipient_id' AND is_nullable='YES') nullable_recipient,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.outreach_threads'::regclass
+      AND conname='outreach_threads_source_check') source_xor`);
+  const row=result.rows[0]||{};
+  if(!row.reservation_column||!row.nullable_recipient||!row.source_xor)
+    throw new Error('Phase 13 automated reply bridge migration verification failed');
+  return{phase13_auto_reply_bridge_verified:true};
+}
+
 export async function applyPhase7Migrations(options = {}) {
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
@@ -692,6 +771,21 @@ export async function applyPhase7Migrations(options = {}) {
   const phase11ControlledSharedCrm=await applyPhase7Migration({...options,
     migrationPath:options.phase11ControlledSharedCrmMigrationPath||path.resolve(projectRoot,'database/migrations',PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY),
     appliedBy:options.appliedBy||'dpv-phase11-shared-crm-migration-runner'});
+  const phase13OpportunityPool=await applyPhase7Migration({...options,
+    migrationPath:options.phase13OpportunityPoolMigrationPath||phase13OpportunityPoolPath,
+    appliedBy:options.appliedBy||'dpv-phase13-migration-runner'});
+  const phase13ResearchBatch=await applyPhase7Migration({...options,
+    migrationPath:options.phase13ResearchBatchMigrationPath||phase13ResearchBatchPath,
+    appliedBy:options.appliedBy||'dpv-phase13-migration-runner'});
+  const phase13SearchPlanning=await applyPhase7Migration({...options,
+    migrationPath:options.phase13SearchPlanningMigrationPath||phase13SearchPlanningPath,
+    appliedBy:options.appliedBy||'dpv-phase13-migration-runner'});
+  const phase13AutomationControl=await applyPhase7Migration({...options,
+    migrationPath:options.phase13AutomationControlMigrationPath||phase13AutomationControlPath,
+    appliedBy:options.appliedBy||'dpv-phase13-migration-runner'});
+  const phase13AutoReplyBridge=await applyPhase7Migration({...options,
+    migrationPath:options.phase13AutoReplyBridgeMigrationPath||phase13AutoReplyBridgePath,
+    appliedBy:options.appliedBy||'dpv-phase13-migration-runner'});
   return {base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
@@ -699,7 +793,8 @@ export async function applyPhase7Migrations(options = {}) {
     phase10ManualOfficialRoute,phase10GmailApiProvider,phase10BudgetResumeContinuation,phase10TavilyProviderAccountOnly,
     phase10ProviderAccountState,phase10EmptyResearchPurgeAudit,phase10RetireInternalTavilyEnforcement,phase10CategoryDrivenContext,
     phase10CategoryContactSimplification,phase10CategoryStatusCompatibility,phase10CategoryReadinessCompatibility,phase11OqumailOutboundSafety,phase11OqumailInboundCrm,phase11SuppressionClosedLoop,phase11ControlledApplication,
-    phase11VersionPayloadGuard,phase11ControlledSharedCrm,status:phase11ControlledSharedCrm.status,database:phase11ControlledSharedCrm.database};
+    phase11VersionPayloadGuard,phase11ControlledSharedCrm,phase13OpportunityPool,phase13ResearchBatch,phase13SearchPlanning,
+    phase13AutomationControl,phase13AutoReplyBridge,status:phase13AutoReplyBridge.status,database:phase13AutoReplyBridge.database};
 }
 
 export async function verifyPhase11ControlledSharedCrmMigration(client){
@@ -772,7 +867,17 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
+      const verification = migrationKey===PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY
+        ?await verifyPhase13AutoReplyBridgeMigration(client)
+        :migrationKey===PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY
+        ?await verifyPhase13AutomationControlMigration(client)
+        :migrationKey===PHASE13_SEARCH_PLANNING_MIGRATION_KEY
+          ?await verifyPhase13SearchPlanningMigration(client)
+          :migrationKey===PHASE13_RESEARCH_BATCH_MIGRATION_KEY
+            ?await verifyPhase13ResearchBatchMigration(client)
+            :migrationKey===PHASE13_OPPORTUNITY_POOL_MIGRATION_KEY
+              ?await verifyPhase13OpportunityPoolMigration(client)
+              :migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
         ?await verifyPhase11ControlledSharedCrmMigration(client)
         :migrationKey===PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY
         ?await verifyPhase11VersionPayloadGuardMigration(client)
@@ -846,7 +951,17 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, appliedBy]
     );
-    const verification = migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
+    const verification = migrationKey===PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY
+      ?await verifyPhase13AutoReplyBridgeMigration(client)
+      :migrationKey===PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY
+      ?await verifyPhase13AutomationControlMigration(client)
+      :migrationKey===PHASE13_SEARCH_PLANNING_MIGRATION_KEY
+        ?await verifyPhase13SearchPlanningMigration(client)
+        :migrationKey===PHASE13_RESEARCH_BATCH_MIGRATION_KEY
+          ?await verifyPhase13ResearchBatchMigration(client)
+          :migrationKey===PHASE13_OPPORTUNITY_POOL_MIGRATION_KEY
+            ?await verifyPhase13OpportunityPoolMigration(client)
+            :migrationKey===PHASE11_CONTROLLED_SHARED_CRM_MIGRATION_KEY
       ?await verifyPhase11ControlledSharedCrmMigration(client)
       :migrationKey===PHASE11_VERSION_PAYLOAD_GUARD_MIGRATION_KEY
       ?await verifyPhase11VersionPayloadGuardMigration(client)
