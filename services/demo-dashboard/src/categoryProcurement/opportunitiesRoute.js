@@ -1,6 +1,7 @@
 import {confirmedCategoryStatusSql} from './categoryAdmission.js';
 import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
 import {OpportunityPoolService} from '../opportunityPool/OpportunityPoolService.js';
+import {currentBusinessProjection} from '../opportunityPool/currentBusinessProjection.js';
 
 const upper=value=>String(value||'').trim().toUpperCase();
 
@@ -225,30 +226,31 @@ export async function queryCategoryProcurementOpportunities(options={}){
     const evidence=legacy.find(x=>x.company_id===r.company_id&&x.product_profile===selected)||{};
     const contactRoutes=routeResult.rows.filter(x=>x.company_id===r.company_id);
     const route=types=>contactRoutes.find(x=>types.includes(x.contact_type)&&!['INVALID','REJECTED'].includes(x.verification_status))?.contact_value_normalized||null;
-    return{...evidence,...r,id:r.company_id,product_profile:selected,product_profiles:profiles.map(p=>p.product_profile),
+    return currentBusinessProjection({...evidence,...r,id:r.company_id,product_profile:selected,product_profiles:profiles.map(p=>p.product_profile),
       official_route_types:[...new Set(contactRoutes.map(x=>x.contact_type))],
       official_email_route:route(['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL']),official_phone_route:route(['BUSINESS_PHONE']),
       official_whatsapp_route:route(['BUSINESS_WHATSAPP']),official_form_route:route(['CONTACT_FORM']),
       contact_routes:contactRoutes.map(x=>({route_type:x.contact_type,value:x.contact_value_normalized,source_url:x.source_url,last_verified_at:x.last_verified_at})),
       opportunity_key:`${r.company_id}:${selected}`,opportunity_decision_id:evidence.opportunity_decision_id||null,
-      display_opportunity_status:r.is_active_business_opportunity?'RECOMMENDED':r.opportunity_pool_band==='NOT_SUITABLE'?'NOT_SUITABLE':'EVIDENCE_REQUIRED',
       legacy_display_opportunity_status:evidence.display_opportunity_status||null,
-      management_contact_status:evidence.management_contact_status||'NOT_REVIEWED'};
+      management_contact_status:evidence.management_contact_status||'NOT_REVIEWED'});
   });
   const progress=await attachContactProgress(pool,rows);
-  const status=upper(query.status||'RECOMMENDED');
-  const allowed=['ALL','RECOMMENDED','ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY','MANAGEMENT_APPROVED','EVIDENCE_REQUIRED','HOLD','NOT_SUITABLE'];
+  const status=upper(query.status||'ACTIVE');
+  // Old URL filters remain read-only aliases, never new business states.
+  const allowed=['ALL','RECOMMENDED','ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY','MANAGEMENT_APPROVED','EVIDENCE_REQUIRED','HOLD',...Object.keys(bandRank)];
   if(!allowed.includes(status))throw Object.assign(new Error('Invalid opportunity status'),{code:'OPPORTUNITY_STATUS_INVALID',status:400});
   const filtered=progress.filter(r=>{
     if(['RECOMMENDED','ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY'].includes(status)&&!r.is_active_business_opportunity)return false;
     if(status==='EVIDENCE_REQUIRED'&&r.opportunity_pool_band!=='EXPLORATORY')return false;
+    if(Object.hasOwn(bandRank,status)&&r.opportunity_pool_band!==status)return false;
     if(status==='NOT_SUITABLE'&&r.opportunity_pool_band!=='NOT_SUITABLE')return false;
     if(['MANAGEMENT_APPROVED','HOLD'].includes(status)&&r.management_contact_status!==status)return false;
     if(query.country&&upper(r.country_code)!==upper(query.country))return false;
     const requestedBand=upper(query.opportunity_pool_band);
     if(requestedBand==='ACTIVE'&&!r.is_active_business_opportunity)return false;
     if(requestedBand&&!['ALL','ACTIVE'].includes(requestedBand)&&r.opportunity_pool_band!==requestedBand)return false;
-    const fields={tier:'tier',size:'company_size',score_eligibility:'score_eligibility',buyer_business_model:'buyer_business_model',buyer_subtype:'buyer_subtype',category_procurement_match_band:'category_procurement_match_band',category_procurement_match_status:'category_procurement_match_status',product_access_matrix:'product_access_matrix',readiness:'readiness',historical_crm_status:'historical_crm_status',cooperation_matrix:'cooperation_matrix',feasibility_band:'feasibility_band',decision_maker_status:'decision_maker_status',normalized_role:'normalized_role',contact_type:'best_contact_type',contact_verification:'contact_verification',opportunity_matrix:'opportunity_matrix'};
+    const fields={tier:'tier',size:'company_size',score_eligibility:'score_eligibility',buyer_business_model:'buyer_business_model',buyer_subtype:'buyer_subtype',category_procurement_match_band:'category_procurement_match_band',category_procurement_match_status:'category_procurement_match_status',historical_crm_status:'historical_crm_status',decision_maker_status:'decision_maker_status',normalized_role:'normalized_role',contact_type:'best_contact_type',contact_verification:'contact_verification'};
     for(const [key,field] of Object.entries(fields))if(query[key]&&upper(r[field])!==upper(query[key]))return false;
     for(const [key,field] of [['management_match_band','customer_match'],['historical_match_band','historical_customer_match']]){const b=upper(query[key]),v=r[field];if(b==='UNKNOWN'&&v!=null||b==='HIGH'&&!(v>=60)||b==='MEDIUM'&&!(v>=35&&v<60)||b==='LOW'&&!(v!=null&&v<35))return false;}
     return true;

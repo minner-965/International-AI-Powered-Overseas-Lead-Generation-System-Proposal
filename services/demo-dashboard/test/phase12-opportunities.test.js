@@ -44,11 +44,12 @@ test('V3 opportunity styling has no obsolete palette, hover lift, hidden English
   assert.match(css,/min-height:44px/);
   assert.match(css,/prefers-reduced-motion/);
 });
-test('all eight views retain form names and stable decision hooks, table is compact and paginated',async()=>{
+test('current five-band and communication views retain stable hooks, table is compact and paginated',async()=>{
   const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
   const region=html.split('id="view-opportunities"')[1].split('id="view-contact-queue"')[0];
-  for(const status of ['RECOMMENDED','EVIDENCE_REQUIRED','MANAGEMENT_APPROVED','SENT_NO_REPLY','REPLIED','HOLD','NOT_SUITABLE','ALL'])assert.match(region,new RegExp(`data-opportunity-status="${status}"`));
+  for(const status of ['ACTIVE','PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','MANAGEMENT_APPROVED','SENT_NO_REPLY','REPLIED','HOLD','NOT_SUITABLE','ALL'])assert.match(region,new RegExp(`data-opportunity-status="${status}"`));
+  assert.doesNotMatch(region,/data-opportunity-status="(?:RECOMMENDED|EVIDENCE_REQUIRED)"/);
   assert.equal((region.match(/<th class="op-col-/g)||[]).length,8);
   for(const hook of ['opportunity-table','opportunity-pagination','opportunity-advanced-filter-drawer','opportunity-status'])assert.match(region,new RegExp(`id="${hook}"`));
   assert.match(app,/status:presentationView \? 'ALL' : filters.status/);

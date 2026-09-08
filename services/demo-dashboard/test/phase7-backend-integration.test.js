@@ -210,7 +210,7 @@ test('migration runner applies additive Phase 8 contact-ready gate after immutab
   assert.ok(runner.indexOf('contactReady=await applyPhase7Migration')>runner.indexOf('roleHardening=await applyPhase7Migration'));
 });
 
-test('opportunity list projects the current Phase 7 five-state decision without replacing Phase 6 facts', async () => {
+test('opportunity list reads historical decisions but defaults to current active pool', async () => {
   const source = await textFile('services/demo-dashboard/src/categoryProcurement/opportunitiesRoute.js');
   assert.match(source,/LEFT JOIN leadgen\.business_opportunity_current bod ON bod\.company_id=c\.id AND bod\.product_profile=cpm\.product_profile/);
   for (const field of ['display_opportunity_status','system_recommendation_status','contact_readiness','policy_contact_status']) {
@@ -218,7 +218,8 @@ test('opportunity list projects the current Phase 7 five-state decision without 
   }
   assert.match(source,/bod\.display_opportunity_status=\$\$\{index\}/);
   const server=await textFile('services/demo-dashboard/src/server.js');
-  assert.match(server,/status:req\.query\.status === undefined \? 'RECOMMENDED'/);
+  assert.match(server,/status:req\.query\.status === undefined \? 'ACTIVE'/);
+  assert.match(source,/currentBusinessProjection/);
 });
 
 test('Compose assigns the Phase 7 queues and prepares writable private exchange directories', async () => {

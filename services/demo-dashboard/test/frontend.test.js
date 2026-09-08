@@ -318,13 +318,13 @@ test('V3 opportunity labels and filter query remain deterministic and bilingual'
   const query = buildOpportunityQuery({ country:'MX',product_profile:'WOMENSWEAR',buyer_business_model:'DIRECT_END_BUYER',buyer_subtype:'CHAIN_RETAILER',category_procurement_match_band:'HIGH',category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',product_access_matrix:'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS',readiness:'SALES_READY',cooperation_matrix:'HIGH_FIT_HIGH_ACCESS',sort:'' },100);
   assert.equal(query.get('country'),'MX');
   assert.equal(query.get('product_profile'),'WOMENSWEAR');
-  assert.equal(query.get('readiness'),'SALES_READY');
-  assert.equal(query.get('cooperation_matrix'),'HIGH_FIT_HIGH_ACCESS');
+  assert.equal(query.get('readiness'),null);
+  assert.equal(query.get('cooperation_matrix'),null);
   assert.equal(query.get('buyer_business_model'),'DIRECT_END_BUYER');
   assert.equal(query.get('buyer_subtype'),'CHAIN_RETAILER');
   assert.equal(query.get('category_procurement_match_band'),'HIGH');
   assert.equal(query.get('category_procurement_match_status'),'CATEGORY_PROCUREMENT_MATCH');
-  assert.equal(query.get('product_access_matrix'),'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS');
+  assert.equal(query.get('product_access_matrix'),null);
   assert.equal(query.get('sort'),'category_procurement_desc');
   assert.equal(query.get('limit'),'100');
   assert.equal(activeOpportunityFilterCount({ country:'MX',sort:'feasibility_desc',tier:'' }),1);
@@ -335,7 +335,7 @@ test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps 
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('../public/ui/opportunity-workspace.css', import.meta.url), 'utf8');
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
-  for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-product-access-matrix','opportunity-readiness','opportunity-feasibility-band','opportunity-cooperation-matrix','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
+  for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-feasibility-band','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
   for (const column of ['op-col-company','op-col-market','op-col-product-match','op-col-activity','op-col-owner','op-col-contact','op-col-status','op-col-action']) assert.match(html,new RegExp(column));
   for (const preserved of ['opportunityProductSummaryCell','opportunitySupplierAccessCell','opportunitySecondaryScores','detail-panel-product-match']) assert.match(app,new RegExp(preserved));
@@ -385,7 +385,7 @@ test('Phase 6.1 V3 Buyer, Category Procurement, Product Opportunity and Supplier
   assert.equal(productMatchProfile({ product_profile:'womenswear' }),'WOMENSWEAR');
   assert.deepEqual(productMatchItems({ items:[{ product_profile:'WOMENSWEAR' }] }),[{ product_profile:'WOMENSWEAR' }]);
   const query = buildOpportunityQuery({ buyer_business_model:'DIRECT_END_BUYER',category_procurement_match_band:'HIGH',category_procurement_match_status:'CATEGORY_PROCUREMENT_MATCH',product_access_matrix:'DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS' },100);
-  assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&product_access_matrix=DIRECT_BUYER_HIGH_PRODUCT_HIGH_ACCESS&sort=category_procurement_desc&limit=100');
+  assert.equal(query.toString(),'buyer_business_model=DIRECT_END_BUYER&category_procurement_match_band=HIGH&category_procurement_match_status=CATEGORY_PROCUREMENT_MATCH&sort=category_procurement_desc&limit=100');
 });
 
 test('Phase 6.1 capabilities remain available behind the compact eight-column decision surface', async () => {

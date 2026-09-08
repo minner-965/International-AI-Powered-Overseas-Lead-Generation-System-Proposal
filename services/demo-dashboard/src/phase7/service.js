@@ -1370,11 +1370,8 @@ export class Phase7Service {
         official_phone:row.official_phone_route||'',
         official_whatsapp:row.official_whatsapp_route||'',
         official_contact_page:row.official_form_route||'',
-        opportunity_status:row.display_opportunity_status||row.system_recommendation_status,
-        primary_blocker:(row.opportunity_decision_reason_codes||[])[0]||'',
-        next_action:['RECOMMENDED','MANAGEMENT_APPROVED'].includes(row.display_opportunity_status||row.system_recommendation_status)
-          ?'PREPARE_MANUAL_CONTACT':(row.display_opportunity_status||row.system_recommendation_status)==='NOT_SUITABLE'
-            ?'NO_FOLLOW_UP':'COMPLETE_PRIMARY_EVIDENCE',
+        opportunity_status:row.opportunity_pool_band||'',
+        primary_blocker:row.is_active_business_opportunity?'':(row.opportunity_pool_reason_codes||[])[0]||'',
         latest_evidence_time:row.latest_evidence_time||row.latest_route_verified_at||row.last_verified_at,
         evidence_url:row.category_evidence_url||row.contact_source_url||'',
         buyer_business_model:row.buyer_business_model,
@@ -1384,7 +1381,6 @@ export class Phase7Service {
         observed_company_categories:exportBusinessList(row.observed_customer_categories||row.observed_categories),
         dpv_supply_categories:exportBusinessList(row.matched_scopes||row.dpv_category_scopes),
         category_opportunity_basis:row.match_basis,
-        readiness_blockers:(row.readiness_blockers||[]).join?.('; ')||'',
         decision_maker:row.buyer_name,buying_department:row.buyer_department,business_contact:row.best_contact,
         contact_verification:row.contact_verification,management_baseline_match:row.customer_match,
         mexico_historical_reference_match:row.historical_customer_match,last_assessed_at:row.feasibility_calculated_at,

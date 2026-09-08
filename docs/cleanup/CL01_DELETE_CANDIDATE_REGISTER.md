@@ -1,5 +1,11 @@
 # CL01 — Deletion Candidate Register
 
+## Follow-on resolution — CL02/CL03, 2026-09-08
+
+The original CL01 inventory below remains the frozen before-state. CL02 retired the competing `docs/current-project-status.schema.json` after replacing its parser references; its exact content is retained as `docs/history/status/pre-cl02-current-project-status.schema.json`. The old current-status document is archived separately. CL03 removed three active access/readiness filter controls and three current export columns, while retaining read-only historical assessments and all database rows. No service, queue, table or applied migration file was deleted. See CL02_CURRENT_STATE_CLEANUP.md and CL03_BUSINESS_LEGACY_REMOVAL.md for executed tests and scope. Other candidates remain unapproved for deletion in this round.
+
+## Original CL01 decision
+
 Decision: inventory only; actual deleted files, routes, queues and database objects = 0. Candidate means a review target, not permission to remove it.
 
 ## Classification vocabulary

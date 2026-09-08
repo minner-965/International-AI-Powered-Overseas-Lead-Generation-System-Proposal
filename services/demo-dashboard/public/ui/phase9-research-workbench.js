@@ -153,7 +153,7 @@ function routeMetric(metric) {
   if (metric === 'verified_profile_buyers') return routeToJobs({ type:'DECISION_MAKER_ENRICHMENT' });
   if (metric === 'contact_ready_opportunities') {
     const status = $('#opportunity-status');
-    if (status) status.value = 'RECOMMENDED';
+    if (status) status.value = 'ACTIVE';
     activateView('opportunities');
     status?.dispatchEvent(new Event('change',{ bubbles:true }));
   }

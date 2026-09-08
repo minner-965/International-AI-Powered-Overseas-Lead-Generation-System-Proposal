@@ -24,6 +24,7 @@ import { CategoryScopeService } from './categoryProcurement/CategoryScopeService
 import { resolveTargetCategoryContext,resolveTargetCategoryContextFromDatabase } from './categoryProcurement/targetCategoryContext.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
 import {OpportunityPoolService} from './opportunityPool/OpportunityPoolService.js';
+import {currentBusinessProjection} from './opportunityPool/currentBusinessProjection.js';
 import {companyDirectoryAdmittedSql,evaluatedCategoryProfilesSql} from './categoryProcurement/categoryAdmission.js';
 import { AutoEvidenceOrchestrator,autoEvidenceConfig,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
@@ -2116,7 +2117,7 @@ app.get('/api/companies/:id/category-procurement-matches', async (req,res,next) 
       category_research_job_id,contact_research_job_id FROM leadgen.auto_evidence_tasks
       WHERE company_id=$1 ORDER BY product_profile,created_at DESC,id DESC`,[companyId]);
     const autoByProfile=new Map(auto.rows.map(item=>[item.product_profile,item]));
-    res.json(rows.map(item=>({
+    res.json(rows.map(item=>currentBusinessProjection({
       category_procurement_match_result_id:item.category_procurement_match_result_id,product_profile:item.product_profile,
       category_procurement_match_score:item.category_procurement_match_score,category_procurement_match_band:item.category_procurement_match_band,
       category_procurement_match_status:item.category_procurement_match_status,category_procurement_coverage:item.category_procurement_coverage,
@@ -2216,7 +2217,7 @@ app.get('/api/category-procurement/jobs/:id/results', managementAuth.authenticat
       JOIN leadgen.buyer_business_model_results b ON b.id=r.buyer_business_model_result_id
       LEFT JOIN leadgen.cooperation_feasibility_results f ON f.category_procurement_match_result_id=r.id
       WHERE r.research_job_id=$1 ORDER BY c.country_code,c.company_name,r.product_profile`,[id]);
-    res.json({job:categoryProcurementJobResponse(job.rows[0]),items:result.rows});
+    res.json({job:categoryProcurementJobResponse(job.rows[0]),items:result.rows.map(currentBusinessProjection)});
   }catch(error){next(error);}
 });
 
@@ -2269,29 +2270,19 @@ app.patch('/api/internal/category-procurement/jobs/:id/status', requireInternalT
 
 app.get('/api/opportunities', async (req,res,next) => {
   try{
-    const defaultCategoryProcurementOrder='CATEGORY_PROCUREMENT_MATCH → DIRECT_END_BUYER → category_procurement_match_band/score → decision_maker → best_contact/contact_verification → supplier_access_band → product_access_matrix → customer_match → historical_customer_match → dpv_score → NULLS LAST';
-    // Stable opportunity_key = concat(company_id, product_profile). Public V3 fields:
-    // category_procurement_match_score, category_procurement_match_band, category_procurement_match_status,
-    // category_procurement_coverage, buyer_business_model, buyer_subtype, observed_categories,
-    // match_basis, matched_scopes, observed_customer_categories,
-    // supplier_access_band, product_access_matrix, readiness, readiness_blockers.
-    // Default priority: CATEGORY_PROCUREMENT_MATCH → DIRECT_END_BUYER → category_procurement_match_band/score
-    // → decision_maker → best_contact → supplier_access_band → product_access_matrix
-    // → customer_match → historical_customer_match → dpv_score; NULLS LAST.
-    // Historical axes remain separate: mr.opportunity_matrix, access_opportunity_matrix and product_access_matrix.
+    // MC04 current company-level bands govern membership; contact and email are independent.
+    // Historical assessment fields are read-only compatibility, not current admission gates.
     const filters={
-      status:req.query.status === undefined ? 'RECOMMENDED' : req.query.status,
+      status:req.query.status === undefined ? 'ACTIVE' : req.query.status,
       ...req.query,
       buyer_business_model:req.query.buyer_business_model,
       buyer_subtype:req.query.buyer_subtype,
       category_procurement_match_band:req.query.category_procurement_match_band,
-      category_procurement_match_status:req.query.category_procurement_match_status,
-      product_access_matrix:req.query.product_access_matrix
+      category_procurement_match_status:req.query.category_procurement_match_status
     };
     const rows=await queryCategoryProcurementOpportunities({
       pool,query:filters,publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
     });
-    void defaultCategoryProcurementOrder;
     res.json(rows);
   }catch(error){next(error);}
 });

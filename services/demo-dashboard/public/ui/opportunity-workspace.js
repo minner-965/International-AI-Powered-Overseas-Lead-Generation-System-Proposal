@@ -6,10 +6,11 @@ const escapeHtml = value => String(value ?? '')
   .replaceAll("'", '&#039;');
 
 const statusMeta = Object.freeze({
-  RECOMMENDED: { zh: '业务机会', en: 'Active opportunities', tone: 'primary' },
-  EVIDENCE_REQUIRED: { zh: '待补资料', en: 'Evidence Required', tone: 'warning' },
+  PRECISION: { zh: '精准匹配', en: 'Precision match', tone: 'primary' },
+  RELEVANT: { zh: '相关匹配', en: 'Relevant match', tone: 'primary' },
+  GENERAL_RELEVANT: { zh: '泛相关', en: 'Broadly relevant', tone: 'primary' },
+  EXPLORATORY: { zh: '待研究', en: 'Exploratory', tone: 'warning' },
   MANAGEMENT_APPROVED: { zh: '已授权邮件联系', en: 'Email contact authorized', tone: 'success' },
-  HOLD: { zh: '暂不联系', en: 'Hold', tone: 'neutral' },
   NOT_SUITABLE: { zh: '当前不适合', en: 'Not Suitable', tone: 'danger' }
 });
 
@@ -137,7 +138,7 @@ function renderWorkstreamList(host, records, stream, getBlocker, getBlockerLabel
 
 function renderWorkstreams(items, getStatus, getBlocker, getBlockerLabel, onTask) {
   const records = items
-    .filter(item => getStatus(item) === 'EVIDENCE_REQUIRED')
+    .filter(item => getStatus(item) === 'EXPLORATORY')
     .sort((a,b)=>priorityScore(b,getBlocker)-priorityScore(a,getBlocker));
   const groups = { auto:[], human:[] };
   records.forEach(item=>groups[workstreamFor(item,getBlocker)].push(item));
@@ -184,6 +185,6 @@ export function renderOpportunityWorkspace({ items = [], counts = {}, workbench 
 export function setOpportunityResultSummary(count, status) {
   const host = document.querySelector('#opw-result-summary');
   if (!host) return;
-  const meta = statusMeta[status] || ({ SENT_NO_REPLY:{zh:'已发未回复',en:'Sent · no reply'}, REPLIED:{zh:'已回复',en:'Replied'} })[status];
+  const meta = statusMeta[status] || ({ ACTIVE:{zh:'业务机会',en:'Active opportunities'}, SENT_NO_REPLY:{zh:'已发未回复',en:'Sent · no reply'}, REPLIED:{zh:'已回复',en:'Replied'} })[status];
   host.innerHTML = `<strong>${numberValue(count)}</strong><span><span lang="zh-CN">条${meta ? ` · ${meta.zh}` : ''}</span><span lang="en">records${meta ? ` · ${meta.en}` : ''}</span></span>`;
 }

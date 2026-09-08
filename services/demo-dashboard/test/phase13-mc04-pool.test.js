@@ -65,13 +65,19 @@ test('MC04 actual opportunity query keeps three bands with no contacts or legacy
     return{rows:[]};
   }};
   const options={pool,publicDataOriginSql:"'public_web'",companyMarketVisibleSql:()=> 'TRUE',excludesConfirmedExistingCustomerSql:()=> 'TRUE'};
-  for(const query of [{},{status:'ALL',opportunity_pool_band:'ACTIVE'}]){
+  for(const query of [{},{status:'ALL',opportunity_pool_band:'ACTIVE'},
+    {status:'ACTIVE',product_access_matrix:'UNKNOWN_PRODUCT',readiness:'NEEDS_PRODUCT_EVIDENCE',cooperation_matrix:'LOW_PRIORITY'}]){
     const rows=await queryCategoryProcurementOpportunities({...options,query});
     assert.deepEqual(rows.map(r=>r.opportunity_pool_band),bands.slice(0,3));
+    assert.deepEqual(rows.map(r=>r.display_opportunity_status),bands.slice(0,3));
     assert.ok(rows.every(r=>r.review_warning&&r.is_active_business_opportunity));
     assert.ok(rows.every(r=>r.contact_readiness_labels.includes('NO_CONTACT_FOUND')&&r.email_eligibility.send_authorized===false));
     assert.ok(rows.every(r=>r.email_eligibility.reason_codes.includes('EXISTING_EMAIL_AUTHORIZATION_REQUIRES_EVALUATION')));
     assert.ok(rows.every(r=>r.opportunity_decision_id===null));
+  }
+  for(const band of bands){
+    const selected=await queryCategoryProcurementOpportunities({...options,query:{status:band}});
+    assert.deepEqual(selected.map(r=>r.opportunity_pool_band),[band]);
   }
   const scoped=await queryCategoryProcurementOpportunities({...options,query:{product_profile:'GENERAL_MERCHANDISE'}});
   assert.deepEqual(scoped.map(row=>row.opportunity_pool_band),['GENERAL_RELEVANT']);

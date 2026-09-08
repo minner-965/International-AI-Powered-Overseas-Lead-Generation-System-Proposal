@@ -15,6 +15,6 @@ function setBilingualDetail(value) {
 
 setBilingualDetail(storage.get('dpv-bilingual-detail', 'standard'));
 bilingual?.addEventListener('change', event => setBilingualDetail(event.target.value));
-if (defaultView) defaultView.value = 'RECOMMENDED';
+if (defaultView) defaultView.value = 'ACTIVE';
 
 document.documentElement.dataset.phase8Ui = 'active';

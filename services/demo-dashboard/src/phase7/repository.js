@@ -462,6 +462,8 @@ export class Phase7Repository {
 
   async listManualOfficialRoutes({ status = 'ACTIVE', limit = 200 } = {}) {
     const normalized=String(status||'ACTIVE').trim().toUpperCase();
+    // Retired tasks remain auditable but never re-enter an active work queue.
+    if (['ACTIVE','READY','IN_PROGRESS'].includes(normalized)) return [];
     const allowed=['READY','IN_PROGRESS','COMPLETED','DISMISSED'];
     if(normalized!=='ACTIVE'&&!allowed.includes(normalized)){
       const error=new Error('Invalid manual route status');error.code='MANUAL_ROUTE_STATUS_INVALID';error.status=400;throw error;

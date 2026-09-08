@@ -213,11 +213,11 @@ export function feasibilityReasonLabel(value) {
 export function buildOpportunityQuery(filters = {}, limit = 100) {
   const query = new URLSearchParams();
   const allowed = [
-    'status', 'country', 'product_profile', 'readiness', 'decision_maker_status', 'normalized_role',
+    'status', 'country', 'product_profile', 'decision_maker_status', 'normalized_role',
     'contact_type', 'contact_verification', 'historical_crm_status', 'management_match_band',
     'historical_match_band', 'buyer_business_model', 'buyer_subtype',
     'category_procurement_match_band', 'category_procurement_match_status',
-    'product_access_matrix', 'tier', 'feasibility_band', 'cooperation_matrix', 'sort'
+    'tier', 'feasibility_band', 'sort'
   ];
   for (const key of allowed) {
     const value = String(filters[key] ?? '').trim();
@@ -230,6 +230,6 @@ export function buildOpportunityQuery(filters = {}, limit = 100) {
 
 export function activeOpportunityFilterCount(filters = {}) {
   return Object.entries(filters).filter(([key, value]) => key !== 'sort'
-    && !(key === 'status' && String(value ?? '').trim().toUpperCase() === 'RECOMMENDED')
+    && !(key === 'status' && String(value ?? '').trim().toUpperCase() === 'ACTIVE')
     && String(value ?? '').trim()).length;
 }

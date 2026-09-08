@@ -17,7 +17,7 @@ test('Opportunity Workspace replaces the legacy text-first hero with real decisi
   ]) assert.match(html, new RegExp(`id="${hook}"`));
   assert.match(html, /href="\/ui\/opportunity-workspace\.css\?v=20260901"/);
   assert.equal((html.match(/class="opw-kpi is-/g) || []).length, 5);
-  assert.match(module, /items\s*\.filter\(item => getStatus\(item\) === 'EVIDENCE_REQUIRED'\)/);
+  assert.match(module, /items\s*\.filter\(item => getStatus\(item\) === 'EXPLORATORY'\)/);
   assert.match(module, /opw-chart-track/);
   assert.match(module, /data-opw-status/);
   assert.match(app, /renderOpportunityWorkspace\(\{[\s\S]*items: allOpportunities[\s\S]*counts: statusCounts/);
@@ -32,7 +32,7 @@ test('Opportunity Workspace keeps the released decision contracts and avoids dec
     publicFile('ui/opportunity-workspace.js'),
     publicFile('ui/opportunity-workspace.css')
   ]);
-  const statuses = ['RECOMMENDED', 'EVIDENCE_REQUIRED', 'MANAGEMENT_APPROVED', 'HOLD', 'NOT_SUITABLE', 'ALL'];
+  const statuses = ['ACTIVE','PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','MANAGEMENT_APPROVED','HOLD','NOT_SUITABLE','ALL'];
   for (const status of statuses) assert.equal((html.match(new RegExp(`data-opportunity-status="${status}"`, 'g')) || []).length, 1);
   assert.equal((html.match(/<th class="op-col-/g) || []).length, 8);
   assert.match(html, /name="contact_verification"/);

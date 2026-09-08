@@ -13,12 +13,12 @@ const advancedActions = document.querySelector('#opportunity-advanced-filter-act
 let opener = null;
 
 const primaryNames = new Set(['status', 'country', 'product_profile', 'sort']);
-const ignoredDefaults = new Map([['status', 'RECOMMENDED'], ['sort', 'category_procurement_desc']]);
+const ignoredDefaults = new Map([['status', 'ACTIVE'], ['sort', 'category_procurement_desc']]);
 
 const groups = Object.freeze([
   [['客户采购','Buyer'], ['buyer_business_model', 'buyer_subtype', 'decision_maker_status', 'normalized_role']],
-  [['类目与准入','Category & access'], ['category_procurement_match_band', 'category_procurement_match_status', 'feasibility_band', 'cooperation_matrix', 'product_access_matrix']],
-  [['联系方式','Contact'], ['readiness', 'contact_type', 'contact_verification']],
+  [['类目匹配','Category match'], ['category_procurement_match_band', 'category_procurement_match_status', 'feasibility_band']],
+  [['联系方式','Contact'], ['contact_type', 'contact_verification']],
   [['历史与参考','History & reference'], ['historical_crm_status', 'management_match_band', 'historical_match_band', 'tier']],
 ]);
 
@@ -58,7 +58,7 @@ function activeControls() {
 }
 
 function syncTabs() {
-  const value = statusSelect?.value || 'RECOMMENDED';
+  const value = statusSelect?.value || 'ACTIVE';
   tabs.forEach(tab => {
     const active = tab.dataset.opportunityStatus === value;
     tab.setAttribute('aria-selected', String(active));

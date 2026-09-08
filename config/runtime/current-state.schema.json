@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DPV current runtime state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generated_at",
+    "repo",
+    "commit",
+    "branch",
+    "current_phase",
+    "runtime_controls",
+    "provider_state",
+    "search_state",
+    "opportunity_pool_counts",
+    "contact_counts",
+    "email_state",
+    "reply_state",
+    "blockers",
+    "migrations",
+    "next_allowed_work"
+  ],
+  "properties": {
+    "generated_at": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "current_phase": {
+      "type": "string"
+    },
+    "runtime_controls": {
+      "type": "object"
+    },
+    "provider_state": {
+      "type": "object"
+    },
+    "search_state": {
+      "type": "object"
+    },
+    "opportunity_pool_counts": {
+      "type": "object"
+    },
+    "contact_counts": {
+      "type": "object"
+    },
+    "email_state": {
+      "type": "object"
+    },
+    "reply_state": {
+      "type": "object"
+    },
+    "blockers": {
+      "type": "array"
+    },
+    "migrations": {
+      "type": "object"
+    },
+    "next_allowed_work": {
+      "type": "string"
+    }
+  }
+}

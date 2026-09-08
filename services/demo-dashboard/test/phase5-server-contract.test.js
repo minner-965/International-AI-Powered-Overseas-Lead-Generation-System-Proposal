@@ -7,7 +7,7 @@ const frontend = await readFile(new URL('../public/app.js', import.meta.url), 'u
 const compose = await readFile(new URL('../../../compose.yaml', import.meta.url), 'utf8');
 const dockerfile = await readFile(new URL('../Dockerfile', import.meta.url), 'utf8');
 
-test('Phase 5 read APIs keep DPV score and Customer Match separate', () => {
+test('Phase 5 read APIs keep DPV score and Customer Match separate', async () => {
   for (const route of [
     '/api/companies/:id/score',
     '/api/companies/:id/score-history',
@@ -18,8 +18,9 @@ test('Phase 5 read APIs keep DPV score and Customer Match separate', () => {
     '/api/icp/profiles/:id',
     '/api/opportunities'
   ]) assert.match(server, new RegExp(route.replaceAll('/', '\\/').replace(':id', ':id')));
-  assert.match(server, /dpv_score/);
-  assert.match(server, /customer_match/);
+  const projection=await readFile(new URL('../src/categoryProcurement/opportunitiesRoute.js',import.meta.url),'utf8');
+  assert.match(projection, /dpv_score/);
+  assert.match(projection, /customer_match/);
 });
 
 test('management mutations use the internal-token boundary', () => {

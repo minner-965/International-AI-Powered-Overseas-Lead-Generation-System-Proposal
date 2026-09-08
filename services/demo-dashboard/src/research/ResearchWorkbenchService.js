@@ -528,21 +528,21 @@ export class ResearchWorkbenchService {
         const item=items[index];
         const snapshot=await client.query(`SELECT id FROM leadgen.product_profile_catalog_snapshots
           WHERE product_profile=$1 ORDER BY created_at DESC,id DESC LIMIT 1`,[item.product_profile]);
-        if(!snapshot.rowCount){const error=new Error('Catalog snapshot is required');error.code='PHASE9_CATALOG_SNAPSHOT_REQUIRED';throw error;}
+        const catalogSnapshotId=snapshot.rows[0]?.id||null;
         const current=await client.query(`SELECT c.verification_status,c.lifecycle_status,o.relationship_status
           FROM leadgen.companies c JOIN leadgen.business_opportunity_current o ON o.company_id=c.id AND o.product_profile=$2
           WHERE c.id=$1`,[item.company_id,item.product_profile]);
         if(!current.rowCount){const error=new Error('Current opportunity is required');error.code='PHASE9_OPPORTUNITY_REQUIRED';throw error;}
         const state=current.rows[0];
         const inputDigest=digest({job_id:jobId,company_id:item.company_id,product_profile:item.product_profile,
-          market:item.market,wave,rank:index+1,selection_reason:item.selection_reason,snapshot_id:snapshot.rows[0].id});
+          market:item.market,wave,rank:index+1,selection_reason:item.selection_reason,snapshot_id:catalogSnapshotId});
         const reasonCode=String(item.selection_reason||'EVIDENCE_REQUIRED').toUpperCase().replace(/[^A-Z0-9_]+/g,'_').slice(0,80);
         const inserted=await client.query(`INSERT INTO leadgen.research_job_cohort_items
           (research_job_id,company_id,product_profile,product_profile_catalog_snapshot_id,market_code,research_wave,
            selection_rank,selection_reason_code,company_verification_status_snapshot,company_lifecycle_status_snapshot,
            relationship_status_snapshot,selection_input_digest,selected_at)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()) RETURNING *`,[
-          jobId,item.company_id,item.product_profile,snapshot.rows[0].id,item.market,wave,index+1,
+          jobId,item.company_id,item.product_profile,catalogSnapshotId,item.market,wave,index+1,
           reasonCode,state.verification_status,state.lifecycle_status,
           state.relationship_status,inputDigest
         ]);

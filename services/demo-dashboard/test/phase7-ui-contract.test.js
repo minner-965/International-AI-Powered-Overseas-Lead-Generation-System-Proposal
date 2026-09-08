@@ -62,11 +62,11 @@ test('Phase 7 workspace actions do not expose or request a management token', as
   assert.doesNotMatch(ui,/phase7-management-access|Management Access|Management access token|showModal/);
 });
 
-test('Opportunities defaults to RECOMMENDED while keeping explicit ALL and five-state filters', async () => {
+test('Opportunities defaults to active aggregate while keeping five bands and separate contact views', async () => {
   const [html,opportunityUi]=await Promise.all([read('index.html'),read('opportunity-ui.js')]);
   assert.match(html,/id="opportunity-status"/);
-  assert.match(html,/<option value="RECOMMENDED" selected>/);
-  for(const status of ['MANAGEMENT_APPROVED','EVIDENCE_REQUIRED','HOLD','NOT_SUITABLE','ALL'])assert.match(html,new RegExp(`value="${status}"`));
+  assert.match(html,/<option value="ACTIVE" selected>/);
+  for(const status of ['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','MANAGEMENT_APPROVED','HOLD','NOT_SUITABLE','ALL'])assert.match(html,new RegExp(`value="${status}"`));
   assert.match(opportunityUi,/'status', 'country'/);
 });
 

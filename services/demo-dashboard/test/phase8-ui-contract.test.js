@@ -14,13 +14,13 @@ const position = (source, token) => {
   return value;
 };
 
-const statusValues = ['RECOMMENDED', 'EVIDENCE_REQUIRED', 'MANAGEMENT_APPROVED', 'HOLD', 'NOT_SUITABLE', 'ALL'];
+const statusValues = ['ACTIVE', 'PRECISION', 'RELEVANT', 'GENERAL_RELEVANT', 'EXPLORATORY', 'MANAGEMENT_APPROVED', 'HOLD', 'NOT_SUITABLE', 'ALL'];
 const opportunityFilterNames = [
-  'status', 'country', 'product_profile', 'readiness', 'decision_maker_status', 'normalized_role',
+  'status', 'country', 'product_profile', 'decision_maker_status', 'normalized_role',
   'contact_type', 'contact_verification', 'historical_crm_status', 'management_match_band',
   'historical_match_band', 'buyer_business_model', 'buyer_subtype',
   'category_procurement_match_band', 'category_procurement_match_status',
-  'product_access_matrix', 'tier', 'feasibility_band', 'cooperation_matrix', 'sort'
+  'tier', 'feasibility_band', 'sort'
 ];
 
 test('V3 foundations replace Phase 8 foundations in a documented load order', async () => {
@@ -106,34 +106,34 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
   assert.match(app,/Promise\.allSettled\(requests\.map/);
 });
 
-test('all 20 opportunity query parameters retain their names and deterministic values', async () => {
+test('CL03 current opportunity query parameters retain deterministic values after retiring access gates', async () => {
   const [html, filtersUi, components] = await readMany(['index.html', 'ui/filters.js', 'ui/phase8-components.css']);
   const filters = Object.fromEntries(opportunityFilterNames.map((name, index) => [name, `VALUE_${index}`]));
   const query = buildOpportunityQuery(filters, 500);
-  assert.equal(opportunityFilterNames.length, 20);
+  assert.equal(opportunityFilterNames.length, 17);
   for (const name of opportunityFilterNames) {
     assert.equal(query.get(name), filters[name]);
     assert.match(html, new RegExp(`name="${name}"`));
   }
   assert.equal(query.get('limit'), '500');
-  assert.equal([...query.keys()].filter(key => key !== 'limit').length, 20);
-  for (const group of ['Buyer', 'Category & access', 'Contact', 'History & reference']) assert.match(filtersUi, new RegExp(`'${group}'`));
+  assert.equal([...query.keys()].filter(key => key !== 'limit').length, 17);
+  for (const group of ['Buyer', 'Category match', 'Contact', 'History & reference']) assert.match(filtersUi, new RegExp(`'${group}'`));
   assert.match(filtersUi, /primaryNames\s*=\s*new Set\(\['status', 'country', 'product_profile', 'sort'\]\)/);
   assert.match(filtersUi, /advancedHost\.append\(section\)/);
   assert.match(filtersUi, /data-remove-filter/);
   assert.match(components, /\.crm-filter-chip-list\s*\{[^}]*flex-wrap:\s*wrap/);
 });
 
-test('eight opportunity views preserve six backend decisions and default, communication views query ALL', async () => {
+test('CL03 five bands and independent communication views preserve keyboard filters', async () => {
   const [html, filters, app] = await readMany(['index.html', 'ui/filters.js','app.js']);
   const tabs = html.match(/data-opportunity-status="[^"]+"/g) || [];
   assert.equal(tabs.length, statusValues.length + 2);
   for (const status of ['SENT_NO_REPLY','REPLIED']) assert.equal(tabs.filter(tag => tag === `data-opportunity-status="${status}"`).length,1);
   assert.match(app,/status:presentationView \? 'ALL' : filters.status/);
   for (const status of statusValues) assert.equal(tabs.filter(tag => tag === `data-opportunity-status="${status}"`).length, 1);
-  assert.match(tagWith(html, 'data-opportunity-status', 'RECOMMENDED'), /aria-selected="true"/);
-  assert.match(html, /<option value="RECOMMENDED" selected>/);
-  assert.match(tagWith(html, 'data-opportunity-status', 'EVIDENCE_REQUIRED'), /aria-selected="false"/);
+  assert.match(tagWith(html, 'data-opportunity-status', 'ACTIVE'), /aria-selected="true"/);
+  assert.match(html, /<option value="ACTIVE" selected>/);
+  assert.match(tagWith(html, 'data-opportunity-status', 'EXPLORATORY'), /aria-selected="false"/);
   for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) assert.match(filters, new RegExp(`'${key}'`));
   assert.match(filters, /tabIndex\s*=\s*active\s*\?\s*0\s*:\s*-1/);
 });
@@ -172,8 +172,8 @@ test('Opportunities renders eight compact business columns with category score r
   assert.equal((renderer.match(/opportunityDisplayBadge\(/g) || []).length, 1);
   assert.match(`${html}\n${app}`, /暂无当前业务机会/);
   assert.match(`${html}\n${app}`, /No active business opportunities/);
-  assert.match(`${html}\n${app}`, /View Evidence Required/);
-  assert.match(app, /RECOMMENDED/);
+  assert.match(`${html}\n${app}`, /View exploratory companies/);
+  assert.match(app, /EXPLORATORY/);
   assert.match(app, /opportunity-table/);
   assert.match(app, /hidden/);
 });

@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {parseCurrentState,validateCurrentState,assertCurrentProjectionMatches} from '../../../scripts/current-state.mjs';
+const snapshot=()=>parseCurrentState(readFileSync(new URL('../../../docs/CURRENT_PROJECT_STATUS.md',import.meta.url),'utf8'));
+test('CL02 current snapshot has no historical phase keys',()=>assert.equal(validateCurrentState(snapshot()),true));
+test('CL02 obsolete top-level current keys fail closed',()=>{const s=snapshot();s.phase13_search={runtime_activation:'NOT_ACTIVATED_PENDING_CONFIG'};assert.throws(()=>validateCurrentState(s),/historical/);});
+test('CL02 historical keys nested in a current projection fail closed',()=>{const s=snapshot();s.provider_state.phase13_search={};assert.throws(()=>validateCurrentState(s),/Historical/);});
+test('CL02 search arithmetic rejects a stale completion count',()=>{const s=snapshot();s.search_state.completed++;assert.throws(()=>validateCurrentState(s),/reconcile/);});
+test('CL02 provider projection must equal observed DB projection',()=>{const s=snapshot(),actual=snapshot();s.provider_state.account_state='AVAILABLE';assert.throws(()=>assertCurrentProjectionMatches(s,actual),/provider_state/);});
+test('CL02 controls must equal observed DB controls',()=>{const s=snapshot(),actual=snapshot();s.runtime_controls.persisted[0].enabled=!s.runtime_controls.persisted[0].enabled;assert.throws(()=>assertCurrentProjectionMatches(s,actual),/runtime_controls/);});
+test('CL02 execution counters must equal observed execution tables',()=>{const s=snapshot(),actual=snapshot();s.search_state.completed++;s.search_state.remaining--;assert.throws(()=>assertCurrentProjectionMatches(s,actual),/search_state/);});
+test('CL02 authoring identity may change without fabricating runtime change',()=>{const s=snapshot(),actual=snapshot();actual.generated_at=new Date().toISOString();assert.equal(assertCurrentProjectionMatches(s,actual),true);});

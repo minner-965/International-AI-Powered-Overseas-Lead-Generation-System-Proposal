@@ -22,24 +22,29 @@ test('desktop Opportunities exposes eight compact decision columns and preserves
   assert.match(html,/id=["']opportunity-table["'][\s\S]*colspan=["']8["']/);
 });
 
-test('V3 Opportunities exposes buyer/category/matrix filters with stable IDs',()=>{
+test('V3 Opportunities retains buyer/category filters and retires access-gate filters',()=>{
   for(const id of [
     'opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band',
-    'opportunity-category-procurement-status','opportunity-product-access-matrix'
+    'opportunity-category-procurement-status'
   ]) assert.match(html,new RegExp(`id=["']${id}["']`));
+  assert.doesNotMatch(html,/name="(?:product_access_matrix|cooperation_matrix|readiness)"/);
 });
 
-test('Opportunities renderer consumes V3 fields without collapsing independent scores or matrices',()=>{
+test('Opportunities renderer preserves category and score fields with access matrices in historical mapper only',()=>{
   const source=`${opportunities}\n${app}\n${productMatch}`;
   for(const field of [
     'buyer_business_model','buyer_subtype','category_procurement_match_score','category_procurement_match_band',
     'category_procurement_match_status','category_procurement_coverage','observed_categories','matched_scopes',
-    'match_basis','observed_customer_categories','supplier_access_band','product_access_matrix','readiness'
+    'match_basis','observed_customer_categories','supplier_access_band','readiness'
   ]) assert.match(source,new RegExp(`\\b${field}\\b`));
   for(const removed of ['top_product_opportunity','product_opportunity_count','product_opportunity_status']){
     assert.doesNotMatch(source,new RegExp(`\\b${removed}\\b`));
   }
-  for(const legacy of ['dpv_score','customer_match','historical_customer_match','cooperation_matrix']) assert.match(source,new RegExp(`\\b${legacy}\\b`));
+  for(const score of ['dpv_score','customer_match','historical_customer_match']) assert.match(source,new RegExp(`\\b${score}\\b`));
+  const history = read('phase7-ui.js');
+  assert.match(history,/product_access_matrix/);
+  assert.match(opportunities,/cooperationMatrixLabel/);
+  assert.doesNotMatch(opportunities,/'product_access_matrix'|'cooperation_matrix'/);
 });
 
 test('mobile prioritizes company/category/status/action and retains secondary facts in detail',()=>{
