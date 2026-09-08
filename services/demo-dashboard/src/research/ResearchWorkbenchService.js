@@ -1,6 +1,7 @@
 import { projectResearchTask,compareResearchTasks,rankCohortCandidate } from './researchTaskProjection.js';
 import { createHash } from 'node:crypto';
 import {firstContactPendingSql} from '../outreach/contactProgress.js';
+import {summarizePoolRows} from '../opportunityPool/OpportunityPoolService.js';
 
 const ACTIVE_JOB_STATES = Object.freeze(['QUEUED','DISCOVERING','CRAWLING','QUALIFYING','SCORING','RESOLVING','VERIFYING','PERSISTING']);
 const COMPLETE_JOB_STATES = new Set(['COMPLETE','COMPLETED']);
@@ -138,9 +139,11 @@ function publicJob(row = {}) {
 }
 
 export class ResearchWorkbenchService {
-  constructor({pool,hunter=null,autoEvidence=null,providerAccountState=null,discoveryAccountState=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[]}={}) {
+  constructor({pool,hunter=null,autoEvidence=null,providerAccountState=null,discoveryAccountState=null,contactVerificationTtlDays=30,runCapUnits=20000,billingPeriodCapUnits=20000,publicDataOrigins=[],opportunityPoolService=null,companyMarketVisibleSql=()=> 'TRUE'}={}) {
     if (!pool) throw new Error('ResearchWorkbenchService requires a PostgreSQL pool');
     this.pool=pool;
+    this.opportunityPoolService=opportunityPoolService;
+    this.companyMarketVisibleSql=companyMarketVisibleSql;
     this.hunter=hunter;
     this.autoEvidence=autoEvidence;
     this.providerAccountState=providerAccountState;
@@ -293,7 +296,7 @@ export class ResearchWorkbenchService {
   }
 
   async getSummary() {
-    const [counts,catalog,budget,automation,searchProvider]=await Promise.all([
+    const [counts,catalog,budget,automation,searchProvider,opportunityPool]=await Promise.all([
       this.pool.query(`SELECT
         (SELECT count(*)::int FROM leadgen.research_jobs WHERE status=ANY($1::text[])) active_jobs,
         (SELECT count(DISTINCT d.id)::int FROM leadgen.decision_makers d JOIN leadgen.decision_maker_product_relevance pr ON pr.decision_maker_id=d.id
@@ -307,7 +310,8 @@ export class ResearchWorkbenchService {
             AND d.normalized_role IN('BUYER','SENIOR_BUYER','HEAD_OF_BUYING','PURCHASING','PROCUREMENT','CATEGORY_MANAGEMENT','MERCHANDISING','SOURCING')) verified_email_routes,
         (SELECT count(*)::int FROM leadgen.business_opportunity_current o WHERE contact_readiness='READY' AND business_fit_status='FIT' AND ${firstContactPendingSql('o')}) contact_ready_opportunities`,[ACTIVE_JOB_STATES,this.contactVerificationTtlDays]),
       this.catalogProfiles(),this.budgetState(),this.autoEvidence?this.autoEvidence.summary():Promise.resolve(null),
-      this.providerAccountState?this.providerAccountState.getState():Promise.resolve({status:'UNKNOWN'})
+      this.providerAccountState?this.providerAccountState.getState():Promise.resolve({status:'UNKNOWN'}),
+      this.getOpportunityPoolSummary()
     ]);
     const discoveryProvider=this.discoveryAccountState?await this.discoveryAccountState.getState('COMPANY_DISCOVERY'):searchProvider;
     const tasks=await this.listTasks({limit:3});
@@ -328,9 +332,10 @@ export class ResearchWorkbenchService {
       evidence_service:{status:searchProvider.status,checked_at:searchProvider.checked_at||null},
       tavily_usage:{...(automation?.tavily_metrics||{}),limit_mode:'PROVIDER_ACCOUNT_ONLY'}
     }:null;
-    return {as_of:new Date().toISOString(),active_jobs:Number(row.active_jobs),evidence_tasks:tasks.total,
+    return {as_of:new Date().toISOString(),opportunity_pool:opportunityPool,active_jobs:Number(row.active_jobs),evidence_tasks:tasks.total,
       verified_profile_buyers:Number(row.verified_profile_buyers),verified_email_routes:Number(row.verified_email_routes),
-      contact_ready_opportunities:Number(row.contact_ready_opportunities),hunter_mode:budget.mode,hunter_budget_state:budget.state,
+      contact_ready_opportunities:opportunityPool?opportunityPool.contact_ready:Number(row.contact_ready_opportunities),
+      legacy_first_contact_pending_opportunities:Number(row.contact_ready_opportunities),hunter_mode:budget.mode,hunter_budget_state:budget.state,
       verification_service:{state:budget.state,mode:budget.mode,per_run_cap_units:budget.per_run_cap_units,
         billing_period_remaining_units:budget.billing_period_remaining_units},catalog_profiles:catalog,priority_tasks:tasks.items,
       auto_evidence:autoEvidence};
@@ -392,27 +397,42 @@ export class ResearchWorkbenchService {
     return result.rowCount?publicJob(result.rows[0]):null;
   }
 
+  async getOpportunityPoolSummary(){
+    if(!this.opportunityPoolService)return null;
+    const [rows,visible]=await Promise.all([this.opportunityPoolService.list({band:'ALL'}),
+      this.pool.query(`SELECT c.id FROM leadgen.companies c WHERE ${this.companyMarketVisibleSql('c')}`)]);
+    const ids=new Set(visible.rows.map(row=>row.id));
+    return summarizePoolRows(rows.filter(row=>ids.has(row.company_id)));
+  }
   async getJobResults(jobId) {
     const job=await this.getJob(jobId);if(!job)return null;
-    const companies=await this.pool.query(`SELECT e.company_id,c.company_name,c.country_code,e.product_profiles,e.attempt_status,
+    const companies=await this.pool.query(`WITH linked_companies AS (
+      SELECT company_id FROM leadgen.enrichment_job_companies WHERE research_job_id=$1
+      UNION SELECT id FROM leadgen.companies WHERE research_job_id=$1
+      UNION SELECT company_id FROM leadgen.research_candidate_verifications WHERE research_job_id=$1 AND company_id IS NOT NULL
+      UNION SELECT unnest(requested_company_ids) FROM leadgen.research_jobs WHERE id=$1
+    ) SELECT c.id company_id,c.company_name,c.country_code,e.product_profiles,e.attempt_status,e.id IS NOT NULL enrichment_record_present,
       e.queries_executed,e.sources_found,e.decision_makers_found,e.contact_routes_found,
-      coalesce(pu.provider_call_count,0) provider_call_count,coalesce(pu.used_units,0) used_units,e.timeout_count,
+      pu.provider_call_count,pu.used_units,e.timeout_count,
       CASE WHEN e.last_error IS NULL THEN NULL WHEN e.last_error ILIKE '%timeout%' THEN 'TEMPORARY_ERROR' ELSE 'COMPANY_STAGE_FAILED' END blocker,
       e.started_at,e.completed_at
-      FROM leadgen.enrichment_job_companies e JOIN leadgen.companies c ON c.id=e.company_id
+      FROM linked_companies linked JOIN leadgen.companies c ON c.id=linked.company_id
+      LEFT JOIN leadgen.enrichment_job_companies e ON e.company_id=c.id AND e.research_job_id=$1
       LEFT JOIN leadgen.research_job_company_provider_usage_summary pu
-        ON pu.research_job_id=e.research_job_id AND pu.company_id=e.company_id
-      WHERE e.research_job_id=$1 ORDER BY c.country_code,c.company_name,c.id`,[jobId]);
+        ON pu.research_job_id=$1 AND pu.company_id=c.id
+      WHERE ${this.companyMarketVisibleSql('c')} ORDER BY c.country_code,c.company_name,c.id`,[jobId]);
     const sourceRows=await this.pool.query(`SELECT source_url,captured_at,source_authority FROM leadgen.decision_maker_sources
       WHERE research_job_id=$1 ORDER BY captured_at DESC,id DESC LIMIT 100`,[jobId]);
     const stageRows=await this.pool.query(`SELECT DISTINCT ON(stage) stage,outcome_code,reason_codes,source_count,retry_number,occurred_at
       FROM leadgen.research_job_stage_events WHERE research_job_id=$1 AND stage<>'SUPPLIER_ACCESS'
       ORDER BY stage,occurred_at DESC,id DESC`,[jobId]);
+    const storedNumber=value=>value==null?null:Number(value);
     const items=companies.rows.map(row=>({company_id:row.company_id,company_name:row.company_name,market:row.country_code,
-      product_profiles:row.product_profiles,status:row.attempt_status,queries_executed:Number(row.queries_executed),sources_found:Number(row.sources_found),
-      verified_buyers:Number(row.decision_makers_found),contact_routes:Number(row.contact_routes_found),
-      verification_calls:Number(row.provider_call_count),used_units:Number(row.used_units),
-      timeout_count:Number(row.timeout_count),blocker:row.blocker,started_at:row.started_at,completed_at:row.completed_at}));
+      product_profiles:row.product_profiles||[],status:row.attempt_status||null,enrichment_record_present:row.enrichment_record_present===true,
+      queries_executed:storedNumber(row.queries_executed),sources_found:storedNumber(row.sources_found),
+      verified_buyers:storedNumber(row.decision_makers_found),contact_routes:storedNumber(row.contact_routes_found),
+      verification_calls:storedNumber(row.provider_call_count),used_units:storedNumber(row.used_units),
+      timeout_count:storedNumber(row.timeout_count),blocker:row.blocker,started_at:row.started_at,completed_at:row.completed_at}));
     const totals=items.reduce((sum,item)=>({companies:sum.companies+1,sources:sum.sources+item.sources_found,buyers:sum.buyers+item.verified_buyers,
       contacts:sum.contacts+item.contact_routes,verification_calls:sum.verification_calls+item.verification_calls,
       used_units:sum.used_units+item.used_units}),{companies:0,sources:0,buyers:0,contacts:0,verification_calls:0,used_units:0});
@@ -428,7 +448,10 @@ export class ResearchWorkbenchService {
       :row.outcome_code==='TEMPORARY_ERROR'?'FAILED_RETRYABLE':row.outcome_code==='NOT_SUITABLE'?'COMPLETED':'COMPLETED',
       outcome:row.outcome_code,reason_codes:row.reason_codes||[],source_count:Number(row.source_count||0),retry_number:Number(row.retry_number||0),
       occurred_at:row.occurred_at})):fallbackStages;
-    return {as_of:new Date().toISOString(),job,stages,items,sources:sourceRows.rows.map(row=>({source_url:row.source_url,captured_at:row.captured_at,source_authority:row.source_authority}))};
+    const decorated=this.opportunityPoolService?await this.opportunityPoolService.decorateRows(items):items;
+    return {as_of:new Date().toISOString(),job,stages,items:decorated,
+      opportunity_pool:this.opportunityPoolService?summarizePoolRows(decorated):null,
+      sources:sourceRows.rows.map(row=>({source_url:row.source_url,captured_at:row.captured_at,source_authority:row.source_authority}))};
   }
 
   async selectCohort({limit=5,excludeCompanyIds=[]}={}) {

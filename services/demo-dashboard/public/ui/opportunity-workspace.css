@@ -155,6 +155,12 @@
  .opw-workspace .crm-opportunity-table td[class] { width:auto; }
  .opw-workspace .crm-opportunity-table .op-col-company { grid-column:1; grid-row:1; }
  .opw-workspace .crm-opportunity-table .op-col-status { grid-column:2; grid-row:1; }
+ .opw-workspace .crm-opportunity-table tr:has(.v3-opportunity-dimensions) .op-col-company { grid-column:1 / -1; }
+ .opw-workspace .crm-opportunity-table tr:has(.v3-opportunity-dimensions) .op-col-status { grid-column:1 / -1; grid-row:2; }
+ .opw-workspace .crm-opportunity-table tr:has(.v3-opportunity-dimensions) .op-col-product-match { grid-row:3; }
+ .opw-workspace .crm-opportunity-table tr:has(.v3-opportunity-dimensions) .op-col-action { grid-row:4; }
+ .opw-workspace .v3-opportunity-dimensions { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+ .opw-workspace .crm-op-cell.is-status .v3-opportunity-dimensions .data-state-badge { padding:4px 6px; }
  .opw-workspace .crm-opportunity-table .op-col-product-match { grid-column:1 / -1; grid-row:2; }
  .opw-workspace .crm-opportunity-table .op-col-action { grid-column:1 / -1; grid-row:3; }
  .opw-workspace .crm-opportunity-table :is(.op-col-market,.op-col-contact,.op-col-activity,.op-col-owner) { display:none; }

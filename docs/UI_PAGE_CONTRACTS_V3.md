@@ -2,6 +2,10 @@
 
 Status: implemented page contracts, consolidated at WP-UI16. Thirteen current routes include Contact-ready and Replies; System Status is an existing overview/settings surface, not a separate new business entity. Verification scope and remaining gaps are recorded in PHASE12_UI_RESULT.md.
 
+## MC04 functional amendment — 2026-09-08
+
+The approved MC04 business projection supersedes the earlier opportunity-admission semantics below, not V3 styling. PRECISION, RELEVANT and GENERAL_RELEVANT automatically mean Active Business Opportunity. Review flags are expandable warnings, not confirmation controls. Overview, Opportunities, Company Detail, Contact-ready, Research/Jobs, Email Review, existing search/service monitors and Export show independent Business Opportunity, Contact Readiness and Email Eligibility. Contacting a company does not remove its business opportunity; first-contact queues and mail authorization remain separate. Operational search monitoring stays in the existing Research/Jobs/Settings surfaces. Historical scores, task outcomes and approval records retain their original meaning.
+
 | Page | V3 structure | Data/behavior invariants |
 | --- | --- | --- |
 | Overview | Four KPIs; 2:1 analysis/distribution; 1:1 tasks/attention | Recommended, verified-active, SENT_NO_REPLY PROSPECT, actionable pending; no synthetic trends; actual API scope |

@@ -1,3 +1,4 @@
+import { hasOpportunityPool, isActiveBusinessOpportunity, opportunityDimensionsMarkup, contactReadinessMarkup } from './ui/v3/opportunity-dimensions.js';
 import {
   activeFilterCount,
   buildVerificationQuery,
@@ -200,9 +201,9 @@ const productProfileLabel = lead => productProfileValues(lead).length > 1
     : esc(displayValue(lead.product_category || (Array.isArray(lead.product_categories) ? lead.product_categories.join(', ') : lead.product_categories)) || '-');
 const pairHtml = value => bi(value?.[0] || '待确认',value?.[1] || 'To confirm');
 const enumBadge = (value,tone='unknown') => `<span class="data-state-badge state-${esc(tone)}">${pairHtml(value)}</span>`;
-const phase7OpportunityStatus = item => displayValue(item?.display_opportunity_status || item?.displayOpportunityStatus || item?.opportunity_status || item?.opportunityStatus || item?.system_recommendation_status || item?.systemRecommendationStatus).toUpperCase();
+const phase7OpportunityStatus = item => hasOpportunityPool(item) ? (isActiveBusinessOpportunity(item) ? 'RECOMMENDED' : item.opportunity_pool_band === 'NOT_SUITABLE' ? 'NOT_SUITABLE' : 'EVIDENCE_REQUIRED') : displayValue(item?.display_opportunity_status || item?.displayOpportunityStatus || item?.opportunity_status || item?.opportunityStatus || item?.system_recommendation_status || item?.systemRecommendationStatus).toUpperCase();
 const phase7OpportunityBadge = value => value ? `<span class="data-state-badge state-${esc(phase7StatusTone(value))}">${pairHtml(phase7StateLabel(value))}</span>` : '';
-const opportunityDisplayBadge = item => `<span data-contact-progress>${contactProgressLabel(item)
+const opportunityDisplayBadge = item => hasOpportunityPool(item) ? opportunityDimensionsMarkup(item) : `<span data-contact-progress>${contactProgressLabel(item)
   ? enumBadge(contactProgressLabel(item),['OPTED_OUT','DO_NOT_CONTACT','BOUNCED'].includes(item.contact_progress_status)?'danger':'info')
   : phase7OpportunityBadge(phase7OpportunityStatus(item))}</span>`;
 const valueList = value => {
@@ -581,7 +582,7 @@ async function loadMetrics() {
   if(state.metricsGeneration!==generation)return;
   const allOpportunities = opportunityPayload == null ? null : (Array.isArray(opportunityPayload) ? opportunityPayload : opportunityPayload?.items || opportunityPayload?.opportunities || []).filter(companyMarketIsVisible);
   if (allOpportunities) state.overviewOpportunities = allOpportunities;
-  const statusCounts = Object.fromEntries(opportunityStates.map(status => [status,allOpportunities?.filter(item => phase7OpportunityStatus(item) === status && (!['RECOMMENDED','MANAGEMENT_APPROVED'].includes(status)||initialContactPending(item))).length ?? null]));
+  const statusCounts = Object.fromEntries(opportunityStates.map(status => [status,allOpportunities?.filter(item => phase7OpportunityStatus(item) === status && (hasOpportunityPool(item)||!['RECOMMENDED','MANAGEMENT_APPROVED'].includes(status)||initialContactPending(item))).length ?? null]));
   renderOverview({metrics:data,opportunities:allOpportunities,operations,research,jobs,getStatus:phase7OpportunityStatus,onCompany:showLead});
   if (allOpportunities) document.querySelectorAll('[data-status-count]').forEach(node => {
     const code = node.dataset.statusCount;
@@ -808,6 +809,7 @@ function opportunitySupplierCell(item) {
 }
 
 function opportunityRouteReadinessCell(item) {
+  if (hasOpportunityPool(item)) return contactReadinessMarkup(item);
   const routes=[];
   if (item.buyer_name && String(item.decision_maker_status||'').toUpperCase()==='VERIFIED') routes.push(bi('具名买手','Named buyer'));
   if (item.official_email_route) routes.push(bi('官方邮箱','Official email'));
@@ -944,7 +946,7 @@ function renderOpportunityTable() {
     if (stateHost) {
       stateHost.hidden = false;
       stateHost.innerHTML = selectedStatus === 'RECOMMENDED' && !activeOpportunityFilterCount(filters)
-        ? `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-user-search" aria-hidden="true"></i></span><div><h3>${bi('尚无联系就绪机会','No contact-ready opportunities yet')}</h3></div><button class="btn btn-outline-primary" type="button" data-opportunity-evidence-view>${bi('查看待补资料','View Evidence Required')}</button></div>`
+        ? `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-user-search" aria-hidden="true"></i></span><div><h3>${bi('暂无当前业务机会','No active business opportunities')}</h3></div><button class="btn btn-outline-primary" type="button" data-opportunity-evidence-view>${bi('查看待补资料','View Evidence Required')}</button></div>`
         : `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-filter-search" aria-hidden="true"></i></span><div><h3>${bi('当前筛选没有业务机会','No opportunities match the current view')}</h3></div></div>`;
       stateHost.querySelector('[data-opportunity-evidence-view]')?.addEventListener('click',()=>{
         const select = $('#opportunity-status');

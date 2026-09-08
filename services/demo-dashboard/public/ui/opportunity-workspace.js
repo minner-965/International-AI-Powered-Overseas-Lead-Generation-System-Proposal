@@ -6,9 +6,9 @@ const escapeHtml = value => String(value ?? '')
   .replaceAll("'", '&#039;');
 
 const statusMeta = Object.freeze({
-  RECOMMENDED: { zh: '建议联系', en: 'Recommended', tone: 'primary' },
+  RECOMMENDED: { zh: '业务机会', en: 'Active opportunities', tone: 'primary' },
   EVIDENCE_REQUIRED: { zh: '待补资料', en: 'Evidence Required', tone: 'warning' },
-  MANAGEMENT_APPROVED: { zh: '已确认待联系', en: 'Approved', tone: 'success' },
+  MANAGEMENT_APPROVED: { zh: '已授权邮件联系', en: 'Email contact authorized', tone: 'success' },
   HOLD: { zh: '暂不联系', en: 'Hold', tone: 'neutral' },
   NOT_SUITABLE: { zh: '当前不适合', en: 'Not Suitable', tone: 'danger' }
 });

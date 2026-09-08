@@ -95,7 +95,7 @@ At the start of every task, complete both checks below before implementation beg
 ## Phase 13 rule-reading and dry-run boundary
 
 - Before Phase 13 business/category/contact work, read `docs/rules/PHASE13_BUSINESS_SCOPE.md`, `docs/rules/PHASE13_OPPORTUNITY_POOL_RULES.md` and `docs/rules/PHASE13_CONTACT_READINESS_RULES.md`.
-- V2.1 MC03 is the opportunity-pool read-only comparison, superseding the old MC03 search-shadow numbering. Do not redo MC00–02. MC03 does not activate rules, call providers or send mail; preserve current business rows and stop for review before MC04.
+- V2.1 MC03 is the historical opportunity-pool read-only comparison, superseding old search-shadow numbering. The user approved MC04: PRECISION/RELEVANT/GENERAL_RELEVANT enter Active Business Opportunity directly; no manual Opportunity Confirmation; review flags are nonblocking. Keep Business Opportunity, Contact Readiness and Email Eligibility independent across V3 UI/API/export. Append new pool revisions, preserve legacy rows and email approval/security gates. Do not redo MC00–03, call providers, send mail or begin MC05. STOP after MC04.
 - Keep rule documentation, standalone implementation and tests consistent. Later work packages need their own explicit activation and applicable rule files; a broad future plan is not permission to run later work.
 
 ## Existing opportunity email behavior

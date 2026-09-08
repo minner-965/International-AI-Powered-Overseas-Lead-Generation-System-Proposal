@@ -37,6 +37,7 @@ import {
 } from '../dataExchange/index.js';
 import { validateReadOnlyManifest } from '../dataExchange/sharedFolderManifest.js';
 import { Phase7Repository, cleanFilename, notFound, requiredUuid, sha256 } from './repository.js';
+import {OpportunityPoolService} from '../opportunityPool/OpportunityPoolService.js';
 
 function bool(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -220,7 +221,10 @@ export class Phase7Service {
   async getOutreachOperationsSummary(){
     const [summary,monitor]=await Promise.all([this.repository.getOutreachOperationsSummary(),this.repository.getOutreachMonitoring()]);
     const {last_inbound_sync,last_successful_sync,...counts}=monitor;
-    return{...summary,monitoring:{last_inbound_sync,last_successful_sync,
+    const poolRows=this.opportunityQuery?await this.opportunityQuery({status:'ALL',limit:5000}):null;
+    const active=poolRows?.filter(r=>r.is_active_business_opportunity);
+    return{...summary,...(active?{active_business_opportunities:active.length,
+      pending_contacts:active.filter(r=>!(r.contact_readiness_labels||[]).some(x=>x.endsWith('_READY'))).length}:{}),monitoring:{last_inbound_sync,last_successful_sync,
       smtp_configured:Boolean(this.env.SMTP_HOST&&this.env.SMTP_USER&&this.env.SMTP_PASSWORD),
       imap_configured:Boolean(this.env.IMAP_HOST&&this.env.IMAP_USER&&this.env.IMAP_PASSWORD),
       last_error_class:counts.imap_sync_failure?'IMAP_SYNC_FAILURE':null,
@@ -251,7 +255,15 @@ export class Phase7Service {
       return{...item,send_allowed:reasons.length===0,send_blocked_reasons:reasons,
         retry_allowed:item.retry_before_provider_possible===true&&sendingReasons.length===0&&gate.reasons.length===0};
     }));
-    return{items:projected,sending_enabled:sendingReasons.length===0,sending_blocked_reasons:sendingReasons,
+    const poolService=this.opportunityQuery?new OpportunityPoolService({pool:this.pool}):null;
+    const decorated=poolService?await poolService.decorateRows(projected):projected;
+    // Active business companies without a mailbox/draft remain visible as contact research,
+    // not silently absent and not automatically authorized for email.
+    const activePool=this.opportunityQuery?await this.opportunityQuery({status:'RECOMMENDED',limit:5000}):[];
+    const present=new Set(decorated.map(r=>r.company_id));
+    const additions=activePool.filter(r=>!present.has(r.company_id)).map(r=>({...r,opportunity_status:r.legacy_display_opportunity_status||'NOT_REVIEWED',
+      send_allowed:false,send_blocked_reasons:['EXACT_VERSION_APPROVAL_REQUIRED'],draft_status:null,recipient_id:null,activity:[]}));
+    return{items:[...decorated,...additions],sending_enabled:sendingReasons.length===0,sending_blocked_reasons:sendingReasons,
       marketing_context:context?{id:context.id,version:context.version,status:context.approval_decision||context.context_status}:null,
       sender_configured:Boolean(this.env.SMTP_FROM_EMAIL&&this.env.SMTP_REPLY_TO),
       template:{subject:'Womenswear and general merchandise cooperation',body_text:'Hello,\n\nI am contacting you from DPV. We supply womenswear and Yiwu general merchandise. We would like to explore a potential cooperation based on the product categories relevant to your business.\n\nWould you be open to receiving a brief introduction to our relevant product offering?\n\nIf you prefer not to receive further emails, please reply unsubscribe and we will stop contacting this address.\n\nBest regards,\nDPV Sales Team'}};
@@ -322,10 +334,25 @@ export class Phase7Service {
   }
 
   async opportunityDecisionHistory(reference) { return this.repository.opportunityDecisionHistory(reference); }
-  async listContactQueue(query = {}) { return this.repository.listContactQueue({limit:query.limit}); }
+  async listContactQueue(query = {}) {
+    if(!this.opportunityQuery)return this.repository.listContactQueue({limit:query.limit});
+    const rows=await this.opportunityQuery({status:'RECOMMENDED',limit:5000});
+    return rows.filter(r=>r.first_contact_pending!==false&&(r.contact_readiness_labels||[]).some(x=>['EMAIL_READY','PHONE_READY','WHATSAPP_READY','FORM_READY'].includes(x)))
+      .slice(0,Math.max(1,Math.min(500,Number(query.limit)||200))).map(r=>({...r,opportunity_id:r.opportunity_decision_id||r.opportunity_key,
+        queue_status:'CONTACT_READY',matched_categories:r.matched_scopes?.length?r.matched_scopes:r.product_profiles,
+        opportunity_status:'ACTIVE_BUSINESS_OPPORTUNITY',named_buyers:r.buyer_name?[r.buyer_name]:[],named_buyer_ready:(r.contact_readiness_labels||[]).includes('NAMED_BUYER_READY')}));
+  }
   async listWorkspaceContactQueue(query = {}) {
-    const rows=await this.repository.listContactQueue({limit:query.limit});
-    return rows.map(row=>({opportunity_id:row.opportunity_id,company_id:row.company_id,queue_status:row.queue_status,
+    const rows=await this.listContactQueue(query);
+    return rows.map(row=>({opportunity_pool_band:row.opportunity_pool_band,is_active_business_opportunity:row.is_active_business_opportunity,
+      contact_readiness_labels:row.contact_readiness_labels,email_send_eligibility:row.email_send_eligibility,review_flags:row.review_flags,
+      active_opportunity_pool:row.is_active_business_opportunity,email_eligibility:row.email_send_eligibility,
+      review_warning:Boolean(row.review_flags?.length),data_quality_flags:row.data_quality_flags||row.review_flags||[],
+      category_relation:row.category_relation,category_basis:row.category_basis,company_fit_relation:row.company_fit_relation,
+      opportunity_pool_reason_codes:row.opportunity_pool_reason_codes||[],
+      opportunity_pool_decision_id:row.opportunity_pool_decision_id,opportunity_pool_revision:row.opportunity_pool_revision,
+      opportunity_pool_profile_results:row.opportunity_pool_profile_results||[],opportunity_pool_evidence_references:row.opportunity_pool_evidence_references||[],
+      opportunity_id:row.opportunity_id,company_id:row.company_id,queue_status:row.queue_status,
       company_name:row.company_name,country_code:row.country_code,website_url:row.website_url,
       matched_categories:row.matched_categories||[],opportunity_status:row.opportunity_status,
       named_buyers:row.named_buyers||[],contact_routes:row.contact_routes||[],named_buyer_ready:row.named_buyer_ready,
@@ -1363,7 +1390,8 @@ export class Phase7Service {
         mexico_historical_reference_match:row.historical_customer_match,last_assessed_at:row.feasibility_calculated_at,
         source_reference_urls:row.contact_source_url||'',
         recipient:outreach.recipient_email||'',recipient_type:outreach.recipient_type||'',recipient_source:outreach.recipient_source||'',
-        email_send_eligibility:outreach.eligibility_status||'',management_approval:outreach.opportunity_status==='MANAGEMENT_APPROVED'?'APPROVED':'PENDING_REVIEW',
+        contact_readiness:(row.contact_readiness_labels||[]).join('; '),review_flags:(row.review_flags||[]).join('; '),
+        email_send_eligibility:row.email_send_eligibility?.status||outreach.eligibility_status||'NOT_EVALUATED_FOR_SEND',management_approval:outreach.opportunity_status==='MANAGEMENT_APPROVED'?'APPROVED':'PENDING_REVIEW',
         draft_status:outreach.draft_status||'',business_contact_status:contactProgress,
         transport_status:historicalTransport||outreach.transport_status||'NOT_ATTEMPTED',receipt_evidence_status:historicalReceipt||outreach.receipt_evidence_status||'UNCONFIRMED',
         sent_at:historicalSent?.toISOString?.()||historicalSent||outreach.sent_at?.toISOString?.()||outreach.sent_at||'',reply_status:historicalReply||outreach.reply_status||(outreach.sent_at?'NO_REPLY_YET':'NOT_SENT'),suppression:outreach.suppression||false,

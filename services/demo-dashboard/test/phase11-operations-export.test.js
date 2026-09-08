@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {Phase7Service} from '../src/phase7/service.js';
 import {OUTREACH_EXPORT_LABELS,outreachExportValue,resolveExportRequest,serializeCsv,projectExportRow} from '../src/dataExchange/index.js';
 
-test('outreach export offers all18 business fields and bilingual headers without private payloads',()=>{
-  assert.equal(Object.keys(OUTREACH_EXPORT_LABELS).length,18);
+test('outreach export preserves all18 legacy fields and adds four independent MC04 columns',()=>{
+  const legacy=['company_name','matched_categories','opportunity_status','recipient','recipient_type','recipient_source','email_send_eligibility','management_approval','draft_status','business_contact_status','transport_status','receipt_evidence_status','sent_at','reply_status','suppression','owner','next_action','crm_sync'];
+  for(const key of legacy)assert.ok(Object.hasOwn(OUTREACH_EXPORT_LABELS,key));
+  assert.equal(Object.keys(OUTREACH_EXPORT_LABELS).length,22);
   const resolved=resolveExportRequest({exportType:'SALES_OPPORTUNITY',format:'CSV',mode:'CURRENT_FILTER',requesterRole:'SALES',columns:Object.keys(OUTREACH_EXPORT_LABELS)});
   const projected=projectExportRow({company_name:'Company',business_contact_status:outreachExportValue('SENT_NO_REPLY'),body_text:'private reply',password:'secret'},resolved);
   const csv=serializeCsv(resolved.columns,[projected],OUTREACH_EXPORT_LABELS);

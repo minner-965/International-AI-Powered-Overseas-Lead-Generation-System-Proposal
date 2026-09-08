@@ -1,6 +1,7 @@
 import { bilingual as bi, escapeText as esc, stateMarkup } from './components.js';
 import { isMarketVisible } from '../../market-visibility.js';
 import { initialContactPending } from '../contact-progress.js';
+import { hasOpportunityPool, isActiveBusinessOpportunity, opportunityDimensionsMarkup } from './opportunity-dimensions.js';
 
 /** One set of original controls: compact disclosure on phone, open filter bar on desktop. */
 export function mountCompanyFilters(root) {
@@ -93,7 +94,7 @@ export function groupContactCompanies(opportunities) {
   const groups = new Map();
   for (const item of array(opportunities)) {
     const id = idFor(item);
-    if (!id || !eligibleStatus(item) || !initialContactPending(item) || !isMarketVisible(item.country_code)) continue;
+    if (!id || !(hasOpportunityPool(item) ? isActiveBusinessOpportunity(item) : eligibleStatus(item)) || !initialContactPending(item) || !isMarketVisible(item.country_code)) continue;
     if (!groups.has(id)) groups.set(id,{ companyId:id, name:item.company_name || item.resolved_company_name || '—', market:item.country_code || '—', categories:[], opportunities:[] });
     const group = groups.get(id);
     if (category(item) && !group.categories.includes(category(item))) group.categories.push(category(item));
@@ -141,7 +142,7 @@ export function renderContactCompanies(groups) {
       names.length ? names.map(esc).join('<br>') : bi('未登记','Not listed'),
       emails.length ? channelList(emails.slice(0,1))+(emails.length>1?`<details><summary>${bi(`另外 ${emails.length-1} 个邮箱`,`${emails.length-1} more mailboxes`)}</summary>${channelList(emails.slice(1))}</details>`:'') : bi('未登记邮箱','No mailbox listed'),
       others.length ? `<details><summary>${bi(`${others.length} 个商务渠道`,`${others.length} business channels`)}</summary>${channelList(others)}</details>` : bi('未登记','Not listed'),
-      group.error ? stateMarkup('degraded','渠道读取待重试','Retry contact channels') : !group.channels?.length ? stateMarkup('warning','联系渠道待补充','Contact channels required') : bi('联系前审核','Review before contact'),
+      opportunityDimensionsMarkup(group.opportunities?.find(hasOpportunityPool)) || (group.error ? stateMarkup('degraded','渠道读取待重试','Retry contact channels') : !group.channels?.length ? stateMarkup('warning','联系渠道待补充','Contact channels required') : bi('联系前审核','Review before contact')),
       emails.length ? `<button type="button" class="btn btn-primary" data-contact-review="${esc(group.companyId)}">${bi('审核邮件','Review email')}</button>` : `<button type="button" class="btn btn-outline-secondary" data-contact-company="${esc(group.companyId)}">${bi('查看详情','View details')}</button>`
     ];
     return `<tr>${cells.map((cell,index)=>`<td data-label="${esc(headings[index].join(' / '))}">${cell}</td>`).join('')}</tr>`;

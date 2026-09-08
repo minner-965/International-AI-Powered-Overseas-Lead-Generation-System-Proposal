@@ -169,8 +169,8 @@ test('Opportunities renders eight compact business columns with category score r
   assert.equal((renderer.match(/<td\b/g) || []).length, 8);
   for (const name of columnClasses) assert.match(renderer, new RegExp(`<td class="[^"]*${name}`));
   assert.equal((renderer.match(/opportunityDisplayBadge\(/g) || []).length, 1);
-  assert.match(`${html}\n${app}`, /尚无联系就绪机会/);
-  assert.match(`${html}\n${app}`, /No contact-ready opportunities yet/);
+  assert.match(`${html}\n${app}`, /暂无当前业务机会/);
+  assert.match(`${html}\n${app}`, /No active business opportunities/);
   assert.match(`${html}\n${app}`, /View Evidence Required/);
   assert.match(app, /RECOMMENDED/);
   assert.match(app, /opportunity-table/);

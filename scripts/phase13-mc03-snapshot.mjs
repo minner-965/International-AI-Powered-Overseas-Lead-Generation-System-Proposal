@@ -4,7 +4,9 @@ import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
-const out=join(root,'artifacts','phase13-mc03',new Date().toISOString().replace(/[:.]/g,'-'),'snapshot.json');
+const phase=process.env.DPV_SNAPSHOT_PHASE||'phase13-mc03';
+if(!['phase13-mc03','phase13-mc04'].includes(phase))throw Error('Unsupported snapshot phase');
+const out=join(root,'artifacts',phase,new Date().toISOString().replace(/[:.]/g,'-'),'snapshot.json');
 execFileSync('git',['check-ignore','--quiet',out],{cwd:root});
 if(existsSync(out))throw Error('Snapshot path already exists');
 async function collect(){

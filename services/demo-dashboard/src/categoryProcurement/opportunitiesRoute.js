@@ -1,5 +1,6 @@
 import {confirmedCategoryStatusSql} from './categoryAdmission.js';
 import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
+import {OpportunityPoolService} from '../opportunityPool/OpportunityPoolService.js';
 
 const upper=value=>String(value||'').trim().toUpperCase();
 
@@ -12,7 +13,7 @@ function matchBandClause(column,value){
   return '';
 }
 
-export async function queryCategoryProcurementOpportunities({
+async function queryLegacyOpportunityEvidence({
   pool,query={},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
 }={}){
   const params=[];
@@ -22,7 +23,8 @@ export async function queryCategoryProcurementOpportunities({
     confirmedCategoryStatusSql('cpm.match_status'),
     "coalesce(routes.route_types,'{}'::text[])&&ARRAY['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM']::text[]",
     "bod.display_opportunity_status IN('RECOMMENDED','MANAGEMENT_APPROVED','HOLD')"];
-  if (['RECOMMENDED','MANAGEMENT_APPROVED'].includes(upper(query.status))) clauses.push(firstContactPendingSql('bod'));
+  if(query._poolEnrichment)clauses.splice(0,clauses.length,companyMarketVisibleSql('c'));
+  if (!query._poolEnrichment&&['RECOMMENDED','MANAGEMENT_APPROVED'].includes(upper(query.status))) clauses.push(firstContactPendingSql('bod'));
   const add=(value,clause)=>{params.push(value);clauses.push(clause(params.length));};
   if(query.country)add(upper(query.country),index=>`c.country_code=$${index}`);
   if(query.tier)add(upper(query.tier),index=>`coalesce(sr.tier,lr.tier)=$${index}`);
@@ -79,7 +81,8 @@ export async function queryCategoryProcurementOpportunities({
     :sort==='match_desc'?`mr.match_score DESC NULLS LAST,hmr.match_score DESC NULLS LAST,${defaultOrder}`
       :sort==='feasibility_desc'?`f.cooperation_feasibility_score DESC NULLS LAST,${defaultOrder}`
         :sort==='name_asc'?'c.company_name,cpm.product_profile':defaultOrder;
-  const limit=Math.max(1,Math.min(500,Number(query.limit||200)));params.push(limit);
+  const limit=Math.max(1,Math.min(500,Number(query.limit||200)));
+  if(!query._poolEnrichment)params.push(limit);
 
   const result=await pool.query(`SELECT
     concat(cpm.company_id::text,':',cpm.product_profile) opportunity_key,
@@ -196,6 +199,61 @@ export async function queryCategoryProcurementOpportunities({
     LEFT JOIN LATERAL(SELECT t.* FROM leadgen.auto_evidence_tasks t
       WHERE t.company_id=c.id AND t.product_profile=cpm.product_profile
       ORDER BY t.created_at DESC,t.id DESC LIMIT 1)auto_task ON true
-    WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy} LIMIT $${params.length}`,params);
+    WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy}${query._poolEnrichment?'':` LIMIT $${params.length}`}`,params);
   return attachContactProgress(pool,result.rows);
+}
+
+// MC04: business membership is a company-level projection; legacy scores/evidence
+// remain supplemental, never an admission or contact/approval prerequisite.
+export async function queryCategoryProcurementOpportunities(options={}){
+  const {pool,query={},companyMarketVisibleSql=()=> 'true'}=options;
+  const requestedProfile=upper(query.product_profile);
+  if(requestedProfile&&!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(requestedProfile))throw Object.assign(new Error('Invalid product profile'),{code:'PRODUCT_PROFILE_INVALID',status:400});
+  const service=new OpportunityPoolService({pool});
+  const [current,legacy,visible,routeResult]=await Promise.all([
+    service.list({band:'ALL'}),
+    queryLegacyOpportunityEvidence({...options,query:{_poolEnrichment:true,status:'ALL'}}),
+    pool.query(`SELECT c.id FROM leadgen.companies c WHERE ${companyMarketVisibleSql('c')}`),
+    pool.query(`SELECT * FROM leadgen.company_contact_route_current WHERE source_url IS NOT NULL`)
+  ]);
+  const visibleIds=new Set(visible.rows.map(r=>r.id));
+  const bandRank={PRECISION:0,RELEVANT:1,GENERAL_RELEVANT:2,EXPLORATORY:3,NOT_SUITABLE:4};
+  const rows=current.filter(r=>visibleIds.has(r.company_id)).filter(r=>!requestedProfile||(r.opportunity_pool_profile_results||[]).some(p=>p.product_profile===requestedProfile&&
+    (p.band==='GENERAL_RELEVANT'||p.category_basis&&p.category_basis!=='NO_CURRENT_CATEGORY_EVIDENCE'))).map(r=>{
+    const profiles=r.opportunity_pool_profile_results||[];
+    const selected=requestedProfile||[...profiles].sort((a,b)=>(bandRank[a.band]??5)-(bandRank[b.band]??5))[0]?.product_profile||'WOMENSWEAR';
+    const evidence=legacy.find(x=>x.company_id===r.company_id&&x.product_profile===selected)||{};
+    const contactRoutes=routeResult.rows.filter(x=>x.company_id===r.company_id);
+    const route=types=>contactRoutes.find(x=>types.includes(x.contact_type)&&!['INVALID','REJECTED'].includes(x.verification_status))?.contact_value_normalized||null;
+    return{...evidence,...r,id:r.company_id,product_profile:selected,product_profiles:profiles.map(p=>p.product_profile),
+      official_route_types:[...new Set(contactRoutes.map(x=>x.contact_type))],
+      official_email_route:route(['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL']),official_phone_route:route(['BUSINESS_PHONE']),
+      official_whatsapp_route:route(['BUSINESS_WHATSAPP']),official_form_route:route(['CONTACT_FORM']),
+      contact_routes:contactRoutes.map(x=>({route_type:x.contact_type,value:x.contact_value_normalized,source_url:x.source_url,last_verified_at:x.last_verified_at})),
+      opportunity_key:`${r.company_id}:${selected}`,opportunity_decision_id:evidence.opportunity_decision_id||null,
+      display_opportunity_status:r.is_active_business_opportunity?'RECOMMENDED':r.opportunity_pool_band==='NOT_SUITABLE'?'NOT_SUITABLE':'EVIDENCE_REQUIRED',
+      legacy_display_opportunity_status:evidence.display_opportunity_status||null,
+      management_contact_status:evidence.management_contact_status||'NOT_REVIEWED'};
+  });
+  const progress=await attachContactProgress(pool,rows);
+  const status=upper(query.status||'RECOMMENDED');
+  const allowed=['ALL','RECOMMENDED','ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY','MANAGEMENT_APPROVED','EVIDENCE_REQUIRED','HOLD','NOT_SUITABLE'];
+  if(!allowed.includes(status))throw Object.assign(new Error('Invalid opportunity status'),{code:'OPPORTUNITY_STATUS_INVALID',status:400});
+  const filtered=progress.filter(r=>{
+    if(['RECOMMENDED','ACTIVE','ACTIVE_BUSINESS_OPPORTUNITY'].includes(status)&&!r.is_active_business_opportunity)return false;
+    if(status==='EVIDENCE_REQUIRED'&&r.opportunity_pool_band!=='EXPLORATORY')return false;
+    if(status==='NOT_SUITABLE'&&r.opportunity_pool_band!=='NOT_SUITABLE')return false;
+    if(['MANAGEMENT_APPROVED','HOLD'].includes(status)&&r.management_contact_status!==status)return false;
+    if(query.country&&upper(r.country_code)!==upper(query.country))return false;
+    const requestedBand=upper(query.opportunity_pool_band);
+    if(requestedBand==='ACTIVE'&&!r.is_active_business_opportunity)return false;
+    if(requestedBand&&!['ALL','ACTIVE'].includes(requestedBand)&&r.opportunity_pool_band!==requestedBand)return false;
+    const fields={tier:'tier',size:'company_size',score_eligibility:'score_eligibility',buyer_business_model:'buyer_business_model',buyer_subtype:'buyer_subtype',category_procurement_match_band:'category_procurement_match_band',category_procurement_match_status:'category_procurement_match_status',product_access_matrix:'product_access_matrix',readiness:'readiness',historical_crm_status:'historical_crm_status',cooperation_matrix:'cooperation_matrix',feasibility_band:'feasibility_band',decision_maker_status:'decision_maker_status',normalized_role:'normalized_role',contact_type:'best_contact_type',contact_verification:'contact_verification',opportunity_matrix:'opportunity_matrix'};
+    for(const [key,field] of Object.entries(fields))if(query[key]&&upper(r[field])!==upper(query[key]))return false;
+    for(const [key,field] of [['management_match_band','customer_match'],['historical_match_band','historical_customer_match']]){const b=upper(query[key]),v=r[field];if(b==='UNKNOWN'&&v!=null||b==='HIGH'&&!(v>=60)||b==='MEDIUM'&&!(v>=35&&v<60)||b==='LOW'&&!(v!=null&&v<35))return false;}
+    return true;
+  });
+  const score=query.sort==='score_desc'?'dpv_score':query.sort==='match_desc'?'customer_match':query.sort==='feasibility_desc'?'cooperation_feasibility_score':'category_procurement_match_score';
+  filtered.sort((a,b)=>query.sort==='name_asc'?a.company_name.localeCompare(b.company_name):(bandRank[a.opportunity_pool_band]-bandRank[b.opportunity_pool_band])||((b[score]??-1)-(a[score]??-1))||a.company_name.localeCompare(b.company_name));
+  return filtered.slice(0,Math.max(1,Math.min(5000,Number(query.limit)||200)));
 }

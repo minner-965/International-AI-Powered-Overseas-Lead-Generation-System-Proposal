@@ -1,4 +1,5 @@
 import { managementRequest } from '../phase7-ui.js';
+import { opportunityDimensionsMarkup } from './v3/opportunity-dimensions.js';
 import { publishCommunicationChange, subscribeCommunicationChanges } from './communication-sync.js';
 import { contactProgressStatus, contactNextAction } from './contact-progress.js';
 
@@ -7,7 +8,7 @@ const bi=(zh,en)=>`<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span la
 const labels={DRAFT:['草稿','Draft'],PENDING_REVIEW:['待审核','Pending review'],APPROVED:['已批准','Approved'],REJECTED:['已拒绝','Rejected'],INVALID_DRAFT:['需要修改','Changes required'],NEEDS_CHANGES:['需要修改','Changes required'],SUPERSEDED:['已替换','Superseded'],QUEUED:['等待发送','Waiting to send'],SENDING:['发送中','Sending'],PROVIDER_ACCEPTED:['已提交邮件服务','Accepted by mail service'],SENT:['已发送','Sent'],FAILED:['发送失败','Send failed'],BLOCKED:['待处理','Action required'],SEND_AMBIGUOUS:['发送结果待核对','Send result needs review'],DELIVERED:['已送达','Delivered'],BOUNCED:['已退信','Bounced']};
 Object.assign(labels,{AMBIGUOUS:['发送结果待核对','Send result needs review'],HARD_BOUNCED:['永久退信','Permanent bounce'],SOFT_BOUNCED:['临时退信','Temporary bounce'],CANCELLED:['已取消','Cancelled']});
 Object.assign(labels,{VALID:['已核验','Verified'],ELIGIBLE:['条件通过','Eligible'],VERIFICATION_REQUIRED:['待核验','Verification required']});
-Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待批准联系','Contact approval required'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
+Object.assign(labels,{SENT_NO_REPLY:['已发送，未回复','Sent, no reply yet'],REPLIED:['已回复','Replied'],OPTED_OUT:['已退订','Opted out'],NEEDS_RECIPIENT_REVIEW:['待核验收件人','Recipient review required'],NEEDS_MANAGEMENT_APPROVAL:['待授权邮件联系','Email contact authorization pending'],NEEDS_DRAFT:['待准备草稿','Draft required'],NEEDS_DRAFT_APPROVAL:['待审核草稿','Draft review required'],READY_TO_SEND:['待发送','Ready to send'],MANUAL_CHANNEL:['其他联系渠道','Other contact channel']});
 const status=value=>{const tone=['APPROVED','VALID','ELIGIBLE','REPLIED','DELIVERED'].includes(value)?'current':['FAILED','REJECTED','OPTED_OUT','BOUNCED','HARD_BOUNCED'].includes(value)?'rejected':['SENT','SENT_NO_REPLY','PROVIDER_ACCEPTED','READY_TO_SEND'].includes(value)?'active':'review';return `<span class="data-state-badge state-${tone}">${bi(...(labels[value]||['待准备','Not prepared']))}</span>`;};
 const category=value=>bi(...(value==='GENERAL_MERCHANDISE'?['日用百货','General merchandise']:['女装','Womenswear']));
 const businessStatus=row=>contactProgressStatus(row)?status(contactProgressStatus(row)):row.business_contact_status&&row.business_contact_status!=='NOT_SENT'?status(row.business_contact_status):row.opportunity_status!=='MANAGEMENT_APPROVED'?status('NEEDS_MANAGEMENT_APPROVAL'):row.eligibility_status!=='ELIGIBLE'?status('NEEDS_RECIPIENT_REVIEW'):status(row.send_status||row.draft_status||'NEEDS_DRAFT');
@@ -46,7 +47,7 @@ composerColumn.append(q('outreach-review-form'),q('outreach-review-feedback'));
 gateColumn.innerHTML=`<h4>${bi('审核与联系条件','Review & contact conditions')}</h4><div id="outreach-gate-status"></div>`;
 gateColumn.append(q('outreach-send-readiness'),dialog.querySelector('.p11-outreach-footer'));
 reviewBody.append(companyColumn,composerColumn,gateColumn);
-const approveContact=document.createElement('button');approveContact.id='outreach-contact-approve';approveContact.type='button';approveContact.className='btn btn-outline-primary';approveContact.innerHTML=bi('批准联系此公司','Approve company contact');q('outreach-review-summary').after(approveContact);
+const approveContact=document.createElement('button');approveContact.id='outreach-contact-approve';approveContact.type='button';approveContact.className='btn btn-outline-primary';approveContact.innerHTML=bi('批准邮件联系','Authorize email contact');q('outreach-review-summary').after(approveContact);
 const refreshReview=document.createElement('button');refreshReview.id='outreach-review-refresh';refreshReview.type='button';refreshReview.className='btn btn-outline-primary';refreshReview.innerHTML=bi('刷新','Refresh');q('outreach-review-close').before(refreshReview);
 function feedback(zh,en){q('outreach-review-feedback').innerHTML=bi(zh,en);}
 const sendBlockLabels={
@@ -83,7 +84,7 @@ function readiness(row){
   if(['AMBIGUOUS','SEND_AMBIGUOUS'].includes(row.send_status))return bi('发送结果待核对，请先检查发件箱。','The send result needs review. Check the Sent folder first.');
   if(row.send_status==='FAILED')return bi('本次发送失败，请联系管理员核对发送记录。','This send failed. Ask your administrator to review the send record.');
   if(row.message_id)return bi('此邮件已有发送记录，请查看当前状态。','This email has a send record. Check its current status.');
-  if(row.opportunity_status!=='MANAGEMENT_APPROVED')return bi('请先点击“批准联系此公司”，再准备开发信。','Choose Approve company contact before preparing a draft.');
+  if(row.opportunity_status!=='MANAGEMENT_APPROVED')return bi('邮件联系授权待批准。','Email contact authorization is pending.');
   if(row.eligibility_status!=='ELIGIBLE')return bi('请先补齐当前联系条件并核验邮箱。','Complete contact requirements and verify the mailbox first.');
   if(row.draft_status!=='APPROVED')return bi('发送前请完成当前草稿审核。','Approve the current draft before sending.');
   if(!state.data?.sending_enabled||!row.send_allowed)return sendBlockExplanation(row);
@@ -117,13 +118,14 @@ function controls(){
   q('outreach-send').innerHTML=row.retry_allowed?bi('重新提交此邮件','Resubmit this email'):bi('发送此邮件','Send this email');
   q('outreach-send').setAttribute('aria-describedby','outreach-send-readiness');
   q('outreach-send-readiness').innerHTML=readiness(row);
-  q('outreach-gate-status').innerHTML=`<dl class="v3-email-checks"><dt>${bi('公司联系','Company contact')}</dt><dd>${row.opportunity_status==='MANAGEMENT_APPROVED'?status('APPROVED'):status('NEEDS_MANAGEMENT_APPROVAL')}</dd><dt>${bi('收件人','Recipient')}</dt><dd>${row.eligibility_status==='ELIGIBLE'?status('ELIGIBLE'):status('NEEDS_RECIPIENT_REVIEW')}</dd><dt>${bi('当前草稿','Current draft')}</dt><dd>${status(row.draft_status||'NEEDS_DRAFT')}</dd></dl>`;
+  q('outreach-gate-status').innerHTML=`<dl class="v3-email-checks"><dt>${bi('邮件联系授权','Email contact authorization')}</dt><dd>${row.opportunity_status==='MANAGEMENT_APPROVED'?status('APPROVED'):status('NEEDS_MANAGEMENT_APPROVAL')}</dd><dt>${bi('收件人','Recipient')}</dt><dd>${row.eligibility_status==='ELIGIBLE'?status('ELIGIBLE'):status('NEEDS_RECIPIENT_REVIEW')}</dd><dt>${bi('当前草稿','Current draft')}</dt><dd>${status(row.draft_status||'NEEDS_DRAFT')}</dd></dl>`;
   dialog.setAttribute('aria-busy',String(state.busy));
 }
 function renderDialog(){
   const row=state.row;if(!row){controls();return;}
   q('outreach-review-summary').innerHTML=`<strong>${esc(row.company_name)}</strong><dl><dt>${bi('商品类目','Product category')}</dt><dd>${category(row.product_profile)}</dd><dt>${bi('收件人','Recipient')}</dt><dd>${esc(row.recipient_email||'—')}</dd><dt>${bi('邮箱核验','Email verification')}</dt><dd>${row.verification_status==='VALID'?status('VALID'):status('VERIFICATION_REQUIRED')} · ${date(row.verified_at)}</dd><dt>${bi('当前状态','Current status')}</dt><dd>${businessStatus(row)}</dd><dt>${bi('收件证据','Receipt evidence')}</dt><dd>${row.receipt_evidence_status==='UNCONFIRMED'||!row.receipt_evidence_status?bi('尚无收件确认','No receipt confirmation'):bi('已有收件证据','Receipt evidence recorded')}</dd><dt>${bi('负责人','Owner')}</dt><dd>${esc(row.owner||'—')}</dd><dt>${bi('下一步','Next action')}</dt><dd>${nextAction(row.next_action)}</dd><dt>${bi('最近回复','Latest reply')}</dt><dd>${date(row.last_reply_at)}</dd></dl><details><summary>${bi('活动记录','Activity history')}</summary><ol class="p11-activity-list">${(row.activity||[]).map(event=>`<li>${bi(...(activityLabels[event.event_type]||['联系状态已更新','Contact status updated']))}<time>${date(event.occurred_at)}</time></li>`).join('')||`<li>${bi('暂无活动','No activity yet')}</li>`}</ol></details>`;
   q('outreach-subject').value=row.subject||state.data?.template?.subject||'';
+  q('outreach-review-summary').insertAdjacentHTML('beforeend',opportunityDimensionsMarkup(row));
   if(window.matchMedia('(max-width:600px)').matches){
     const facts=q('outreach-review-summary').querySelector('dl');
     const disclosure=document.createElement('details');disclosure.innerHTML=`<summary>${bi('公司与联系资料','Company & contact details')}</summary>`;

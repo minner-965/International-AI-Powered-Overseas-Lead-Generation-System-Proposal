@@ -14,6 +14,8 @@ import {
 
 export const OUTREACH_EXPORT_LABELS=Object.freeze({
   company_name:'公司 / Company',matched_categories:'目标类目 / Target Category',opportunity_status:'机会状态 / Opportunity Status',
+  opportunity_pool_band:'业务匹配层级 / Business Fit Band',is_active_business_opportunity:'有效业务机会 / Active Business Opportunity',
+  contact_readiness:'联系方式就绪 / Contact Readiness',review_flags:'复核事项 / Review Items',
   recipient:'收件邮箱 / Recipient',recipient_type:'收件人类型 / Recipient Type',recipient_source:'收件人来源 / Recipient Source',
   email_send_eligibility:'邮件联系资格 / Email Send Eligibility',management_approval:'当前管理审核 / Current Management Approval',
   draft_status:'开发信审核 / Draft Approval',business_contact_status:'联系状态 / Business Contact Status',
@@ -22,6 +24,11 @@ export const OUTREACH_EXPORT_LABELS=Object.freeze({
   owner:'负责人 / Owner',next_action:'下一步 / Next Action',crm_sync:'跟进同步 / CRM Sync'
 });
 export function outreachExportValue(value,key=''){
+  if(key==='contact_readiness'||key==='review_flags'){
+    const values=Array.isArray(value)?value:String(value||'').split(';').filter(Boolean);
+    if(key==='review_flags')return values.length?'待复核 / Review required':'无待复核事项 / No review items';
+    return values.map(item=>outreachExportValue(item)).join('; ');
+  }
   if(key==='matched_categories'){
     const categories={TOPS:'上衣 / Tops',DRESSES:'连衣裙 / Dresses',SKIRTS:'半身裙 / Skirts',PANTS:'裤装 / Pants',TROUSERS:'裤装 / Trousers',
       SHORTS:'短裤 / Shorts',OUTERWEAR:'外套 / Outerwear',KNITWEAR:'针织服装 / Knitwear',WOMENSWEAR:'女装 / Womenswear',
@@ -29,7 +36,13 @@ export function outreachExportValue(value,key=''){
       LOUNGEWEAR:'家居服 / Loungewear',GENERAL_MERCHANDISE:'百货 / General merchandise'};
     return String(value||'').split(';').map(part=>categories[part.trim().toUpperCase()]||part.trim()).filter(Boolean).join('; ');
   }
-  const labels={SENT_NO_REPLY:'已发送，未回复 / Sent, no reply yet',SMTP_ACCEPTED:'邮件服务已接收 / Mail server accepted',
+  const labels={PRECISION:'精准匹配 / Precision',RELEVANT:'类目相关 / Relevant',GENERAL_RELEVANT:'综合相关 / Broadly relevant',
+    EXPLORATORY:'待研究 / Exploratory',NOT_SUITABLE:'不适合 / Not suitable',
+    NAMED_BUYER_READY:'采购联系人就绪 / Named buyer ready',EMAIL_READY:'商务邮箱就绪 / Email ready',
+    PHONE_READY:'电话就绪 / Phone ready',WHATSAPP_READY:'WhatsApp就绪 / WhatsApp ready',FORM_READY:'联系表单就绪 / Contact form ready',
+    CONTACT_RESEARCHING:'联系资料待完善 / Contact evidence pending',NO_CONTACT_FOUND:'暂无联系方式 / No contact found',
+    NOT_EVALUATED_FOR_SEND:'发送资格待审核 / Send eligibility pending review',
+    SENT_NO_REPLY:'已发送，未回复 / Sent, no reply yet',SMTP_ACCEPTED:'邮件服务已接收 / Mail server accepted',
     UNCONFIRMED:'尚无收件确认 / Receipt not confirmed',RECEIVED_CONFIRMED:'收件已确认 / Receipt confirmed',
     NOT_SENT:'尚未发送 / Not sent',NOT_ATTEMPTED:'尚未提交 / Not submitted',REPLIED:'已回复 / Replied',
     OPTED_OUT:'已退订 / Opted out',DO_NOT_CONTACT:'停止联系 / Do not contact',NOT_CONTACTED:'尚未联系 / Not contacted',

@@ -61,13 +61,15 @@ test('B05 replay implementation locks and refreshes a company-level canonical ro
   assert.match(body,/UPDATE leadgen\.decision_maker_contacts SET[\s\S]*last_verified_at=CASE WHEN verification_provider='HUNTER'[\s\S]*THEN last_verified_at ELSE \$11 END/);
 });
 
-test('B05 opportunity directory excludes category matches that have no current opportunity decision',async()=>{
-  let sql='';
-  const pool={query:async statement=>{sql=String(statement);return{rows:[]};}};
+test('MC04 opportunity directory reads the new current pool without requiring a legacy decision',async()=>{
+  const statements=[];
+  const pool={query:async statement=>{statements.push(String(statement));return{rows:[]};}};
   const rows=await queryCategoryProcurementOpportunities({
     pool,query:{status:'ALL'},publicDataOriginSql:"'PUBLIC_RESEARCH'",
     companyMarketVisibleSql:()=> 'TRUE',excludesConfirmedExistingCustomerSql:()=> 'TRUE'
   });
   assert.deepEqual(rows,[]);
-  assert.match(sql,/bod\.id IS NOT NULL/);
+  assert.ok(statements.some(sql=>sql.includes('FROM leadgen.opportunity_pool_current')));
+  assert.ok(statements.every(sql=>!sql.includes('bod.id IS NOT NULL')));
+  assert.ok(statements.every(sql=>/^\s*SELECT\b/.test(sql)));
 });

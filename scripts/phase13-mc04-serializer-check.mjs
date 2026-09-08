@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const {OUTREACH_EXPORT_LABELS,resolveExportRequest,projectExportRow,outreachExportValue,serializeCsv,buildXlsxExportBuffer}=await import('/app/src/dataExchange/index.js');
+const ExcelJS=createRequire('/app/package.json')('exceljs');
+const base='http://127.0.0.1:3000';
+const summaryResponse=await fetch(`${base}/api/opportunity-pool/summary`);assert.equal(summaryResponse.status,200);const summary=await summaryResponse.json();
+const response=await fetch(`${base}/api/opportunities?status=ALL&limit=5000`);assert.equal(response.status,200);const source=await response.json();assert.ok(Array.isArray(source));
+assert.equal(source.length,summary.total_companies);assert.equal(source.filter(r=>r.is_active_business_opportunity).length,summary.active_business_opportunities);
+const resolved=resolveExportRequest({exportType:'SALES_OPPORTUNITY',format:'CSV',mode:'CURRENT_FILTER',requesterRole:'SALES',columns:Object.keys(OUTREACH_EXPORT_LABELS)});
+const rows=source.map(row=>projectExportRow(Object.fromEntries(resolved.columns.map(key=>[key,outreachExportValue(key==='contact_readiness'?row.contact_readiness_labels:key==='email_send_eligibility'?row.email_send_eligibility?.status:row[key],key)])),resolved));
+const csv=serializeCsv(resolved.columns,rows,OUTREACH_EXPORT_LABELS);assert.match(csv,/Business Fit Band/);assert.doesNotMatch(csv,/\[object Object\]/);
+const bytes=await buildXlsxExportBuffer({headers:resolved.columns,rows,headerLabels:OUTREACH_EXPORT_LABELS});
+const book=new ExcelJS.Workbook();await book.xlsx.load(bytes);const sheet=book.worksheets[0];assert.equal(sheet.rowCount,source.length+1);assert.equal(sheet.columnCount,22);
+for(let i=0;i<rows.length;i++)for(let j=0;j<resolved.columns.length;j++)assert.equal(String(sheet.getRow(i+2).getCell(j+1).value??''),String(rows[i][resolved.columns[j]]??''));
+const hostile=projectExportRow({company_name:'=HYPERLINK("bad")',password:'PRIVATE_SENTINEL'},resolved);assert.ok(hostile.company_name.startsWith("'"));assert.ok(!Object.hasOwn(hostile,'password'));
+console.log(JSON.stringify({scope:'GET APIs and existing product CSV/XLSX serialization roundtrip; not UI download or export job creation',api_rows:source.length,summary,columns:22,xlsx_rows:sheet.rowCount,csv_bytes:Buffer.byteLength(csv),xlsx_bytes:bytes.length,all_cells_roundtrip:true,formula_and_private_column_check:true,production_writes:0,provider_calls:0,email_sends:0}));

@@ -1,0 +1,18 @@
+import {execFileSync} from 'node:child_process';
+import {dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {writeFileSync,readFileSync,readdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const root=dirname(dirname(fileURLToPath(import.meta.url)));
+const raw=execFileSync(process.execPath,[join(root,'scripts','phase13-mc03-snapshot.mjs')],{cwd:root,env:{...process.env,DPV_SNAPSHOT_PHASE:'phase13-mc04'},encoding:'utf8',maxBuffer:1024*1024});
+const info=JSON.parse(raw.trim().split('\n')[0]);const folder=dirname(info.path);
+execFileSync('git',['check-ignore','--quiet',join(folder,'database.dump')],{cwd:root});
+const dump=execFileSync('docker',['exec','dpv-leadgen-postgres-1','sh','-c','pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc'],{cwd:root,maxBuffer:128*1024*1024,timeout:60000});
+writeFileSync(join(folder,'database.dump'),dump);
+const containerCopy=`/tmp/dpv-mc04-baseline-${Date.now()}.dump`;
+execFileSync('docker',['cp',join(folder,'database.dump'),`dpv-leadgen-postgres-1:${containerCopy}`],{cwd:root});
+const listing=execFileSync('docker',['exec','dpv-leadgen-postgres-1','pg_restore','--list',containerCopy],{cwd:root,encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024});
+const migrationFolder=join(root,'database','migrations');
+const migrationHashes=Object.fromEntries(readdirSync(migrationFolder).filter(name=>/^0(?:0[1-9]|[1-4][0-9]|5[0-7])_.*\.sql$/.test(name)).sort().map(name=>[name,createHash('sha256').update(readFileSync(join(migrationFolder,name))).digest('hex')]));
+const receipt={observed_at:info.observed_at,git_head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),snapshot:info.path,dump_sha256:createHash('sha256').update(dump).digest('hex'),dump_bytes:dump.length,archive_entries:listing.split('\n').filter(line=>/^\d+;/.test(line)).length,restore_performed:false,migration_hashes_001_057:migrationHashes,counts:info.counts};
+writeFileSync(join(folder,'baseline.json'),JSON.stringify(receipt,null,2)+'\n');console.log(JSON.stringify({folder,...receipt}));

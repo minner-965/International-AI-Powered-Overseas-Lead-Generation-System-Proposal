@@ -146,7 +146,7 @@ export function mountRecordViews(documentRoot = document, options = {}) {
     if (defaultView) {
       const note = documentRoot.createElement('small');
       note.id = 'v3-default-view-note';
-      note.innerHTML = label('当前固定为建议联系','Currently set to Recommended');
+      note.innerHTML = label('当前固定为业务机会','Currently set to Active opportunities');
       defaultView.setAttribute('aria-describedby',note.id);
       defaultView.after(note);
     }

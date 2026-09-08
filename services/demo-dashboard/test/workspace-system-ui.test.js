@@ -52,8 +52,8 @@ test('released interface removes narrative and AI-style decision copy while pres
   for (const hook of ['opportunity-status-tabs', 'opportunity-filters', 'contact-queue-list', 'data-import-form', 'data-export-form']) {
     assert.match(html, new RegExp(`id="${hook}"`));
   }
-  assert.match(html, /建议联系/);
-  assert.match(html, /已确认待联系/);
+  assert.match(html, /业务机会/);
+  assert.match(html, /已授权邮件联系/);
   assert.match(phase7, /Eligibility status/);
   assert.match(phase7, /Status History/);
 });

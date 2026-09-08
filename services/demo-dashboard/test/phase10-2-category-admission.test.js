@@ -32,16 +32,17 @@ test('Companies and company export expose verified records with every evaluated 
   assert.doesNotMatch(companyList,/FROM leadgen\.companies c JOIN leadgen\.lead_reviews/);
 });
 
-test('Opportunities contain only category-confirmed contact-ready business records',async()=>{
-  let sql='';
-  const pool={query:async statement=>{sql=String(statement);return{rows:[]};}};
+test('MC04 opportunity membership uses the pool; legacy category and contact evidence is supplemental',async()=>{
+  const statements=[];
+  const pool={query:async statement=>{statements.push(String(statement));return{rows:[]};}};
   await queryCategoryProcurementOpportunities({
     pool,query:{status:'ALL'},publicDataOriginSql:"'PUBLIC_RESEARCH'",
     companyMarketVisibleSql:()=> 'TRUE',excludesConfirmedExistingCustomerSql:()=> 'TRUE'
   });
-  assert.match(sql,/cpm\.match_status IN\('CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'\)/);
-  assert.match(sql,/coalesce\(routes\.route_types,'\{\}'::text\[\]\)&&ARRAY\['BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL','BUSINESS_PHONE','BUSINESS_WHATSAPP','CONTACT_FORM'\]::text\[\]/);
-  assert.doesNotMatch(sql,/ARRAY\[[^\]]*SUPPLIER_PORTAL[^\]]*\]::text\[\]/);
-  assert.match(sql,/bod\.display_opportunity_status IN\('RECOMMENDED','MANAGEMENT_APPROVED','HOLD'\)/);
-  assert.doesNotMatch(sql,/bod\.display_opportunity_status IN\([^)]*EVIDENCE_REQUIRED/);
+  assert.ok(statements.some(sql=>sql.includes('FROM leadgen.opportunity_pool_current')));
+  const legacy=statements.find(sql=>sql.includes('cpm.match_status'));
+  assert.ok(legacy,'Historical category evidence remains available');
+  assert.doesNotMatch(legacy,/WHERE[\s\S]*bod\.display_opportunity_status IN\('RECOMMENDED','MANAGEMENT_APPROVED','HOLD'\)/);
+  assert.doesNotMatch(legacy,/coalesce\(routes\.route_types,'\{\}'::text\[\]\)&&ARRAY/);
+  assert.ok(statements.every(sql=>/^\s*SELECT\b/.test(sql)),'Listing performs no approval or mail mutation');
 });

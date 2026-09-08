@@ -36,7 +36,7 @@ if(phase13Active){
     const dry=status.phase13_mc03;
     assert(dry.scope==='WP-MC03' && dry.status==='DRY_RUN_COMPLETE_AWAITING_REVIEW','MC03 is a completed comparison, not production acceptance');
     assert(dry.provider_calls===0 && dry.email_sends===0 && dry.business_mutations===0 && dry.applied===false,'MC03 must preserve its read-only boundary');
-    assert(dry.stop_after==='WP-MC03' && status.explicit_stop_boundary.includes('WP-MC03'),'MC03 must stop for review');
+    assert(dry.stop_after==='WP-MC03' && (status.phase13_mc04?.user_approved_mc03_bands===true || status.explicit_stop_boundary.includes('WP-MC03')),'MC03 requires review or explicit MC04 approval');
     assert(existsSync(join(root,dry.result_report)),'MC03 result report required');
     const bands=['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'];
     assert(JSON.stringify(Object.keys(dry.band_counts).sort())===JSON.stringify([...bands].sort()) && bands.every(b=>Number.isInteger(dry.band_counts[b])&&dry.band_counts[b]>=0),'MC03 requires five actual nonnegative band counts');
@@ -79,7 +79,13 @@ if (phase12Active) {
     assert(status.latest_released_phase === 'Phase 11 (Controlled outreach)', 'Unaccepted Phase 12 must preserve the accepted Phase 11 release');
     assert(status.final_acceptance_state === 'INCOMPLETE', 'Unaccepted Phase 12 final acceptance remains incomplete');
   }
-  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  if(status.phase13_mc04){
+    const mc=status.phase13_mc04;
+    assert(mc.scope==='WP-MC04'&&mc.user_approved_mc03_bands===true&&['IN_PROGRESS','PASS'].includes(mc.status),'MC04 requires user approval and actual state');
+    assert(mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC04'&&status.explicit_stop_boundary.includes('WP-MC04'),'MC04 must preserve the no-send and STOP boundary');
+    if(mc.status==='PASS')assert(existsSync(join(root,mc.result_report)),'MC04 result report required');
+  }
+  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
   assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
@@ -204,6 +210,11 @@ for (const name of [
   assert(existsSync(path), `Migration is missing: ${name}`);
   const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
   assert(migrationMap.get(name) === digest, `Migration checksum mismatch: ${name}`);
+}
+
+if(status.phase13_mc04){
+  const name='058_phase13_opportunity_pool.sql';
+  assert(migrationMap.get(name)===createHash('sha256').update(readFileSync(join(root,'database','migrations',name))).digest('hex'),'MC04 migration checksum mismatch');
 }
 
 const git = (...args) => execFileSync('git', [

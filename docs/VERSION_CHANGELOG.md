@@ -1,5 +1,12 @@
 # Version Changelog
 
+## Phase13 V2.1 MC04 — 2026-09-08 — approved opportunity pool
+
+- User-approved PRECISION, RELEVANT and GENERAL_RELEVANT become active automatically; review flags are nonblocking.
+- Additive migration 058 and immutable pool revisions preserve legacy decisions, evidence, scores and mail approvals. Business opportunity, contact readiness and email eligibility remain independent.
+- V3 Overview, Opportunities, Company Detail, Contact-ready, Research/Jobs, Email Review, operational summaries and export projections synchronized. Hidden-market behavior retained.
+- Actual database: 138 current companies, 28 active; visible-market API: 136 companies, 27 active. SMTP/search operations are outside this task. Result: `PHASE13_MC04_OPPORTUNITY_POOL_RESULT.md`. STOP at MC04; no MC05.
+
 ## Phase13 V2.1 MC03 — 2026-09-08 — read-only comparison
 
 - Evaluated all 138 stored companies with five proposed business bands, independent contact readiness and descriptive email gates. No runtime rule, API, UI, provider or business-data change.

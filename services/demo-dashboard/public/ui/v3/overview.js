@@ -1,6 +1,7 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 import { finiteCount, marketSeries, lazyChart } from './charts.js';
 import { initialContactPending } from '../contact-progress.js';
+import { hasOpportunityPool, isActiveBusinessOpportunity } from './opportunity-dimensions.js';
 const bi = (zh,en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const number = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString();
 const empty = (zh,en) => `<p class="v3-overview-empty">${bi(zh,en)}</p>`;
@@ -34,18 +35,19 @@ export function overviewModel({metrics,opportunities,operations,research,getStat
   const sent = operations?.prospect?.sent_no_reply ?? null;
   const p=operations?.prospect;
   const pendingParts=p && ['pending_management','pending_drafts','pending_followups','pending_contacts'].every(key=>finiteCount(p[key])!==null) && Array.isArray(operations?.monitoring?.alerts)
-    ? [['pending_management','待批准机会','Opportunity Approvals'],['pending_drafts','待审核草稿','Draft Reviews'],['pending_followups','回复与跟进','Replies & Follow-up'],['pending_contacts','待完善联系','Contact Evidence']].map(([key,zh,en])=>({key,zh,en,count:Number(p[key])})) : null;
+    ? [['pending_management','待授权邮件联系','Email Contact Authorizations'],['pending_drafts','待审核草稿','Draft Reviews'],['pending_followups','回复与跟进','Replies & Follow-up'],['pending_contacts','待完善联系','Contact Evidence']].map(([key,zh,en])=>({key,zh,en,count:Number(p[key])})) : null;
   if(pendingParts)pendingParts.push({key:'alerts',zh:'运营提醒类别',en:'Operational Alert Types',count:(operations.monitoring?.alerts || []).length});
   const markets = new Map();
   const companies = new Set();
   for (const row of opportunities || []) {
+    if (hasOpportunityPool(row) && !isActiveBusinessOpportunity(row)) continue;
     const id = row.company_id || row.companyId || row.id;
     if (!id || companies.has(id)) continue;
     companies.add(id);
     const market = row.country_code || row.market || '—';
     markets.set(market,(markets.get(market) || 0)+1);
   }
-  return {recommended:opportunities ? opportunities.filter(row=>getStatus(row)==='RECOMMENDED'&&initialContactPending(row)).length : null,
+  return {recommended:opportunities ? new Set(opportunities.filter(row=>hasOpportunityPool(row)?isActiveBusinessOpportunity(row):getStatus(row)==='RECOMMENDED'&&initialContactPending(row)).map(row=>row.company_id||row.companyId||row.id)).size : null,
     verified:metrics?.verified_active ?? null,sent,pending:pendingParts?pendingParts.reduce((sum,item)=>sum+item.count,0):null,pendingParts,
     markets:[...markets].sort((a,b)=>b[1]-a[1]),marketTotal:Array.isArray(opportunities)?companies.size:null,
     operations:operations?.prospect || null};
@@ -75,15 +77,20 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   const model=overviewModel({metrics,opportunities,operations,research,getStatus});
   const set=(id,html)=>{const el=document.getElementById(id);if(el){el.innerHTML=html;el.setAttribute('aria-busy','false');delete el.dataset.refreshing;}};
   set('metrics',[
-    [model.recommended,'建议联系','Recommended','尚未首次联系','Awaiting first contact','target-arrow','primary'],
+    [model.recommended,'业务机会','Business opportunities','当前匹配企业','Current matching companies','target-arrow','primary'],
     [model.verified,'当前有效企业','Verified Active Companies','','','building','success'],
     [model.sent,'已发未回复','Sent · Awaiting Reply','全部客户邮件','All prospect mail','mail','primary'],
     [model.pending,'待处理','Pending Actions','审批、跟进、联系与运营事项','Approvals, follow-up, contacts & operations','clipboard-list','warning']
   ].map(([value,zh,en,scopeZh,scopeEn,icon,tone])=>`<article class="v3-overview-metric" data-tone="${tone}"><div class="v3-overview-metric-top">${bi(zh,en)}<i class="ti ti-${icon}" aria-hidden="true"></i></div><strong>${number(value)}</strong>${scopeZh ? `<p>${bi(scopeZh,scopeEn)}</p>` : ''}</article>`).join(''));
   const stageValues={verified:model.verified,category:opportunities?opportunities.filter(row=>['CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'].includes(row.category_procurement_match_status)).length:null,
-    contact:research?.contact_ready_opportunities ?? null,management:opportunities?opportunities.filter(row=>getStatus(row)==='MANAGEMENT_APPROVED'&&initialContactPending(row)).length:null,
+    contact:research?.contact_ready_opportunities ?? null,management:opportunities?opportunities.filter(row=>(hasOpportunityPool(row) ? row.management_contact_status==='MANAGEMENT_APPROVED'||row.display_opportunity_status==='MANAGEMENT_APPROVED' : getStatus(row)==='MANAGEMENT_APPROVED')&&initialContactPending(row)).length:null,
     sent:operations?.prospect?.smtp_accepted ?? null,replied:operations?.prospect?.replies ?? null};
-  const stages=[['verified','已验证企业','Verified Companies'],['category','类目匹配机会','Category-Matched Opportunities'],['contact','联系方式就绪','Contact-Ready Opportunities'],['management','管理批准机会','Management Approved'],['sent','已发邮件','Sent Emails'],['replied','客户回复','Customer Replies']];
+  if (research?.opportunity_pool) {
+    stageValues.category = research.opportunity_pool.active ?? null;
+    stageValues.contact = research.opportunity_pool.contact_ready ?? null;
+    stageValues.management = research.opportunity_pool.email_eligible ?? null;
+  }
+  const stages=[['verified','已验证企业','Verified Companies'],['category','类目匹配机会','Category-Matched Opportunities'],['contact','联系方式就绪','Contact-Ready Opportunities'],['management','邮件资格通过','Email Eligible'],['sent','已发邮件','Sent Emails'],['replied','客户回复','Customer Replies']];
   const max=Math.max(1,...Object.values(stageValues).map(value=>Number(value || 0)));
   set('outreach-operations',`<ol class="v3-overview-stages">${stages.map(([key,zh,en],i)=>`<li><span class="v3-overview-stage-index" aria-hidden="true">${i+1}</span><div><div class="v3-overview-stage-label">${bi(zh,en)}<strong>${number(stageValues[key])}</strong></div><div class="v3-overview-track" aria-hidden="true"><span style="width:${Math.max(0,Number(stageValues[key] || 0))/max*100}%"></span></div></div></li>`).join('')}</ol><p class="v3-overview-caption">${bi('当前企业与机会 · 累计客户邮件与回复','Current companies & opportunities · Cumulative prospect mail & replies')}</p>${link('contact-queue','查看邮件审核','View Email Review')}`);
   set('overview-markets',marketDonut(model.markets,model.marketTotal));

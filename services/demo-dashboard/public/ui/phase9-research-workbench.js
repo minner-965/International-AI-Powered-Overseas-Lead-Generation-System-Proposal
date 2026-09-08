@@ -258,6 +258,7 @@ function renderSummary(summary) {
     summaryMetric('有效联系方式','Contact-ready channels',first(summary,['contact_ready_opportunities','hunter_valid_routes'],0),'contact_ready_opportunities',asOf),
   ].join('');
   host.querySelectorAll('[data-summary-metric]').forEach(button => button.addEventListener('click',()=>routeMetric(button.dataset.summaryMetric)));
+  host.insertAdjacentHTML('beforeend',opportunityPoolSummaryMarkup(summary.opportunity_pool));
   const [code,zh,en] = providerState(summary);
   provider.dataset.state = code;
   provider.innerHTML = bi(zh,en);
@@ -266,6 +267,9 @@ function renderSummary(summary) {
   renderAlerts(summary,code);
   renderCatalogSummary();
   renderAutomationMonitors(summary);
+  for (const selector of ['#research-automation-monitor','#jobs-automation-monitor','#settings-automation-monitor']) {
+    $(selector)?.insertAdjacentHTML('beforeend',opportunityPoolSummaryMarkup(summary.opportunity_pool));
+  }
 }
 
 function renderSummaryError() {
@@ -616,7 +620,7 @@ async function loadOutreachJobs() {
     host.innerHTML = rows.length ? rows.map(row => {
       const label = outreachTaskLabel(row);
       const latest = row.last_reply_at || row.updated_at || row.sent_at || row.submitted_at;
-      return `<article class="v3-job-record"><div><strong>${esc(row.company_name)}</strong><small>${esc(profileLabel(row.product_profile))}</small></div><div>${bi(label[0],label[1])}<small>${dateTimeMarkup(latest)}</small></div><div><small>${bi('负责人','Owner')}</small><span>${esc(row.owner || '—')}</span></div><button class="btn btn-outline-primary" type="button" data-outreach-task-open>${bi('打开邮件工作台','Open email workspace')}</button></article>`;
+      return `<article class="v3-job-record"><div><strong>${esc(row.company_name)}</strong><small>${esc(profileLabel(row.product_profile))}</small>${opportunityDimensionsMarkup(row)}</div><div>${bi(label[0],label[1])}<small>${dateTimeMarkup(latest)}</small></div><div><small>${bi('负责人','Owner')}</small><span>${esc(row.owner || '—')}</span></div><button class="btn btn-outline-primary" type="button" data-outreach-task-open>${bi('打开邮件工作台','Open email workspace')}</button></article>`;
     }).join('') : `<div class="p9-inline-state">${bi('暂无邮件任务。','No email tasks yet.')}</div>`;
     host.querySelectorAll('[data-outreach-task-open]').forEach(button => button.addEventListener('click', () => activateView('contact-queue')));
   } catch {
@@ -796,6 +800,11 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
   host.setAttribute('aria-busy','false');
   host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
+  if (results?.opportunity_pool) {
+    const resultSection=document.createElement('section');resultSection.className='card crm-panel';
+    resultSection.innerHTML=`<header class="card-header crm-panel-header"><h4 class="card-title">${bi('企业研究结果','Company research results')}</h4></header><div class="card-body">${opportunityPoolSummaryMarkup(results.opportunity_pool)}${items(results.items).length?`<details><summary>${bi('查看企业结果','View company results')}</summary>${items(results.items).map(row=>`<article><strong>${esc(row.company_name||row.resolved_company_name||'—')}</strong>${opportunityDimensionsMarkup(row)}</article>`).join('')}</details>`:''}</div>`;
+    host.append(resultSection);
+  }
   host.querySelector('[data-close-job]')?.addEventListener('click', () => {
     const url = new URL(location.href); url.searchParams.delete('job'); history.pushState(null,'',url);
     clearJobDetail();
@@ -1085,3 +1094,4 @@ function initialize() {
 }
 
 initialize();
+import { opportunityDimensionsMarkup, opportunityPoolSummaryMarkup } from './v3/opportunity-dimensions.js';

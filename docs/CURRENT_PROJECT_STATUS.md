@@ -5,11 +5,11 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-08T11:25:00+08:00",
+  "generated_updated_at": "2026-09-08T12:02:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
   "commit": "b227f1d2c32a06f5f1401173208fed06b40c8165",
-  "dirty_at_snapshot": false,
+  "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 12 (Workspace UI)",
   "current_active_phase": "Phase 13",
   "phase13_search":{"scope":["WP-MC00","WP-MC01","WP-MC02"],"wp_mc00":"PASS","wp_mc01":"PASS","wp_mc02":"PASS","runtime_activation":"NOT_ACTIVATED_PENDING_CONFIG","live_brave_test":"NOT_RUN","brave_configured":false,"storage_rights_confirmed":false,"result_report":"docs/PHASE13_MC00_02_RESULT.md","stop_after":"WP-MC02"},
@@ -115,7 +115,8 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"054_phase11_suppression_closed_loop.sql","sha256":"0f43058663a1dead26e4816ac97d241d9e1595b47adb4b2156f40959a5d5e41b"},
     {"migration_key":"055_phase11_controlled_application_context.sql","sha256":"3ab845b2bb7ae56764ababeb7aea0959a593b1e737369bb306b279c012db5a57"},
     {"migration_key":"056_phase11_version_payload_guard_rowtype.sql","sha256":"2812ea9cbffc8b1f502764c16043a987d74ac99b0461ad94da4d945c1fbf54dd"},
-    {"migration_key":"057_phase11_controlled_shared_crm.sql","sha256":"08dfc8d0ff581850c804ee6608a116fce316f2093e57e7910214baf510b3d063"}
+    {"migration_key":"057_phase11_controlled_shared_crm.sql","sha256":"08dfc8d0ff581850c804ee6608a116fce316f2093e57e7910214baf510b3d063"},
+    {"migration_key":"058_phase13_opportunity_pool.sql","sha256":"544d7f2f8567900a4cbd36a35f6ab24e610cbe065f2fad3192342215333ef0be"}
   ],
   "current_real_data_counts": {
     "companies": 129,
@@ -377,8 +378,9 @@ This file is the single source of truth for current execution state. Historical 
     }
   },
   "current_blockers": [],
-  "next_allowed_work_package": "WP_MC03_REVIEW_STOP",
-  "explicit_stop_boundary": "Phase13 V2.1 WP-MC03 opportunity-pool DRY-RUN completed, STOP for user review before MC04. MC00 through WP-MC02 remain historical completed search-code work; do not redo them or activate Brave. No production application, provider call, email or business mutation in MC03. Proposed bands retain documented attribution/type risks, not production rule acceptance. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance, manual single-email policy and closed automatic email/follow-up."
+  "phase13_mc04":{"scope":"WP-MC04","status":"PASS","user_approved_mc03_bands":true,"provider_calls":0,"email_sends":0,"migration":"058_phase13_opportunity_pool.sql","company_count":138,"active_business_opportunities":28,"result_report":"docs/PHASE13_MC04_OPPORTUNITY_POOL_RESULT.md","stop_after":"WP-MC04"},
+  "next_allowed_work_package": "WP_MC04_STOP",
+  "explicit_stop_boundary": "Phase13 V2.1 WP-MC04 only: user approved MC03 bands, automatic active opportunity membership and nonblocking warnings. Preserve independent contact readiness and existing email eligibility/approval gates. STOP after WP-MC04; do not begin MC05, activate providers or automatic email. MC03 remains a historical read-only comparison. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance and manual single-email policy."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->

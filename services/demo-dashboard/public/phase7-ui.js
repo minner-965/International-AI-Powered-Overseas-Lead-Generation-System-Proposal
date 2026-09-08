@@ -71,6 +71,10 @@ const REASON_LABELS = Object.freeze({
 });
 
 const FIELD_LABELS = Object.freeze({
+  opportunity_pool_band:['机会匹配','Opportunity match'],active_opportunity_pool:['业务机会','Active business opportunity'],
+  is_active_business_opportunity:['业务机会','Active business opportunity'],contact_readiness_labels:['联系准备','Contact readiness'],
+  email_eligibility:['邮件资格','Email eligibility'],review_flags:['资料提示','Evidence notes'],data_quality_flags:['资料质量提示','Data quality notes'],
+  category_relation:['类目关系','Category relation'],company_fit_relation:['企业适配','Company fit'],
   target_category:['目标类目','Target category'],opportunity_status:['机会状态','Opportunity status'],
   recipient:['收件邮箱','Recipient'],recipient_type:['收件人类型','Recipient type'],recipient_source:['收件人来源','Recipient source'],
   email_send_eligibility:['邮件联系资格','Email send eligibility'],management_approval:['当前管理审核','Current management approval'],
@@ -502,6 +506,7 @@ function actionLabels(action) {
 }
 
 function readinessActions(record) {
+  if (hasOpportunityPool(record)) return '';
   const display = text(opportunityStatus(record)).toUpperCase();
   const system = text(firstValue(record,['system_recommendation_status','systemRecommendationStatus'])).toUpperCase();
   const actions = [];
@@ -545,6 +550,7 @@ function readinessEntryLinks() {
 function renderReadiness(state, decision, queue) {
   const record = currentOpportunity(decision);
   if (!record) return detailEmpty('ti-lock-check','尚无机会状态','No opportunity status yet','','');
+  if (hasOpportunityPool(record)) return `<section class="crm-phase7-summary-card">${opportunityDimensionsMarkup(record)}${readinessEntryLinks()}</section>`;
   const display = opportunityStatus(record);
   const system = firstValue(record,['system_recommendation_status','systemRecommendationStatus']) || display;
   const contact = firstValue(record,['contact_readiness','contactReadiness','verification_status']) || 'UNKNOWN';
@@ -768,3 +774,4 @@ export function attachPhase7CompanyDetail(detail, { companyId, opportunityId = '
     tab.addEventListener('focus',load);
   });
 }
+import { hasOpportunityPool, opportunityDimensionsMarkup } from './ui/v3/opportunity-dimensions.js';

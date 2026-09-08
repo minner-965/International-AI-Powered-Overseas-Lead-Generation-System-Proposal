@@ -44,3 +44,17 @@ textarea.dpv-field { min-height: 120px; resize: vertical; width: 100%; }
 .dpv-dialog__body { overflow-y: auto; overscroll-behavior: contain; padding: 24px; }
 .dpv-dialog__foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--dpv-border); padding: 16px 24px; }
 @media (max-width: 767px) { .dpv-panel__head, .dpv-panel__body, .card-body, .dpv-dialog__body { padding: 16px; } .dpv-table :is(th,td) { padding: 12px; } }
+.v3-opportunity-dimensions { display:grid; gap:8px; margin:8px 0; min-width:0; }
+.v3-opportunity-dimensions > div { min-width:0; }
+.v3-opportunity-dimensions dt { color:var(--dpv-muted); font-size:12px; margin-bottom:4px; }
+.v3-opportunity-dimensions dd { display:flex; flex-wrap:wrap; gap:4px; margin:0; }
+.v3-opportunity-dimensions [data-contact-readiness] { display:flex; flex-wrap:wrap; gap:4px; }
+.v3-opportunity-review-note { color:var(--dpv-muted); font-size:12px; margin:4px 0; }
+.v3-opportunity-review-note summary { display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer; }
+.v3-contact-readiness-more { width:100%; }
+.v3-contact-readiness-more summary { min-height:44px; cursor:pointer; }
+.v3-contact-readiness-more .data-state-badge { margin-bottom:4px; }
+.v3-opportunity-dimensions[data-opportunity-pool-summary], #research-job .v3-opportunity-dimensions { grid-template-columns:repeat(3,minmax(0,1fr)); }
+#research-workbench-summary > [data-opportunity-pool-summary] { grid-column:1/-1; }
+#research-job article + article { border-top:1px solid var(--dpv-border); margin-top:16px; padding-top:16px; }
+#research-job details > summary { min-height:44px; cursor:pointer; }

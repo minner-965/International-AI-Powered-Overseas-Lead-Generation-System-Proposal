@@ -24,6 +24,7 @@ import { CategoryProcurementService,buildCategoryProcurementWorkItems } from './
 import { CategoryScopeService } from './categoryProcurement/CategoryScopeService.js';
 import { resolveTargetCategoryContext,resolveTargetCategoryContextFromDatabase } from './categoryProcurement/targetCategoryContext.js';
 import { queryCategoryProcurementOpportunities } from './categoryProcurement/opportunitiesRoute.js';
+import {OpportunityPoolService} from './opportunityPool/OpportunityPoolService.js';
 import {companyDirectoryAdmittedSql,evaluatedCategoryProfilesSql} from './categoryProcurement/categoryAdmission.js';
 import { AutoEvidenceOrchestrator,autoEvidenceConfig,createAutoEvidenceQueueHandlers,createAutoEvidenceExecutors } from './autoEvidence/index.js';
 import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.js';
@@ -103,6 +104,7 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD,
 });
 instrumentPgPool(pool, telemetry);
+const opportunityPoolService=new OpportunityPoolService({pool});
 const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:searchConfig.tavilyApiKey,
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
   refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
@@ -152,7 +154,7 @@ const categoryEvidenceService = new CategoryEvidenceService({
   maxPagesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_PAGES_PER_COMPANY || 12),
   maxDiscoveryDepth:Number(process.env.CATEGORY_PROCUREMENT_MAX_DISCOVERY_DEPTH || 2)
 });
-const categoryProcurementService = new CategoryProcurementService({pool});
+const categoryProcurementService = new CategoryProcurementService({pool,opportunityPoolService});
 const categoryScopeService = new CategoryScopeService({pool});
 
 function optionalUuid(value, label) {
@@ -342,6 +344,7 @@ async function classifyBuyerBusinessModelWork(data){const payload=categoryProcur
 async function calculateCategoryProcurementMatchWork(data){const payload=categoryProcurementQueuePayload(data);try{
   await pool.query(`UPDATE leadgen.research_jobs SET status='SCORING' WHERE id=$1 AND status NOT IN('COMPLETED','FAILED')`,[payload.job_id]);
   const result=await categoryProcurementService.calculateCategoryMatchAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,buyerBusinessModelResultId:payload.buyer_business_model_result_id});
+  await opportunityPoolService.refreshCompany(payload.company_id,{researchJobId:payload.job_id,reason:'CATEGORY_MATCH_COMMITTED'});
   const next={...payload,category_procurement_match_result_id:result.id};const queueJobId=await phase5Queue.enqueue(PHASE5_QUEUES.CALCULATE_PRODUCT_OPPORTUNITIES,next,{singletonKey:`phase6.1:opportunity:${payload.execution_key}`});
   await refreshCategoryProcurementJobProgress(payload.job_id);return{category_procurement_match_result_id:result.id,score:result.score,band:result.band,match_status:result.match_status,queue_job_id:queueJobId};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
@@ -349,12 +352,14 @@ async function calculateCategoryProcurementMatchWork(data){const payload=categor
 async function calculateProductOpportunitiesWork(data){const payload=categoryProcurementQueuePayload(data);try{
   const result=await categoryProcurementService.calculateProductOpportunityAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id});
   await categoryProcurementService.calculateCommercialFitAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id});
+  await opportunityPoolService.refreshCompany(payload.company_id,{researchJobId:payload.job_id,reason:'COMMERCIAL_ASSESSMENT_COMMITTED'});
   const next={...payload,product_opportunity_result_id:result.id};const queueJobId=await phase5Queue.enqueue(PHASE5_QUEUES.RECALCULATE_COOPERATION_V3,next,{singletonKey:`phase6.1:cooperation:${payload.execution_key}`});
   await refreshCategoryProcurementJobProgress(payload.job_id);return{product_opportunity_result_id:result.id,recommendation_status:result.recommendation_status,candidate_count:result.candidate_count,queue_job_id:queueJobId};
 }catch(error){await refreshCategoryProcurementJobProgress(payload.job_id,{error:String(error.message||error)});throw error;}}
 
 async function recalculateCooperationV3Work(data){const payload=categoryProcurementQueuePayload(data);try{
   const result=await categoryProcurementService.calculateCooperationAndPersist({researchJobId:payload.job_id,companyId:payload.company_id,productProfile:payload.product_profile,executionKey:payload.execution_key,categoryProcurementMatchResultId:payload.category_procurement_match_result_id,productOpportunityResultId:payload.product_opportunity_result_id});
+  await opportunityPoolService.refreshCompany(payload.company_id,{researchJobId:payload.job_id,reason:'COOPERATION_ASSESSMENT_COMMITTED'});
   const updatedJob=await refreshCategoryProcurementJobProgress(payload.job_id);
   if(['COMPLETED','PARTIAL'].includes(updatedJob?.status)){
     await phase7Service.repository.refreshOpportunityDecisions({
@@ -468,7 +473,12 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   },
   discover:jobId=>discoverResearchCandidates(pool,jobId,searchConfig,{tavilyUsageConfig}),
   checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
-  verify:jobId=>verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true}),
+  verify:async jobId=>{
+    const verified=await verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true});
+    const companyIds=[...new Set((verified.results||[]).map(row=>row.company_id).filter(Boolean))];
+    if(companyIds.length)await opportunityPoolService.refresh({companyIds,researchJobId:jobId,reason:'COMPANY_VERIFICATION_COMMITTED'});
+    return verified;
+  },
   score:async(jobId,executionKey)=>{
     const jobResult=await pool.query('SELECT product_profile,product_category FROM leadgen.research_jobs WHERE id=$1',[jobId]);
     if(!jobResult.rowCount)throw Object.assign(new Error('Research job not found'),{code:'RESEARCH_JOB_NOT_FOUND'});
@@ -499,6 +509,8 @@ const publicDataOrigins = [
 const publicDataOriginSql = publicDataOrigins.map(value => `'${value}'`).join(',');
 const researchWorkbenchService = new ResearchWorkbenchService({
   pool,
+  opportunityPoolService,
+  companyMarketVisibleSql,
   hunter:enrichmentService.hunter,
   autoEvidence:autoEvidenceService,
   providerAccountState:tavilyProviderAccountState,
@@ -1090,7 +1102,10 @@ async function metrics(db = pool) {
       AND ${companyMarketVisibleSql('c')}
       AND ${companyDirectoryAdmittedSql('c')}`);
   const lastRun = await db.query('SELECT new_companies,updated_companies,fetched_records,completed_at FROM leadgen.collection_runs ORDER BY completed_at DESC LIMIT 1');
-  return { ...rows[0], data_origin: 'mixed_public_provenance', last_run: lastRun.rows[0] || null };
+  const opportunities=await queryCategoryProcurementOpportunities({pool:db,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql});
+  return { ...rows[0],active_business_opportunities:opportunities.filter(r=>r.is_active_business_opportunity).length,
+    opportunity_pool_bands:Object.fromEntries(['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'].map(b=>[b,opportunities.filter(r=>r.opportunity_pool_band===b).length])),
+    data_origin: 'mixed_public_provenance', last_run: lastRun.rows[0] || null };
 }
 
 app.get('/api/health', async (_req, res) => {
@@ -1115,6 +1130,16 @@ app.post('/api/live/collect', managementAuth.authenticate,
 app.get('/api/metrics', async (_req, res, next) => {
   try { res.json(await metrics(pool)); } catch (e) { next(e); }
 });
+
+app.get('/api/opportunity-pool/summary',async(_req,res,next)=>{try{
+  const rows=await queryCategoryProcurementOpportunities({pool,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql});
+  const active=rows.filter(r=>r.is_active_business_opportunity);
+  res.json({total_companies:rows.length,active_business_opportunities:active.length,
+    bands:Object.fromEntries(['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'].map(b=>[b,rows.filter(r=>r.opportunity_pool_band===b).length])),
+    contact_ready:active.filter(r=>(r.contact_readiness_labels||[]).some(s=>s.endsWith('_READY'))).length,
+    email_eligible:active.filter(r=>r.email_send_eligibility?.status==='ELIGIBLE').length,
+    review_flagged:active.filter(r=>r.review_flags?.length).length,updated_at:new Date().toISOString()});
+}catch(e){next(e);}});
 
 function researchJobResponse(row) {
   const { id, ...fields } = row;
@@ -1766,6 +1791,8 @@ app.post('/api/internal/research/jobs/:id/verify-companies', requireInternalToke
       promoted_new: result.promotedNew,
       enriched_existing: result.enrichedExisting
     });
+    const verifiedCompanyIds=[...new Set((result.results||[]).map(item=>item.company_id).filter(Boolean))];
+    if(verifiedCompanyIds.length)await opportunityPoolService.refresh({companyIds:verifiedCompanyIds,researchJobId:req.params.id,reason:'COMPANY_VERIFICATION_COMMITTED'});
     const categoryProcurementCompanyIds=[...new Set((result.results||[])
       .filter(item=>item.company_id&&item.verification_status==='VERIFIED_BUSINESS'
         &&['PROMOTED_NEW','ENRICHED_EXISTING'].includes(item.promotion_status))
@@ -2336,7 +2363,7 @@ app.get('/api/leads', async (req, res, next) => {
         r.lead_score, r.tier, r.approval_status, r.send_status, r.next_action
       FROM leadgen.companies c LEFT JOIN leadgen.lead_reviews r ON r.company_id = c.id
       WHERE ${clauses.join(' AND ')} ORDER BY r.lead_score DESC, c.company_name`, params);
-    res.json(await attachContactProgress(pool,rows));
+    res.json(await opportunityPoolService.decorateRows(await attachContactProgress(pool,rows)));
   } catch (e) { next(e); }
 });
 
@@ -2374,7 +2401,7 @@ app.get('/api/export/leads', managementAuth.authenticate,
         AND ${excludesConfirmedExistingCustomerSql('c')}
         AND ${companyDirectoryAdmittedSql('c')}
       ORDER BY r.lead_score DESC,c.company_name`);
-    res.json({ generated_at: new Date().toISOString(), target_product: '全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）', leads: rows });
+    res.json({ generated_at: new Date().toISOString(), target_product: '全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）', leads: await opportunityPoolService.decorateRows(rows) });
   } catch (e) { next(e); }
 });
 
@@ -2402,7 +2429,8 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
         FROM leadgen.sources WHERE company_id=c.id
       ) src ON true
       WHERE c.id = $1 AND ${companyMarketVisibleSql('c')}
-        AND ${companyDirectoryAdmittedSql('c')}
+        AND (${companyDirectoryAdmittedSql('c')} OR EXISTS(
+          SELECT 1 FROM leadgen.opportunity_pool_current pc WHERE pc.company_id=c.id))
       `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
     const lead=rows[0];
@@ -2412,7 +2440,7 @@ app.get('/api/leads/:id', managementAuth.tryAuthenticate, async (req, res, next)
         'contact_lifecycle_status','contact_last_verified_at']) delete lead[field];
       lead.contact_access='RESTRICTED';
     }
-    res.json((await attachContactProgress(pool,[lead]))[0]);
+    res.json((await opportunityPoolService.decorateRows(await attachContactProgress(pool,[lead])))[0]);
   } catch (e) { next(e); }
 });
 

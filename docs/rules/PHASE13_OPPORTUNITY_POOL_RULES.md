@@ -1,6 +1,6 @@
 # Phase 13 opportunity pool rules
 
-Status: MC03 dry-run proposal only. Read PHASE13_BUSINESS_SCOPE.md first.
+Status: MC04 approved runtime rules (2026-09-08). Read PHASE13_BUSINESS_SCOPE.md first. The user approved the MC03 bands; all three positive bands become Active Business Opportunity without manual Opportunity Confirmation. Review flags are warnings only and never prevent pool membership.
 
 | Band | Evidence requirement | Active pool |
 |---|---|---|
@@ -20,4 +20,4 @@ Use current approved scopes and current/latest per-profile match records, retain
 
 One row per company includes old decision/blocker, proposed band, category/type basis, explicit exclusions, independent contact/email state, active-pool decision and notes. Report all five totals, old-to-new matrix, market/profile/type groupings, up to 20 deterministic representatives per band, all promoted legacy exclusions and unexpected recommended downgrades. Representatives are not a new numeric ranking.
 
-MC03 implements a standalone offline classifier only. No changes to runtime scores, projections, approvals, historical revisions or routes. Output local JSON under ignored artifacts/phase13-mc03; publish a technical Markdown summary without private contact details. Review false-positive and false-negative boundaries before any MC04 approval.
+MC03 remains the historical read-only comparison. MC04 reuses that classifier and appends versioned opportunity-pool decisions without rewriting old scores, evidence, approvals or decisions. Existing ambiguous broad-scope records retain the approved bands and show review warnings; warnings do not fabricate supporting evidence. Contact readiness and email eligibility are separate projections. All V3 workspaces and exports use these same dimensions. STOP after MC04; no MC05 execution, automatic outreach, or new provider calls.
