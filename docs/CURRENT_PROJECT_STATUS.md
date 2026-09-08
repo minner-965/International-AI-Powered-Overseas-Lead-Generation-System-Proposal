@@ -8,8 +8,8 @@ This file is the single source of truth for current execution state. Historical 
   "generated_updated_at": "2026-09-08T11:25:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
-  "commit": "e3cf16f05bd2ea460eb537a9909d67592959c1b8",
-  "dirty_at_snapshot": true,
+  "commit": "b227f1d2c32a06f5f1401173208fed06b40c8165",
+  "dirty_at_snapshot": false,
   "latest_released_phase": "Phase 12 (Workspace UI)",
   "current_active_phase": "Phase 13",
   "phase13_search":{"scope":["WP-MC00","WP-MC01","WP-MC02"],"wp_mc00":"PASS","wp_mc01":"PASS","wp_mc02":"PASS","runtime_activation":"NOT_ACTIVATED_PENDING_CONFIG","live_brave_test":"NOT_RUN","brave_configured":false,"storage_rights_confirmed":false,"result_report":"docs/PHASE13_MC00_02_RESULT.md","stop_after":"WP-MC02"},
@@ -385,7 +385,9 @@ This file is the single source of truth for current execution state. Historical 
 
 ## Status interpretation
 
-Current MC01/MC02 code acceptance: PASS for the implemented adapter/router and executed tests, not live-provider activation. Brave credentials are not configured and storage-rights confirmation remains false. Runtime activation is NOT_ACTIVATED_PENDING_CONFIG; live Brave test NOT_RUN. Existing legacy Tavily configuration is preserved, not an automatic fallback. Full suite985/931passed/54skipped/0failed, isolated PostgreSQL5/5 with cleanup, browser contact-sync9/9 and draft22/22. No new provider calls, mail, migrations, dependencies or MC03 work. Local implementation commit e3cf16f05bd2ea460eb537a9909d67592959c1b8; Phase13 push/tag are not executed in MC00–02. See PHASE13_MC00_02_RESULT.md. Phase12 release remains the independently verified6403dd3 baseline.
+Current MC03 V2.1 receipt (2026-09-08): standalone implementation/rules/tests commit `b227f1d2c32a06f5f1401173208fed06b40c8165`. All138 companies dry-run: 4 PRECISION / 2 RELEVANT / 22 GENERAL_RELEVANT / 101 EXPLORATORY / 9 NOT_SUITABLE. Proposed active28 retains four named attribution/type risks in the result report; no production rule acceptance or application. Full suite1014/960passed/54skipped/0failed; targeted29/29. All129 business-table fingerprints unchanged; only the existing IMAP runtime checkpoint advanced. Zero provider calls/email/business mutations. No Phase13 push/tag. STOP awaiting review before MC04. The following dated MC00–02 and earlier entries are historical checkpoints, not the current execution boundary.
+
+Historical MC01/MC02 code acceptance: PASS for the implemented adapter/router and executed tests, not live-provider activation. Brave credentials are not configured and storage-rights confirmation remains false. Runtime activation is NOT_ACTIVATED_PENDING_CONFIG; live Brave test NOT_RUN. Existing legacy Tavily configuration is preserved, not an automatic fallback. Full suite985/931passed/54skipped/0failed, isolated PostgreSQL5/5 with cleanup, browser contact-sync9/9 and draft22/22. No new provider calls, mail, migrations, dependencies or MC03 work in that earlier scope. Local implementation commit e3cf16f05bd2ea460eb537a9909d67592959c1b8; Phase13 push/tag are not executed in MC00–02. See PHASE13_MC00_02_RESULT.md. Phase12 release remains the independently verified6403dd3 baseline.
 
 Current MC00 release receipt: accepted Phase12 implementation `6403dd3fb4e82ea757636c8a59cb7edf29f5beb0` and remote branch were verified; new acceptance tag `phase12-workspace-ui-v3-accepted-20260907` has object `fb70993b7eaff99beb78985f6220a1d2ee914fd3` and peels to that implementation. Old tag is unchanged. Local database dump and immutable migration hashes are recorded in PHASE13_MC00_RESULT.md. MC00 PASS; MC01/MC02 IN_PROGRESS, STOP at MC02. Earlier uncommitted/not-released statements below are historical and superseded only by this verified receipt.
 
