@@ -2334,6 +2334,7 @@ $('#research-country').addEventListener('change', () => {
 });
 $('#research-form').addEventListener('submit', async event => {
   event.preventDefault();
+  if (event.currentTarget.dataset.researchBatch === 'true') return;
   const button = $('#start-research');
   const buyerTypes = [...document.querySelectorAll('input[name="buyer_type"]:checked')].map(input => input.value);
   const selectedCategories = [...document.querySelectorAll('input[name="product_category"]:checked')].map(input => ({

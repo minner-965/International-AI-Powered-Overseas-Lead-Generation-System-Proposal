@@ -16,13 +16,14 @@
     "generated_updated_at": {"type":"string","format":"date-time"},
     "repository": {"type":"string","minLength":1},
     "branch": {"type":"string","minLength":1},
-    "commit": {"type":"string","pattern":"^[0-9a-f]{40}$"},
-    "dirty_at_snapshot": {"type":"boolean"},
+    "commit": {"type":"string","pattern":"^[0-9a-f]{40}$","description":"Existing Git baseline when the snapshot was authored; must be an ancestor of the committed status snapshot."},
+    "dirty_at_snapshot": {"type":"boolean","description":"Historical worktree state at snapshot authoring, independent of a later checkout's cleanliness."},
     "latest_released_phase": {"enum":["Phase 10 (Pre-email)","Phase 11 (Controlled outreach)","Phase 12 (Workspace UI)"]},
     "current_active_phase": {"enum":["Phase 10","Phase 11","Phase 12","Phase 13"]},
     "phase13_search":{"type":"object","additionalProperties":false,"required":["scope","wp_mc00","wp_mc01","wp_mc02","stop_after"],"properties":{"scope":{"const":["WP-MC00","WP-MC01","WP-MC02"]},"wp_mc00":{"const":"PASS"},"wp_mc01":{"enum":["IN_PROGRESS","PASS"]},"wp_mc02":{"enum":["IN_PROGRESS","PASS"]},"runtime_activation":{"const":"NOT_ACTIVATED_PENDING_CONFIG"},"live_brave_test":{"const":"NOT_RUN"},"brave_configured":{"const":false},"storage_rights_confirmed":{"const":false},"result_report":{"const":"docs/PHASE13_MC00_02_RESULT.md"},"stop_after":{"const":"WP-MC02"}}},
     "phase13_mc03": {"type":"object","additionalProperties":false,"required":["scope","status","provider_calls","email_sends","business_mutations","applied","company_count","band_counts","result_report","stop_after"],"properties":{"scope":{"const":"WP-MC03"},"status":{"const":"DRY_RUN_COMPLETE_AWAITING_REVIEW"},"provider_calls":{"const":0},"email_sends":{"const":0},"business_mutations":{"const":0},"applied":{"const":false},"company_count":{"type":"integer","minimum":0},"band_counts":{"type":"object"},"result_report":{"const":"docs/PHASE13_MC03_OPPORTUNITY_POOL_DRY_RUN_RESULT.md"},"stop_after":{"const":"WP-MC03"}}},
     "phase13_mc04":{"type":"object","required":["scope","status","user_approved_mc03_bands","provider_calls","email_sends","migration","company_count","active_business_opportunities","result_report","stop_after"],"properties":{"scope":{"const":"WP-MC04"},"status":{"enum":["IN_PROGRESS","PASS"]},"user_approved_mc03_bands":{"const":true},"provider_calls":{"const":0},"email_sends":{"const":0},"migration":{"const":"058_phase13_opportunity_pool.sql"},"company_count":{"type":"integer"},"active_business_opportunities":{"type":"integer"},"result_report":{"const":"docs/PHASE13_MC04_OPPORTUNITY_POOL_RESULT.md"},"stop_after":{"const":"WP-MC04"}}},
+    "phase13_mc05":{"type":"object","required":["scope","status","checkpoint_commit","mc04_rule_changes","provider_calls","email_sends","result_report","ui_report","stop_after"],"properties":{"scope":{"const":"WP-MC05"},"status":{"enum":["IN_PROGRESS","PASS"]},"checkpoint_commit":{"type":"string"},"mc04_rule_changes":{"const":0},"provider_calls":{"const":0},"email_sends":{"const":0},"result_report":{"const":"docs/PHASE13_MC05_RESEARCH_BATCH_RESULT.md"},"ui_report":{"const":"docs/PHASE13_MC05_UI_RESULT.md"},"stop_after":{"const":"WP-MC05"}}},
     "phase12_ui": {
       "type":"object", "additionalProperties":false,
       "required":["scope","status","full_phase_acceptance","prior_release_acceptance","stop_after"],
@@ -111,7 +112,7 @@
       }
     },
     "current_blockers":{"type":"array","items":{"type":"string"}},
-    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION","WP_MC02_STOP","WP_MC03_REVIEW_STOP","WP_MC04_STOP"]},
+    "next_allowed_work_package":{"enum":["POST_PHASE10_EMAIL_CONFIGURATION","WP-OQ10_CONTROLLED_APPLICATION_CONTEXT_AND_REAL_E2E","WP-OQ11_SINGLE_PILOT_SEND","WP-OQ11_REPLY_AND_CRM_ACCEPTANCE","PHASE11_REMAINING_ACCEPTANCE","STOP_AWAIT_PRODUCTION_POLICY","WP_UI12_UI14_VERIFICATION","WP_MC02_STOP","WP_MC03_REVIEW_STOP","WP_MC04_STOP","WP_MC05_STOP"]},
     "explicit_stop_boundary":{"type":"string","pattern":"STOP"}
   },
   "allOf":[

@@ -5,10 +5,10 @@ This file is the single source of truth for current execution state. Historical 
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_updated_at": "2026-09-08T12:02:00+08:00",
+  "generated_updated_at": "2026-09-08T12:30:00+08:00",
   "repository": "D:/codex/International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
   "branch": "phase12-workspace-ui-v3",
-  "commit": "b227f1d2c32a06f5f1401173208fed06b40c8165",
+  "commit": "69b55bcb247459b085ca6e784207d6616692eac7",
   "dirty_at_snapshot": true,
   "latest_released_phase": "Phase 12 (Workspace UI)",
   "current_active_phase": "Phase 13",
@@ -116,7 +116,8 @@ This file is the single source of truth for current execution state. Historical 
     {"migration_key":"055_phase11_controlled_application_context.sql","sha256":"3ab845b2bb7ae56764ababeb7aea0959a593b1e737369bb306b279c012db5a57"},
     {"migration_key":"056_phase11_version_payload_guard_rowtype.sql","sha256":"2812ea9cbffc8b1f502764c16043a987d74ac99b0461ad94da4d945c1fbf54dd"},
     {"migration_key":"057_phase11_controlled_shared_crm.sql","sha256":"08dfc8d0ff581850c804ee6608a116fce316f2093e57e7910214baf510b3d063"},
-    {"migration_key":"058_phase13_opportunity_pool.sql","sha256":"544d7f2f8567900a4cbd36a35f6ab24e610cbe065f2fad3192342215333ef0be"}
+    {"migration_key":"058_phase13_opportunity_pool.sql","sha256":"544d7f2f8567900a4cbd36a35f6ab24e610cbe065f2fad3192342215333ef0be"},
+    {"migration_key":"059_phase13_research_batches.sql","sha256":"0255ae85545d71e8c59a076c0cb5aaaf1beb3ad6cb3875f48da9dc8fd7ed342e"}
   ],
   "current_real_data_counts": {
     "companies": 129,
@@ -379,13 +380,16 @@ This file is the single source of truth for current execution state. Historical 
   },
   "current_blockers": [],
   "phase13_mc04":{"scope":"WP-MC04","status":"PASS","user_approved_mc03_bands":true,"provider_calls":0,"email_sends":0,"migration":"058_phase13_opportunity_pool.sql","company_count":138,"active_business_opportunities":28,"result_report":"docs/PHASE13_MC04_OPPORTUNITY_POOL_RESULT.md","stop_after":"WP-MC04"},
-  "next_allowed_work_package": "WP_MC04_STOP",
-  "explicit_stop_boundary": "Phase13 V2.1 WP-MC04 only: user approved MC03 bands, automatic active opportunity membership and nonblocking warnings. Preserve independent contact readiness and existing email eligibility/approval gates. STOP after WP-MC04; do not begin MC05, activate providers or automatic email. MC03 remains a historical read-only comparison. Phase12 human screen-reader listening remains NOT_TESTED, no WCAG certification. Preserve historical WP-A16 and WP-OQ09 acceptance and manual single-email policy."
+  "phase13_mc05":{"scope":"WP-MC05","status":"PASS","checkpoint_commit":"69b55bcb247459b085ca6e784207d6616692eac7","mc04_rule_changes":0,"provider_calls":0,"provider_calls_scope":"Search execution only; existing startup account-usage metadata refresh occurred without consumption change","email_sends":0,"result_report":"docs/PHASE13_MC05_RESEARCH_BATCH_RESULT.md","ui_report":"docs/PHASE13_MC05_UI_RESULT.md","stop_after":"WP-MC05"},
+  "next_allowed_work_package": "WP_MC05_STOP",
+  "explicit_stop_boundary": "Phase13 V2.1 WP-MC05 only: accepted MC04 checkpoint preserved; do not change or recalculate MC04 rules. Add approved active-scope selection, immutable ResearchBatch and existing child ResearchJob fan-out/dedupe. STOP after WP-MC05; do not begin MC06, enable Brave, run continuous search or send email. MC03 and MC04 reports remain historical. Preserve WP-A16 and WP-OQ09 acceptance, independent contact/email gates, existing manual policy, Phase12 human screen-reader NOT_TESTED and no WCAG certification."
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Status interpretation
+
+CI verification correction (2026-09-08): the recorded commit and dirty flag describe the authoring snapshot. Verification requires that the recorded baseline exists in the snapshot's ancestry and that the latest implementation commit is included in the status snapshot's history. Commit implementation changes and their status update together; a later implementation without an updated status remains an error. Full Git history is required. The standalone CI repair is committed on the remote Phase 12 branch; these same verification changes are integrated locally alongside the ongoing Phase 13 work without publishing that work.
 
 Current MC03 V2.1 receipt (2026-09-08): standalone implementation/rules/tests commit `b227f1d2c32a06f5f1401173208fed06b40c8165`. All138 companies dry-run: 4 PRECISION / 2 RELEVANT / 22 GENERAL_RELEVANT / 101 EXPLORATORY / 9 NOT_SUITABLE. Proposed active28 retains four named attribution/type risks in the result report; no production rule acceptance or application. Full suite1014/960passed/54skipped/0failed; targeted29/29. All129 business-table fingerprints unchanged; only the existing IMAP runtime checkpoint advanced. Zero provider calls/email/business mutations. No Phase13 push/tag. STOP awaiting review before MC04. The following dated MC00–02 and earlier entries are historical checkpoints, not the current execution boundary.
 

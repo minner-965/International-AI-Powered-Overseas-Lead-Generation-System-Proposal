@@ -2,6 +2,7 @@ import { activateView } from '../crm-shell.js';
 import { managementRequest } from '../phase7-ui.js';
 import { researchStageLabel } from '../verification-ui.js';
 import { profileLabel, persistedProgress, outreachTaskRows, outreachTaskLabel } from './v3/research-jobs.js';
+import { initializeResearchBatch, batchScopeReview, batchValidateScope, refreshBatchOptions } from './v3/research-batch.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -325,6 +326,7 @@ function selectedResearchCategories() {
 }
 
 function syncCategoryPicker({ selectAll = false } = {}) {
+  if ($('#research-form')?.dataset.researchBatch === 'true') return;
   const categoryInputs=$$('input[name="product_category"]');
   const all=$('#research-category-all');
   if(selectAll && all)categoryInputs.forEach(input=>{input.checked=all.checked;});
@@ -343,6 +345,7 @@ function syncCategoryPicker({ selectAll = false } = {}) {
 }
 
 function renderCatalogSummary() {
+  if ($('#research-form')?.dataset.researchBatch === 'true') return;
   const host = $('#research-catalog-summary');
   if (!host) return;
   const selected=selectedResearchCategories();
@@ -851,6 +854,7 @@ async function openJobDetail(jobId,{ replaceState = false, trigger = null } = {}
 }
 
 function renderScopeReview() {
+  if ($('#research-form')?.dataset.researchBatch === 'true') { batchScopeReview(); return; }
   const host = $('#research-scope-review');
   const country = $('#research-country');
   const categories=selectedResearchCategories();
@@ -901,7 +905,8 @@ function openResearchDialog(trigger) {
   if (state.summary) renderCatalogSummary(); else void loadSummary();
   setDialogStep(1,{ focus:false });
   if (!dialog.open) dialog.showModal();
-  requestAnimationFrame(()=>$('#research-country')?.focus({ preventScroll:true }));
+  void refreshBatchOptions();
+  requestAnimationFrame(()=>$('#research-market-all')?.focus({ preventScroll:true }));
 }
 
 function closeResearchDialog(result = 'cancel') {
@@ -913,6 +918,7 @@ function validateDialogStep() {
   const status = $('#research-create-status');
   if (status) status.textContent = '';
   if (state.dialogStep === 1) {
+    if ($('#research-form')?.dataset.researchBatch === 'true') return batchValidateScope();
     for (const control of [$('#research-country')]) {
       if (control && !control.checkValidity()) {
         control.reportValidity();
@@ -942,6 +948,7 @@ function initializeDialog() {
   const form = $('#research-form');
   if (!dialog || !form) return;
   document.body.append(dialog);
+  initializeResearchBatch({ request:managementRequest, bi, esc, openJobDetail, clearJobDetail, activateView });
   $$('[data-research-dialog-open]').forEach(button=>button.addEventListener('click',()=>openResearchDialog(button)));
   document.addEventListener('crm:newresearch',event=>openResearchDialog(event.detail?.trigger));
   dialog.querySelectorAll('[data-research-dialog-close]').forEach(button=>button.addEventListener('click',()=>closeResearchDialog()));

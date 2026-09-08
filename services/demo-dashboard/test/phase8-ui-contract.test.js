@@ -85,8 +85,7 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
   assert.match(`${html}\n${app}`, /id="detail-section-nav"/);
 
   for (const [name, values] of [
-    ['country', ['United Arab Emirates', 'Mexico']],
-    ['product_category', ["Women's Apparel", 'General Merchandise']],
+    ['country', []],
     ['buyer_type', ['Importer', 'Wholesaler', 'Distributor', 'Department Store', 'Large Retail Group', 'Regional Retail Chain', 'Supermarket']],
     ['import_type', ['PROSPECT_LEADS', 'PRODUCT_MASTER_UPDATE', 'CUSTOMER_DEALS', 'CUSTOMER_DEAL_LINES']],
     ['export_type', ['LEAD_MASTER_INTERNAL', 'SALES_OPPORTUNITY', 'PRODUCT_CATALOG_INTERNAL', 'CUSTOMER_DEAL_HISTORY', 'RESEARCH_JOB_PROVIDER_USAGE', 'IMPORT_ERROR_REPORT']],
@@ -99,8 +98,10 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
   for (const endpoint of ['/api/research/jobs', '/api/data-imports/dry-run', '/api/data-exports']) {
     assert.ok(`${app}\n${phase7}`.includes(endpoint), `Missing preserved endpoint ${endpoint}`);
   }
-  assert.match(html,/id="research-category-all"[^>]*type="checkbox"[^>]*checked/);
-  assert.equal((html.match(/name="product_category"/g)||[]).length,2);
+  const [batchUi]=await readMany(['ui/v3/research-batch.js']);
+  assert.match(batchUi,/id="research-category-all"[^>]*type="checkbox"/);
+  assert.match(batchUi,/category_scope_ids/);
+  assert.equal((html.match(/name="product_category"/g)||[]).length,0);
   assert.match(app,/querySelectorAll\('input\[name="product_category"\]:checked'\)/);
   assert.match(app,/Promise\.allSettled\(requests\.map/);
 });

@@ -1,5 +1,12 @@
 # Version Changelog
 
+## Phase13 V2.1 MC05 — 2026-09-08 — registry-based ResearchBatch
+
+- Preserved accepted MC04 in local checkpoint `69b55bcb247459b085ca6e784207d6616692eac7` before implementation.
+- Added migration 059, immutable batch scopes, transactional existing-job fan-out and cross-entry active-scope dedupe. MC04 rules and historical migrations remain unchanged.
+- V3 Research gains single/multi/all registry selection, live scope totals and batch navigation. AE/MX searchable; BD stays hidden. Actual current selection is 2 × 13 = 26 scopes.
+- Results: `PHASE13_MC05_RESEARCH_BATCH_RESULT.md` and `PHASE13_MC05_UI_RESULT.md`. No provider activation, continuous search, email, push or tag; STOP before MC06.
+
 ## Phase13 V2.1 MC04 — 2026-09-08 — approved opportunity pool
 
 - User-approved PRECISION, RELEVANT and GENERAL_RELEVANT become active automatically; review flags are nonblocking.

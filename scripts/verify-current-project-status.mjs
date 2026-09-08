@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { verifyStatusGitSnapshot } from './current-project-status-git.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,10 +82,17 @@ if (phase12Active) {
   if(status.phase13_mc04){
     const mc=status.phase13_mc04;
     assert(mc.scope==='WP-MC04'&&mc.user_approved_mc03_bands===true&&['IN_PROGRESS','PASS'].includes(mc.status),'MC04 requires user approval and actual state');
-    assert(mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC04'&&status.explicit_stop_boundary.includes('WP-MC04'),'MC04 must preserve the no-send and STOP boundary');
+    assert(mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC04'&&(status.phase13_mc05||status.explicit_stop_boundary.includes('WP-MC04')),'MC04 must preserve the no-send and historical STOP boundary');
     if(mc.status==='PASS')assert(existsSync(join(root,mc.result_report)),'MC04 result report required');
   }
-  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
+  if(status.phase13_mc05){
+    const mc=status.phase13_mc05;
+    assert(status.phase13_mc04?.status==='PASS'&&mc.scope==='WP-MC05'&&['IN_PROGRESS','PASS'].includes(mc.status),'MC05 requires accepted MC04');
+    assert(mc.mc04_rule_changes===0&&mc.provider_calls===0&&mc.email_sends===0&&mc.stop_after==='WP-MC05'&&status.explicit_stop_boundary.includes('WP-MC05'),'MC05 must preserve accepted rules and STOP');
+    assert(/^[a-f0-9]{40}$/.test(mc.checkpoint_commit),'MC05 checkpoint required');
+    if(mc.status==='PASS')assert(existsSync(join(root,mc.result_report))&&existsSync(join(root,mc.ui_report)),'MC05 reports required');
+  }
+  assert(status.next_allowed_work_package === (phase13Active?(status.phase13_mc05?'WP_MC05_STOP':status.phase13_mc04?'WP_MC04_STOP':status.phase13_mc03?'WP_MC03_REVIEW_STOP':'WP_MC02_STOP'):'STOP_AWAIT_PRODUCTION_POLICY'), 'Execution must stop at the authorized phase boundary');
   assert(ui.stop_after === 'WP-UI16' && (phase13Active || status.explicit_stop_boundary.includes('WP-UI16')), 'Phase 12 historical STOP must remain WP-UI16');
   const uiSchema = schema.properties.phase12_ui;
   for (const key of uiSchema.required) assert(Object.hasOwn(ui, key), `Missing Phase 12 UI metadata: ${key}`);
@@ -217,13 +224,7 @@ if(status.phase13_mc04){
   assert(migrationMap.get(name)===createHash('sha256').update(readFileSync(join(root,'database','migrations',name))).digest('hex'),'MC04 migration checksum mismatch');
 }
 
-const git = (...args) => execFileSync('git', [
-  '-c', `safe.directory=${root.replaceAll('\\', '/')}`, '-C', root, ...args
-], { encoding: 'utf8' }).trim();
-const implementationHead = git('log', '-1', '--format=%H', '--', '.', ':(exclude)docs/**');
-const dirty = git('status', '--porcelain').length > 0;
-assert(status.commit === implementationHead, 'Current status commit does not match the latest implementation commit');
-assert(status.dirty_at_snapshot === dirty, 'Current status dirty flag does not match the worktree');
+verifyStatusGitSnapshot(root, status);
 
 const credentialAssignment = /(?:PASSWORD|API_KEY|CLIENT_SECRET|REFRESH_TOKEN|PRIVATE_KEY)\s*[:=]\s*["']?[^\s"'<]+/i;
 assert(!credentialAssignment.test(statusText), 'Current status contains a credential-like assignment');

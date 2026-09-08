@@ -66,7 +66,7 @@ test('management UI hides BD through a reversible market-visibility switch', asy
   assert.equal(isMarketVisible(''), true);
   assert.equal(MARKET_VISIBILITY.BD, false);
   assert.deepEqual(filterVisibleMarkets(['AE','MX','BD']), ['AE','MX']);
-  assert.match(html, /<option(?=[^>]*data-country-code="BD")(?=[^>]*hidden)(?=[^>]*disabled)[^>]*>/);
+  assert.doesNotMatch(html, /<option[^>]*value="Bangladesh"/);
 });
 
 test('research lifecycle labels include Phase 4 crawling and qualifying states', () => {
@@ -157,10 +157,10 @@ test('common verification presets are deterministic and count active filters', (
 test('research form exposes country selector and optional city and region fields', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  assert.match(html, /<select(?=[^>]*id="research-country")(?=[^>]*name="country")(?=[^>]*required)[^>]*>/);
-  assert.match(html, /data-country-code="AE"/);
-  assert.match(html, /data-country-code="MX"/);
-  assert.match(html, /data-country-code="BD"[^>]*hidden[^>]*disabled/);
+  assert.match(html, /<select(?=[^>]*id="research-country")(?=[^>]*name="country")[^>]*>/);
+  const batch=await readFile(new URL('../public/ui/v3/research-batch.js',import.meta.url),'utf8');
+  assert.match(batch,/\/api\/research\/batches\/options/);
+  assert.match(batch,/item.status==='ACTIVE'&&item.search_enabled===true/);
   assert.match(html, /<input(?=[^>]*id="research-city")(?=[^>]*name="city")[^>]*>/);
   assert.match(html, /<input(?=[^>]*id="research-region")(?=[^>]*name="region")[^>]*>/);
   assert.doesNotMatch(html, /<input(?=[^>]*id="research-city")[^>]*\bvalue=/);

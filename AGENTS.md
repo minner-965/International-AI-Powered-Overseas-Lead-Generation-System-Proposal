@@ -98,6 +98,13 @@ At the start of every task, complete both checks below before implementation beg
 - V2.1 MC03 is the historical opportunity-pool read-only comparison, superseding old search-shadow numbering. The user approved MC04: PRECISION/RELEVANT/GENERAL_RELEVANT enter Active Business Opportunity directly; no manual Opportunity Confirmation; review flags are nonblocking. Keep Business Opportunity, Contact Readiness and Email Eligibility independent across V3 UI/API/export. Append new pool revisions, preserve legacy rows and email approval/security gates. Do not redo MC00–03, call providers, send mail or begin MC05. STOP after MC04.
 - Keep rule documentation, standalone implementation and tests consistent. Later work packages need their own explicit activation and applicable rule files; a broad future plan is not permission to run later work.
 
+## MC05 execution boundary — 2026-09-08
+
+- MC04 was accepted and checkpointed locally at `69b55bcb247459b085ca6e784207d6616692eac7`. Preserve its Opportunity Pool rules and stored projections; do not recalculate them during MC05 verification.
+- The user authorizes V2.1 MC05 only: active/search-enabled Market Registry and active/approved target-category selection, immutable scope snapshot, parent ResearchBatch and existing single-scope ResearchJob fan-out/reuse. Reuse the transactional outbox, pg-boss, worker/checkpoints and provider ledger. Preserve single/multiple selections and V3 UI.
+- Registry updates must not mutate historical snapshots. Repeated creation and identical active scopes must dedupe. Verify charge prevention without triggering live provider execution.
+- No Brave activation, 24-hour search, email, Phase13 final push/tag or MC06. STOP after MC05. The earlier MC04 STOP is historical, superseded only for this explicitly authorized work package.
+
 ## Existing opportunity email behavior
 
 - A current category-based business opportunity is sufficient commercial justification for an introductory email; do not add a separate proof-of-current-procurement requirement.

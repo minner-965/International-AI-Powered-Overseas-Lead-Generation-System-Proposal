@@ -36,6 +36,8 @@ import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js
 import { createResearchRouter } from './research/router.js';
 import { OrchestratorHealthService } from './orchestration/OrchestratorHealthService.js';
 import { ResearchDirectDispatchService,ResearchJobDirectExecutor } from './research/ResearchDirectDispatchService.js';
+import {ResearchBatchService,createOrReuseResearchJob} from './researchBatch/ResearchBatchService.js';
+import {createResearchBatchRouter} from './research/researchBatchRouter.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
 
@@ -497,6 +499,9 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   }
 }});
 researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phase5Queue,executor:researchDirectExecutor,audit});
+const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,
+  ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
+  runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -547,6 +552,7 @@ function requireInternalToken(req, res, next) {
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
+app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
 
 const categoryScopeRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
 const categoryScopeWrite=[managementAuth.authenticate,
@@ -1294,7 +1300,6 @@ app.post('/api/research/jobs', managementAuth.authenticate,
         detail: 'country, buyer_types and max_results (1-100) are required'
       });
     }
-    await searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY');
     const requestPayload = {
       country_code:marketProfile.countryCode,country_name:country,city:city || null,region:region || null,
       preferred_language:preferredLanguage,product_category:productCategory,product_profile:productProfile,
@@ -1304,18 +1309,10 @@ app.post('/api/research/jobs', managementAuth.authenticate,
     const requestDigest = canonicalDigest(requestPayload);
     const idempotencyKey = clean(req.get('idempotency-key') || req.body?.idempotency_key).slice(0,200) || randomUUID();
     const created=await researchDirectDispatchService.createAtomic(async client=>{
-      const {rows}=await client.query(`INSERT INTO leadgen.research_jobs
-        (country,country_code,country_name,city,region,preferred_language,market_profile,
-         product_category,product_profile,buyer_types,max_results,status,idempotency_key,request_digest,
-         created_by_identity,created_by_role,run_budget_cap_units)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'QUEUED',$12,$13,$14,$15,$16)
-      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
-      DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
-      RETURNING *, (xmax=0) AS inserted`, [country, marketProfile.countryCode, country, city || null, region || null,
-      preferredLanguage, marketProfile.profileKey, productCategory, productProfile, buyerTypes, maxResults,
-      idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
-      Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000)]);
-      return rows[0];
+      return createOrReuseResearchJob(client,{payload:{...requestPayload,market_profile:marketProfile.profileKey},
+        idempotencyKey,requestDigest,identity:req.managementUser.identity,role:req.managementUser.role,
+        runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000),
+        beforeInsert:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY')});
     });
     const job = created.job;
     if (!job.inserted) {
