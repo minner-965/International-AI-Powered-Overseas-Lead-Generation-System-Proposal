@@ -1,5 +1,12 @@
 # Version Changelog
 
+## Cleanup CL14–CL16 verification — 2026-09-13
+
+- Historical results are archived under `docs/history`; current authority is `CURRENT_RUNTIME_CONTRACT.md` and the generated status. Earlier STOP statements below are historical release records.
+- Nodemailer 10.0.9 / ImapFlow 1.7.8 remove the previously recorded high-severity dependency findings; fixture mail and native dependency checks pass.
+- Fresh migrations 001–063, 18 reply/CRM cases, 5 search ledger cases and 46 enabled PostgreSQL tests pass. No applied migration or production business record changed by these tests.
+- Browser checks cover seven viewport sizes and native 200% zoom with intercepted APIs. Final scope, restrictions and remote release status are recorded in `cleanup/FINAL_CLEANUP_RESULT.md`.
+
 ## Phase13 V2.1 MC06 — 2026-09-08 — deterministic search planning
 
 - MC05 accepted checkpoint: `cf559d6db0b7b4baa68cc41af54a246b3fba97e0`. Versioned Precision/Coverage matrix, multilingual frozen scope, fingerprints and work-conserving fair lanes added without provider execution.
@@ -264,7 +271,7 @@
 - Real PostgreSQL rollback probes verified strategy selection and the extended attempt insert contract. Migration 037 preserved 80 historical attempt rows, created 0 new strategy rows and caused 0 Provider events; dependency audit remains at 0 vulnerabilities.
 - A real PostgreSQL rollback probe verified WP10 Tavily reservation and settlement with `EVIDENCE` pool and exact product-profile lineage. Migration 039 caused 0 Provider events, and the dependency audit remains at 0 vulnerabilities.
 - Phase 10 code/migration/UI/automated validation passes, but V1.1 final `Implementation PASS` remains `INCOMPLETE` and `Business-result PASS=NO`: Provider is `NONE`, and controlled live send/reply/CRM plus an approved opportunity pilot have not occurred.
-- Detailed result: `docs/PHASE10_RESULT.md`.
+- Detailed result: `docs/history/phase10/PHASE10_RESULT.md`.
 
 ## post-phase9-full-workspace-ui-refresh — 2026-09-01 — completed locally
 

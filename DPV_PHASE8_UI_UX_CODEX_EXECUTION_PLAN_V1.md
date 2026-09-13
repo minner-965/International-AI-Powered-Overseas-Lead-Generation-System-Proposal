@@ -19,9 +19,9 @@ Phase 9 real-opportunity enrichment: NOT STARTED
 本文件以以下实际材料为权威基线：
 
 ```text
-docs/PHASE7_RESULT.md
+docs/history/phase7/PHASE7_RESULT.md
 docs/VERSION_CHANGELOG.md
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 DPV_PHASE7_CODEX_EXECUTION_PLAN_V1.md at tag phase7
 actual Phase 7 frontend/backend source at tag phase7
 ```
@@ -91,7 +91,7 @@ Phase 8 是视觉与工作流表达重构，不得重新实现这些后端能力
 
 ## 1.3 文档版本差异
 
-`docs/PHASE7_RESULT.md` 标题仍写“计划 V1.1”，但已发布的 `phase7` tag 内计划文件实际为 **V1.2**。
+`docs/history/phase7/PHASE7_RESULT.md` 标题仍写“计划 V1.1”，但已发布的 `phase7` tag 内计划文件实际为 **V1.2**。
 
 Phase 8 开始时必须：
 
@@ -436,10 +436,10 @@ GSAP scroll reveal
 创建：
 
 ```text
-docs/PHASE8_DESIGN_SYSTEM.md
+docs/history/phase8/PHASE8_DESIGN_SYSTEM.md
 ```
 
-同时重写 `docs/UI_SYSTEM.md`，使 Phase 8 成为新的前端视觉 Source of Truth。
+同时重写 `docs/history/reference/UI_SYSTEM.md`，使 Phase 8 成为新的前端视觉 Source of Truth。
 
 ## 5.1 设计目标
 
@@ -1402,8 +1402,8 @@ no AI-template decoration
 ```text
 1. Verify clean phase7 baseline, origin/main and annotated tag
 2. Record Phase 7 plan-version erratum V1.1 → V1.2
-3. Create docs/PHASE8_VISUAL_AUDIT.md with current screenshots/measurements
-4. Create docs/PHASE8_DESIGN_SYSTEM.md and update docs/UI_SYSTEM.md
+3. Create docs/history/phase8/PHASE8_VISUAL_AUDIT.md with current screenshots/measurements
+4. Create docs/history/phase8/PHASE8_DESIGN_SYSTEM.md and update docs/history/reference/UI_SYSTEM.md
 5. Create docs/PHASE8_UI_UX_REUSE_RESEARCH.md
 6. Create migration 028 and business_fit_status contract
 7. Implement business-opportunity-decision-v2
@@ -1426,7 +1426,7 @@ no AI-template decoration
 24. Run unit, API, migration and data-exchange regression
 25. Run browser matrix and accessibility checks
 26. Verify current real data and zero-send proof
-27. Create docs/PHASE8_UI_UX_RESULT.md and update VERSION_CHANGELOG
+27. Create docs/history/phase8/PHASE8_UI_UX_RESULT.md and update VERSION_CHANGELOG
 28. Implementation commit + push + remote verification
 29. Documentation handoff commit
 30. Annotated tag phase8 + push + peeled-commit verification
@@ -1440,10 +1440,10 @@ no AI-template decoration
 ```text
 DPV_PHASE8_UI_UX_CODEX_EXECUTION_PLAN_V1.md
 docs/PHASE8_UI_UX_REUSE_RESEARCH.md
-docs/PHASE8_VISUAL_AUDIT.md
-docs/PHASE8_DESIGN_SYSTEM.md
-docs/PHASE8_UI_UX_RESULT.md
-docs/UI_SYSTEM.md
+docs/history/phase8/PHASE8_VISUAL_AUDIT.md
+docs/history/phase8/PHASE8_DESIGN_SYSTEM.md
+docs/history/phase8/PHASE8_UI_UX_RESULT.md
+docs/history/reference/UI_SYSTEM.md
 docs/VERSION_CHANGELOG.md
 database/migrations/028_phase8_contact_ready_recommendation.sql
 services/demo-dashboard/public/ui/phase8-tokens.css
@@ -1489,7 +1489,7 @@ updated Phase 8 tests
 [ ] existing Phase 7 APIs/security/data contracts preserved
 [ ] migrations 001→028 apply and replay
 [ ] npm test 0 failed
-[ ] docs/PHASE8_UI_UX_RESULT.md completed
+[ ] docs/history/phase8/PHASE8_UI_UX_RESULT.md completed
 [ ] implementation and handoff commits pushed
 [ ] annotated tag phase8 pushed and remote verified
 ```

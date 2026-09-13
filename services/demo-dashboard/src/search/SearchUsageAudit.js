@@ -1,6 +1,8 @@
 import {createHash,randomUUID} from 'node:crypto';
+export function providerCostUsd(cost){const value=cost?.total;return typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;}
 export function searchRequestFingerprint({provider,researchJobId,companyId=null,purpose,request={}}){
-  return createHash('sha256').update(JSON.stringify({version:1,provider:String(provider).toUpperCase(),researchJobId,companyId,purpose,
+  const providerCode=String(provider).toUpperCase();
+  return createHash('sha256').update(JSON.stringify({version:providerCode==='EXA'?2:1,provider:providerCode,researchJobId,companyId,purpose,
     query:String(request.query||'').trim().replace(/\s+/g,' '),country:String(request.country||'ALL').toUpperCase(),
     language:request.searchLang||request.language||'en',offset:Number(request.offset||0),count:Number(request.count||10),
     depth:request.searchDepth||request.search_depth||null})).digest('hex');
@@ -37,7 +39,7 @@ export class SearchUsageAudit{
         const stored=event.result_payload?.audit||{};
         const results=Array.isArray(stored.results)?stored.results:await loadPersistedResults?.({referenceIds:stored.reference_ids||[],resultCount:stored.result_count||0})||[];
         if(Number(stored.result_count)>0&&!results.length)throw Object.assign(new Error('Persisted search results require review'),{code:'SEARCH_REPLAY_RESULTS_MISSING'});
-        return{provider:this.provider.name,results,result_count:stored.result_count||0,replay:true,attempts:0,usage_event:event};
+        return{provider:this.provider.name,results,result_count:stored.result_count||0,costDollars:stored.provider_cost_usd==null?null:{total:stored.provider_cost_usd},replay:true,attempts:0,usage_event:event};
       }
       throw Object.assign(new Error('Previous search request requires review'),{code:event?.status==='RESERVED'?'SEARCH_REQUEST_IN_PROGRESS':'SEARCH_PREVIOUS_REQUEST_FAILED',retryable:false,usage_event:event});
     }
@@ -55,6 +57,7 @@ export class SearchUsageAudit{
       }});
       audit.result_count=response.results.length;
       audit.provider_used_units=Number(response.credits||0);
+      audit.provider_cost_usd=providerCostUsd(response.costDollars);
       audit.results=response.results.slice(0,20).map(row=>({title:String(row.title||'').slice(0,500),url:String(row.url||'').slice(0,2000),snippet:String(row.snippet||'').slice(0,2000),rank:row.rank}));
       const persisted=await persistResults?.(response.results)||{};
       audit.reference_ids=(persisted.referenceIds||[]).map(String).slice(0,20);

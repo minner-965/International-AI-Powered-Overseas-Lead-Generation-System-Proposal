@@ -40,9 +40,9 @@
 
 ## 来源与证据强度
 
-1. `docs/PHASE10_WP16_GMAIL_DNS_ACCEPTANCE_RESULT.md`：历史 From/Reply-To 选择、Google 登录失败、OAuth 未配置；历史 MX 为 `smtp.google.com`。DNS 结果是历史记录，本轮未重新检测 DNS，更未用 MX 推定账户 license、alias 或管理权限。
-2. `docs/DPV_PHASE10_CURRENT_MASTER_HANDOFF.md`：已有 Gmail 实现、历史发件身份和未配置 OAuth 的交接依据。
-3. `docs/PHASE10_WP15_GMAIL_API_PROVIDER_RESULT.md`：邮箱身份、Send As、回复监控人及 OAuth 授权仍需确认。
+1. `docs/history/phase10/PHASE10_WP16_GMAIL_DNS_ACCEPTANCE_RESULT.md`：历史 From/Reply-To 选择、Google 登录失败、OAuth 未配置；历史 MX 为 `smtp.google.com`。DNS 结果是历史记录，本轮未重新检测 DNS，更未用 MX 推定账户 license、alias 或管理权限。
+2. `docs/history/phase10/DPV_PHASE10_CURRENT_MASTER_HANDOFF.md`：已有 Gmail 实现、历史发件身份和未配置 OAuth 的交接依据。
+3. `docs/history/phase10/PHASE10_WP15_GMAIL_API_PROVIDER_RESULT.md`：邮箱身份、Send As、回复监控人及 OAuth 授权仍需确认。
 4. 2026-09-05 runtime 快照：实际发送 Provider=NONE，outreach 及 live prospect 开关均关闭。SMTP/IMAP 只支持显式的只读连接检查，不发送邮件。
 
 ## 现有能力复用

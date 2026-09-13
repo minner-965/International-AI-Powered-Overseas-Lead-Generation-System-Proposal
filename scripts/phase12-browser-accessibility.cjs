@@ -20,12 +20,19 @@ async function metrics(page){return page.evaluate(()=>{
  return {width:innerWidth,height:innerHeight,outerWidth,outerHeight,dpr:devicePixelRatio,scale:visualViewport.scale,cssZoom:getComputedStyle(document.documentElement).zoom,clientWidth:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth,reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,maxTransitionMs:Math.max(0,...nodes.map(e=>duration(getComputedStyle(e).transitionDuration))),maxAnimationMs:Math.max(0,...nodes.map(e=>duration(getComputedStyle(e).animationDuration))),activeAnimations:document.getAnimations().filter(a=>a.playState==='running').length,activeView:document.querySelector('[data-app-view]:not([hidden])')?.dataset.appView};
  });}
 (async()=>{
+ let ready=false;
+ for(let attempt=0;attempt<30;attempt++){
+  try{ready=(await fetch(origin+'/api/health',{signal:AbortSignal.timeout(2000)})).ok;}catch{}
+  if(ready)break;await new Promise(resolve=>setTimeout(resolve,500));
+ }
+ if(!ready)throw new Error('Dashboard readiness check failed before browser verification');
  for(const config of [{name:'native-200-1440',width:1440,height:900,zoom:2},{name:'native-200-1280',width:1280,height:720,zoom:2},{name:'reduce-desktop',width:1440,height:900,zoom:1,reduce:true},{name:'reduce-phone',width:390,height:844,zoom:1,reduce:true}]){
   const profile=fs.mkdtempSync(path.join(os.tmpdir(),'dpv-ui14-a11y-'));report.profiles.push(profile);
   const context=await chromium.launchPersistentContext(profile,{executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,viewport:config.reduce?{width:config.width,height:config.height}:null,args:[`--window-size=${config.width},${config.height}`,'--force-device-scale-factor=1'],serviceWorkers:'block'});
   const run={config,pages:[]};report.runs.push(run);
   try{
-   await context.route('**/*',route=>{const r=route.request();if(new URL(r.url()).origin===origin&&['GET','HEAD'].includes(r.method()))return route.continue();report.blocked.push({method:r.method(),origin:new URL(r.url()).origin});return route.abort();});
+   // Audited read-only preview: SELECT registry + pure planning, no persisted job/provider call.
+   await context.route('**/*',route=>{const r=route.request(),url=new URL(r.url());if(url.origin===origin&&(['GET','HEAD'].includes(r.method())||(r.method()==='POST'&&url.pathname==='/api/research/batches/preview')))return route.continue();report.blocked.push({method:r.method(),origin:url.origin,path:url.pathname});return route.abort();});
    await context.routeWebSocket('**/*',ws=>ws.close());
    const page=context.pages()[0];
    page.on('pageerror',e=>report.errors.push({config:config.name,message:e.message}));

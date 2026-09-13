@@ -23,11 +23,11 @@ async function fixture(pool,{status='PROVIDER_CAPACITY_WAIT'}={}){
       $2,$3,'phase10-provider-capacity-test','SYSTEM','TAVILY_CREDIT_EXHAUSTED',now()) RETURNING id`,[
     company.id,`capacity-job-${suffix}`,digest(`job-${suffix}`)])).rows[0];
   const task=(await pool.query(`INSERT INTO leadgen.auto_evidence_tasks
-    (company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
+    (target_category_scope_key,target_category_code,company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
      task_status,current_stage,technical_blocker,attempt_count,max_attempts,budget_state,input_digest,
      strategy_attempt_count,current_strategy_code,strategy_version,current_query_fingerprint,
      current_strategy_locale,current_source_class,strategy_state)
-    VALUES($1,'WOMENSWEAR',$2,'NAMED_BUYER_EVIDENCE',1,$3,$4,'VERIFYING_EMAIL',
+    VALUES('PROFILE:WOMENSWEAR','WOMENSWEAR',$1,'WOMENSWEAR',$2,'NAMED_BUYER_EVIDENCE',1,$3,$4,'VERIFYING_EMAIL',
       'PROVIDER_CREDIT_EXHAUSTED',2,7,'NOT_REQUIRED',$5,2,'S04_OFFICIAL_LEADERSHIP','phase10-wp09-v1',$6,
       'en','OFFICIAL_SITE',$7) RETURNING *`,[company.id,job.id,`capacity-task-${suffix}`,status,
     digest(`task-${suffix}`),digest(`query-${suffix}`),status==='PROVIDER_CAPACITY_WAIT'?'PROVIDER_CAPACITY_WAIT':'STRATEGY_RUNNING'])).rows[0];

@@ -1,0 +1,12 @@
+# Staged local recovery; does not alter persisted business automation intent.
+# Usage: docker compose -f compose.yaml -f compose.readonly-recovery.yaml up -d --no-deps --no-build demo-dashboard
+services:
+  demo-dashboard:
+    image: dpv-cleanup-acceptance:cl16
+    env_file:
+      - path: .env.exa-runtime
+        required: true
+    environment:
+      DPV_MAINTENANCE_READ_ONLY: "true"
+    ports: !override
+      - "127.0.0.1:3000:3000"

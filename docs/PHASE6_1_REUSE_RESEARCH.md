@@ -10,7 +10,7 @@ Decision: reuse the installed local stack; add no runtime dependency and no exte
 - `pg_trgm` 1.6 is installed in the running database.
 - The preflight catalog contains 366 real `product_master` rows: 109 `WOMENSWEAR`, 18 `GENERAL_MERCHANDISE`, and 239 `UNKNOWN`.
 - No `product_master.category` or MOQ value is populated. Phase 6.1 therefore preserves `UNKNOWN` unless explicit source text supports a controlled assignment.
-- The fixed Phase 6 acceptance input is the seven companies recorded by `docs/PHASE6_RESULT.md`; Phase 6.1 evaluates both profiles for every company.
+- The fixed Phase 6 acceptance input is the seven companies recorded by `docs/history/phase6/PHASE6_RESULT.md`; Phase 6.1 evaluates both profiles for every company.
 - V3 separates Category Procurement Match, Buyer Business Model, Product Opportunity, Supplier Access and Decision Maker/Contactability. No reused score is allowed to collapse these layers into a single probability.
 
 ## Decisions

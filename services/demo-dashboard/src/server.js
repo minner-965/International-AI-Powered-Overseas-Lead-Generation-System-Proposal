@@ -1,4 +1,5 @@
 import express from 'express';
+import {maintenanceReadOnly,maintenanceWriteGuard} from './maintenanceMode.js';
 import {attachContactProgress} from './outreach/contactProgress.js';
 import pg from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
@@ -40,11 +41,12 @@ import {ResearchBatchService,createOrReuseResearchJob} from './researchBatch/Res
 import {SearchPlanService} from './searchPlanning/SearchPlanService.js';
 import {createResearchBatchRouter} from './research/researchBatchRouter.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
+import {ExaProviderAccountState} from './search/ExaProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
 import {CurrentCapacityRouter} from './search/CurrentCapacityRouter.js';
 import {FrozenSearchPlanExecutor} from './search/FrozenSearchPlanExecutor.js';
 import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
-import {AutomationControlService} from './automation/AutomationControlService.js';
+import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/AutomationControlService.js';
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
@@ -53,6 +55,9 @@ const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const httpListenEnabled = !/^(0|false|no|off)$/i.test(process.env.HTTP_LISTEN_ENABLED || 'true');
+const maintenanceMode=maintenanceReadOnly();
+if(maintenanceMode&&!httpListenEnabled)throw new Error('Read-only maintenance is an HTTP-only mode');
+app.use(maintenanceWriteGuard(maintenanceMode));
 const n8nEnrichmentWebhookUrl = process.env.N8N_ENRICHMENT_WEBHOOK_URL || '';
 const n8nCategoryProcurementWebhookUrl = process.env.N8N_CATEGORY_PROCUREMENT_WEBHOOK_URL || '';
 const n8nWebhookTimeoutMs = Math.max(1000, Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 5000));
@@ -82,6 +87,9 @@ function canonicalDigest(value) {
 const searchConfig = Object.freeze({
   dualSearchEnabled: /^(1|true|yes)$/i.test(process.env.SEARCH_DUAL_ROUTING_ENABLED || ''),
   provider: String(process.env.SEARCH_PROVIDER || 'tavily').toLowerCase(),
+  exaApiKey: process.env.EXA_API_KEY || '',
+  exaEndpoint: process.env.EXA_SEARCH_ENDPOINT || (String(process.env.EXA_BASE_URL || 'https://api.exa.ai').replace(/\/+$/,'') + '/search'),
+  exaEnabled: /^(1|true|yes|on)$/i.test(process.env.EXA_ENABLED || ''),
   braveApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   dataForSeoLogin: process.env.DATAFORSEO_LOGIN || '',
   dataForSeoPassword: process.env.DATAFORSEO_PASSWORD || '',
@@ -112,6 +120,7 @@ const pool = new Pool({
   database: process.env.POSTGRES_DB || 'leadgen',
   user: process.env.POSTGRES_USER || 'leadgen',
   password: process.env.POSTGRES_PASSWORD,
+  ...(maintenanceMode?{options:'-c default_transaction_read_only=on'}:{}),
 });
 instrumentPgPool(pool, telemetry);
 const opportunityPoolService=new OpportunityPoolService({pool});
@@ -119,16 +128,16 @@ const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:sea
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
   refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
   timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
+const exaProviderAccountState=new ExaProviderAccountState({pool,apiKey:searchConfig.exaApiKey,enabled:searchConfig.exaEnabled,capacityRetryHours:Number(process.env.EXA_CAPACITY_RETRY_HOURS||24)});
 const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
-const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState});
+const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState,exaAccountState:exaProviderAccountState});
 const automationControls=new AutomationControlService({pool});
-const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,
-  providerState:()=>tavilyProviderAccountState.getState(),providerOrder:['tavily'],audit});
-const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,
-  getOrder:()=>phase13Automation.currentProviderOrder(),
-  getStates:async()=>({tavily:await tavilyProviderAccountState.getState()})});
+const providerStates=async()=>({exa:await exaProviderAccountState.getState(),tavily:await tavilyProviderAccountState.getState()});
+const currentProviderState=async()=>{const states=await providerStates();const control=await automationControls.get(AUTOMATION_CONTROLS.RESEARCH_PROVIDER_EXECUTION);const order=(control.settings?.provider_order||['exa','tavily']).map(v=>String(v).toLowerCase());for(const p of order)if(states[p]?.status==='AVAILABLE')return states[p];return states[order[0]]||{provider_code:'SEARCH',status:'UNAVAILABLE'};};
+const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,providerState:currentProviderState,providerOrder:['exa','tavily'],audit});
+const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOrder:()=>phase13Automation.currentProviderOrder(),getStates:providerStates});
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
-  isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState});
+  isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -1323,18 +1332,18 @@ app.get('/api/markets', (_req, res) => {
 app.get('/api/research/provider-status',managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT','SALES'),async(_req,res,next)=>{
   try{
-    const state=await tavilyProviderAccountState.getState();
+    const state=await searchProviderRouter.getState('COMPANY_DISCOVERY');
     res.json({provider:'SEARCH',status:state.status,retry_after_at:state.retry_after_at||null,
-      checked_at:state.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR'].includes(state.status)});
+      checked_at:state.checked_at||null,creation_allowed:!maintenanceMode&&state.status==='AVAILABLE'});
   }catch(error){next(error);}
 });
 
 app.post('/api/research/provider-status/refresh',managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'),async(_req,res,next)=>{
   try{
-    const state=await tavilyProviderAccountState.refreshUsage({force:true,source:'ADMIN_REFRESH'});
+    const state=await searchProviderRouter.forPurpose('COMPANY_DISCOVERY').refreshUsage();
     res.json({provider:'SEARCH',status:state.status,retry_after_at:state.retry_after_at||null,
-      checked_at:state.checked_at||null,creation_allowed:!['CREDIT_EXHAUSTED','AUTH_ERROR'].includes(state.status)});
+      checked_at:state.checked_at||null,creation_allowed:!maintenanceMode&&state.status==='AVAILABLE'});
   }catch(error){next(error);}
 });
 
@@ -2602,16 +2611,17 @@ async function start() {
   }
   // Non-search workers intentionally receive no Tavily credential. They must not
   // overwrite the shared provider projection with a false AUTH_ERROR at startup.
+  if(maintenanceMode){
+    const readOnlyServer=app.listen(port,'0.0.0.0',()=>console.log(`DPV read-only workspace listening on ${port}`));
+    const stop=async()=>{readOnlyServer.close();await telemetry.shutdown();await pool.end();process.exit(0);};
+    process.once('SIGTERM',stop);process.once('SIGINT',stop);
+    return;
+  }
   if(httpListenEnabled||searchConfig.tavilyApiKey){
     await tavilyProviderAccountState.refreshUsage({source:'STARTUP_PROBE'})
       .catch(error=>audit('TAVILY_USAGE_STARTUP_PROBE_FAILED',{code:error?.code||'PROVIDER_STATE_ERROR'}));
   }
-  if (httpListenEnabled) {
-    const liveCount = await pool.query(`SELECT count(*)::int AS count FROM leadgen.companies WHERE data_origin IN (${publicDataOriginSql})`);
-    if (liveCount.rows[0].count === 0) {
-      try { await collectLive(50); } catch (error) { console.warn(`Initial live collection failed: ${error.message}`); }
-    }
-  }
+  // Empty installations wait for an explicit research request; startup is not discovery authorization.
   await phase5Queue.start();
   let researchOutboxTimer=null;
   let autoFirstTouchTimer=null;

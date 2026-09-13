@@ -1,15 +1,15 @@
 # DPV Company-Facing Copy Rules
 
-## Cleanup maintenance boundary — CL12/CL13
+## Current execution boundary — CL14–CL16 and Exa verification
 
-- CL09–CL11 are checkpointed at `56760f8`. The current authorization is CL12 dependencies/scripts/configuration/Docker and CL13 database-object/current-projection cleanup only. Preserve MC04 rules, MC07 first-touch behavior and immutable history. STOP after CL13; no CL14 or final push/tag.
+- CL12–CL13 are checkpointed at `e0edadf`. The user now authorizes CL14–CL16, followed by completion and bounded verification of the configured Exa integration. Earlier package STOP statements below are historical, not the current boundary. Preserve MC04 rules, MC07 first-touch behavior and immutable history. Final push/tag must reflect actual acceptance, never an unverified PASS.
 - Never delete or rewrite an applied migration.
 - Never delete business/audit history merely because its rule is retired.
 - Never delete source/evidence lineage referenced by current or historical decisions.
 - Never delete outbound/inbound/suppression/Activity/SalesTask history.
 - Never delete a queue/table just because its current count is zero without proving zero runtime/FK/audit references.
 - Never treat a historical name as permission to edit immutable history.
-- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL12–CL13. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md. Use isolated data and intercepted requests for write/browser tests. Migration 063 remains pending production restoration.
+- During cleanup acceptance, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. Preserve PostgreSQL and persisted automation intent; use isolated databases/providers and intercepted browser tests. Zero live SMTP, Hunter, WhatsApp or external CRM calls during acceptance. CL16 restoration follows verified tests and a pending-work review, not a blind service restart. Exa live verification is a separate bounded action after cleanup; do not use it to resume the entire historical search backlog or implicitly send email. Migration 063 requires isolated replay before production restoration.
 
 These rules apply to every company-facing page, spreadsheet, report, slide, export, screenshot, and presentation in this repository.
 
@@ -64,7 +64,7 @@ At the start of every task, complete both checks below before implementation beg
 
 ## Frontend UI system
 
-- Before changing company-facing frontend files, explicitly use `$dpv-workspace-ui` at `.agents/skills/dpv-workspace-ui/SKILL.md` and read `docs/UI_SYSTEM_V3.md`. `docs/UI_SYSTEM.md` and Phase 8/post-Phase 9 visual conventions are superseded; do not reuse their visual styling.
+- Before changing company-facing frontend files, explicitly use `$dpv-workspace-ui` at `.agents/skills/dpv-workspace-ui/SKILL.md` and read `docs/UI_SYSTEM_V3.md`. `docs/history/reference/UI_SYSTEM.md` and Phase 8/post-Phase 9 visual conventions are superseded; do not reuse their visual styling.
 - Existing features receive the shared UI without changing their APIs, data semantics, form names or values, request payloads, endpoints, or stable DOM hooks.
 - Future features must extend the same UI system. Reuse an existing component pattern before adding a new visual pattern.
 - Use semantic design tokens for colors, borders, radii, shadows, and states. Do not introduce raw component colors when an existing token covers the role.

@@ -7,11 +7,11 @@ Persisted intent and actual execution are separate: maintenance pauses execution
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_at": "2026-09-13T19:45:59.041456+08:00",
+  "generated_at": "2026-09-13T21:24:30.105127+08:00",
   "repo": "International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "commit": "56760f8e31e87fb24a3b59b7cfa10079b783943d",
+  "commit": "e0edadf425130e1b0981674876120dd6d9e624bc",
   "branch": "phase13-cleanup-deai",
-  "current_phase": "Phase 13 cleanup CL12-CL13",
+  "current_phase": "Phase 13 cleanup CL14-CL16 and Exa verification",
   "runtime_controls": {
     "persisted": [
       {
@@ -55,7 +55,7 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       },
       {
         "service": "demo-dashboard",
-        "state": "exited"
+        "state": "running"
       },
       {
         "service": "n8n",
@@ -74,7 +74,8 @@ Persisted intent and actual execution are separate: maintenance pauses execution
         "state": "running"
       }
     ],
-    "maintenance_active": true
+    "maintenance_active": true,
+    "http_read_only": true
   },
   "provider_state": {
     "selected_provider": "EXA",
@@ -559,17 +560,21 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       {
         "name": "062_phase13_auto_first_touch_reply_bridge.sql",
         "sha256": "f3583ad2b90a1e3d0aeed1b161efd1a7dd3e7f9085a0c8f425aae872a7024459"
+      },
+      {
+        "name": "063_cleanup_optional_cohort_catalog_snapshot.sql",
+        "sha256": "56f9f985d7118b7e137bc4a7c4a3f58f016ef40aa001b1fd1057e817786c1f9e"
       }
     ]
   },
-  "next_allowed_work": "STOP_AFTER_CL13_AWAIT_AUTHORIZATION"
+  "next_allowed_work": "CL14_CL16_THEN_BOUNDED_EXA_VERIFICATION"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Boundary
 
-CL12 and CL13 only. STOP after CL13. Restoration, additional cleanup, push and tag require their later work packages.
+The user authorized CL14–CL16 followed by bounded Exa verification. See CURRENT_RUNTIME_CONTRACT.md and OPERATIONS_RUNBOOK.md. Acceptance, runtime restoration and remote release are reported separately; historical STOP statements are not current authority.
 
 ## Historical evidence
 

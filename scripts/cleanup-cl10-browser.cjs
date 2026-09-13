@@ -2,7 +2,8 @@
 const {chromium}=require('C:/Users/ACER/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const express=require('../services/demo-dashboard/node_modules/express');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'..'),out=path.join(root,'test-artifacts/cleanup-cl10/browser');
+const nativeZoom=process.env.DPV_QA_NATIVE_ZOOM==='200';
+const root=path.resolve(__dirname,'..'),out=path.join(root,nativeZoom?'test-artifacts/cleanup-cl15/browser-native-200':'test-artifacts/cleanup-cl10/browser');
 const routes=['overview','opportunities','research','jobs','companies','contact-ready','contact-queue','replies','evidence','customer-match','data-import','data-export','settings'];
 const company='00000000-0000-4000-8000-000000000123';
 const lead={id:company,company_id:company,company_name:'Workspace fixture',name:'Workspace fixture',country:'United Arab Emirates',country_code:'AE',verification_status:'VERIFIED',lifecycle_status:'ACTIVE',product_profile:'WOMENSWEAR',product_profiles:['WOMENSWEAR'],opportunity_pool_band:'PRECISION',display_opportunity_status:'PRECISION',is_active_business_opportunity:true,active_opportunity_pool:true,contact_readiness_labels:['EMAIL_READY'],email_send_eligibility:{status:'BLOCKED',send_authorized:false},matched_scopes:['TOPS'],review_flags:[],contacts:[],sources:[],score:77,tier:'A',category_procurement_match_score:70};
@@ -17,8 +18,9 @@ const report={mode:'INTERCEPTED_FIXTURES_ONLY',views:[],dialogs:[],page_errors:[
  const origin=`http://127.0.0.1:${server.address().port}`;
  const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
  try{
- for(const viewport of [{width:1440,height:900},{width:390,height:844},{width:375,height:667},{width:1280,height:720},{width:1024,height:768},{width:768,height:900},{width:844,height:390}]){
-  const context=await browser.newContext({viewport,serviceWorkers:'block',reducedMotion:'reduce'});let scenario='success';
+ for(const viewport of (nativeZoom?[{width:1440,height:900}]:[{width:1440,height:900},{width:390,height:844},{width:375,height:667},{width:1280,height:720},{width:1024,height:768},{width:768,height:900},{width:844,height:390}])){
+  const context=nativeZoom?await chromium.launchPersistentContext(fs.mkdtempSync(path.join(out,'profile-')),{headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',viewport:null,args:['--window-size=1440,900','--force-device-scale-factor=1'],serviceWorkers:'block',reducedMotion:'reduce'}):await browser.newContext({viewport,serviceWorkers:'block',reducedMotion:'reduce'});let scenario='success';
+  if(nativeZoom){const settings=await context.newPage();await settings.goto('chrome://settings/appearance');await settings.locator('#zoomLevel').selectOption({label:'200%'});report.native_zoom=await settings.locator('#zoomLevel').evaluate(el=>el.selectedOptions[0].textContent.trim());await settings.close();}
   await context.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url());
    if(u.origin!==origin||!['GET','HEAD'].includes(req.method())){report.unexpected_requests.push(req.method()+' '+u.pathname);return route.abort();}
@@ -46,7 +48,8 @@ const report={mode:'INTERCEPTED_FIXTURES_ONLY',views:[],dialogs:[],page_errors:[
    for(const view of routes){
     await page.goto(origin+'/#'+view);await page.waitForTimeout(400);
     assert.equal(await page.locator(`[data-app-view="${view}"]`).isVisible(),true,view);
-    const state=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth-innerWidth,text:document.body.innerText}));
+    const state=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth-innerWidth,text:document.body.innerText,width:innerWidth,dpr:devicePixelRatio}));
+    if(nativeZoom){assert.equal(state.dpr,2);assert.ok(state.width<viewport.width);}
     const matches=state.text.match(/\b(?:AI|smart|intelligent|robot|wand|sparkle)\b|智能|AI建议|AI推荐|模型认为|系统认为|建议您/gi)||[];
     if(matches.length)report.lexical.push({view,mode,matches});
     assert.ok(state.overflow<=1,`${view}/${mode}/${viewport.width} overflow ${state.overflow}`);

@@ -23,12 +23,12 @@ Conditional test skips allowed for Phase 10 PASS: 0
 本文件根据以下 Phase 9 实际结果和当前代码、数据库快照编制：
 
 ```text
-docs/PHASE9_RESULT.md
-docs/PHASE9_REAL_OPPORTUNITY_RESULT.md
+docs/history/phase9/PHASE9_RESULT.md
+docs/history/phase9/PHASE9_REAL_OPPORTUNITY_RESULT.md
 docs/PHASE9_REUSE_RESEARCH.md
-docs/PHASE9_VISUAL_AUDIT.md
-docs/POST_PHASE9_OPPORTUNITY_UI_REFRESH_RESULT.md
-docs/POST_PHASE9_FULL_UI_REFRESH_RESULT.md
+docs/history/phase9/PHASE9_VISUAL_AUDIT.md
+docs/history/phase9/POST_PHASE9_OPPORTUNITY_UI_REFRESH_RESULT.md
+docs/history/phase9/POST_PHASE9_FULL_UI_REFRESH_RESULT.md
 docs/VERSION_CHANGELOG.md
 current source tree and current PostgreSQL data
 ```
@@ -1077,13 +1077,13 @@ CRM follow-up / won / lost feedback
 执行完成后至少生成：
 
 ```text
-docs/PHASE10_RESULT.md
-docs/PHASE10_CATEGORY_SCOPE_RESULT.md
-docs/PHASE10_AUTO_EVIDENCE_RESULT.md
-docs/PHASE10_CONTROLLED_OUTREACH_RESULT.md
-docs/PHASE10_REAL_END_TO_END_VALIDATION_RESULT.md
-docs/PHASE10_FORWARD_REVERSE_VALIDATION_MATRIX.md
-docs/PHASE10_VISUAL_AUDIT.md
+docs/history/phase10/PHASE10_RESULT.md
+docs/history/phase10/PHASE10_CATEGORY_SCOPE_RESULT.md
+docs/history/phase10/PHASE10_AUTO_EVIDENCE_RESULT.md
+docs/history/phase10/PHASE10_CONTROLLED_OUTREACH_RESULT.md
+docs/history/phase10/PHASE10_REAL_END_TO_END_VALIDATION_RESULT.md
+docs/history/phase10/PHASE10_FORWARD_REVERSE_VALIDATION_MATRIX.md
+docs/history/phase10/PHASE10_VISUAL_AUDIT.md
 docs/PHASE10_REUSE_RESEARCH.md
 docs/VERSION_CHANGELOG.md update
 ```

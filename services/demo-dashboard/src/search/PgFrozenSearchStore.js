@@ -3,12 +3,12 @@ import {normalizeSearchResult} from './resultNormalizer.js';
 import {classifySearchResult} from './resultFilter.js';
 import {evaluateDomainPolicy} from '../searchPlanning/domainPolicy.js';
 import {SearchHitCorroborationService} from '../searchPlanning/SearchHitCorroborationService.js';
-import {searchRequestFingerprint} from './SearchUsageAudit.js';
+import {searchRequestFingerprint,providerCostUsd} from './SearchUsageAudit.js';
 
 export class PgFrozenSearchStore {
  constructor({pool}={}){this.pool=pool;this.hits=new SearchHitCorroborationService({pool});}
  async load(jobId){return (await this.pool.query('SELECT * FROM leadgen.research_query_plans WHERE research_job_id=$1 ORDER BY created_at,id LIMIT 1',[jobId])).rows[0];}
- async lookup(plan,q){return (await this.pool.query(`SELECT * FROM leadgen.research_query_executions WHERE research_query_plan_id=$1 AND query_fingerprint=$2 ORDER BY created_at,id LIMIT 1`,[plan.id,q.fingerprint])).rows[0];}
+ async lookup(plan,q){return (await this.pool.query(`SELECT * FROM leadgen.research_query_executions WHERE research_query_plan_id=$1 AND query_fingerprint=$2 ORDER BY CASE WHEN status IN('PERSISTED','NOT_FOUND') THEN 0 WHEN status='PROVIDER_COMPLETED' AND response_snapshot IS NOT NULL THEN 1 WHEN status IN('CLAIMED','REVIEW_REQUIRED','FAILED','TEMPORARY_ERROR') THEN 2 ELSE 3 END,updated_at DESC,created_at DESC,id DESC LIMIT 1`,[plan.id,q.fingerprint])).rows[0];}
  async claim(plan,q,selection){
   const scope=plan.scope_snapshot.scopes.find(s=>(s.market_code||s.country_code)===q.market_id&&(s.category_scope_id||s.category_id)===q.category_id);
   const request={query:q.normalized_query,count:Math.min(20,Number(scope?.max_results)||10),country:q.market_id,countryName:scope?.country_name,searchLang:q.language};
@@ -20,7 +20,7 @@ export class PgFrozenSearchStore {
    [plan.id,plan.research_job_id,q.fingerprint,selection.provider.toUpperCase(),q.provider_purpose,JSON.stringify(request),selection.reason,randomUUID()])).rows[0];
  }
  async recordResponse(execution,response){
-  const safe={results:(response.results||[]).map(r=>({title:r.title,url:r.url,snippet:r.snippet,rank:r.rank,provider_score:r.provider_score})),credits:response.credits||0,requestId:response.requestId||null};
+  const safe={results:(response.results||[]).map(r=>({title:r.title,url:r.url,snippet:r.snippet,rank:r.rank,provider_score:r.provider_score})),credits:response.credits||0,requestId:response.requestId||null,costDollars:response.costDollars||null};
   const fingerprint=searchRequestFingerprint({provider:execution.provider,researchJobId:execution.research_job_id,purpose:'NEW_COMPANY_DISCOVERY',request:execution.request_snapshot});
   await this.pool.query(`UPDATE leadgen.research_query_executions SET status='PROVIDER_COMPLETED',response_snapshot=$2::jsonb,provider_completed_at=now(),provider_usage_event_id=(SELECT id FROM leadgen.provider_usage_events WHERE provider=$4 AND request_fingerprint=$5),updated_at=now() WHERE id=$1 AND claim_token=$3`,[execution.id,JSON.stringify(safe),execution.claim_token,execution.provider,fingerprint]);
  }
@@ -50,7 +50,7 @@ export class PgFrozenSearchStore {
     refs.push(candidate.id);
    }
    await client.query(`UPDATE leadgen.research_query_executions SET status=$2,reference_ids=$3::text[],result_count=$4,persisted_at=now(),completed_at=now(),updated_at=now() WHERE id=$1`,[execution.id,(response.results||[]).length?'PERSISTED':'NOT_FOUND',refs,(response.results||[]).length]);
-   if(saved.provider_usage_event_id)await client.query(`UPDATE leadgen.provider_usage_events SET status=$2,used_units=$3,completed_at=now(),result_payload=jsonb_set(coalesce(result_payload,'{}'::jsonb),'{audit}',coalesce(result_payload->'audit','{}'::jsonb)||$4::jsonb) WHERE id=$1`,[saved.provider_usage_event_id,(response.results||[]).length?'COMPLETED':'NOT_FOUND',Number(saved.response_snapshot?.credits||0),JSON.stringify({result_count:(response.results||[]).length,results:saved.response_snapshot?.results||response.results||[],reference_ids:refs,provider_used_units:Number(saved.response_snapshot?.credits||0)})]);
+   if(saved.provider_usage_event_id)await client.query(`UPDATE leadgen.provider_usage_events SET status=$2,used_units=$3,completed_at=now(),result_payload=jsonb_set(coalesce(result_payload,'{}'::jsonb),'{audit}',coalesce(result_payload->'audit','{}'::jsonb)||$4::jsonb) WHERE id=$1`,[saved.provider_usage_event_id,(response.results||[]).length?'COMPLETED':'NOT_FOUND',Number(saved.response_snapshot?.credits||0),JSON.stringify({result_count:(response.results||[]).length,results:saved.response_snapshot?.results||response.results||[],reference_ids:refs,provider_used_units:Number(saved.response_snapshot?.credits||0),provider_cost_usd:providerCostUsd(saved.response_snapshot?.costDollars??response.costDollars)})]);
    await client.query(`UPDATE leadgen.research_jobs SET candidates_found=(SELECT count(*) FROM leadgen.research_candidates WHERE research_job_id=$1) WHERE id=$1`,[plan.research_job_id]);
    await client.query('COMMIT');return refs;
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}

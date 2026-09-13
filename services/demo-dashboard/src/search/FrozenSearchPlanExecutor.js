@@ -11,8 +11,8 @@ export function searchPause(error){
 // One existing job, its immutable plan, and the existing usage ledger. Storage
 // owns transactional candidate/hit persistence; the worker owns stage handoff.
 export class FrozenSearchPlanExecutor {
- constructor({store,router,isEnabled=async()=>true,accountState=null,pool=null,auditFactory=null}={}){
-  Object.assign(this,{store,router,isEnabled,accountState,pool});
+ constructor({store,router,isEnabled=async()=>true,accountState=null,accountStates={},pool=null,auditFactory=null}={}){
+  Object.assign(this,{store,router,isEnabled,accountState,accountStates,pool});
   this.auditFactory=auditFactory||((provider)=>new SearchUsageAudit({provider,pool,retrySafeFailures:true}));
  }
  async executeJob(jobId,{signal}={}){
@@ -47,7 +47,8 @@ export class FrozenSearchPlanExecutor {
     completed++;if(response.replay)replayed++;
    }catch(error){
     await this.store.fail(execution,error);
-    if(selected.provider==='tavily'&&this.accountState)await this.accountState.observeSearchError(error);
+    const state=this.accountStates?.[selected.provider]||(selected.provider==='tavily'?this.accountState:null);
+     try{await state?.observeSearchError?.(error);}catch{}
     return pause(searchPause(error));
    }
   }

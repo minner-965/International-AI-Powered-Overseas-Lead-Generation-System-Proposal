@@ -1300,7 +1300,7 @@ UNKNOWN 排在已评分结果后，但必须可见。
 必须先读：
 
 ```text
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 ```
 
 复用现有 tokens、`.bi` 双语结构、详情窗、表格和响应式规则。
@@ -1426,7 +1426,7 @@ API error 与 `NEEDS_PRODUCT_EVIDENCE` 必须是两个不同 UI 状态。
 
 ## 23.1 固定输入
 
-使用 `docs/PHASE6_RESULT.md` 中记录的最终 acceptance job 作为公司清单来源。
+使用 `docs/history/phase6/PHASE6_RESULT.md` 中记录的最终 acceptance job 作为公司清单来源。
 
 不得用“当前所有数据库公司”替换第一批 acceptance 对比。
 
@@ -1617,7 +1617,7 @@ npm test
 创建：
 
 ```text
-docs/PHASE6_1_PRODUCT_MATCH_RESULT.md
+docs/history/phase6/PHASE6_1_PRODUCT_MATCH_RESULT.md
 ```
 
 必须包含安全聚合：
@@ -1672,9 +1672,9 @@ GitHub 结果文档禁止写入：
 同时更新：
 
 ```text
-docs/PHASE6_RESULT.md
+docs/history/phase6/PHASE6_RESULT.md
 docs/PHASE6_DECISION_MAKER_DATA_CONTRACT.md
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 docs/VERSION_CHANGELOG.md
 workflows/README.md
 ```
@@ -1839,10 +1839,10 @@ STOP — Phase 7 not started.
 交付：
 
 ```text
-docs/PHASE6_1_PRODUCT_MATCH_RESULT.md
-updated docs/PHASE6_RESULT.md
+docs/history/phase6/PHASE6_1_PRODUCT_MATCH_RESULT.md
+updated docs/history/phase6/PHASE6_RESULT.md
 updated docs/PHASE6_DECISION_MAKER_DATA_CONTRACT.md
-updated docs/UI_SYSTEM.md
+updated docs/history/reference/UI_SYSTEM.md
 updated docs/VERSION_CHANGELOG.md
 phase6.1 GitHub tag verification
 ```

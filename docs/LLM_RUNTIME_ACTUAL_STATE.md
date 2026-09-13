@@ -26,7 +26,7 @@ The total proposal explicitly describes language models for company classificati
 
 - `build_dpv_proposals.py`, architecture paragraphs around lines 782–783: total-plan model roles and commercial-commitment boundary.
 - `README.md`, proposed operating model: rules/AI classification and draft/approval sequence. Its original phase-one implementation section is historical and predates current mail integration.
-- `docs/PROJECT_CONTEXT.md`: historical total workflow; it explicitly directs current-phase readers to `CURRENT_PROJECT_STATUS.md`.
+- `docs/history/reference/PROJECT_CONTEXT.md`: historical total workflow; it explicitly directs current-phase readers to `CURRENT_PROJECT_STATUS.md`.
 - `workflows/README.md` and current JSON exports: server orchestration and HTTP/code nodes; no configured language-model node.
 - `services/demo-dashboard/src/phase7/service.js`: draft creation consumes supplied subject/body and validates approved context.
 - `services/demo-dashboard/src/outreach/marketingContext.js`: prepares a restricted model-facing context, but does not itself invoke a model.

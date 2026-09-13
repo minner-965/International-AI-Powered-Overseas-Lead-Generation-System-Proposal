@@ -33,10 +33,10 @@ async function company(client,researchJobId=null){return(await client.query(`INS
 async function taskFor(client,row,{status='CANCELLED',stage=null,replay=0}={}){
   const c=await company(client);
   return(await client.query(`INSERT INTO leadgen.auto_evidence_tasks
-    (company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
+    (target_category_scope_key,target_category_code,company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
      task_status,current_stage,automation_owner,attempt_count,max_attempts,budget_state,input_digest,
      strategy_attempt_count,checkpoint_replay_count,retry_at)
-    VALUES($1,'WOMENSWEAR',$2,'NEEDS_BUYER_CONTACT',1,$3,$4,$5,'SYSTEM',0,10,'NOT_REQUIRED',$6,0,$7,
+    VALUES('PROFILE:WOMENSWEAR','WOMENSWEAR',$1,'WOMENSWEAR',$2,'NEEDS_BUYER_CONTACT',1,$3,$4,$5,'SYSTEM',0,10,'NOT_REQUIRED',$6,0,$7,
       CASE WHEN $4='RETRY_SCHEDULED' THEN now()+interval '5 minutes' END)
     RETURNING *`,[c.id,row.id,`purge-task-${crypto.randomUUID()}`,status,stage,digest(crypto.randomUUID()),replay])).rows[0];
 }

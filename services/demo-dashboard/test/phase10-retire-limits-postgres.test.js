@@ -16,9 +16,10 @@ const migrationPath=path.join(root,'database/migrations',PHASE10_RETIRE_INTERNAL
 test('047 applies and replays with no Tavily ceiling or fixed strategy cap',{skip:!connectionString},async()=>{
   const pool=new pg.Pool({connectionString,max:2});
   try{
+    const alreadyApplied=(await pool.query('SELECT 1 FROM leadgen.schema_migrations WHERE migration_key=$1',[PHASE10_RETIRE_INTERNAL_TAVILY_ENFORCEMENT_MIGRATION_KEY])).rowCount>0;
     const first=await applyPhase7Migration({pool,migrationPath,expectedDatabase:database,appliedBy:'wp-u05-u09-test'});
     const replay=await applyPhase7Migration({pool,migrationPath,expectedDatabase:database,appliedBy:'wp-u05-u09-replay'});
-    assert.equal(first.status,'APPLIED');assert.equal(replay.status,'SKIPPED_ALREADY_APPLIED');
+    assert.equal(first.status,alreadyApplied?'SKIPPED_ALREADY_APPLIED':'APPLIED');assert.equal(replay.status,'SKIPPED_ALREADY_APPLIED');
     const state=(await pool.query(`SELECT
       NOT EXISTS(SELECT 1 FROM leadgen.provider_credit_ledger WHERE provider='TAVILY' AND credit_limit_units IS NOT NULL) no_ceiling,
       EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='leadgen.auto_evidence_tasks'::regclass

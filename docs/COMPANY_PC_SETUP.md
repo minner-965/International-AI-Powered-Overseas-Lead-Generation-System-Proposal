@@ -130,7 +130,7 @@ docker compose exec demo-dashboard npm run phase7:migrate
 
 After migration, rerun the same command to verify idempotent replay, then run the
 full test suite and the database count/zero-send checks documented in
-`docs/PHASE7_RESULT.md`. The verified Phase 7 development database recorded
+`docs/history/phase7/PHASE7_RESULT.md`. The verified Phase 7 development database recorded
 `APPLIED` on the first migration run and `SKIPPED` on replay, with all recorded
 pre-existing business-table counts unchanged. A newly cloned company computer
 must reproduce those checks against its own restored database before use.
@@ -159,7 +159,7 @@ full import/export test set before changing the version.
 Read these files before implementation:
 
 1. `README.md`
-2. `docs/PROJECT_CONTEXT.md`
+2. `docs/history/reference/PROJECT_CONTEXT.md`
 3. Latest Chinese and English proposals in `final_updated_v3/`
 4. n8n management deck in `management_demo/`
 5. Budget workbooks in `outputs/`

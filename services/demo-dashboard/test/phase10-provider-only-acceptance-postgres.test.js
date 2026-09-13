@@ -46,10 +46,10 @@ before(async()=>{
   await state.audit.search({researchJobId:state.job.id,companyId:state.company.id,
     productProfile:'WOMENSWEAR',purpose:'U12_DISTINCT_SEARCH',request:{query:`u12 distinct ${suffix} 0`,count:5}});
   state.task=(await pool.query(`INSERT INTO leadgen.auto_evidence_tasks
-    (company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
+    (target_category_scope_key,target_category_code,company_id,product_profile,contact_research_job_id,business_blocker,evidence_revision,execution_key,
      task_status,current_stage,attempt_count,max_attempts,budget_state,input_digest,strategy_attempt_count,
      current_strategy_code,strategy_version,current_query_fingerprint,current_strategy_locale,current_source_class,strategy_state)
-    VALUES($1,'WOMENSWEAR',$2,'NAMED_BUYER_EVIDENCE',2,$3,'RUNNING','VERIFYING_EMAIL',12,10,'NOT_REQUIRED',$4,
+    VALUES('PROFILE:WOMENSWEAR','WOMENSWEAR',$1,'WOMENSWEAR',$2,'NAMED_BUYER_EVIDENCE',2,$3,'RUNNING','VERIFYING_EMAIL',12,10,'NOT_REQUIRED',$4,
       12,'S10_ALTERNATIVE_OFFICIAL_ROUTE','phase10-u12', $5,'en','OFFICIAL_SITE','STRATEGY_RUNNING') RETURNING *`,[
     state.company.id,state.job.id,`u12-task-${suffix}`,crypto.createHash('sha256').update(`task-${suffix}`).digest('hex'),
     crypto.createHash('sha256').update(`query-${suffix}`).digest('hex')])).rows[0];

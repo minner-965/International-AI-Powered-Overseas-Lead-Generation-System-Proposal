@@ -20,9 +20,9 @@ Real prospect sending during Phase 9: 0
 本文件以以下实际材料为权威基线：
 
 ```text
-docs/PHASE8_UI_UX_RESULT.md
-docs/PHASE8_DESIGN_SYSTEM.md
-docs/PHASE8_VISUAL_AUDIT.md
+docs/history/phase8/PHASE8_UI_UX_RESULT.md
+docs/history/phase8/PHASE8_DESIGN_SYSTEM.md
+docs/history/phase8/PHASE8_VISUAL_AUDIT.md
 docs/PHASE8_UI_UX_REUSE_RESEARCH.md
 docs/VERSION_CHANGELOG.md
 DPV_PHASE8_UI_UX_CODEX_EXECUTION_PLAN_V1.md
@@ -1021,7 +1021,7 @@ Evidence Required 行的 next action 必须深链到 Research/Jobs：
 - 不通过隐藏英文来缩短页面；
 - 不在一个标题区同时出现 eyebrow、H1/H2 和同义说明三次。
 
-Phase 9 如需修改 `docs/PHASE8_DESIGN_SYSTEM.md`，必须新增“Research Workbench refinement”章节并说明这是层级与布局调整，不是删除双语或改业务语义。
+Phase 9 如需修改 `docs/history/phase8/PHASE8_DESIGN_SYSTEM.md`，必须新增“Research Workbench refinement”章节并说明这是层级与布局调整，不是删除双语或改业务语义。
 
 ---
 
@@ -1242,9 +1242,9 @@ services/demo-dashboard/test/phase9-research-workbench.test.js
 services/demo-dashboard/test/phase9-real-enrichment-gates.test.js
 services/demo-dashboard/test/phase9-ui-contract.test.js
 docs/PHASE9_REUSE_RESEARCH.md
-docs/PHASE9_REAL_OPPORTUNITY_RESULT.md
-docs/PHASE9_VISUAL_AUDIT.md
-docs/PHASE9_RESULT.md
+docs/history/phase9/PHASE9_REAL_OPPORTUNITY_RESULT.md
+docs/history/phase9/PHASE9_VISUAL_AUDIT.md
+docs/history/phase9/PHASE9_RESULT.md
 ```
 
 允许修改：
@@ -1255,8 +1255,8 @@ services/demo-dashboard/public/app.js
 services/demo-dashboard/public/crm-shell.js
 services/demo-dashboard/src/server.js
 existing enrichment/category services where a verified gap exists
-docs/PHASE8_DESIGN_SYSTEM.md
-docs/UI_SYSTEM.md
+docs/history/phase8/PHASE8_DESIGN_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 docs/VERSION_CHANGELOG.md
 ```
 
@@ -1492,17 +1492,17 @@ UI 可以先用 synthetic fixtures 测试，但最终截图和计数必须来自
 ```text
 DPV_PHASE9_REAL_OPPORTUNITY_AND_RESEARCH_WORKBENCH_CODEX_EXECUTION_PLAN_V1.md
 docs/PHASE9_REUSE_RESEARCH.md
-docs/PHASE9_REAL_OPPORTUNITY_RESULT.md
-docs/PHASE9_VISUAL_AUDIT.md
-docs/PHASE9_RESULT.md
-docs/PHASE8_DESIGN_SYSTEM.md updated with Phase 9 refinement
-docs/UI_SYSTEM.md updated
+docs/history/phase9/PHASE9_REAL_OPPORTUNITY_RESULT.md
+docs/history/phase9/PHASE9_VISUAL_AUDIT.md
+docs/history/phase9/PHASE9_RESULT.md
+docs/history/phase8/PHASE8_DESIGN_SYSTEM.md updated with Phase 9 refinement
+docs/history/reference/UI_SYSTEM.md updated
 docs/VERSION_CHANGELOG.md updated
 source and tests
 optional migration 029 only if Gate 1 proves it necessary
 ```
 
-`docs/PHASE9_REAL_OPPORTUNITY_RESULT.md` 至少记录聚合：
+`docs/history/phase9/PHASE9_REAL_OPPORTUNITY_RESULT.md` 至少记录聚合：
 
 - cohort selection count；
 - Wave A/B started/completed/stopped；

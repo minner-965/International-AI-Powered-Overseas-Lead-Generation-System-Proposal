@@ -101,3 +101,13 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Local Exa recovery/diagnostic material retained on this workstation, not release code.
+/WORKSPACE_RECOVERY_RESULT.md
+/apply-exa-provider.ps1.broken
+/compose.exa-local.yaml
+/exa-exact-source.txt
+/exa-final-context.txt
+/exa-provider-context.txt
+/exa-live-check.mjs
+/patch-exa-provider.mjs
+

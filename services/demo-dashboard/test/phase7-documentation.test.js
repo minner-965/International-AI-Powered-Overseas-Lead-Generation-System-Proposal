@@ -47,7 +47,7 @@ test('Phase 7 contracts and final result record the verified release boundary', 
     'docs/PHASE7_OPPORTUNITIES_DECISION_CONTRACT.md',
     'docs/PHASE7_OUTREACH_DATA_CONTRACT.md',
     'docs/PHASE7_DATA_EXCHANGE_CONTRACT.md',
-    'docs/PHASE7_RESULT.md',
+    'docs/history/phase7/PHASE7_RESULT.md',
     'docs/VERSION_CHANGELOG.md',
     'docs/COMPANY_PC_SETUP.md'
   ];
@@ -57,7 +57,7 @@ test('Phase 7 contracts and final result record the verified release boundary', 
     assert.ok(contents.trim().length > 200, `${relative} must contain a substantive contract`);
   }
 
-  const result = await read('docs/PHASE7_RESULT.md');
+  const result = await read('docs/history/phase7/PHASE7_RESULT.md');
   assert.match(result, /^状态：`PASS`/m);
   assert.match(result, /LIVE PILOT: NOT STARTED/);
   assert.match(result, /REAL PROSPECT SENDS: 0/);

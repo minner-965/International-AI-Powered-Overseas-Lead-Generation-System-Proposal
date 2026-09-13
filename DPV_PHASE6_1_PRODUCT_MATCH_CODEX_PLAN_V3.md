@@ -1453,7 +1453,7 @@ API 使用字段白名单，禁止返回内部价格、客户订单、利润或�
 必须先读：
 
 ```text
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 ```
 
 ## 25.1 Opportunities
@@ -1748,7 +1748,7 @@ npm test
 创建：
 
 ```text
-docs/PHASE6_1_PRODUCT_MATCH_RESULT.md
+docs/history/phase6/PHASE6_1_PRODUCT_MATCH_RESULT.md
 ```
 
 报告安全聚合：
@@ -1787,9 +1787,9 @@ GitHub 报告禁止列出真实内部商品 ID、名称、价格或订单明细�
 同时更新：
 
 ```text
-docs/PHASE6_RESULT.md
+docs/history/phase6/PHASE6_RESULT.md
 docs/PHASE6_DECISION_MAKER_DATA_CONTRACT.md
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 docs/VERSION_CHANGELOG.md
 workflows/README.md
 ```
@@ -1945,10 +1945,10 @@ STOP — Phase 7 not started.
 交付：
 
 ```text
-docs/PHASE6_1_PRODUCT_MATCH_RESULT.md
-updated docs/PHASE6_RESULT.md
+docs/history/phase6/PHASE6_1_PRODUCT_MATCH_RESULT.md
+updated docs/history/phase6/PHASE6_RESULT.md
 updated docs/PHASE6_DECISION_MAKER_DATA_CONTRACT.md
-updated docs/UI_SYSTEM.md
+updated docs/history/reference/UI_SYSTEM.md
 updated docs/VERSION_CHANGELOG.md
 phase6.1 GitHub tag verification
 ```

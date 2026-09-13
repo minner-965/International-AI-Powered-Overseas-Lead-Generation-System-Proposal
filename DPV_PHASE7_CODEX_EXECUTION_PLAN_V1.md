@@ -17,8 +17,8 @@ Reported runtime input: Hunter API key added; presence/health/credits still requ
 本文件以以下实际验收结果为唯一基线：
 
 ```text
-docs/PHASE6_RESULT.md
-docs/PHASE6_1_PRODUCT_MATCH_RESULT.md
+docs/history/phase6/PHASE6_RESULT.md
+docs/history/phase6/PHASE6_1_PRODUCT_MATCH_RESULT.md
 docs/PHASE6_1_REUSE_RESEARCH.md
 docs/VERSION_CHANGELOG.md
 tag: phase6.1
@@ -1653,7 +1653,7 @@ CRM 重放必须幂等，CRM 字段不得反向覆盖 DPV 的证据、评分或�
 先读并遵守：
 
 ```text
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 ```
 
 公司侧继续使用中文上、英文下且同等字号权重的 `.bi` 结构。
@@ -2059,7 +2059,7 @@ npm test
 [ ] migration 025 applies and replays on existing database
 [ ] tests 0 failed
 [ ] browser matrix PASS
-[ ] docs/PHASE7_RESULT.md created
+[ ] docs/history/phase7/PHASE7_RESULT.md created
 [ ] VERSION_CHANGELOG updated
 [ ] implementation commit pushed and remote verified
 [ ] annotated tag phase7 pushed and remote verified
@@ -2113,7 +2113,7 @@ LIVE PILOT: NOT STARTED
 31. Run synthetic sandbox send/event fixtures only
 32. Verify current real database produces zero recommendations, approvals and sends
 33. Run browser matrix
-34. Create docs/PHASE7_RESULT.md and update docs
+34. Create docs/history/phase7/PHASE7_RESULT.md and update docs
 35. Implementation commit + push + verify
 36. Documentation handoff commit
 37. Annotated tag phase7 + push + verify
@@ -2127,11 +2127,11 @@ LIVE PILOT: NOT STARTED
 ```text
 DPV_PHASE7_CODEX_EXECUTION_PLAN_V1.md
 docs/PHASE7_REUSE_RESEARCH.md
-docs/PHASE7_RESULT.md
+docs/history/phase7/PHASE7_RESULT.md
 docs/PHASE7_OPPORTUNITIES_DECISION_CONTRACT.md
 docs/PHASE7_DATA_EXCHANGE_CONTRACT.md
 docs/PHASE7_OUTREACH_DATA_CONTRACT.md
-docs/UI_SYSTEM.md
+docs/history/reference/UI_SYSTEM.md
 docs/VERSION_CHANGELOG.md
 docs/COMPANY_PC_SETUP.md
 workflows/04-phase7-controlled-outreach-and-data-exchange.json
@@ -2146,7 +2146,7 @@ skills.lock.json
 
 # 30. Phase 7 之后的已确认规划输入（本阶段不执行）
 
-收到实际 `docs/PHASE7_RESULT.md`、相关验收文档和实施后的 UI 代码后，以真实实现为基线编写 Phase 8，不得把本计划文件当作已完成结果。
+收到实际 `docs/history/phase7/PHASE7_RESULT.md`、相关验收文档和实施后的 UI 代码后，以真实实现为基线编写 Phase 8，不得把本计划文件当作已完成结果。
 
 后续正式阶段：
 

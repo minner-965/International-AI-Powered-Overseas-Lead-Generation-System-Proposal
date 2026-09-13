@@ -74,7 +74,7 @@ export class Phase13AutomationFacade {
     const state=await this.getState();
     let provider={status:'UNAVAILABLE'};
     try{provider=await this.providerState();}catch(error){provider={status:'UNAVAILABLE',code:error?.code||'PROVIDER_STATE_ERROR'};}
-    provider={provider_code:provider.provider_code||'TAVILY',status:provider.status||'UNAVAILABLE',
+    provider={provider_code:provider.provider_code||String(this.providerOrder?.[0]||'SEARCH').toUpperCase(),status:provider.status||'UNAVAILABLE',
       remaining_credits:provider.remaining_credits??null,checked_at:provider.checked_at||null,
       retry_after_at:provider.retry_after_at||null,last_provider_error_code:provider.last_provider_error_code||provider.code||null};
     const [search,email]=await Promise.all([
