@@ -27,7 +27,7 @@ Before/after comparison covered all 147 `leadgen` tables. The only changed table
 
 ## Remaining operational boundary
 
-Coordinator staged recovery: dashboard recreated from final image `sha256:c4ffb15473ceb61b598a2e98c393b8bc5180a9d792951315297ad33f02ebd24a` with `DPV_MAINTENANCE_READ_ONLY=true`, loopback port 3000 and a read-only PostgreSQL session default. Dashboard and PostgreSQL are healthy. Workers/n8n remain stopped; no backlog or email is released. Registry-only batch preview is the one audited non-GET read operation permitted. Final deployed-browser evidence is in `FINAL_CLEANUP_RESULT.md`.
+Coordinator staged recovery: dashboard recreated from final image `sha256:8a2824782928f7dc68492c5607b33bbd280e6377a6b41ca36d81ab9b94b7ef75` with `DPV_MAINTENANCE_READ_ONLY=true`, loopback port 3000 and a read-only PostgreSQL session default. This image includes the subsequent invalid-detail-ID and category-input error fixes. Dashboard and PostgreSQL are healthy. Workers/n8n remain stopped; no backlog or email is released. Registry-only batch preview is the one audited non-GET read operation permitted. Final deployed-browser evidence is in `FINAL_CLEANUP_RESULT.md`.
 
 This preparation did not release search backlog, start email workers, change automation controls, invoke providers or send messages. Background service restoration and any controlled Exa verification must be recorded separately by the coordinator. A read-only dashboard is not equivalent to full automation restoration.
 

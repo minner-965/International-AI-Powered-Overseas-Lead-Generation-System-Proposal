@@ -6,17 +6,17 @@ Measured 2026-09-13 before final release. Source baseline is `07af1424ad92ab9ba4
 
 | Metric | Source baseline | Current working tree |
 | --- | ---: | ---: |
-| Git index entries | 818 | 874 |
-| Existing tracked plus nonignored additions | 818 | 895 |
-| Runtime source JS files | 135 | 137 |
+| Git index entries | 818 | 901 |
+| Existing tracked plus nonignored additions | 818 | 909 |
+| Runtime source JS files | 135 | 139 |
 | Authored public CSS bytes | 189,554 | 187,048 |
-| Authored source/public JS bytes | 2,377,990 | 2,369,038 |
+| Authored source/public JS bytes | 2,377,990 | 2,371,867 |
 | Static Express route declarations | 159 | 159 |
 | Compose services | 7 | 7 |
 | Tracked workflow JSON exports | 4 | 4 |
 | Direct production dependencies | 16 | 16 |
-| Distinct example environment keys | 155 | 140 |
-| Markdown under docs outside history | 164 | 69 |
+| Distinct example environment keys | 155 | 144 |
+| Markdown under docs outside history | 164 | 79 |
 | Markdown under docs/history | 0 | 123 |
 
 Counts change when the coordinating task adds/stages final reports; rerun at release. New Exa source files are included and are explicitly user-owned additions, not cleanup waste. Documentation counts are location-based: the non-history count includes cleanup acceptance reports, not only operating instructions. Bytes are raw bytes; worktree CRLF differences may contribute. Route counts use one identical regex before/after, not CL09's expanded route-method inventory; they neither replace that inventory nor prove reachability.

@@ -31,9 +31,16 @@ try{
   const name=`${prefix}-${suffix}`;
   const args=['run','-d','--name',name,...base,'-e',`HTTP_LISTEN_ENABLED=${!queues}`,'-e',`PGBOSS_PROCESS_JOBS=${!!queues}`];
   if(queues)args.push('-e',`PGBOSS_QUEUE_ALLOWLIST=${queues}`);
+  args.push('-e','INTERNAL_API_TOKEN=cl15-internal-fixture');
   run([...args,image]);created.push(name);
   const before=await waitReady(name,!!queues);
   if(!queues){report.http=JSON.parse(run(['exec',name,'node','--input-type=module','-e',"const results=[];for(const p of ['/','/api/health','/api/research/jobs','/api/research/provider-status']){const r=await fetch('http://127.0.0.1:3000'+p);results.push({path:p,status:r.status});if(r.status>=500)throw new Error(p+' '+r.status);}console.log(JSON.stringify(results))"]));}
+  if(!queues&&process.env.CL15_SERVER_GET==='true'){
+   run(['cp','scripts/cleanup-cl15-server-get-cases.mjs',`${name}:/app/server-get-cases.mjs`]);
+   try{report.server_get=JSON.parse(run(['exec',name,'node','/app/server-get-cases.mjs']));}
+   catch(error){if(!String(error.stdout||'').trim())throw new Error(String(error.stderr));report.server_get=JSON.parse(error.stdout);}
+   writeFileSync('artifacts/cl15-server-get-result.json',JSON.stringify(report.server_get,null,2));
+  }
   run(['restart',name]);const after=await waitReady(name,!!queues);
   report.services.push({service:suffix,start:before,restart:after});console.log(`${suffix}: START_RESTART_PASS`);
  }
@@ -51,7 +58,8 @@ try{
  for(const f of workflows){const w=JSON.parse(readFileSync(f,'utf8'));w.active=false;const name=f.split('/').pop();writeFileSync(`artifacts/cl15-n8n-fixtures/${name}`,JSON.stringify(w));mounts.push('-v',`${root}/artifacts/cl15-n8n-fixtures/${name}:/fixtures/${name}:ro`);}
  report.n8n_import=run(['run','--rm','--network',network,'--user','0','-e','N8N_USER_FOLDER=/tmp/cl15n8n','-e','N8N_DIAGNOSTICS_ENABLED=false','-e','N8N_VERSION_NOTIFICATIONS_ENABLED=false',...mounts,'n8nio/n8n:2.36.7','import:workflow','--separate','--input=/fixtures']).split('\n').filter(line=>/imported|Importing/.test(line)).join('\n');
  report.n8n_workflows=workflows.length;
- report.pass=true;
+ report.pass=!(report.server_get?.server_errors?.length);
+ if(!report.pass)process.exitCode=1;
 }catch(e){report.pass=false;report.error=e.message;process.exitCode=1;}
 finally{
  for(const name of created.reverse())run(['rm','-f',name]);

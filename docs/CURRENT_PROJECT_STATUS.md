@@ -7,9 +7,9 @@ Persisted intent and actual execution are separate: maintenance pauses execution
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_at": "2026-09-13T21:24:30.105127+08:00",
+  "generated_at": "2026-09-13T21:43:57.039964+08:00",
   "repo": "International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "commit": "e0edadf425130e1b0981674876120dd6d9e624bc",
+  "commit": "191678fb5b87dc4fd22c4858eb70ed6c13b51935",
   "branch": "phase13-cleanup-deai",
   "current_phase": "Phase 13 cleanup CL14-CL16 and Exa verification",
   "runtime_controls": {
@@ -567,14 +567,14 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       }
     ]
   },
-  "next_allowed_work": "CL14_CL16_THEN_BOUNDED_EXA_VERIFICATION"
+  "next_allowed_work": "CL15_HTTP_ACCEPTANCE_AND_CONTROLLED_RESTORATION_DECISION"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Boundary
 
-The user authorized CL14–CL16 followed by bounded Exa verification. See CURRENT_RUNTIME_CONTRACT.md and OPERATIONS_RUNBOOK.md. Acceptance, runtime restoration and remote release are reported separately; historical STOP statements are not current authority.
+The user authorized CL14–CL16 followed by bounded Exa verification. The one-request Exa verification has passed; do not repeat it or release the backlog implicitly. Remaining HTTP acceptance and a controlled-restoration decision are separate. See CURRENT_RUNTIME_CONTRACT.md and OPERATIONS_RUNBOOK.md. Acceptance, runtime restoration and remote release are reported separately; historical STOP statements are not current authority.
 
 ## Historical evidence
 

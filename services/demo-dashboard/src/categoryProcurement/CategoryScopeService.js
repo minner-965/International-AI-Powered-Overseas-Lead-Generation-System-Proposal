@@ -6,10 +6,16 @@ const SHA256=/^[0-9a-f]{64}$/i;
 const upper=value=>String(value??'').trim().toUpperCase();
 const normalizedCategory=value=>upper(value).replace(/&/g,' AND ').replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
-function required(value,code){const result=String(value??'').trim();if(!result)throw new Error(code);return result;}
-function digest(value,code){const result=required(value,code);if(!SHA256.test(result))throw new Error(code);return result.toLowerCase();}
-function revisionNumber(value){const result=Number(value);if(!Number.isInteger(result)||result<1)throw new Error('CATEGORY_SCOPE_REVISION_INVALID');return result;}
-function profile(value){const result=upper(value);if(!PROFILE_VALUES.has(result))throw new Error('CATEGORY_SCOPE_PROFILE_INVALID');return result;}
+function categoryScopeError(code){
+  const error=new Error(code);error.code=code;
+  error.status=code==='CATEGORY_SCOPE_DRAFT_NOT_FOUND'?404:code==='CATEGORY_SCOPE_MANAGEMENT_APPROVAL_REQUIRED'?403:400;
+  return error;
+}
+
+function required(value,code){const result=String(value??'').trim();if(!result)throw categoryScopeError(code);return result;}
+function digest(value,code){const result=required(value,code);if(!SHA256.test(result))throw categoryScopeError(code);return result.toLowerCase();}
+function revisionNumber(value){const result=Number(value);if(!Number.isInteger(result)||result<1)throw categoryScopeError('CATEGORY_SCOPE_REVISION_INVALID');return result;}
+function profile(value){const result=upper(value);if(!PROFILE_VALUES.has(result))throw categoryScopeError('CATEGORY_SCOPE_PROFILE_INVALID');return result;}
 
 export function validateCategoryScopeDraft(input={}){
   const scopes=(input.scopes||[]).map((scope,index)=>({
@@ -20,12 +26,12 @@ export function validateCategoryScopeDraft(input={}){
     scope_status:upper(scope.scope_status||'ACTIVE'),taxonomy_node_id:scope.taxonomy_node_id||null,
     source_fact_digest:digest(scope.source_fact_digest,'CATEGORY_SCOPE_FACT_DIGEST_INVALID')
   }));
-  if(!scopes.length)throw new Error('CATEGORY_SCOPE_FACTS_REQUIRED');
-  if(new Set(scopes.map(scope=>scope.client_key)).size!==scopes.length)throw new Error('CATEGORY_SCOPE_CLIENT_KEY_DUPLICATE');
+  if(!scopes.length)throw categoryScopeError('CATEGORY_SCOPE_FACTS_REQUIRED');
+  if(new Set(scopes.map(scope=>scope.client_key)).size!==scopes.length)throw categoryScopeError('CATEGORY_SCOPE_CLIENT_KEY_DUPLICATE');
   for(const scope of scopes){
-    if(!scope.normalized_category||!/^[A-Z0-9][A-Z0-9_]{0,99}$/.test(scope.normalized_category))throw new Error('CATEGORY_SCOPE_CATEGORY_INVALID');
-    if(!['ACTIVE','INACTIVE','REVIEW'].includes(scope.scope_status))throw new Error('CATEGORY_SCOPE_STATUS_INVALID');
-    if(scope.parent_client_key&&!scopes.some(parent=>parent.client_key===scope.parent_client_key&&parent.product_profile===scope.product_profile))throw new Error('CATEGORY_SCOPE_PARENT_INVALID');
+    if(!scope.normalized_category||!/^[A-Z0-9][A-Z0-9_]{0,99}$/.test(scope.normalized_category))throw categoryScopeError('CATEGORY_SCOPE_CATEGORY_INVALID');
+    if(!['ACTIVE','INACTIVE','REVIEW'].includes(scope.scope_status))throw categoryScopeError('CATEGORY_SCOPE_STATUS_INVALID');
+    if(scope.parent_client_key&&!scopes.some(parent=>parent.client_key===scope.parent_client_key&&parent.product_profile===scope.product_profile))throw categoryScopeError('CATEGORY_SCOPE_PARENT_INVALID');
   }
   const aliases=(input.aliases||[]).map(alias=>({
     scope_client_key:required(alias.scope_client_key,'CATEGORY_SCOPE_ALIAS_SCOPE_REQUIRED'),
@@ -35,10 +41,10 @@ export function validateCategoryScopeDraft(input={}){
     market_code:alias.market_code?upper(alias.market_code):null,status:upper(alias.status||'ACTIVE')
   }));
   for(const alias of aliases){
-    if(!scopes.some(scope=>scope.client_key===alias.scope_client_key))throw new Error('CATEGORY_SCOPE_ALIAS_SCOPE_INVALID');
-    if(!ALIAS_TYPES.has(alias.alias_type))throw new Error('CATEGORY_SCOPE_ALIAS_TYPE_INVALID');
-    if(!['en','es','zh','und'].includes(alias.language))throw new Error('CATEGORY_SCOPE_ALIAS_LANGUAGE_INVALID');
-    if(!['ACTIVE','INACTIVE','REVIEW'].includes(alias.status))throw new Error('CATEGORY_SCOPE_ALIAS_STATUS_INVALID');
+    if(!scopes.some(scope=>scope.client_key===alias.scope_client_key))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_SCOPE_INVALID');
+    if(!ALIAS_TYPES.has(alias.alias_type))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_TYPE_INVALID');
+    if(!['en','es','zh','und'].includes(alias.language))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_LANGUAGE_INVALID');
+    if(!['ACTIVE','INACTIVE','REVIEW'].includes(alias.status))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_STATUS_INVALID');
   }
   return {revision:revisionNumber(input.revision),source_type:SOURCE_TYPES.has(upper(input.source_type))?upper(input.source_type):null,
     source_reference:required(input.source_reference,'CATEGORY_SCOPE_SOURCE_REFERENCE_REQUIRED'),
@@ -75,7 +81,7 @@ export class CategoryScopeService{
           scope.parent_client_key?ids.get(scope.parent_client_key):null,scope.scope_status,scope.taxonomy_node_id,scope.source_fact_digest]);
         ids.set(scope.client_key,row.rows[0].id);pending.splice(index,1);inserted+=1;
       }
-      if(!inserted)throw new Error('CATEGORY_SCOPE_PARENT_CYCLE');
+      if(!inserted)throw categoryScopeError('CATEGORY_SCOPE_PARENT_CYCLE');
     }
     for(const alias of aliases)await client.query(`INSERT INTO leadgen.dpv_product_category_scope_aliases
       (scope_revision_id,scope_id,normalized_alias,raw_alias,alias_type,language,market_code,status)
@@ -84,7 +90,7 @@ export class CategoryScopeService{
     return ids;
   }
   async createDraft(input={}){
-    const draft=validateCategoryScopeDraft(input);if(!draft.source_type)throw new Error('CATEGORY_SCOPE_SOURCE_TYPE_INVALID');
+    const draft=validateCategoryScopeDraft(input);if(!draft.source_type)throw categoryScopeError('CATEGORY_SCOPE_SOURCE_TYPE_INVALID');
     return this.transaction(async client=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['leadgen:phase10:category-scope']);
       const existing=await client.query(`SELECT * FROM leadgen.dpv_product_category_scope_revisions
         WHERE revision=$1 AND source_digest=$2`,[draft.revision,draft.source_digest]);
@@ -99,22 +105,22 @@ export class CategoryScopeService{
   }
   async approveRevision(input={}){
     const actor=required(input.actor,'CATEGORY_SCOPE_ACTOR_REQUIRED');const role=upper(input.actor_role);
-    if(!APPROVER_ROLES.has(role))throw new Error('CATEGORY_SCOPE_MANAGEMENT_APPROVAL_REQUIRED');
+    if(!APPROVER_ROLES.has(role))throw categoryScopeError('CATEGORY_SCOPE_MANAGEMENT_APPROVAL_REQUIRED');
     const newRevision=revisionNumber(input.revision);const sourceReference=required(input.source_reference,'CATEGORY_SCOPE_SOURCE_REFERENCE_REQUIRED');
     const sourceDigest=digest(input.source_digest,'CATEGORY_SCOPE_SOURCE_DIGEST_INVALID');
     const effectiveFrom=input.effective_from?new Date(input.effective_from):new Date();
-    if(Number.isNaN(effectiveFrom.getTime()))throw new Error('CATEGORY_SCOPE_EFFECTIVE_FROM_INVALID');
+    if(Number.isNaN(effectiveFrom.getTime()))throw categoryScopeError('CATEGORY_SCOPE_EFFECTIVE_FROM_INVALID');
     return this.transaction(async client=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['leadgen:phase10:category-scope']);
       const prior=await client.query(`SELECT * FROM leadgen.dpv_product_category_scope_revisions
         WHERE id=$1 AND approval_status='DRAFT' FOR SHARE`,[input.draft_revision_id]);
-      if(!prior.rowCount)throw new Error('CATEGORY_SCOPE_DRAFT_NOT_FOUND');
+      if(!prior.rowCount)throw categoryScopeError('CATEGORY_SCOPE_DRAFT_NOT_FOUND');
       const replay=await client.query(`SELECT * FROM leadgen.dpv_product_category_scope_revisions
         WHERE revision=$1 AND approval_status='APPROVED' AND source_digest=$2`,[newRevision,sourceDigest]);
       if(replay.rowCount)return {...replay.rows[0],idempotent_replay:true};
       const sourceScopes=await client.query(`SELECT s.*,
         (SELECT p.normalized_category FROM leadgen.dpv_product_category_scopes p WHERE p.id=s.parent_scope_id) parent_category
         FROM leadgen.dpv_product_category_scopes s WHERE s.scope_revision_id=$1 ORDER BY s.created_at,s.id`,[prior.rows[0].id]);
-      if(!sourceScopes.rowCount)throw new Error('CATEGORY_SCOPE_FACTS_REQUIRED');
+      if(!sourceScopes.rowCount)throw categoryScopeError('CATEGORY_SCOPE_FACTS_REQUIRED');
       const scopes=sourceScopes.rows.map(scope=>({client_key:scope.id,product_profile:scope.product_profile,
         normalized_category:scope.normalized_category,parent_client_key:scope.parent_scope_id||null,
         scope_status:scope.scope_status,taxonomy_node_id:scope.taxonomy_node_id,source_fact_digest:scope.source_fact_digest}));

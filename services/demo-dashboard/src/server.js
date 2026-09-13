@@ -1,4 +1,5 @@
 import express from 'express';
+import {validateDetailId} from './httpIdValidation.js';
 import {maintenanceReadOnly,maintenanceWriteGuard} from './maintenanceMode.js';
 import {attachContactProgress} from './outreach/contactProgress.js';
 import pg from 'pg';
@@ -53,6 +54,7 @@ import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFa
 
 const { Pool } = pg;
 const app = express();
+app.param(['id','candidateId'], validateDetailId);
 const port = Number(process.env.PORT || 3000);
 const httpListenEnabled = !/^(0|false|no|off)$/i.test(process.env.HTTP_LISTEN_ENABLED || 'true');
 const maintenanceMode=maintenanceReadOnly();

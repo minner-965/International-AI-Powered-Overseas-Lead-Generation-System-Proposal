@@ -17,7 +17,7 @@ export function validateCurrentState(s){
  assert(s.search_state.completed>=0&&s.search_state.remaining>=0,'Search counts must be nonnegative');
  assert(s.provider_state.search_runtime_state===s.search_state.runtime_state,'Duplicate provider/search truth differs');
  assert(Array.isArray(s.runtime_controls.persisted)&&s.runtime_controls.persisted.every(c=>typeof c.enabled==='boolean'&&c.revision>0),'Controls invalid');
- assert(s.next_allowed_work==='CL14_CL16_THEN_BOUNDED_EXA_VERIFICATION','Cleanup boundary invalid');
+ assert(s.next_allowed_work==='CL15_HTTP_ACCEPTANCE_AND_CONTROLLED_RESTORATION_DECISION','Cleanup boundary invalid');
  return true;
 }
 export function assertCurrentProjectionMatches(state,actual){
@@ -64,7 +64,7 @@ export function collectCurrentState(){
  email_state:{provider:mail.OUTBOUND_EMAIL_PROVIDER||null,smtp_configured:Boolean(mail.SMTP_HOST&&mail.SMTP_USER&&mail.SMTP_PASSWORD),smtp_enabled:mail.SMTP_ENABLED==='true',execution_paused:paused,policy:db.policy,outbound_status_counts:db.outbound,reservation_status_counts:db.reservations},
  reply_state:{...db.reply,imap_configured:Boolean(mail.IMAP_HOST&&mail.IMAP_USER&&mail.IMAP_PASSWORD),monitor_enabled:mail.SMTP_IMAP_INBOUND_SYNC_ENABLED==='true',execution_paused:paused},
  blockers:[...(paused?['MAINTENANCE_EXECUTION_PAUSED']:[]),...(runtime==='PAUSED_PROVIDER_CAPACITY'?['PROVIDER_CAPACITY_EXHAUSTED']:[])],
- migrations:{files:readdirSync(path.join(root,'database/migrations')).filter(v=>v.endsWith('.sql')).sort().map(name=>({name,sha256:createHash('sha256').update(readFileSync(path.join(root,'database/migrations',name))).digest('hex')})),operational_ledger:db.migration_ledger},next_allowed_work:'CL14_CL16_THEN_BOUNDED_EXA_VERIFICATION'};
+ migrations:{files:readdirSync(path.join(root,'database/migrations')).filter(v=>v.endsWith('.sql')).sort().map(name=>({name,sha256:createHash('sha256').update(readFileSync(path.join(root,'database/migrations',name))).digest('hex')})),operational_ledger:db.migration_ledger},next_allowed_work:'CL15_HTTP_ACCEPTANCE_AND_CONTROLLED_RESTORATION_DECISION'};
  validateCurrentState(state);return state;
 }
 export function parseCurrentState(text){const m=text.match(/<!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- CURRENT_PROJECT_STATUS_JSON:END -->/);if(!m)throw new Error('Current state block missing');return JSON.parse(m[1]);}
