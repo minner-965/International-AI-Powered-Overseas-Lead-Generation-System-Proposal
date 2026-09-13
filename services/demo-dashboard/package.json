@@ -2,7 +2,7 @@
   "name": "dpv-leadgen-demo-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "Two-week phase-one lead qualification demo",
+  "description": "DPV overseas sales workspace",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",

@@ -1,15 +1,15 @@
 # DPV Company-Facing Copy Rules
 
-## Cleanup maintenance boundary — CL09/CL10/CL11
+## Cleanup maintenance boundary — CL12/CL13
 
-- CL07–CL08 are checkpointed at `7036048`. The current authorization is CL09 API/service, CL10 UI copy/state and CL11 visual asset cleanup only. Preserve MC04 rules, MC07 first-touch behavior and immutable history. STOP after CL11; no CL12 or final push/tag.
+- CL09–CL11 are checkpointed at `56760f8`. The current authorization is CL12 dependencies/scripts/configuration/Docker and CL13 database-object/current-projection cleanup only. Preserve MC04 rules, MC07 first-touch behavior and immutable history. STOP after CL13; no CL14 or final push/tag.
 - Never delete or rewrite an applied migration.
 - Never delete business/audit history merely because its rule is retired.
 - Never delete source/evidence lineage referenced by current or historical decisions.
 - Never delete outbound/inbound/suppression/Activity/SalesTask history.
 - Never delete a queue/table just because its current count is zero without proving zero runtime/FK/audit references.
 - Never treat a historical name as permission to edit immutable history.
-- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL09–CL11. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md. Use isolated data and intercepted requests for write/browser tests. Migration 063 remains pending production restoration.
+- During cleanup, run `node scripts/cleanup-maintenance-guard.mjs` before diagnostics. The execution containers are intentionally stopped; PostgreSQL and persisted automation ON settings are retained. Do not restart execution services or invoke live providers, Hunter, SMTP, WhatsApp or external CRM during CL12–CL13. Restoration is a distinct final-cleanup step, documented in CL00_BASELINE.md. Use isolated data and intercepted requests for write/browser tests. Migration 063 remains pending production restoration.
 
 These rules apply to every company-facing page, spreadsheet, report, slide, export, screenshot, and presentation in this repository.
 

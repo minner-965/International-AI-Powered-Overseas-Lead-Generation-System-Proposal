@@ -2,6 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,readdirSync,mkdirSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
+import {compareTableFingerprints} from './cleanup-baseline-comparison.mjs';
 const root=process.cwd();
 const dir=path.join(root,'artifacts/backups/cleanup-cl00-20260908');
 mkdirSync(dir,{recursive:true});
@@ -31,12 +32,12 @@ writeFileSync(path.join(dir,`${label}.json`),JSON.stringify(snapshot,null,2)+'\n
 if(mode==='before')writeFileSync(path.join(dir,'migration-checksums.json'),JSON.stringify(migrations,null,2)+'\n');
 if(mode!=='before'){
  const before=JSON.parse(readFileSync(path.join(dir,'before.json'),'utf8'));
- const changed=fingerprints.filter(t=>JSON.stringify(t)!==JSON.stringify(before.fingerprints.find(x=>x.table===t.table)));
+ const {changed,removed_tables}=compareTableFingerprints(before.fingerprints,fingerprints);
  const controls_equal=JSON.stringify(controls)===JSON.stringify(before.controls)&&JSON.stringify(policy)===JSON.stringify(before.policy);
  const migrations_equal=JSON.stringify(migrations)===JSON.stringify(before.migrations);
  const applied_files_unchanged=before.migrations.every(old=>migrations.some(now=>now.name===old.name&&now.sha256===old.sha256));
  const added_migrations=migrations.filter(now=>!before.migrations.some(old=>old.name===now.name)).map(m=>m.name);
  const allowAppend=process.argv.includes('--allow-new-migrations')&&applied_files_unchanged;
- console.log(JSON.stringify({tables:tables.length,changed,controls_equal,migrations_equal,applied_files_unchanged,added_migrations,backup}));
- if(changed.length||!controls_equal||!(migrations_equal||allowAppend))process.exitCode=1;
+ console.log(JSON.stringify({tables:tables.length,changed,removed_tables,controls_equal,migrations_equal,applied_files_unchanged,added_migrations,backup}));
+ if(changed.length||removed_tables.length||!controls_equal||!(migrations_equal||allowAppend))process.exitCode=1;
 }else console.log(JSON.stringify({tables:tables.length,controls,policy,backup,migrations:migrations.length}));

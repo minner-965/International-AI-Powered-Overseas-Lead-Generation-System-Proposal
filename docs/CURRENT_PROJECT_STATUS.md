@@ -7,17 +7,17 @@ Persisted intent and actual execution are separate: maintenance pauses execution
 <!-- CURRENT_PROJECT_STATUS_JSON:BEGIN -->
 ```json
 {
-  "generated_at": "2026-09-08T21:04:31.277565+08:00",
+  "generated_at": "2026-09-13T19:45:59.041456+08:00",
   "repo": "International-AI-Powered-Overseas-Lead-Generation-System-Proposal",
-  "commit": "70360481e43e8b1f5f3638b7c20bedca3f6eb462",
+  "commit": "56760f8e31e87fb24a3b59b7cfa10079b783943d",
   "branch": "phase13-cleanup-deai",
-  "current_phase": "Phase 13 cleanup CL09-CL11",
+  "current_phase": "Phase 13 cleanup CL12-CL13",
   "runtime_controls": {
     "persisted": [
       {
         "control_key": "PHASE13_AUTO_FIRST_TOUCH",
         "enabled": true,
-        "revision": 2,
+        "revision": 5,
         "settings": {
           "mode": "AUTO_FIRST_TOUCH",
           "allowed_bands": [
@@ -34,9 +34,10 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       {
         "control_key": "RESEARCH_PROVIDER_EXECUTION",
         "enabled": true,
-        "revision": 2,
+        "revision": 5,
         "settings": {
           "provider_order": [
+            "exa",
             "tavily"
           ],
           "provider_spend_mode": "NO_NEW_PAID_SPEND"
@@ -76,22 +77,24 @@ Persisted intent and actual execution are separate: maintenance pauses execution
     "maintenance_active": true
   },
   "provider_state": {
-    "selected_provider": "TAVILY",
+    "selected_provider": "EXA",
     "configured": true,
-    "account_state": "CREDIT_EXHAUSTED",
-    "search_runtime_state": "PAUSED_PROVIDER_CAPACITY",
-    "last_checked": "2026-09-08T17:30:19.687345+08:00"
+    "account_state": "NOT_CHECKED",
+    "search_runtime_state": "PAUSED_MAINTENANCE",
+    "last_checked": null
   },
   "search_state": {
-    "runtime_state": "PAUSED_PROVIDER_CAPACITY",
+    "runtime_state": "PAUSED_MAINTENANCE",
     "total": 579,
-    "completed": 30,
-    "remaining": 549,
+    "completed": 35,
+    "remaining": 544,
     "parent_plans": 1,
     "execution_status_counts": {
       "NOT_FOUND": 1,
       "RATE_LIMITED": 1,
-      "PERSISTED": 29
+      "REVIEW_REQUIRED": 23,
+      "PERSISTED": 34,
+      "CLAIMED": 1
     }
   },
   "opportunity_pool_counts": {
@@ -108,7 +111,7 @@ Persisted intent and actual execution are separate: maintenance pauses execution
   "contact_counts": {
     "companies": 153,
     "contacts": 185,
-    "decision_maker_contacts": 165
+    "decision_maker_contacts": 186
   },
   "email_state": {
     "provider": "SMTP",
@@ -133,18 +136,17 @@ Persisted intent and actual execution are separate: maintenance pauses execution
     }
   },
   "reply_state": {
-    "inbound_messages": 3,
+    "inbound_messages": 5,
     "activities": 4,
     "sales_tasks": 1,
     "suppressions": 2,
-    "last_imap_success": "2026-09-08T17:30:16.444842+08:00",
+    "last_imap_success": "2026-09-13T19:40:39.189748+08:00",
     "imap_configured": true,
     "monitor_enabled": true,
     "execution_paused": true
   },
   "blockers": [
-    "MAINTENANCE_EXECUTION_PAUSED",
-    "PROVIDER_CAPACITY_EXHAUSTED"
+    "MAINTENANCE_EXECUTION_PAUSED"
   ],
   "migrations": {
     "files": [
@@ -560,14 +562,14 @@ Persisted intent and actual execution are separate: maintenance pauses execution
       }
     ]
   },
-  "next_allowed_work": "STOP_AFTER_CL11_AWAIT_AUTHORIZATION"
+  "next_allowed_work": "STOP_AFTER_CL13_AWAIT_AUTHORIZATION"
 }
 ```
 <!-- CURRENT_PROJECT_STATUS_JSON:END -->
 
 ## Boundary
 
-CL09, CL10 and CL11 only. STOP after CL11. Restoration, additional cleanup, push and tag require their later work packages.
+CL12 and CL13 only. STOP after CL13. Restoration, additional cleanup, push and tag require their later work packages.
 
 ## Historical evidence
 
