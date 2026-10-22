@@ -3401,7 +3401,12 @@ main.page-body { width: 100%; }
   .form-control, .form-select, .select, :where(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea) { min-height: 44px; font-size: 16px; }
   .tabs > :is(button, a) { min-height: 44px; align-items: center; }
   .card, .crm-panel, .card.crm-panel, .list-panel { border-radius: 10px; }
-  :where(.app-view) > :is(.card, .crm-panel, section.card, details, .list-panel) { margin-inline: 12px; }
+  .app-view:not(.v4-overview):not(#view-opportunities):not(#view-tasks):not(#view-followups):not(#view-me) { padding: 10px 12px 0; }
+  .app-view:not(.v4-overview):not(#view-opportunities):not(#view-tasks):not(#view-followups):not(#view-me) > :is(.head, .crm-section-head, .v3-company-page-header, .p9-command-header, .p9-jobs-header) { padding: 0; }
+  .v3-automation-strip-actions { width: 100%; margin-left: 0; }
+  .v3-automation-strip-actions .btn { flex: 1; min-width: 0; white-space: normal; }
+  .p9-jobs-tabs { display: flex !important; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .p9-jobs-tabs > button { flex: 0 0 auto; }
   .card-header, .crm-panel-header { padding: 14px 16px 10px; }
   .card-body { padding: 14px 16px 16px; }
   /* Bottom tab bar */
