@@ -219,6 +219,17 @@ Integration boundary: seed data only. Market activation stays a management decis
 
 Search vocabulary for de/fr/pt/it/tr (buyer terms + the 13 approved category terms) was written as standard B2B trade terminology in `config/search/query-strategies.v2.json`; no machine-translation service was called. Native-speaker review is recommended before large paid runs. Languages without vocabulary fall back to English.
 
+## Any-category source (multilingual product taxonomy)
+
+| Candidate | License / terms (verified) | Languages | Decision |
+|---|---|---|---|
+| [Shopify Standard Product Taxonomy](https://github.com/Shopify/product-taxonomy) | **MIT** (upstream `LICENSE` read and copied to `rules/product-taxonomy/shopify/LICENSE`); release 2026-08; ~10,600 categories with stable IDs and mappings to Google categories | en, es, de, fr, pt-BR, it, tr, zh-CN release files (no ar) | **Adopted.** Trimmed subset (apparel, home & garden, luggage, baby, toys, office, health & beauty, furniture; depth ≤ 4; 2,954 categories) generated at dev time by `scripts/import-product-taxonomy.mjs` into `rules/product-taxonomy/shopify/categories-subset.json` (1.4 MB) |
+| [Google Product Taxonomy](https://support.google.com/merchants/answer/6324436) | Merchant Center help page offers `taxonomy-with-ids.<locale>.txt/.xls` downloads but states **no license**; only general Google Terms of Service | many locales | Not vendored: redistribution terms are not stated. Shopify's taxonomy is MIT and already maps to Google category IDs, so nothing is lost |
+| UNSPSC | Free code set requires registration; redistribution/derivative terms restrictive (GS1 US) | en (others paid/limited) | Rejected: licensing and B2B procurement focus, weak retail-category wording |
+| HS codes (WCO Harmonized System) | Nomenclature copyright WCO; national tariff versions vary | per national customs | Rejected: customs classification, not buyer-facing category names |
+
+Integration boundary: `GET /api/category-scopes/taxonomy?q=` searches the subset; `POST /api/category-scopes/custom` turns a chosen category plus its multilingual names into a DRAFT category-scope revision. Approval remains the existing management approve endpoint; taxonomy data never approves a category or proves a buyer's procurement. Regenerate with a newer release by downloading the release files and rerunning the script (review the diff).
+
 ## Search spend control
 
 Reused: `leadgen.provider_usage_events` (append-only rows; reuse is recorded as a new zero-cost `SKIPPED` row), `research_query_executions` stored response snapshots (cross-run reuse), the frozen search plan (query counts). Unit prices (`SEARCH_COST_USD_PER_QUERY_<PROVIDER>`) are configurable estimates; provider-reported `costDollars` is used when present. No billing SDK or external cost service is added.

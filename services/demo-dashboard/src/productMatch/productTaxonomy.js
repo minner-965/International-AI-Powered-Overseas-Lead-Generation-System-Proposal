@@ -23,6 +23,51 @@ const indexedAliases = aliases
   .filter(item => item.normalized_alias)
   .sort((left,right) => right.normalized_alias.length-left.normalized_alias.length || left.alias.localeCompare(right.alias));
 
+// Aliases of management-approved category scopes (current approved revision). They extend the
+// built-in dictionary so a newly approved category produces observations without a code change.
+let approvedScopeAliases = [];
+const SCOPE_ALIAS_MATCH = { EXACT:'EXACT', SYNONYM:'EXACT', CHILD:'EXACT', PARENT:'PARENT', SIMILAR:'ADJACENT' };
+const builtInCategories = new Set(taxonomy.profiles.flatMap(profile => [profile.code, ...(profile.categories || []).map(category => category.code)]));
+
+export function approvedScopeAliasEntries(rows = []) {
+  const entries = [];
+  for (const row of rows) {
+    const profile = String(row.product_profile || '').toUpperCase();
+    const category = String(row.normalized_category || '').toUpperCase();
+    if (!profile || !category) continue;
+    if (row.raw_alias || row.normalized_alias) entries.push({ language:row.language || 'und', alias:row.raw_alias || String(row.normalized_alias).replaceAll('_',' '),
+      profile, category:category === profile ? null : category, subcategory:null,
+      match_type:SCOPE_ALIAS_MATCH[String(row.alias_type || 'SYNONYM').toUpperCase()] || 'ADJACENT', source:'APPROVED_CATEGORY_SCOPE' });
+    // A category outside the built-in taxonomy is also recognized by its own name.
+    if (!builtInCategories.has(category)) entries.push({ language:'en', alias:category.replaceAll('_',' '), profile, category,
+      subcategory:null, match_type:'EXACT', source:'APPROVED_CATEGORY_SCOPE' });
+  }
+  return entries;
+}
+
+export function setApprovedCategoryAliases(rows = []) {
+  const seen = new Set();
+  approvedScopeAliases = approvedScopeAliasEntries(rows)
+    .map(item => ({ ...item, normalized_alias:normalizeTaxonomyText(item.alias) }))
+    .filter(item => {
+      const key = `${item.normalized_alias}|${item.profile}|${item.category}|${item.match_type}`;
+      if (!item.normalized_alias || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  return approvedScopeAliases.length;
+}
+
+export function getApprovedCategoryAliases() {
+  return approvedScopeAliases.map(item => ({ ...item }));
+}
+
+function activeAliases(extraAliases) {
+  const extra = Array.isArray(extraAliases) ? extraAliases.map(item => ({ ...item, normalized_alias:item.normalized_alias || normalizeTaxonomyText(item.alias) })) : [];
+  if (!approvedScopeAliases.length && !extra.length) return indexedAliases;
+  return [...indexedAliases, ...approvedScopeAliases, ...extra]
+    .sort((left,right) => right.normalized_alias.length-left.normalized_alias.length || String(left.alias).localeCompare(String(right.alias)));
+}
+
 function containsAlias(text, alias) {
   if (!text || !alias) return false;
   if (/[^\u0000-\u007f]/.test(alias)) return text.includes(alias);
@@ -48,7 +93,7 @@ export function taxonomyRelation(leftCategory, rightCategory) {
   return relation.relation === 'PARENT' ? 'PARENT_CATEGORY' : 'ADJACENT_CATEGORY';
 }
 
-export function normalizeProductObservation(input = {}) {
+export function normalizeProductObservation(input = {}, { aliases:extraAliases = null } = {}) {
   const explicitProfile = String(input.product_profile || input.normalized_profile || '').trim().toUpperCase();
   const fields = [
     ['raw_product_name',input.raw_product_name],
@@ -65,8 +110,9 @@ export function normalizeProductObservation(input = {}) {
   }
 
   const matches = [];
+  const candidates = activeAliases(extraAliases);
   for (const [field,text] of normalizedFields) {
-    for (const alias of indexedAliases) {
+    for (const alias of candidates) {
       if (containsAlias(text,alias.normalized_alias)) matches.push({ ...alias,field });
     }
   }

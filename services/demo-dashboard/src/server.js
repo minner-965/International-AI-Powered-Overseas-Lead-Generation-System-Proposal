@@ -52,6 +52,7 @@ import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
 import {SearchCostControl,loadSearchCostConfig} from './search/SearchCostControl.js';
 import {MarketRegistryService} from './market/MarketRegistryService.js';
 import {createMarketRegistryRouter} from './market/marketRegistryRouter.js';
+import {searchProductTaxonomy} from './categoryProcurement/productTaxonomyCatalog.js';
 import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/AutomationControlService.js';
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
@@ -679,11 +680,25 @@ app.post('/api/category-scopes/revisions',...categoryScopeWrite,async(req,res,ne
     res.status(result.idempotent_replay?200:201).json(result);
   }catch(error){next(error);}
 });
+// Searches the imported multilingual product taxonomy subset for custom category proposals.
+app.get('/api/category-scopes/taxonomy',...categoryScopeRead,async(req,res,next)=>{
+  try{res.json(searchProductTaxonomy(clean(req.query.q,120),{limit:req.query.limit,profile:req.query.product_profile||null}));}catch(error){next(error);}
+});
+// Proposes a new category with multilingual names as a DRAFT revision (current approved scopes + the new one).
+app.post('/api/category-scopes/custom',...categoryScopeWrite,async(req,res,next)=>{
+  try{
+    const result=await categoryScopeService.createCustomDraft({...req.body,actor:req.managementUser.identity});
+    audit('CATEGORY_SCOPE_CUSTOM_DRAFT_CREATED',{revision_id:result.id,revision:result.revision,actor:req.managementUser.identity,
+      product_profile:clean(req.body?.product_profile,40),normalized_category:clean(req.body?.normalized_category,100)});
+    res.status(result.idempotent_replay?200:201).json(result);
+  }catch(error){next(error);}
+});
 app.post('/api/category-scopes/revisions/:id/approve',...categoryScopeApprove,async(req,res,next)=>{
   try{
     const result=await categoryScopeService.approveRevision({...req.body,draft_revision_id:optionalUuid(req.params.id,'draft_revision_id'),
       actor:req.managementUser.identity,actor_role:req.managementUser.role});
     audit('CATEGORY_SCOPE_REVISION_APPROVED',{revision_id:result.id,revision:result.revision,actor:req.managementUser.identity});
+    await categoryEvidenceService.aliasRefresher?.refresh?.({force:true}).catch(()=>{});
     const scheduleJobId=await enqueueAutoEvidenceEvent(`category-scope-approved:${result.id}`,
       {category_scope_revision_id:result.id});
     res.status(result.idempotent_replay?200:201).json({...result,auto_evidence_schedule_job_id:scheduleJobId});

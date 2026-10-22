@@ -200,3 +200,61 @@ test('registry markets: 065 seeds inactive markets, management toggle is audited
     assert.deepEqual(await markets.activeMarketCodes(),['AE','DE','MX']);
   });
 });
+
+test('custom category: draft with multilingual aliases, approval, observation from an alias and an active opportunity pool band',{skip:!adminUrl},async()=>{
+  const {ApprovedCategoryAliasRefresher}=await import('../src/categoryProcurement/approvedCategoryAliases.js');
+  const {extractCategoryBuyerObservations}=await import('../src/categoryProcurement/categoryObservationExtractor.js');
+  const {CategoryEvidenceService}=await import('../src/categoryProcurement/CategoryEvidenceService.js');
+  const {OpportunityPoolService}=await import('../src/opportunityPool/OpportunityPoolService.js');
+  const {setApprovedCategoryAliases}=await import('../src/productMatch/productTaxonomy.js');
+  await withDatabase(null,async(pool,name)=>{
+    await databaseAt064(pool);
+    await approveCategories(pool,['WOMENSWEAR:DRESSES']);
+    await applyPhase7Migrations({pool,expectedDatabase:name});
+    const scopes=new CategoryScopeService({pool});
+    const draft=await scopes.createCustomDraft({product_profile:'WOMENSWEAR',normalized_category:'Swimwear',taxonomy_id:'aa-1-20',actor:'simon',
+      names:{en:'Swimwear',es:'Trajes de baño',zh:'泳装',de:'Bademode',ar:'ملابس السباحة'}});
+    assert.equal(draft.approval_status,'DRAFT');assert.equal(draft.scope_count,2);assert.equal(draft.alias_count,5);
+    await assert.rejects(scopes.createCustomDraft({product_profile:'WOMENSWEAR',normalized_category:'DRESSES',names:{en:'Dresses'},actor:'simon'}),
+      {code:'CATEGORY_SCOPE_ALREADY_APPROVED'});
+    // Drafts do not change what the classifier or research may use.
+    const refresher=new ApprovedCategoryAliasRefresher({pool,ttlMs:0});
+    await refresher.refresh({force:true});
+    const html=`<html><body><p>Visit our stores across Germany.</p><div class="product-card"><h3>Bademode Riviera</h3><span class="category">Bademode</span></div></body></html>`;
+    const extract=()=>extractCategoryBuyerObservations({html,source_url:'https://strand.example/bademode',source_authority:'OFFICIAL_STOREFRONT',
+      company_name:'Strand Mode GmbH',product_profile:'WOMENSWEAR'}).filter(row=>row.observation_type!=='RETAIL_CHANNEL'&&row.observation_type!=='STORE_NETWORK');
+    assert.equal(extract().length,0);
+    const approved=await scopes.approveRevision({draft_revision_id:draft.id,revision:draft.revision+1,source_reference:'custom-test',
+      source_digest:digest('approve-swimwear'),actor:'simon',actor_role:'MANAGEMENT'});
+    assert.equal(approved.scope_count,2);assert.equal(approved.alias_count,5);
+    const languages=(await pool.query(`SELECT a.language FROM leadgen.dpv_product_category_scope_aliases a
+      JOIN leadgen.dpv_product_category_scope_current c ON c.id=a.scope_id AND c.scope_revision_id=a.scope_revision_id
+      WHERE c.normalized_category='SWIMWEAR' ORDER BY 1`)).rows.map(row=>row.language);
+    assert.deepEqual(languages,['ar','de','en','es','zh']);
+    await refresher.refresh({force:true});
+    try{
+      const products=extract();
+      assert.equal(products.length,1);assert.equal(products[0].normalized_category,'SWIMWEAR');assert.equal(products[0].normalized_profile,'WOMENSWEAR');
+
+      // Persist through the existing evidence service and classify with the existing opportunity pool.
+      const company=(await pool.query(`INSERT INTO leadgen.companies(company_name,normalized_domain,country_code,country_name,website_url,official_root_domain,verification_status)
+        VALUES('Strand Mode GmbH','strand.example','DE','Germany','https://strand.example','strand.example','VERIFIED') RETURNING id`)).rows[0];
+      const job=(await pool.query(`INSERT INTO leadgen.research_jobs(country,country_code,country_name,market_profile,product_category,max_results,job_type)
+        VALUES('Germany','DE','Germany','DE','SWIMWEAR',5,'CATEGORY_PROCUREMENT_ENRICHMENT') RETURNING id`)).rows[0];
+      const evidence=new CategoryEvidenceService({pool,provider:{name:'test',search:async()=>{throw new Error('no provider calls');}},aliasRefresher:refresher});
+      const source=await evidence.persistSource({researchJobId:job.id,companyId:company.id,url:'https://strand.example/bademode',sourceType:'OFFICIAL_STOREFRONT',
+        authority:'OFFICIAL_STOREFRONT',capturedAt:new Date()});
+      for(const item of extractCategoryBuyerObservations({html,source_url:'https://strand.example/bademode',source_authority:'OFFICIAL_STOREFRONT',
+        company_name:'Strand Mode GmbH',product_profile:'WOMENSWEAR'}))await evidence.persistObservation(source,item);
+      const target=await evidence.targetCategory('WOMENSWEAR','SWIMWEAR',['de','en']);
+      assert.deepEqual(target.aliases.slice(0,2),['Bademode','Swimwear']);
+
+      const preview=await new OpportunityPoolService({pool}).preview({companyIds:[company.id]});
+      const row=preview.rows[0];
+      assert.ok(['PRECISION','RELEVANT'].includes(row.opportunity_pool_band),row.opportunity_pool_band);
+      assert.equal(row.is_active_business_opportunity,true);
+      const swim=row.profile_results.find(result=>result.product_profile==='WOMENSWEAR');
+      assert.equal(swim.category_basis,'EXACT_CATEGORY');
+    }finally{setApprovedCategoryAliases([]);}
+  });
+});

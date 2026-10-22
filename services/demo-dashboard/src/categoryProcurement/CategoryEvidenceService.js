@@ -5,8 +5,10 @@ import { TavilyUsageAudit } from '../search/TavilyUsageAudit.js';
 import { WebsiteReachabilityChecker } from '../contact/WebsiteReachabilityChecker.js';
 import { domainService } from '../platform/DomainService.js';
 import { getMarketProfile } from '../market/marketProfiles.js';
+import { marketSearchLanguages } from '../market/marketLanguages.js';
 import { normalizeProductObservation } from '../productMatch/productTaxonomy.js';
 import { extractCategoryBuyerObservations } from './categoryObservationExtractor.js';
+import { ApprovedCategoryAliasRefresher } from './approvedCategoryAliases.js';
 
 const clean=(value,max=2000)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
 const sha=value=>crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -18,9 +20,14 @@ function categoryOperationTerms(market){return unique([...(market.retailTerms||[
   .filter(term=>!/(?:procurement|purchasing|supplier onboarding|vendor registration|tender|\brfp\b|\brfq\b|supplier portal|buying department)/i.test(term));}
 function queryType(term){const value=String(term).toLowerCase();if(/import/.test(value))return'import_activity';if(/wholesale|mayor/.test(value))return'wholesale_activity';if(/distribut/.test(value))return'distribution_network';if(/store|tienda|retail|minorista|supermarket|department/.test(value))return'retail_operation';return'category_assortment';}
 
-export function buildCategoryBuyerDiscoveryQueries({company={},product_profile,market_profile=null,max_queries=4}={}){
+// target_category ({code, aliases:[...]}) narrows evidence queries to the specific approved
+// category and its approved aliases; product-profile terms are only a supplement.
+export function buildCategoryBuyerDiscoveryQueries({company={},product_profile,market_profile=null,max_queries=4,target_category=null}={}){
   const profile=upper(product_profile);const market=market_profile||getMarketProfile(company.country_code,company.country_name);
-  const categoryTerms=unique(market.productDiscoveryTerms?.[profile]||[],String);const operationTerms=categoryOperationTerms(market);
+  const targetCode=upper(target_category?.code||target_category);
+  const specific=targetCode&&targetCode!==profile?unique([targetCode.replaceAll('_',' ').toLowerCase(),
+    ...(Array.isArray(target_category?.aliases)?target_category.aliases:[]).map(value=>clean(value,120))],value=>String(value).toLocaleLowerCase()):[];
+  const categoryTerms=unique([...specific,...(market.productDiscoveryTerms?.[profile]||[])],value=>String(value).toLocaleLowerCase());const operationTerms=categoryOperationTerms(market);
   const domain=String(company.official_root_domain||company.normalized_domain||company.official_domain||'').trim();const name=clean(company.company_name||company.name,240);
   const subject=domain?`site:${domain}`:`"${name}"`;const rows=[];
   for(const term of categoryTerms)rows.push({query:`${subject} ${term}`,query_text:`${subject} ${term}`,query_type:'category_assortment',product_profile:profile,term_group:'category'});
@@ -34,8 +41,8 @@ function discoverLinks(html,baseUrl){const $=cheerio.load(String(html||''));cons
 function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if(/\.pdf$|report/.test(pathname))return'OFFICIAL_DOCUMENT';if(/catalog/.test(pathname))return'OFFICIAL_CATALOG';if(/shop|store|tienda|product|categor|collection|brand/.test(pathname))return'OFFICIAL_STOREFRONT';return'OFFICIAL';}
 
 export class CategoryEvidenceService{
-  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2}={}){
-    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.provider=provider||createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE');
+  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2,aliasRefresher=null}={}){
+    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.aliasRefresher=aliasRefresher||new ApprovedCategoryAliasRefresher({pool});this.provider=provider||createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE');
     this.searchAudit=searchAudit||new TavilyUsageAudit({provider:this.provider,pool,...tavilyUsageConfig});
     this.checker=checker||new WebsiteReachabilityChecker({...crawlerConfig,blockedDomains:['linkedin.com']});this.maxQueriesPerProfile=Math.max(1,Math.min(4,Number(maxQueriesPerProfile)||4));
     this.maxQueriesPerCompany=Math.max(1,Math.min(8,Number(maxQueriesPerCompany)||8));this.maxPagesPerCompany=Math.max(1,Math.min(12,Number(maxPagesPerCompany)||12));this.maxDiscoveryDepth=Math.max(0,Math.min(2,Number(maxDiscoveryDepth)||2));
@@ -63,10 +70,23 @@ export class CategoryEvidenceService{
       WHERE company_id=$1 AND evidence_type='PRODUCT_CATEGORY' AND source_url ~ '^https?://' ORDER BY captured_at,id`,[companyId]);let sources=0,observations=0;
     for(const row of result.rows){const isOfficial=upper(row.source_type)==='OFFICIAL_WEBSITE';const source=await this.persistSource({researchJobId,companyId,url:row.source_url,sourceType:'PHASE4_PRODUCT_CATEGORY',authority:isOfficial?'OFFICIAL':'OTHER_PUBLIC',capturedAt:row.captured_at,pageTitle:row.source_page_title,verificationStatus:isOfficial?'VERIFIED':'REVIEW'});sources+=1;const normalized=normalizeProductObservation({raw_category:row.evidence_value});
       observations+=await this.persistObservation(source,{observation_type:'PRODUCT_CATEGORY',raw_category:row.evidence_value,normalized_profile:normalized.normalized_profile,normalized_category:normalized.normalized_category,normalized_subcategory:normalized.normalized_subcategory,business_activity_role:'UNKNOWN',evidence_text:row.evidence_text,evidence_hash:sha(`${source.id}|${row.evidence_value}|${row.evidence_text}`),extraction_version:'phase4-category-backfill-v1',verification_status:isOfficial&&['CONFIRMED','SUPPORTED'].includes(normalized.assignment_status)?'VERIFIED':'REVIEW'});}return{sources,observations};}
-  async collect({researchJobId,companyId,productProfile,tavilyEnabled=true,reuseFreshEvidence=false,sourceTtlDays=90,strategy=null}){
+  // Approved aliases of a specific category in the market's languages (plus language-neutral ones).
+  async targetCategory(productProfile,categoryCode,languages=['en']){
+    const code=upper(categoryCode).replace(/^CATEGORY:/,'');
+    if(!code||code===upper(productProfile)||code.startsWith('PROFILE:'))return null;
+    const result=await this.pool.query(`SELECT a.raw_alias FROM leadgen.dpv_product_category_scope_current c
+      JOIN leadgen.dpv_product_category_scope_aliases a ON a.scope_id=c.id AND a.scope_revision_id=c.scope_revision_id AND a.status='ACTIVE'
+      WHERE c.product_profile=$1 AND c.normalized_category=$2 AND c.scope_status='ACTIVE' AND c.approval_status='APPROVED'
+        AND a.alias_type IN('EXACT','SYNONYM','CHILD') AND a.language=ANY($3::text[])
+      ORDER BY CASE WHEN a.language=$4 THEN 0 ELSE 1 END,a.created_at,a.id`,[upper(productProfile),code,[...new Set([...languages,'en','und'])],languages[0]||'en']);
+    return {code,aliases:result.rows.map(row=>row.raw_alias)};
+  }
+  async collect({researchJobId,companyId,productProfile,tavilyEnabled=true,reuseFreshEvidence=false,sourceTtlDays=90,strategy=null,targetCategoryCode=null}){
+    try{await this.aliasRefresher?.refresh?.();}catch{/* built-in dictionary remains available */}
     const found=await this.pool.query(`SELECT id,company_name,country_code,country_name,website_url,official_root_domain,normalized_domain FROM leadgen.companies WHERE id=$1`,[companyId]);if(!found.rowCount)throw new Error('Company not found');const company=found.rows[0];
     if(reuseFreshEvidence){const fresh=await this.findFreshReusableEvidence(companyId,productProfile,sourceTtlDays);if(fresh)return{reused_fresh_evidence:true,reused_research_job_id:fresh.research_job_id,prospect_category_source_id:fresh.source_id,prospect_category_observation_id:fresh.observation_id,sources:Number(fresh.sources||0),observations:Number(fresh.observations||0),queries:0,search_skipped:true,search_failures:0,pages_fetched:0,observations_inserted:0,timeouts:0,partials:0};}
-    const market=getMarketProfile(company.country_code,company.country_name);const root=company.official_root_domain||domainService.getRegistrableDomain(company.website_url);const queries=strategy?.query_text?[{query:strategy.query_text,query_text:strategy.query_text,query_type:strategy.query_type||'auto_evidence_strategy',product_profile:upper(productProfile),term_group:'strategy'}]:buildCategoryBuyerDiscoveryQueries({company,product_profile:productProfile,market_profile:market,max_queries:this.maxQueriesPerProfile});const urls=[];if(company.website_url)urls.push({url:company.website_url,depth:0});let failures=0;
+    const market=getMarketProfile(company.country_code,company.country_name);const root=company.official_root_domain||domainService.getRegistrableDomain(company.website_url);const queries=strategy?.query_text?[{query:strategy.query_text,query_text:strategy.query_text,query_type:strategy.query_type||'auto_evidence_strategy',product_profile:upper(productProfile),term_group:'strategy'}]:buildCategoryBuyerDiscoveryQueries({company,product_profile:productProfile,market_profile:market,max_queries:this.maxQueriesPerProfile,
+      target_category:await this.targetCategory(productProfile,targetCategoryCode,marketSearchLanguages(company.country_code))});const urls=[];if(company.website_url)urls.push({url:company.website_url,depth:0});let failures=0;
     const backfill=await this.backfillPhase4Evidence(researchJobId,companyId,productProfile);
     const searchEnabled=tavilyEnabled||String(this.provider.name||'').toLowerCase()!=='tavily';
     for(const query of searchEnabled?queries.slice(0,this.maxQueriesPerCompany):[]){const stored=await this.pool.query(`INSERT INTO leadgen.research_search_queries

@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+const sha256=value=>crypto.createHash('sha256').update(String(value)).digest('hex');
 const PROFILE_VALUES=new Set(['WOMENSWEAR','GENERAL_MERCHANDISE']);
 const SOURCE_TYPES=new Set(['MANAGEMENT_APPROVED','PRODUCT_IMPORT','TAXONOMY']);
 const ALIAS_TYPES=new Set(['EXACT','SYNONYM','PARENT','CHILD','SIMILAR']);
@@ -5,10 +7,15 @@ const APPROVER_ROLES=new Set(['MANAGEMENT','MANAGEMENT_APPROVER']);
 const SHA256=/^[0-9a-f]{64}$/i;
 const upper=value=>String(value??'').trim().toUpperCase();
 const normalizedCategory=value=>upper(value).replace(/&/g,' AND ').replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+// Aliases keep every script (Chinese, Arabic, accented Latin); category codes stay A-Z0-9_.
+const normalizedAlias=value=>String(value??'').normalize('NFKC').trim().toLocaleUpperCase('en-US').replace(/&/g,' AND ')
+  .replace(/[^\p{L}\p{N}]+/gu,'_').replace(/^_+|_+$/g,'');
+export const CATEGORY_ALIAS_LANGUAGES=Object.freeze(['en','es','zh','de','fr','pt','it','tr','ar','und']);
 
 function categoryScopeError(code){
   const error=new Error(code);error.code=code;
-  error.status=code==='CATEGORY_SCOPE_DRAFT_NOT_FOUND'?404:code==='CATEGORY_SCOPE_MANAGEMENT_APPROVAL_REQUIRED'?403:400;
+  error.status=code==='CATEGORY_SCOPE_DRAFT_NOT_FOUND'?404:code==='CATEGORY_SCOPE_MANAGEMENT_APPROVAL_REQUIRED'?403
+    :code==='CATEGORY_SCOPE_ALREADY_APPROVED'?409:400;
   return error;
 }
 
@@ -35,7 +42,7 @@ export function validateCategoryScopeDraft(input={}){
   }
   const aliases=(input.aliases||[]).map(alias=>({
     scope_client_key:required(alias.scope_client_key,'CATEGORY_SCOPE_ALIAS_SCOPE_REQUIRED'),
-    normalized_alias:normalizedCategory(alias.normalized_alias||alias.raw_alias),
+    normalized_alias:normalizedAlias(alias.normalized_alias||alias.raw_alias),
     raw_alias:required(alias.raw_alias||alias.normalized_alias,'CATEGORY_SCOPE_ALIAS_REQUIRED'),
     alias_type:upper(alias.alias_type||'SYNONYM'),language:String(alias.language||'und').toLowerCase(),
     market_code:alias.market_code?upper(alias.market_code):null,status:upper(alias.status||'ACTIVE')
@@ -43,7 +50,8 @@ export function validateCategoryScopeDraft(input={}){
   for(const alias of aliases){
     if(!scopes.some(scope=>scope.client_key===alias.scope_client_key))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_SCOPE_INVALID');
     if(!ALIAS_TYPES.has(alias.alias_type))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_TYPE_INVALID');
-    if(!['en','es','zh','und'].includes(alias.language))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_LANGUAGE_INVALID');
+    if(!alias.normalized_alias)throw categoryScopeError('CATEGORY_SCOPE_ALIAS_REQUIRED');
+    if(!CATEGORY_ALIAS_LANGUAGES.includes(alias.language))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_LANGUAGE_INVALID');
     if(!['ACTIVE','INACTIVE','REVIEW'].includes(alias.status))throw categoryScopeError('CATEGORY_SCOPE_ALIAS_STATUS_INVALID');
   }
   return {revision:revisionNumber(input.revision),source_type:SOURCE_TYPES.has(upper(input.source_type))?upper(input.source_type):null,
@@ -102,6 +110,42 @@ export class CategoryScopeService{
       await this.insertScopeSet(client,revision.rows[0].id,draft.scopes,draft.aliases);
       return {...revision.rows[0],scope_count:draft.scopes.length,alias_count:draft.aliases.length,idempotent_replay:false};
     });
+  }
+  // A management-proposed category: a DRAFT revision containing every currently approved scope
+  // (with its aliases) plus the new category and its names in each language as aliases.
+  // Approval stays with the existing approve endpoint.
+  async createCustomDraft(input={}){
+    const productProfile=profile(input.product_profile);
+    const category=normalizedCategory(input.normalized_category);
+    if(!category||!/^[A-Z0-9][A-Z0-9_]{0,99}$/.test(category))throw categoryScopeError('CATEGORY_SCOPE_CATEGORY_INVALID');
+    const names=input.names&&typeof input.names==='object'&&!Array.isArray(input.names)?input.names:{};
+    const newAliases=[];
+    for(const [rawLanguage,rawValue] of Object.entries(names)){
+      const language=String(rawLanguage).toLowerCase().split(/[-_]/)[0];
+      for(const value of (Array.isArray(rawValue)?rawValue:[rawValue]).map(item=>String(item??'').trim()).filter(Boolean))
+        newAliases.push({scope_client_key:'custom',raw_alias:value.slice(0,200),language,alias_type:'SYNONYM'});
+    }
+    if(!newAliases.length)throw categoryScopeError('CATEGORY_SCOPE_CUSTOM_NAMES_REQUIRED');
+    const actor=required(input.actor,'CATEGORY_SCOPE_ACTOR_REQUIRED');
+    const current=await this.pool.query(`SELECT * FROM leadgen.dpv_product_category_scope_current
+      WHERE approval_status='APPROVED' ORDER BY product_profile,normalized_category,id`);
+    if(current.rows.some(row=>row.product_profile===productProfile&&row.normalized_category===category))
+      throw categoryScopeError('CATEGORY_SCOPE_ALREADY_APPROVED');
+    const currentAliases=current.rowCount?(await this.pool.query(`SELECT a.* FROM leadgen.dpv_product_category_scope_aliases a
+      WHERE a.scope_revision_id=$1 ORDER BY a.created_at,a.id`,[current.rows[0].scope_revision_id])).rows:[];
+    const parent=input.parent_category?current.rows.find(row=>row.product_profile===productProfile&&row.normalized_category===normalizedCategory(input.parent_category)):null;
+    if(input.parent_category&&!parent)throw categoryScopeError('CATEGORY_SCOPE_PARENT_INVALID');
+    const factDigest=sha256(JSON.stringify({product_profile:productProfile,normalized_category:category,names,taxonomy_id:input.taxonomy_id||null}));
+    const scopes=[...current.rows.map(row=>({client_key:row.id,product_profile:row.product_profile,normalized_category:row.normalized_category,
+      parent_client_key:row.parent_scope_id||null,scope_status:row.scope_status,taxonomy_node_id:row.taxonomy_node_id,source_fact_digest:row.source_fact_digest})),
+      {client_key:'custom',product_profile:productProfile,normalized_category:category,parent_client_key:parent?.id||null,scope_status:'ACTIVE',source_fact_digest:factDigest}];
+    const aliases=[...currentAliases.map(alias=>({scope_client_key:alias.scope_id,normalized_alias:alias.normalized_alias,raw_alias:alias.raw_alias,
+      alias_type:alias.alias_type,language:alias.language,market_code:alias.market_code,status:alias.status})),...newAliases];
+    const revisions=await this.pool.query('SELECT coalesce(max(revision),0)::int revision FROM leadgen.dpv_product_category_scope_revisions');
+    const sourceDigest=sha256(JSON.stringify({base_revision_id:current.rows[0]?.scope_revision_id||null,custom:{product_profile:productProfile,category,names,parent:parent?.id||null}}));
+    return this.createDraft({revision:Number(input.revision)||revisions.rows[0].revision+1,source_type:'MANAGEMENT_APPROVED',
+      source_reference:String(input.source_reference||`custom-category:${productProfile}:${category}${input.taxonomy_id?`:shopify-taxonomy:${input.taxonomy_id}`:''}`).slice(0,300),
+      source_digest:sourceDigest,supersedes_revision_id:current.rows[0]?.scope_revision_id||null,actor,scopes,aliases});
   }
   async approveRevision(input={}){
     const actor=required(input.actor,'CATEGORY_SCOPE_ACTOR_REQUIRED');const role=upper(input.actor_role);

@@ -124,7 +124,8 @@ export function createAutoEvidenceExecutors({
           tavilyEnabled,
           reuseFreshEvidence:!strategy,
           sourceTtlDays,
-          strategy
+          strategy,
+          targetCategoryCode: task.target_category_code || null
         });
         const metrics=metricDelta(before,await evidenceCounts(pool,task));
         const references=result.reused_fresh_evidence?{
