@@ -3745,6 +3745,8 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
   table.rtable td.m-sub .meta { display: inline; margin-left: 4px; }
   table.rtable td.m-sub .meta:not(:empty)::before { content: "· "; }
   .rtable td .co { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .v4-pipeline-table td .co::after { content: ""; position: absolute; inset: 0; }
+  .search.inline:focus-within { box-shadow: 0 0 0 2px var(--primary); }
   .rtable td .co { font-size: 16px; font-weight: 600; }
   .rtable td .meta { font-size: 13px; }
   .rtable .v4-phone-inline { display: inline; }
