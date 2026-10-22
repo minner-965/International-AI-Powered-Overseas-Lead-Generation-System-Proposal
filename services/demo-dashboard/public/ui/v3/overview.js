@@ -2,24 +2,28 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 import { finiteCount, marketSeries, lazyChart } from './charts.js';
 import { initialContactPending } from '../contact-progress.js';
 import { hasOpportunityPool, isActiveBusinessOpportunity } from './opportunity-dimensions.js';
+import { crm, STAGES, taskTypePill, taskDot, when, stateBlock, skeletonRows } from '../v4/crm.js';
 const bi = (zh,en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const number = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString();
 const empty = (zh,en) => `<p class="v3-overview-empty">${bi(zh,en)}</p>`;
-const panel = (id,zh,en,body) => `<section class="v3-overview-panel" aria-labelledby="${id}-title"><header><h3 id="${id}-title">${bi(zh,en)}</h3></header>${body}</section>`;
-const link = (view,zh,en) => `<a class="v3-overview-link" href="#${view}" data-open-view="${view}">${bi(zh,en)}<i class="ti ti-arrow-right" aria-hidden="true"></i></a>`;
+// V4 card: title with inline English, optional caption and header link.
+const card = (id,zh,en,body,{caption=null,link:headerLink='',cls=''}={}) => `<section class="card v4-card ${cls}" aria-labelledby="${id}-title"><div class="ph"><div><h3 id="${id}-title">${bi(zh,en)}</h3>${caption?`<p>${bi(...caption)}</p>`:''}</div>${headerLink}</div>${body}</section>`;
+const link = (view,zh,en) => `<a class="lnk v3-overview-link" href="#${view}" data-open-view="${view}">${bi(zh,en)}<i class="ti ti-chevron-right" aria-hidden="true"></i></a>`;
+const marketLabels={AE:['阿联酋','UAE'],MX:['墨西哥','Mexico'],SA:['沙特阿拉伯','Saudi Arabia'],US:['美国','United States'],BD:['孟加拉国','Bangladesh']};
+const donutColors=['var(--c1)','var(--c2)','var(--c3)','var(--c4)'];
+
 export function marketDonut(markets,total) {
   const series=marketSeries(markets,total);
   if(series.state==='error')return empty('市场分布暂未读取，请刷新重试。','Market distribution unavailable. Refresh to retry.');
   if(series.state==='empty')return empty('暂无市场分布','No market distribution available');
-  const colors=['var(--dpv-primary)','var(--dpv-violet-data)','var(--dpv-info)','var(--dpv-muted)'];
-  const labels={AE:['阿联酋','UAE'],MX:['墨西哥','Mexico']};
   let offset=0;
-  const rings=markets.map(([market,count],i)=>{
+  const rings=markets.map(([,count],i)=>{
     const fraction=count/total*100;
-    const circle=`<circle cx="60" cy="60" r="48" fill="none" stroke="${colors[i%colors.length]}" stroke-width="12" pathLength="100" stroke-dasharray="${fraction} ${100-fraction}" stroke-dashoffset="${-offset}"/>`;
+    const circle=`<circle cx="21" cy="21" r="15.915" fill="none" stroke="${donutColors[Math.min(i,donutColors.length-1)]}" stroke-width="5" pathLength="100" stroke-dasharray="${fraction} ${100-fraction}" stroke-dashoffset="${-offset}"/>`;
     offset+=fraction;return circle;
   }).join('');
-  return `<div class="v3-overview-market-chart"><svg viewBox="0 0 120 120" aria-hidden="true">${rings}</svg><div class="v3-overview-market-total"><strong>${number(total)}</strong>${bi('企业','Companies')}</div></div><ul class="v3-overview-market-list" aria-label="市场分布 Market distribution">${markets.map(([market,count],i)=>`<li><span class="v3-overview-market-dot" style="background:${colors[i%colors.length]}" aria-hidden="true"></span>${bi(...(labels[market]||[market,market]))}<strong>${number(count)} · ${(count/total*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</strong></li>`).join('')}</ul>`;
+  const label=market=>marketLabels[market] || [market,market];
+  return `<div class="donut-wrap v3-overview-market-chart"><div class="donut"><svg viewBox="0 0 42 42" aria-hidden="true"><circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--line-soft)" stroke-width="5"/>${rings}</svg><div class="mid v3-overview-market-total"><b>${number(total)}</b><span>${bi('家企业','companies')}</span></div></div><ul class="legend v3-overview-market-list" aria-label="市场分布 Market distribution">${markets.map(([market,count],i)=>`<li><i style="background:${donutColors[Math.min(i,donutColors.length-1)]}"></i><span class="bi"><span lang="zh-CN">${esc(label(market)[0])}</span><span lang="en">${esc(market)}</span></span><b>${number(count)} · ${Number((count/total*100).toFixed(1))}%</b></li>`).join('')}</ul></div>`;
 }
 function jobCategory(job) {
   const labels={WOMENSWEAR:['女装','Womenswear'],GENERAL_MERCHANDISE:['百货','General Merchandise'],
@@ -53,15 +57,44 @@ export function overviewModel({metrics,opportunities,operations,research,getStat
     operations:operations?.prospect || null};
 }
 
+// Phone workbench grid: every function stays reachable with a text label (no "more" menu).
+const functions=[
+  ['log-note','写跟进','Log note','pencil','b'],['log-call','记电话','Log call','phone','g'],['new-task','新建任务','New task','calendar-plus','a'],
+  ['followups','跟进审批','Approvals','mail','b'],['companies','客户名录','Directory','building','b'],['research','研究任务','Research','list-search','g'],
+  ['data-import','导入导出','Import/Export','arrows-down-up','a'],['settings','系统设置','Settings','adjustments-horizontal','n']
+];
+const functionGrid=()=>`<section class="m-card v4-phone-only v4-function-grid" aria-label="常用功能 Functions"><div class="m-grid">${functions.map(([key,zh,en,icon,tone])=>{const view=['log-note','log-call','new-task'].includes(key)?null:key;return `<a href="#${view||(key==='new-task'?'tasks':'opportunities')}" ${view?`data-open-view="${view}"`:`data-quick-action="${key}"`}><span class="m-ico ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i>${key==='followups'?'<b class="m-badge" data-nav-count="followups" hidden></b>':''}</span><span class="lab">${esc(zh)}<small>${esc(en)}</small></span></a>`;}).join('')}</div></section>`;
+
 export function mountOverview() {
   const root = document.getElementById('view-overview');
   if (!root || root.dataset.v3Mounted) return;
   const reset = document.getElementById('reset');
   const runStatus = document.getElementById('run-status');
-  root.dataset.v3Mounted='true';root.classList.add('v3-overview');
-  root.innerHTML=`<header class="v3-overview-heading"><div><h2 id="overview-title">${bi('客户开发总览','Prospect Overview')}</h2><p id="overview-last-refresh"></p></div><div class="v3-overview-actions">${link('data-export','导出报表','Export Reports')}<button type="button" id="outreach-operations-refresh" class="btn btn-outline-primary">${bi('刷新总览','Refresh Overview')}</button><details class="v3-overview-more"><summary>${bi('名录管理','Directory Actions')}</summary><div id="overview-directory-actions"></div></details></div></header><div id="overview-run-slot"></div><section id="metrics" class="v3-overview-metrics" aria-label="业务概览 Business overview" aria-busy="true">${empty('正在读取概览','Loading overview')}</section><div class="v3-overview-analysis">${panel('outreach-operations','客户开发进展','Prospect Development',`<div id="outreach-operations" data-v3-overview="true" aria-live="polite"></div>`)}${panel('overview-markets','客户市场分布','Market Distribution',`<p class="v3-overview-caption">${bi('当前机会覆盖的企业','Companies represented in current opportunities')}</p><div id="overview-markets"></div>`)}</div><div class="v3-overview-lower">${panel('overview-tasks','工作任务','Work in Progress',`<div id="overview-tasks"></div>${link('jobs','查看任务','View Jobs')}`)}${panel('overview-attention','待处理事项','Attention Required',`<div id="overview-attention"></div>${link('contact-queue','审核邮件与联系','Email Review & Contact')}`)}</div>`;
+  root.dataset.v3Mounted='true';root.classList.add('v3-overview','v4-overview');
+  root.innerHTML=`<header class="head v3-overview-heading"><div><h2 id="overview-title" class="bi"><span lang="zh-CN">总览</span><span lang="en">Overview</span></h2><p id="overview-last-refresh" class="meta"></p></div><div class="btns v3-overview-actions"><button type="button" class="btn" data-open-view="opportunities">${bi('销售机会','Opportunities')}</button><button type="button" class="btn btn-primary" data-open-view="tasks">${bi('处理今日待办',"Today's tasks")}</button><button type="button" id="outreach-operations-refresh" class="btn btn-icon" aria-label="刷新总览 Refresh Overview" title="刷新总览 Refresh Overview"><i class="ti ti-refresh" aria-hidden="true"></i></button></div></header>
+  <div id="overview-run-slot"></div>
+  <section id="metrics" class="grid4 v3-overview-metrics" aria-label="关键指标 Key figures" aria-busy="true">${['有效机会','已发开发信','收到回复','今日待办'].map(()=>'<div class="card kpi"><span class="skel" style="width:60%"></span><span class="skel" style="width:30%;height:24px;margin:12px 0"></span></div>').join('')}</section>
+  ${functionGrid()}
+  <div class="grid2">
+    ${card('overview-pipeline','销售漏斗','Pipeline funnel',`<div class="pb" id="overview-pipeline" aria-live="polite">${skeletonRows(4)}</div>`,{caption:['按当前阶段累计 · 全部有效机会','Cumulative by current stage · all opportunities'],link:link('opportunities','销售机会','Opportunities')})}
+    ${card('overview-markets','市场分布','Markets',`<div class="pb" id="overview-markets"></div>`,{caption:['当前机会覆盖的企业','Companies represented in current opportunities']})}
+  </div>
+  <div class="grid2b v4-overview-actions">
+    ${card('overview-todo','今日待办','Due today',`<div id="overview-todo" aria-live="polite">${skeletonRows(3)}</div>`,{caption:['按截止时间排序','By due time'],link:link('tasks','全部任务','All tasks')})}
+    ${card('overview-approvals','待审批','Approvals',`<div id="overview-approvals" aria-live="polite">${skeletonRows(2)}</div>`,{caption:['跟进邮件 · 批准后按计划发出','Follow-up email · sent as scheduled after approval'],link:link('followups','跟进邮件审批','Follow-up approval')})}
+  </div>
+  <div class="grid3 v4-overview-ops">
+    ${card('outreach-operations','客户开发进展','Prospect development',`<div class="pb" id="outreach-operations" data-v3-overview="true" aria-live="polite"></div>`)}
+    ${card('overview-tasks','研究任务','Research jobs',`<div class="pb" id="overview-tasks"></div>`,{link:link('jobs','查看任务','View jobs')})}
+    ${card('overview-attention','待处理事项','Attention required',`<div class="pb" id="overview-attention"></div>`,{link:link('contact-queue','开发信审核','First-touch review')})}
+  </div>
+  <details class="v3-overview-more v4-directory-actions"><summary>${bi('名录管理','Directory actions')}</summary><div id="overview-directory-actions"></div>${link('data-export','导出报表','Export reports')}</details>`;
   if (reset) document.getElementById('overview-directory-actions').append(reset);
   if (runStatus) document.getElementById('overview-run-slot').append(runStatus);
+  document.addEventListener('crm:viewchange',event=>{if(event.detail?.view==='overview')void loadOverviewCrm();});
+  document.addEventListener('crm:changed',()=>{if(!root.hidden)void loadOverviewCrm();});
+  root.addEventListener('click',event=>{if(event.target.closest('[data-state-retry]'))void loadOverviewCrm();});
+  if(!root.hidden)void loadOverviewCrm();
 }
 
 export function markOverviewLoading() {
@@ -70,18 +103,35 @@ export function markOverviewLoading() {
     if(element) { element.setAttribute('aria-busy','true'); element.dataset.refreshing='true'; }
   }
   const stamp=document.getElementById('overview-last-refresh');
-  if(stamp)stamp.innerHTML=bi('正在更新概览','Updating overview');
+  if(stamp)stamp.innerHTML=bi('正在更新','Updating');
+}
+
+const crmState={tasks:undefined,drafts:undefined,pipeline:undefined,generation:0};
+function kpi({zh,en,value,unit,sub='',attn=false,view}) {
+  return `<a class="card kpi${attn?' attn':''}" href="#${view}" data-open-view="${view}"><div class="lab">${bi(zh,en)}</div><div class="val">${number(value)}${value===null||value===undefined?'':`<small>${esc(unit)}</small>`}</div><div class="kpi-sub">${sub}</div></a>`;
+}
+let lastMetrics=null;
+function renderKpis() {
+  const host=document.getElementById('metrics');
+  if(!host||!lastMetrics)return;
+  const {metrics,model,operations}=lastMetrics;
+  const bands=metrics?.opportunity_pool_bands;
+  const active=metrics?.active_business_opportunities ?? model.recommended;
+  const summary=crmState.tasks?.summary;
+  const overdue=summary?.overdue ?? null;
+  host.innerHTML=[
+    kpi({zh:'有效机会',en:'Active opportunities',value:active,unit:'家',view:'opportunities',sub:bands?[['PRECISION','精准'],['RELEVANT','相关'],['GENERAL_RELEVANT','一般相关']].map(([key,zh])=>`<span class="tag">${zh} ${number(bands[key])}</span>`).join(''):''}),
+    kpi({zh:'已发开发信',en:'First-touch sent',value:operations?.prospect?.smtp_accepted ?? null,unit:'封',view:'contact-queue',sub:model.sent===null?'':bi(`已发未回复 ${number(model.sent)}`,`Awaiting reply ${number(model.sent)}`)}),
+    kpi({zh:'收到回复',en:'Replies',value:operations?.prospect?.replies ?? null,unit:'封',view:'replies',sub:operations?.prospect?.pending_followups==null?'':bi(`待处理 ${number(operations.prospect.pending_followups)}`,`To review ${number(operations.prospect.pending_followups)}`)}),
+    kpi({zh:'今日待办',en:'Due today',value:summary?.due_today ?? null,unit:'项',view:'tasks',attn:overdue>0,sub:crmState.tasks===null?bi('待办暂未读取','Tasks unavailable'):overdue>0?`<span class="down">${bi(`逾期 ${number(overdue)} 项`,`${number(overdue)} overdue`)}</span>`:summary?bi(`未完成 ${number(summary.open)} 项`,`${number(summary.open)} open`):''})
+  ].join('');
+  host.setAttribute('aria-busy','false');delete host.dataset.refreshing;
 }
 
 export function renderOverview({metrics,opportunities,operations,research,jobs,getStatus,onCompany}) {
   const model=overviewModel({metrics,opportunities,operations,research,getStatus});
   const set=(id,html)=>{const el=document.getElementById(id);if(el){el.innerHTML=html;el.setAttribute('aria-busy','false');delete el.dataset.refreshing;}};
-  set('metrics',[
-    [model.recommended,'业务机会','Business opportunities','当前匹配企业','Current matching companies','target-arrow','primary'],
-    [model.verified,'当前有效企业','Verified Active Companies','','','building','success'],
-    [model.sent,'已发未回复','Sent · Awaiting Reply','全部客户邮件','All prospect mail','mail','primary'],
-    [model.pending,'待处理','Pending Actions','审批、跟进、联系与运营事项','Approvals, follow-up, contacts & operations','clipboard-list','warning']
-  ].map(([value,zh,en,scopeZh,scopeEn,icon,tone])=>`<article class="v3-overview-metric" data-tone="${tone}"><div class="v3-overview-metric-top">${bi(zh,en)}<i class="ti ti-${icon}" aria-hidden="true"></i></div><strong>${number(value)}</strong>${scopeZh ? `<p>${bi(scopeZh,scopeEn)}</p>` : ''}</article>`).join(''));
+  lastMetrics={metrics,model,operations};renderKpis();
   const stageValues={verified:model.verified,category:opportunities?opportunities.filter(row=>['CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE'].includes(row.category_procurement_match_status)).length:null,
     contact:research?.contact_ready_opportunities ?? null,management:opportunities?opportunities.filter(row=>(hasOpportunityPool(row) ? row.management_contact_status==='MANAGEMENT_APPROVED'||row.display_opportunity_status==='MANAGEMENT_APPROVED' : getStatus(row)==='MANAGEMENT_APPROVED')&&initialContactPending(row)).length:null,
     sent:operations?.prospect?.smtp_accepted ?? null,replied:operations?.prospect?.replies ?? null};
@@ -90,9 +140,9 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
     stageValues.contact = research.opportunity_pool.contact_ready ?? null;
     stageValues.management = research.opportunity_pool.email_eligible ?? null;
   }
-  const stages=[['verified','已验证企业','Verified Companies'],['category','类目匹配机会','Category-Matched Opportunities'],['contact','联系方式就绪','Contact-Ready Opportunities'],['management','邮件资格通过','Email Eligible'],['sent','已发邮件','Sent Emails'],['replied','客户回复','Customer Replies']];
+  const stages=[['verified','已验证企业','Verified companies'],['category','类目匹配机会','Category-matched'],['contact','联系方式就绪','Contact-ready'],['management','邮件资格通过','Email eligible'],['sent','已发邮件','Sent emails'],['replied','客户回复','Customer replies']];
   const max=Math.max(1,...Object.values(stageValues).map(value=>Number(value || 0)));
-  set('outreach-operations',`<ol class="v3-overview-stages">${stages.map(([key,zh,en],i)=>`<li><span class="v3-overview-stage-index" aria-hidden="true">${i+1}</span><div><div class="v3-overview-stage-label">${bi(zh,en)}<strong>${number(stageValues[key])}</strong></div><div class="v3-overview-track" aria-hidden="true"><span style="width:${Math.max(0,Number(stageValues[key] || 0))/max*100}%"></span></div></div></li>`).join('')}</ol><p class="v3-overview-caption">${bi('当前企业与机会 · 累计客户邮件与回复','Current companies & opportunities · Cumulative prospect mail & replies')}</p>${link('contact-queue','查看邮件审核','View Email Review')}`);
+  set('outreach-operations',`<ol class="v3-overview-stages">${stages.map(([key,zh,en])=>`<li><span class="n">${bi(zh,en)}</span><span class="track v3-overview-track" aria-hidden="true"><span style="width:${Math.max(0,Number(stageValues[key] || 0))/max*100}%"></span></span><b>${number(stageValues[key])}</b></li>`).join('')}</ol><p class="v3-overview-caption">${bi('当前企业与机会 · 累计客户邮件与回复','Current companies & opportunities · Cumulative prospect mail & replies')}</p>`);
   set('overview-markets',marketDonut(model.markets,model.marketTotal));
   document.querySelectorAll('#outreach-operations .v3-overview-stages li').forEach((row,index)=>{
     if(finiteCount(stageValues[stages[index][0]])===null){
@@ -104,7 +154,7 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
     const note=document.getElementById('overview-last-refresh');
     if(note)note.dataset.partial='true';
   } else document.getElementById('overview-last-refresh')?.removeAttribute('data-partial');
-  const chart=document.querySelector('#overview-markets .v3-overview-market-chart');
+  const chart=document.querySelector('#overview-markets .donut');
   const svg=chart?.querySelector('svg');
   if(svg){svg.style.visibility='hidden';lazyChart(chart,()=>{if(svg.isConnected)svg.style.visibility='visible';});}
   const stageLabels={QUEUED:['等待处理','Queued'],RUNNING:['处理中','In Progress'],DISCOVERING:['查找企业','Company Search'],CRAWLING:['查阅资料','Evidence Review'],QUALIFYING:['企业核验','Company Verification'],SCORING:['客户评估','Prospect Assessment'],COMPLETED:['已完成','Completed'],WAITING_EVIDENCE:['待完善资料','Evidence Pending'],FAILED_RETRYABLE:['待重试','Retry Required'],FAILED_FINAL:['待检查','Review Required']};
@@ -121,4 +171,51 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   set('overview-attention',`${pendingDrafts!==undefined?`<div class="v3-overview-attention-summary">${bi('待审核草稿','Drafts Awaiting Review')}<strong>${number(pendingDrafts)}</strong></div>`:''}${alerts.length?`<ul class="v3-overview-attention-list">${alerts.map(alert=>`<li>${bi(...(alertLabels[alert.code] || ['运营事项待检查','Operations Review Required']))}<strong>${number(alert.count)}</strong></li>`).join('')}</ul>`:''}${tasks.length?`<ul class="v3-overview-attention-list">${tasks.map(task=>`<li>${task.company_id?`<button class="v3-overview-company" data-overview-id="${esc(task.company_id)}" type="button">${esc(task.company_name || '—')}</button>`:`<strong>${esc(task.company_name || '—')}</strong>`}<span>${bi(task.human_review_required?'待复核资料':'待完善资料',task.human_review_required?'Evidence Review':'Evidence Pending')}</span></li>`).join('')}</ul>`:empty(research?'暂无优先处理资料':'待处理事项暂未读取',research?'No priority evidence items':'Attention items unavailable')}`);
   if(model.pendingParts)document.getElementById('overview-attention')?.insertAdjacentHTML('afterbegin',`<details class="v3-overview-pending-breakdown"><summary>${bi('待处理构成','Pending Action Breakdown')}</summary><dl>${model.pendingParts.map(item=>`<div><dt>${bi(item.zh,item.en)}</dt><dd>${number(item.count)}</dd></div>`).join('')}</dl><p class="v3-overview-caption">${bi('按事项统计，同一企业可能有多个不同事项。','Counts actions; one company may have multiple distinct actions.')}</p></details>`);
   document.getElementById('overview-attention')?.querySelectorAll('[data-overview-id]').forEach(button=>button.addEventListener('click',()=>onCompany(button.dataset.overviewId)));
+}
+
+/** Cumulative funnel from current stage counts: a stage counts every opportunity at it or beyond (lost excluded). */
+export function pipelineFunnel(stageCounts) {
+  if(!stageCounts||typeof stageCounts!=='object')return null;
+  const order=STAGES.filter(([key])=>key!=='LOST');
+  const counts=order.map(([key])=>finiteCount(stageCounts[key]));
+  if(counts.some(value=>value===null))return null;
+  const reached=counts.map((_,index)=>counts.slice(index).reduce((sum,value)=>sum+value,0));
+  return {rows:order.map(([key,zh,en],index)=>({key,zh,en,count:reached[index],conversion:index&&reached[index-1]?Math.round(reached[index]/reached[index-1]*100):null})),
+    active:counts.slice(0,-1).reduce((sum,value)=>sum+value,0),won:counts.at(-1),lost:finiteCount(stageCounts.LOST)};
+}
+function renderPipeline(payload) {
+  const host=document.getElementById('overview-pipeline');
+  if(!host)return;
+  host.setAttribute('aria-busy','false');
+  if(payload===null){host.innerHTML=stateBlock('error','销售漏斗暂未读取','Pipeline unavailable',{retry:true});return;}
+  const funnel=pipelineFunnel(payload?.stage_counts);
+  if(!funnel){host.innerHTML=stateBlock('error','销售漏斗暂未读取','Pipeline unavailable',{retry:true});return;}
+  if(!funnel.rows[0].count&&!funnel.lost){host.innerHTML=stateBlock('empty','暂无销售机会','No opportunities yet');return;}
+  const max=Math.max(1,funnel.rows[0].count);
+  host.innerHTML=`<div class="fun-head" aria-hidden="true"><span>${bi('阶段','Stage')}</span><span></span><span>${bi('数量','Count')}</span><span>${bi('环比','Step conv.')}</span></div><div class="fun">${funnel.rows.map(row=>`<div class="fun-row"><span class="n">${bi(row.zh,row.en)}</span><span class="track" role="img" aria-label="${esc(row.zh)} ${row.count}"><span style="width:${row.count/max*100}%"></span></span><span class="v">${number(row.count)}</span><span class="r">${row.conversion===null?'—':`${row.conversion}%`}</span></div>`).join('')}</div><div class="fun-foot"><span>${bi('当前有效','Active')}<b>${number(funnel.active)}</b></span><span>${bi('成交','Won')}<b>${number(funnel.won)}</b></span><span>${bi('流失','Lost')}<b>${number(funnel.lost)}</b></span></div>`;
+}
+function renderTodo(payload) {
+  const host=document.getElementById('overview-todo');
+  if(!host)return;
+  if(payload===null){host.innerHTML=stateBlock('error','待办暂未读取','Tasks unavailable',{retry:true});return;}
+  const items=(payload?.items||[]).slice(0,5);
+  if(!items.length){host.innerHTML=stateBlock('empty','今日没有待办','Nothing due today');return;}
+  host.innerHTML=`<ul class="rows">${items.map(task=>{const due=when(task.due_at);return `<li class="${task.overdue?'is-overdue':''}"><button class="row" type="button" data-overview-company="${esc(task.company_id)}"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span><span class="main-t"><span class="co">${esc(task.company_name||'—')}</span><span class="meta">${esc(task.title||task.next_action||'')}</span></span><span class="when${task.overdue?' overdue':''}">${due?esc(due.zh):'—'}${task.overdue&&due?`<small>${bi(`逾期 ${due.overdueDays} 天`,`${due.overdueDays} day${due.overdueDays>1?'s':''} overdue`)}</small>`:''}</span></button></li>`;}).join('')}</ul>`;
+}
+function renderApprovals(payload) {
+  const host=document.getElementById('overview-approvals');
+  if(!host)return;
+  if(payload===null){host.innerHTML=stateBlock('error','待审批暂未读取','Approvals unavailable',{retry:true});return;}
+  const items=(payload?.items||[]).slice(0,4);
+  if(!items.length){host.innerHTML=stateBlock('empty','没有待审批的跟进邮件','No follow-up email awaiting approval');return;}
+  host.innerHTML=`<ul class="rows">${items.map(draft=>{const due=when(draft.due_at);return `<li><div class="row"><span class="main-t"><span class="co">${esc(draft.company_name||'—')}</span><span class="meta">${bi(`第 ${draft.sequence_no} 封跟进邮件 · 计划 ${due?due.zh:'—'}`,`Follow-up ${draft.sequence_no} · ${due?due.en:'—'}`)}</span><span class="meta subj">${esc(draft.subject||'')}</span></span><a class="btn btn-outline-primary btn-sm" href="#followups" data-open-view="followups" data-draft-id="${esc(draft.id)}">${bi('去审批','Review')}</a></div></li>`;}).join('')}</ul>`;
+}
+async function settle(promise){try{return await promise;}catch{return null;}}
+export async function loadOverviewCrm() {
+  const generation=++crmState.generation;
+  const [tasks,drafts,pipeline]=await Promise.all([settle(crm.tasks({due:'today'})),settle(crm.drafts({status:'PENDING_APPROVAL'})),settle(crm.pipeline({limit:1}))]);
+  if(generation!==crmState.generation)return;
+  Object.assign(crmState,{tasks,drafts,pipeline});
+  renderTodo(tasks);renderApprovals(drafts);renderPipeline(pipeline);renderKpis();
+  document.querySelectorAll('#overview-todo [data-overview-company]').forEach(button=>button.addEventListener('click',()=>{if(button.dataset.overviewCompany)document.dispatchEvent(new CustomEvent('crm:opencompany',{detail:{companyId:button.dataset.overviewCompany}}));}));
 }

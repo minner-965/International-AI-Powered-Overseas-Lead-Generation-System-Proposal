@@ -13,7 +13,7 @@ test('V3 workspace assets replace the old global layer and retain every applicat
   ]);
   assert.doesNotMatch(html, /(?:href|src)="\/ui\/workspace-system\.(?:css|js)/);
   assert.match(html, /href="\/ui\/v4\/app\.css"/);
-  for (const section of ['components', 'opportunities', 'shared-components', 'overview', 'v4-base', 'shell']) assert.match(css, new RegExp(`/\\* ==== section: ${section} ==== \\*/`));
+  for (const section of ['components', 'opportunities', 'shared-components', 'v4-components', 'v4-base', 'shell']) assert.match(css, new RegExp(`/\\* ==== section: ${section} ==== \\*/`));
   assert.equal((html.match(/data-app-view="/g) || []).length, 16);
   for (const view of ['tasks', 'followups', 'me']) assert.match(html, new RegExp(`data-app-view="${view}"`));
   assert.match(html,/data-app-nav="replies"/);
@@ -91,15 +91,15 @@ test('record-heavy views use structured adaptive components instead of legacy wi
 });
 
 test('V4 reference colors, bilingual hierarchy and overview proportions replace old visual conventions', async () => {
-  const tokens = tokenCss(); const foundation = cssSection('v4-base'); const overview = cssSection('overview');
+  const tokens = tokenCss(); const foundation = cssSection('v4-base'); const overview = cssSection('v4-components');
   for (const [name, value] of [['canvas', '#f3f5f8'], ['surface', '#ffffff'], ['sidebar', '#1b2230'], ['primary', '#2563eb']]) {
     assert.match(tokens, new RegExp(`--dpv-${name}:\\s*${value}`, 'i'));
   }
   assert.match(foundation, /\.bi > \[lang="en"\]\s*\{[^}]*color: var\(--text-3\)[^}]*font-size: \.86em; font-weight: 400/);
   assert.match(cssSection('shell'), /\.nav \.nav-link \.bi\s*\{[^}]*flex-direction:\s*column/);
-  assert.match(overview, /grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(overview, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
-  assert.match(overview, /v3-overview-analysis>section:first-child\{grid-column:span 2\}/);
-  assert.match(overview, /@media\s*\(max-width:\s*700px\)/);
+  assert.match(overview, /\.grid4\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(overview, /\.grid2\s*\{[^}]*minmax\(0, 2fr\) minmax\(0, 1fr\)/);
+  assert.match(overview, /\.fun-row, \.fun-head\s*\{[^}]*118px/);
+  assert.match(overview, /@media \(max-width: 900px\)[\s\S]*\.m-grid\s*\{[^}]*repeat\(4, 1fr\)/);
   assert.doesNotMatch(`${tokens}\n${foundation}\n${overview}`, /#5146e5|#4338ca|linear-gradient|shimmer/i);
 });

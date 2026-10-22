@@ -21,7 +21,12 @@ function statePill(on, offLabel = ['未启用','Not enabled']) {
   return `<span class="v3-automation-state ${on ? 'is-on' : 'is-off'}"><i aria-hidden="true"></i>${bi(...(on ? ['已启用','Enabled'] : offLabel))}</span>`;
 }
 
+function renderStrip(model) {
+  return `<div class="v3-automation-strip"><span class="v3-automation-strip-title">${bi('自动获客','Automated acquisition')}</span>${statePill(model.enabled,['人工模式','Manual mode'])}${model.paused ? `<span class="v3-automation-strip-alert" role="status"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${bi('当前流程已暂停','Current workflow paused')}</span>` : ''}<span class="v3-automation-strip-actions"><button class="btn btn-sm ${model.enabled ? '' : 'btn-primary'}" type="button" data-automation-toggle aria-pressed="${model.enabled}">${model.enabled ? bi('切换为人工处理','Switch to manual review') : bi('启用自动获客','Enable automation')}</button><button class="btn btn-sm btn-ghost-primary" type="button" data-automation-view="settings">${bi('运营设置','Operations settings')}</button></span></div>`;
+}
+
 function renderPanel(model, location) {
+  if (['research','jobs','contact'].includes(location)) return renderStrip(model);
   const isOverview = location === 'overview';
   const visibleFeatures = ['research','jobs'].includes(location)
     ? featureRows.filter(([key])=>['search','opportunity','contactResearch'].includes(key))
@@ -52,7 +57,7 @@ function panel(id, location) {
 }
 
 function ensurePanels() {
-  const overview = $('#view-overview .v3-overview-heading');
+  const overview = $('#view-overview .v4-overview-ops');
   if (overview && !$('#automation-overview')) overview.after(panel('automation-overview','overview'));
   const research = $('#view-research .p9-command-header');
   if (research && !$('#automation-research')) research.after(panel('automation-research','research'));
@@ -78,7 +83,7 @@ function syncQueueLabels() {
   const title = $('#contact-queue-title');
   const nav = $('[data-app-nav="contact-queue"] .bi');
   const workbench = $('#outreach-workbench-title');
-  const labels = model.enabled ? ['自动首封联系','Auto First-touch Queue'] : ['邮件审核与联系','Email Review & Contact'];
+  const labels = model.enabled ? ['自动首封联系','Auto first-touch'] : ['开发信审核','First-touch review'];
   for (const target of [title,nav]) if (target) target.innerHTML = `<span lang="zh-CN">${labels[0]}</span><span lang="en">${labels[1]}</span>`;
   if (workbench) workbench.innerHTML = model.enabled ? bi('自动首封联系队列','Auto First-touch Queue') : bi('邮件联系工作台','Email Contact Workbench');
   document.dispatchEvent(new CustomEvent('dpv:automationchange',{detail:model}));
