@@ -50,3 +50,15 @@ test('follow-up group pages use the CRM task, draft and reply-review contracts',
   assert.match(review, /decision: 'CORRECT', intent: value/);
   assert.match(replies, /data-classification-id=/);
 });
+
+test('settings expose category scope approval, custom categories, market toggles and research estimates', async () => {
+  const [html, shell, scope, batch] = await Promise.all([read('index.html'), read('crm-shell.js'), read('ui/v4/scope-settings.js'), read('ui/v3/research-batch.js')]);
+  for (const view of ['categories', 'markets']) { assert.match(html, new RegExp(`data-app-view="${view}"`)); assert.match(html, new RegExp(`data-app-nav="${view}"`)); assert.match(shell, new RegExp(`views\\.${view}=`)); }
+  assert.match(scope, /\/api\/category-scopes\/revisions\/\$\{encodeURIComponent\(draft\.id\)\}\/approve/);
+  assert.match(scope, /item\.approval_status === 'DRAFT' && Number\(item\.revision\) > effective/);
+  assert.match(scope, /json\('\/api\/category-scopes\/custom', \{ product_profile/);
+  assert.match(scope, /\/api\/category-scopes\/taxonomy\?q=/);
+  assert.match(scope, /\/api\/markets\/registry\/\$\{encodeURIComponent\(code\)\}`, \{ search_enabled: toggle\.checked/);
+  assert.match(batch, /estimated_queries/);
+  assert.match(batch, /price not configured/);
+});

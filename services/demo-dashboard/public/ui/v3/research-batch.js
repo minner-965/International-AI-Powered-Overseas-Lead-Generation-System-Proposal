@@ -70,7 +70,7 @@ async function loadPreview() {
   try {
     const result=await api.request('/api/research/batches/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});
     if(requestId!==sequence)return;
-    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=api.bi('研究范围已就绪','Research scope ready');
+    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('研究范围已就绪','Research scope ready')}${result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
     batchScopeReview();updateCounts();
   }catch{
     if(requestId!==sequence)return;preview=null;updateCounts();
@@ -79,6 +79,8 @@ async function loadPreview() {
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
 }
+// Search cost estimate from the batch preview; unconfigured prices are stated rather than shown as zero.
+export function costText(result){const cost=result?.estimated_cost_usd;return cost==null||!Number.isFinite(Number(cost))?'未配置单价 / price not configured':`US$ ${Number(cost).toFixed(2)}`;}
 export function batchScopeReview(){
   if(!api)return;
   const {markets,categories,total}=counts(), snapshot=preview?.research_scope_snapshot;
@@ -86,7 +88,8 @@ export function batchScopeReview(){
     ['市场','Markets',(snapshot?.markets||options?.markets?.filter(item=>markets.includes(item.market_code))||[]).map(item=>item.country_name||item.market_code).join(' · ')],
     ['目标类目','Target categories',(snapshot?.categories||options?.categories?.filter(item=>categories.includes(categoryId(item)))||[]).map(item=>categoryLabel(item).join(' / ')).join(' · ')],
     ['客户类型','Buyer types',(preview?.buyer_types||checked('buyer_type')).join(' · ')],
-    ['研究语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5]];
+    ['研究语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5],
+    ['预计查询','Estimated queries',preview?.estimated_queries==null?'—':Number(preview.estimated_queries).toLocaleString()],['预计费用','Estimated cost',costText(preview)]];
   $('#research-scope-review').innerHTML=fields.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('');
   renderSearchPlan();
 }

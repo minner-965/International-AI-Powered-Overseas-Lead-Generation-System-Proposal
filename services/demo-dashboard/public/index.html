@@ -32,7 +32,7 @@
           </div>
           <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">数据</span><span lang="en">Data</span></div>
             <button class="nav-link" type="button" data-app-nav="data-import" data-nav-group="data-import data-export"><i class="ti ti-download" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">数据导入导出</span><span lang="en">Import / Export</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="settings" data-nav-group="settings customer-match"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">系统设置</span><span lang="en">Settings</span></span></button>
+            <button class="nav-link" type="button" data-app-nav="settings" data-nav-group="settings categories markets customer-match"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">系统设置</span><span lang="en">Settings</span></span></button>
           </div>
         </nav>
         <div class="me"><span class="avatar" aria-hidden="true">SIM</span><div id="market-visibility-summary"><p class="bi v4-stack"><span lang="zh-CN">阿联酋、墨西哥</span><span lang="en">UAE and Mexico</span></p><small class="market-code">AE / MX</small></div></div>
@@ -55,10 +55,12 @@
           <div class="tabs" data-subtab-group="research" hidden><button type="button" data-app-nav="research"><span class="bi"><span lang="zh-CN">研究概览</span><span lang="en">Overview</span></span></button><button type="button" data-app-nav="jobs"><span class="bi"><span lang="zh-CN">任务列表</span><span lang="en">Jobs</span></span></button></div>
           <div class="tabs" data-subtab-group="followups" hidden><button type="button" data-app-nav="followups"><span class="bi"><span lang="zh-CN">跟进邮件</span><span lang="en">Follow-up drafts</span></span></button><button type="button" data-app-nav="contact-queue"><span class="bi"><span lang="zh-CN">开发信审核</span><span lang="en">First-touch review</span></span></button><button type="button" class="v4-phone-only" data-app-nav="replies" data-subtab-phone><span class="bi"><span lang="zh-CN">回复</span><span lang="en">Replies</span></span></button></div>
           <div class="tabs" data-subtab-group="data" hidden><button type="button" data-app-nav="data-import"><span class="bi"><span lang="zh-CN">数据导入</span><span lang="en">Import</span></span></button><button type="button" data-app-nav="data-export"><span class="bi"><span lang="zh-CN">数据导出</span><span lang="en">Export</span></span></button></div>
-          <div class="tabs" data-subtab-group="settings" hidden><button type="button" data-app-nav="settings"><span class="bi"><span lang="zh-CN">通用设置</span><span lang="en">General</span></span></button><button type="button" data-app-nav="customer-match"><span class="bi"><span lang="zh-CN">客户画像</span><span lang="en">Customer profile</span></span></button></div>
+          <div class="tabs" data-subtab-group="settings" hidden><button type="button" data-app-nav="settings"><span class="bi"><span lang="zh-CN">通用设置</span><span lang="en">General</span></span></button><button type="button" data-app-nav="categories"><span class="bi"><span lang="zh-CN">品类范围</span><span lang="en">Categories</span></span></button><button type="button" data-app-nav="markets"><span class="bi"><span lang="zh-CN">目标市场</span><span lang="en">Markets</span></span></button><button type="button" data-app-nav="customer-match"><span class="bi"><span lang="zh-CN">客户画像</span><span lang="en">Customer profile</span></span></button></div>
         </nav>
         <section id="view-tasks" class="app-view" data-app-view="tasks" aria-labelledby="tasks-title" hidden><div class="head"><div><h2 id="tasks-title" class="bi"><span lang="zh-CN">我的任务</span><span lang="en">My tasks</span></h2></div></div><div id="tasks-root"></div></section>
         <section id="view-followups" class="app-view" data-app-view="followups" aria-labelledby="followups-title" hidden><div class="head"><div><h2 id="followups-title" class="bi"><span lang="zh-CN">跟进邮件审批</span><span lang="en">Follow-up approval</span></h2></div></div><div id="followups-root"></div></section>
+        <section id="view-categories" class="app-view" data-app-view="categories" aria-labelledby="categories-title" hidden><div class="head"><div><h2 id="categories-title" class="bi"><span lang="zh-CN">品类范围</span><span lang="en">Category scope</span></h2></div></div><div id="categories-root" class="v4-stack-page"></div></section>
+        <section id="view-markets" class="app-view" data-app-view="markets" aria-labelledby="markets-title" hidden><div class="head"><div><h2 id="markets-title" class="bi"><span lang="zh-CN">目标市场</span><span lang="en">Target markets</span></h2></div></div><div id="markets-root" class="v4-stack-page"></div></section>
         <section id="view-me" class="app-view" data-app-view="me" aria-labelledby="me-title" hidden><div class="head"><div><h2 id="me-title" class="bi"><span lang="zh-CN">我的</span><span lang="en">Me</span></h2></div></div><div id="me-root"></div></section>
         <section id="view-contact-ready" class="app-view" data-app-view="contact-ready" aria-label="待联系公司 Contact-ready" hidden></section>
         <section id="view-overview" class="app-view" data-app-view="overview" aria-labelledby="overview-title" hidden>
@@ -285,7 +287,7 @@
         <a href="#opportunities" data-m-views="opportunities companies contact-ready evidence"><span class="m-tab-i"><i class="ti ti-briefcase" aria-hidden="true"></i></span><span>机会<span class="sr-only"> Opportunities</span></span></a>
         <a href="#tasks" data-m-views="tasks"><span class="m-tab-i"><i class="ti ti-square-check" aria-hidden="true"></i><b class="m-badge" data-nav-count="tasks" hidden></b></span><span>任务<span class="sr-only"> Tasks</span></span></a>
         <a href="#followups" data-m-views="followups contact-queue replies"><span class="m-tab-i"><i class="ti ti-message-2" aria-hidden="true"></i><b class="m-badge" data-nav-count="messages" hidden></b></span><span>消息<span class="sr-only"> Messages</span></span></a>
-        <a href="#me" data-m-views="me research jobs data-import data-export settings customer-match"><span class="m-tab-i"><i class="ti ti-user" aria-hidden="true"></i></span><span>我的<span class="sr-only"> Me</span></span></a>
+        <a href="#me" data-m-views="me research jobs data-import data-export settings categories markets customer-match"><span class="m-tab-i"><i class="ti ti-user" aria-hidden="true"></i></span><span>我的<span class="sr-only"> Me</span></span></a>
       </nav>
     </div>
   </div>
@@ -309,5 +311,6 @@
   <script type="module" src="/ui/v4/followups.js"></script>
   <script type="module" src="/ui/v4/reply-review.js"></script>
   <script type="module" src="/ui/v4/me.js"></script>
+  <script type="module" src="/ui/v4/scope-settings.js"></script>
 </body>
 </html>
