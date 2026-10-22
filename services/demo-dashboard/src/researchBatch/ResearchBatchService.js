@@ -92,6 +92,7 @@ export function buildScopeSnapshot(input,options,now=new Date()) {
     category_scope_id:c.id,scope_revision_id:c.scope_revision_id,category_code:c.category_code,
     product_category:c.category_code,product_profile:c.product_profile,
     ...(c.approved_aliases ? {approved_aliases:structuredClone(c.approved_aliases),parent_category:c.parent_category||null} : {}),
+    ...(m.country_terms&&Object.keys(m.country_terms).length?{country_terms:structuredClone(m.country_terms)}:{}),
     languages:[...m.languages],preferred_language:m.languages[0],buyer_types:input.buyer_types||[...m.buyer_types],
     max_results:input.max_results,city:input.city,region:input.region
   })));
@@ -117,10 +118,23 @@ function configurationDiffers(scope,job) {
 }
 
 export class ResearchBatchService {
-  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null}={}) {
+  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null,costControl=null}={}) {
     if(!pool)throw new Error('ResearchBatchService requires a PostgreSQL pool');
     this.pool=pool;this.directDispatch=directDispatch;this.ensureCanCreate=ensureCanCreate;this.runBudgetCapUnits=runBudgetCapUnits;
-    this.planning=planning;
+    this.planning=planning;this.costControl=costControl;
+  }
+  // Estimated search volume/cost of a frozen scope snapshot. Without cost control the
+  // query count is still reported so an empty plan is visible.
+  async searchCost(snapshot,queryable=this.pool) {
+    const plan=this.planning.plan(snapshot);
+    const estimate=this.costControl?await this.costControl.estimate(plan,queryable)
+      :{estimated_queries:Number(plan.summary.planned_query_count),estimated_cost_usd:null,cost_basis:'NOT_CONFIGURED'};
+    return {plan,estimate};
+  }
+  assertSearchCost(estimate) {
+    if(this.costControl)return this.costControl.assertCreatable(estimate);
+    if(!(estimate.estimated_queries>0))throw Object.assign(new Error('SEARCH_PLAN_EMPTY'),{code:'SEARCH_PLAN_EMPTY',status:422,estimate});
+    return estimate;
   }
   async options(queryable=this.pool) {
     const markets=await queryable.query(`SELECT *,market_code country_code FROM leadgen.research_market_registry
@@ -145,7 +159,12 @@ export class ResearchBatchService {
   }
   async preview(input={}) {
     const result=previewResponse(buildScopeSnapshot(normalizeBatchInput(input),await this.options()));
-    return this.planning?{...result,search_plan:this.planning.preview(result.research_scope_snapshot)}:result;
+    if(!this.planning)return result;
+    const {plan,estimate}=await this.searchCost(result.research_scope_snapshot);
+    let blocked=null;
+    try{this.assertSearchCost(estimate);}catch(error){if(!error.estimate)throw error;blocked=error.code;}
+    return {...result,search_plan:this.planning.present(plan),estimated_queries:estimate.estimated_queries,
+      estimated_cost_usd:estimate.estimated_cost_usd,search_cost:estimate,creation_allowed:!blocked,creation_blocked_code:blocked};
   }
   async create(input={},actor={}) {
     const identity=clean(actor.identity||actor.requested_by);
@@ -171,6 +190,8 @@ export class ResearchBatchService {
         if(this.planning)await client.query('LOCK TABLE leadgen.dpv_product_category_scope_aliases IN SHARE MODE');
         const snapshot=buildScopeSnapshot(normalized,await this.options(client));
         const scopeDigest=digest(snapshot.scopes);
+        // Spend guard before any child job or outbox row exists; the creation lock serializes the monthly check.
+        const searchCost=this.planning?this.assertSearchCost((await this.searchCost(snapshot,client)).estimate):null;
         const same=await client.query(`SELECT b.* FROM leadgen.research_batches b
           WHERE requested_by=$1 AND scope_digest=$2 AND status IN('QUEUED','RUNNING')
           ORDER BY created_at DESC LIMIT 1`,[identity,scopeDigest]);
@@ -195,6 +216,9 @@ export class ResearchBatchService {
             (id,requested_by,requested_role,idempotency_key,request_digest,scope_digest,research_scope_snapshot,total_scopes,created_child_count,reused_child_count)
             VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)`,[batchId,identity,role,key,requestDigest,scopeDigest,
             JSON.stringify(snapshot),snapshot.scopes.length,createdIds.length,snapshot.scopes.length-createdIds.length]);
+          if(searchCost)await client.query(`INSERT INTO leadgen.research_batch_cost_estimates
+            (batch_id,estimated_queries,estimated_cost_usd,estimate) VALUES($1,$2,$3,$4::jsonb)`,
+            [batchId,searchCost.estimated_queries,searchCost.estimated_cost_usd,JSON.stringify(searchCost)]);
           for(const {scope,child} of children)await client.query(`INSERT INTO leadgen.research_batch_children
             (batch_id,scope_key,research_job_id,market_code,category_scope_id,scope_snapshot,reused)
             VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)`,[batchId,canonicalResearchScope(scope),child.id,scope.market_code,scope.category_scope_id,
@@ -221,7 +245,11 @@ export class ResearchBatchService {
       JOIN leadgen.research_jobs j ON j.id=c.research_job_id WHERE c.batch_id=$1
       ORDER BY c.market_code,c.scope_key`,[id]);
     const row=result.rows[0];
-    const detail={...row,batch_id:row.id,...previewResponse(row.research_scope_snapshot),children:children.rows};
+    const cost=await this.pool.query(`SELECT estimated_queries,estimated_cost_usd,estimate FROM leadgen.research_batch_cost_estimates
+      WHERE batch_id=$1`,[id]).catch(()=>({rows:[]}));
+    const detail={...row,batch_id:row.id,...previewResponse(row.research_scope_snapshot),children:children.rows,
+      ...(cost.rows[0]?{estimated_queries:cost.rows[0].estimated_queries,estimated_cost_usd:cost.rows[0].estimated_cost_usd===null?null:Number(cost.rows[0].estimated_cost_usd),
+        search_cost:cost.rows[0].estimate}:{})};
     return this.planning?{...detail,search_plan:await this.planning.forBatch(detail)}:detail;
   }
   async list({limit=50}={}) {

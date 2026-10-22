@@ -44,6 +44,7 @@ export const PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY = '061_phase13_automation_
 export const PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY = '062_phase13_auto_first_touch_reply_bridge.sql';
 export const CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY = '063_cleanup_optional_cohort_catalog_snapshot.sql';
 export const CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY = '064_crm_followup_pipeline.sql';
+export const GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY = '065_global_markets_categories_search_cost.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -85,6 +86,7 @@ const phase13AutomationControlPath = path.resolve(projectRoot,'database/migratio
 const phase13AutoReplyBridgePath = path.resolve(projectRoot,'database/migrations',PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY);
 const cleanupOptionalCatalogPath = path.resolve(projectRoot,'database/migrations',CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY);
 const crmFollowupPipelinePath = path.resolve(projectRoot,'database/migrations',CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY);
+const globalMarketsCategoriesSearchCostPath = path.resolve(projectRoot,'database/migrations',GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -688,7 +690,7 @@ export async function verifyPhase13AutoReplyBridgeMigration(client){
 // re-running SQL; each migration's own verification still has to pass.
 async function assertFreshInstallBaseline(pool){
   const state=(await pool.query(`SELECT to_regclass('leadgen.schema_migrations') ledger,
-    to_regclass('leadgen.crm_followup_drafts') latest`)).rows[0];
+    to_regclass('leadgen.research_batch_cost_estimates') latest`)).rows[0];
   if(!state.latest)throw new Error('Baseline requires a database created from all migration files');
   if(state.ledger&&Number((await pool.query('SELECT count(*)::int count FROM leadgen.schema_migrations')).rows[0].count)>0)
     throw new Error('Baseline is only for a new database with an empty migration ledger');
@@ -808,7 +810,10 @@ export async function applyPhase7Migrations(options = {}) {
   const crmFollowupPipeline=await applyPhase7Migration({...options,
     migrationPath:options.crmFollowupPipelineMigrationPath||crmFollowupPipelinePath,
     appliedBy:options.appliedBy||'dpv-crm-migration-runner'});
-  return {crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const globalMarketsCategoriesSearchCost=await applyPhase7Migration({...options,
+    migrationPath:options.globalMarketsCategoriesSearchCostMigrationPath||globalMarketsCategoriesSearchCostPath,
+    appliedBy:options.appliedBy||'dpv-global-markets-migration-runner'});
+  return {globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -847,6 +852,15 @@ export async function verifyPhase11ControlledApplicationMigration(client){
     EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='controlled_application_inbound_messages' AND column_name='from_address_hash') sender_hash`);
   const row=result.rows[0]||{};if(Number(row.controlled_tables)!==9||!row.production_links||!row.sender_hash)throw new Error('Phase 11 controlled application migration verification failed');
   return{controlled_application_tables_verified:9,production_data_isolation_verified:true,controlled_sender_hash_verified:true};
+}
+
+export async function verifyGlobalMarketsCategoriesSearchCostMigration(client){
+  const result=await client.query(`SELECT to_regclass('leadgen.research_batch_cost_estimates') estimates,
+    to_regclass('leadgen.research_query_executions_reuse_idx') reuse_index,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='research_batch_cost_estimate_immutable' AND NOT tgisinternal) immutable`);
+  const row=result.rows[0]||{};
+  if(!row.estimates||!row.reuse_index||!row.immutable)throw new Error('Global markets/categories/search cost migration verification failed');
+  return{search_cost_control:'BATCH_ESTIMATE_AND_REUSE'};
 }
 
 export async function verifyCrmFollowupPipelineMigration(client){
@@ -911,7 +925,9 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
+      const verification = migrationKey===GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY
+        ?await verifyGlobalMarketsCategoriesSearchCostMigration(client)
+        :migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
         ?await verifyCrmFollowupPipelineMigration(client)
         :migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
         ?await verifyCleanupOptionalCatalogMigration(client)
@@ -999,7 +1015,9 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, baseline ? 'fresh-install-baseline' : appliedBy]
     );
-    const verification = migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
+    const verification = migrationKey===GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY
+      ?await verifyGlobalMarketsCategoriesSearchCostMigration(client)
+      :migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
       ?await verifyCrmFollowupPipelineMigration(client)
       :migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
       ?await verifyCleanupOptionalCatalogMigration(client)

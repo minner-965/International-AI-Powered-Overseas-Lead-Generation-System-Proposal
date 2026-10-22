@@ -28,13 +28,13 @@ test('MC06 AE one category and MX one category expand all frozen languages deter
   assert.deepEqual(plan([scope('MX')]),mx);
   assert.equal(mx.status,'PLANNED');assert.ok(mx.queries.every(q=>q.status==='PLANNED'));
 });
-test('MC06 2 markets x 13 frozen approved categories produces complete matrix without a strategy cap',()=>{
+test('MC06 2 markets x 13 frozen approved categories produces complete matrix; category-independent coverage is planned once per market/language',()=>{
   const scopes=['AE','MX'].flatMap(m=>Array.from({length:13},(_,i)=>scope(m,`CATEGORY_${i}`,`id-${i}`)));
   const result=plan(scopes);
-  assert.equal(result.summary.scopes,26);assert.equal(result.queries.length,546);
-  assert.equal(result.summary.precision_planned,273);assert.equal(result.summary.coverage_planned,273);
-  assert.equal(plan(scopes.filter(s=>s.market_code==='AE')).queries.length,182);
-  assert.equal(plan(scopes.filter(s=>s.market_code==='MX')).queries.length,364);
+  assert.equal(result.summary.scopes,26);assert.equal(result.queries.length,294);
+  assert.equal(result.summary.precision_planned,273);assert.equal(result.summary.coverage_planned,21);
+  assert.equal(plan(scopes.filter(s=>s.market_code==='AE')).queries.length,98);
+  assert.equal(plan(scopes.filter(s=>s.market_code==='MX')).queries.length,196);
   assert.equal(new Set(result.queries.map(q=>q.fingerprint)).size,result.queries.length);
   assert.equal(result.samples.PRECISION_LANE.length,5);assert.equal(result.samples.COVERAGE_LANE.length,5);
 });
@@ -73,7 +73,8 @@ test('MC06 duplicate frozen scope/language/alias does not duplicate a logical qu
   const s={...scope(),languages:['en','en']};const result=plan([s,s]);
   assert.equal(result.queries.length,14);
   const other={...s,category_scope_id:'another-approved-scope'};
-  assert.equal(plan([s,other]).queries.length,28);
+  // Precision queries name the category and stay per scope; broad coverage text is shared.
+  assert.equal(plan([s,other]).queries.length,21);
 });
 test('MC06 fair iterator alternates backlogs and lets remaining lane finish',()=>{
   const queries=[{lane:'PRECISION_LANE',id:'p1'},{lane:'PRECISION_LANE',id:'p2'},{lane:'PRECISION_LANE',id:'p3'},{lane:'COVERAGE_LANE',id:'c1'}];
@@ -104,4 +105,18 @@ test('MC06 official domain priority requires explicit prior identity and never p
   const result=evaluateDomainPolicy('https://www.example.org/contact',{config,verifiedOfficialDomain:'example.org',pageRole:'CONTACT'});
   assert.equal(result.action,'PRIORITIZE');assert.equal(result.identity_evidence,false);
   assert.equal(evaluateDomainPolicy('javascript:alert(1)',{config}).action,'BLOCK');
+});
+
+test('Coverage queries that do not render the category share a fingerprint across categories; precision queries do not',()=>{
+  const a=plan([scope('AE','TOPS','cat-a')]);const b=plan([scope('AE','DRESSES','cat-b')]);
+  const coverageA=a.queries.filter(q=>q.lane==='COVERAGE_LANE');const coverageB=b.queries.filter(q=>q.lane==='COVERAGE_LANE');
+  assert.ok(coverageA.length>0&&coverageA.every(q=>q.category_independent===true));
+  assert.deepEqual(coverageA.map(q=>q.fingerprint).sort(),coverageB.map(q=>q.fingerprint).sort());
+  assert.ok(a.queries.filter(q=>q.lane==='PRECISION_LANE').every(q=>!q.category_independent));
+});
+test('A market language without vocabulary falls back to English instead of planning zero queries',()=>{
+  const result=plan([{...scope(),languages:['zz']}]);
+  assert.equal(result.summary.planned_query_count,14);
+  assert.ok(result.queries.every(q=>q.language==='en'));
+  assert.ok(result.skipped.some(s=>s.reason==='LANGUAGE_VOCABULARY_NOT_CONFIGURED'&&s.fallback_language==='en'));
 });

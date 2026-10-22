@@ -1,0 +1,160 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {readdir,readFile} from 'node:fs/promises';
+import pg from 'pg';
+import {applyPhase7Migrations,GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+import {ResearchBatchService} from '../src/researchBatch/ResearchBatchService.js';
+import {SearchPlanService} from '../src/searchPlanning/SearchPlanService.js';
+import {SearchCostControl,loadSearchCostConfig} from '../src/search/SearchCostControl.js';
+import {FrozenSearchPlanExecutor} from '../src/search/FrozenSearchPlanExecutor.js';
+import {PgFrozenSearchStore} from '../src/search/PgFrozenSearchStore.js';
+import {CategoryScopeService} from '../src/categoryProcurement/CategoryScopeService.js';
+
+// Isolated PostgreSQL proof for migration 065 and the search cost controls. Zero provider calls:
+// the search provider below is an in-process double.
+//   GLOBAL_MARKETS_TEST_ADMIN_URL=postgresql://postgres@127.0.0.1:55432/postgres
+// Each test builds its own throwaway database from the migration files.
+const adminUrl=process.env.GLOBAL_MARKETS_TEST_ADMIN_URL||process.env.CRM_PIPELINE_TEST_ADMIN_URL||'';
+const migrations=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../database/migrations');
+const actor={identity:'simon',role:'MANAGEMENT'};
+
+async function withDatabase(source,run){
+  const name=`gm_it_${crypto.randomBytes(4).toString('hex')}`;
+  const admin=new pg.Client({connectionString:adminUrl});await admin.connect();
+  try{await admin.query(source?`CREATE DATABASE ${name} TEMPLATE ${pg.escapeIdentifier(source)}`:`CREATE DATABASE ${name}`);}finally{await admin.end();}
+  const url=new URL(adminUrl);url.pathname=`/${name}`;
+  const pool=new pg.Pool({connectionString:url.toString(),max:6});
+  try{return await run(pool,name);}
+  finally{
+    await pool.end();
+    const cleanup=new pg.Client({connectionString:adminUrl});await cleanup.connect();
+    try{await cleanup.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);}finally{await cleanup.end();}
+  }
+}
+
+// An existing installation at 064: every file through 064 applied and recorded in the runner ledger.
+async function databaseAt064(pool){
+  const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)&&file<'065').sort();
+  for(const file of files)await pool.query(await readFile(path.join(migrations,file),'utf8'));
+  for(const file of files.filter(file=>file>='025')){
+    const sql=await readFile(path.join(migrations,file),'utf8');
+    await pool.query(`INSERT INTO leadgen.schema_migrations(migration_key,checksum_sha256,applied_by) VALUES($1,$2,'test-064')`,
+      [file,crypto.createHash('sha256').update(sql).digest('hex')]);
+  }
+}
+const digest=value=>crypto.createHash('sha256').update(value).digest('hex');
+async function approveCategories(pool,keys){
+  const scopes=new CategoryScopeService({pool});
+  const candidates=await scopes.listCandidates();
+  const picked=keys.map(key=>candidates.find(c=>`${c.product_profile}:${c.normalized_category}`===key));
+  const draft=await scopes.createDraft({revision:1,source_type:'MANAGEMENT_APPROVED',source_reference:'test',source_digest:digest(keys.join()),actor:'simon',
+    scopes:picked.map((c,i)=>({client_key:`s${i}`,product_profile:c.product_profile,normalized_category:c.normalized_category,source_fact_digest:c.source_fact_digest}))});
+  return scopes.approveRevision({draft_revision_id:draft.id,revision:2,source_reference:'test',source_digest:digest(`a:${keys.join()}`),actor:'simon',actor_role:'MANAGEMENT'});
+}
+
+function mockProvider(){
+  const calls=[];
+  return {calls,provider:{name:'exa',endpoint:'https://search.invalid/search',search:async request=>{
+    calls.push(request.query);
+    return {provider:'exa',query:request.query,credits:1,costDollars:{total:0.007},
+      results:[1,2].map(rank=>({title:`Buyer ${rank}`,url:`https://buyer-${rank}-${crypto.createHash('md5').update(request.query).digest('hex').slice(0,8)}.example/`,snippet:'Importer',rank,provider_score:null}))};
+  }}};
+}
+
+function services(pool,env={}){
+  const costControl=new SearchCostControl({pool,config:loadSearchCostConfig(env),providerOrder:async()=>['exa']});
+  const planning=new SearchPlanService({pool});
+  return {costControl,planning,batches:new ResearchBatchService({pool,planning,costControl})};
+}
+
+test('migration 065 applies to a fresh database built from every migration file and baselines',{skip:!adminUrl},async()=>{
+  await withDatabase(null,async(pool,name)=>{
+    const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
+    assert.equal(files.at(-1),GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY);
+    for(const file of files)await pool.query(await readFile(path.join(migrations,file),'utf8'));
+    const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
+    assert.equal(result.globalMarketsCategoriesSearchCost.status,'BASELINED');
+    const replay=await applyPhase7Migrations({pool,expectedDatabase:name});
+    assert.equal(replay.globalMarketsCategoriesSearchCost.status,'SKIPPED_ALREADY_APPLIED');
+  });
+});
+
+test('migration 065 applies through the runner on a database at 064 and enforces search cost controls',{skip:!adminUrl},async()=>{
+  await withDatabase(null,async(pool,name)=>{
+    await databaseAt064(pool);
+    await approveCategories(pool,['WOMENSWEAR:DRESSES','WOMENSWEAR:TOPS']);
+    const applied=await applyPhase7Migrations({pool,expectedDatabase:name});
+    assert.equal(applied.globalMarketsCategoriesSearchCost.status,'APPLIED');
+    assert.equal(applied.crmFollowupPipeline.status,'SKIPPED_ALREADY_APPLIED');
+
+    const categories=(await pool.query(`SELECT id,normalized_category FROM leadgen.dpv_product_category_scope_current
+      WHERE scope_status='ACTIVE' AND approval_status='APPROVED' ORDER BY normalized_category`)).rows;
+    assert.ok(categories.length>=2,'template needs at least two approved categories');
+    const [first,second]=categories;
+
+    // Per-batch query cap.
+    const capped=services(pool,{SEARCH_MAX_QUERIES_PER_BATCH:'5'});
+    await assert.rejects(capped.batches.create({market_codes:['AE'],category_scope_ids:[first.id],idempotency_key:'cap-1'},actor),
+      {code:'SEARCH_BATCH_QUERY_CAP_EXCEEDED',status:409});
+    assert.equal(Number((await pool.query('SELECT count(*) FROM leadgen.research_jobs')).rows[0].count),0);
+
+    // A batch within the caps freezes its estimate.
+    const {batches,costControl}=services(pool,{});
+    const preview=await batches.preview({market_codes:['AE'],category_scope_ids:[first.id]});
+    assert.ok(preview.estimated_queries>0);assert.equal(preview.creation_allowed,true);
+    const batch=await batches.create({market_codes:['AE'],category_scope_ids:[first.id],idempotency_key:'run-1'},actor);
+    assert.equal(batch.estimated_queries,preview.estimated_queries);
+    const jobOne=batch.children[0].research_job_id;
+
+    // First run calls the provider once per planned query.
+    const mock=mockProvider();
+    const router={select:async()=>({provider:'exa',reason:'TEST_ORDER'}),provider:()=>mock.provider};
+    const executor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router,costControl});
+    const runOne=await executor.executeJob(jobOne);
+    assert.equal(runOne.status,'COMPLETED');assert.equal(mock.calls.length,preview.estimated_queries);
+    const spend=await costControl.monthSpend();
+    assert.equal(spend.recorded_queries,mock.calls.length);
+    assert.ok(Math.abs(spend.recorded_cost_usd-mock.calls.length*0.007)<1e-6);
+
+    // A later run of the same scope reuses every stored result without another provider call.
+    await pool.query(`UPDATE leadgen.research_jobs SET status='COMPLETED',completed_at=now() WHERE id=$1`,[jobOne]);
+    const again=await batches.preview({market_codes:['AE'],category_scope_ids:[first.id]});
+    assert.equal(again.search_cost.estimated_reused_queries,again.estimated_queries);assert.equal(again.estimated_cost_usd,0);
+    const batchTwo=await batches.create({market_codes:['AE'],category_scope_ids:[first.id],idempotency_key:'run-2'},actor);
+    const jobTwo=batchTwo.children[0].research_job_id;assert.notEqual(jobTwo,jobOne);
+    const before=mock.calls.length;
+    const runTwo=await executor.executeJob(jobTwo);
+    assert.equal(runTwo.status,'COMPLETED');assert.equal(mock.calls.length,before,'reuse must not call the provider');
+    assert.equal(runTwo.reused_queries,again.estimated_queries);
+    const reuseEvents=(await pool.query(`SELECT status,used_units,result_payload->'audit' audit FROM leadgen.provider_usage_events
+      WHERE research_job_id=$1`,[jobTwo])).rows;
+    assert.equal(reuseEvents.length,again.estimated_queries);
+    assert.ok(reuseEvents.every(row=>row.status==='SKIPPED'&&row.used_units===0&&row.audit.reuse===true&&row.audit.provider_cost_usd===0));
+    assert.ok(Number((await pool.query(`SELECT count(*) FROM leadgen.research_candidates WHERE research_job_id=$1`,[jobTwo])).rows[0].count)>0);
+    const unchanged=await costControl.monthSpend();
+    assert.equal(unchanged.recorded_cost_usd,spend.recorded_cost_usd);
+
+    // Category-independent coverage queries of a second category are reused too; only new precision text is paid.
+    const third=await batches.create({market_codes:['AE'],category_scope_ids:[second.id],idempotency_key:'run-3'},actor);
+    const beforeThird=mock.calls.length;
+    const runThree=await executor.executeJob(third.children[0].research_job_id);
+    assert.ok(runThree.reused_queries>0);assert.equal(mock.calls.length-beforeThird,third.estimated_queries-runThree.reused_queries);
+
+    // Monthly budget: creation is refused and queued work pauses before a paid call.
+    const tight=services(pool,{SEARCH_MAX_USD_PER_MONTH:String(unchanged.recorded_cost_usd)});
+    await pool.query(`UPDATE leadgen.research_market_registry SET status='ACTIVE',search_enabled=true WHERE market_code='MX'`);
+    await assert.rejects(tight.batches.create({market_codes:['MX'],category_scope_ids:[first.id],idempotency_key:'budget-1'},actor),
+      {code:'SEARCH_MONTHLY_BUDGET_EXCEEDED',status:409});
+    const queued=await batches.create({market_codes:['MX'],category_scope_ids:[first.id],idempotency_key:'budget-2'},actor);
+    const paused=await new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router,costControl:tight.costControl})
+      .executeJob(queued.children[0].research_job_id);
+    assert.equal(paused.status,'PAUSED_SEARCH_MONTHLY_BUDGET');
+
+    const estimate=(await pool.query('SELECT estimated_queries FROM leadgen.research_batch_cost_estimates WHERE batch_id=$1',[batch.batch_id])).rows[0];
+    assert.equal(estimate.estimated_queries,preview.estimated_queries);
+    await assert.rejects(pool.query('DELETE FROM leadgen.research_batch_cost_estimates WHERE batch_id=$1',[batch.batch_id]),/append-only/);
+  });
+});

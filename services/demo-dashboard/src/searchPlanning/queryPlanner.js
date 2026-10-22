@@ -15,7 +15,10 @@ export function normalizeSearchQuery(query){
 export function queryFingerprint(query){
   const fields=['strategy_version','strategy_id','lane','market_id','category_id','language','normalized_query','provider_purpose'];
   if(fields.some(field=>!text(query[field])))throw codeError('QUERY_FINGERPRINT_FIELD_REQUIRED');
-  return planningDigest(Object.fromEntries(fields.map(field=>[field,field==='normalized_query'?lower(query[field]):query[field]])));
+  // Coverage queries that do not render the category are category independent: the same
+  // market/language/text is one logical query however many categories share the scope.
+  return planningDigest(Object.fromEntries(fields.map(field=>[field,field==='normalized_query'?lower(query[field])
+    :field==='category_id'&&query.category_independent===true?'*':query[field]])));
 }
 
 // A work-conserving weighted round robin: an empty lane consumes no quota and
@@ -55,6 +58,12 @@ function approvedAliases(scope,language){
       &&(!alias.status||alias.status==='ACTIVE'))
     .map(alias=>term(alias.raw_alias||alias.normalized_alias)).filter(Boolean);
 }
+export const FALLBACK_LANGUAGE='en';
+// A frozen language without configured vocabulary is planned with English terms so a
+// market never silently plans zero queries; the gap is still reported in skipped.
+function effectiveLanguages(languages,locales){
+  return unique(languages.map(lower).filter(Boolean).map(language=>locales[language]?language:FALLBACK_LANGUAGE));
+}
 function render(template,values){return template.replace(/\{([a-z_]+)\}/g,(_match,key)=>values[key]??'');}
 
 export function planSearchQueries(snapshot,{config=loadSearchPlanningConfig(),providerPurpose='COMPANY_DISCOVERY'}={}){
@@ -67,8 +76,10 @@ export function planSearchQueries(snapshot,{config=loadSearchPlanningConfig(),pr
   for(const scope of scopes){
     const marketId=text(scope.market_code||scope.country_code);
     const categoryId=text(scope.category_scope_id||scope.category_id);
-    const languages=unique(scope.languages.map(lower).filter(Boolean));
-    for(const language of languages){
+    for(const language of unique(scope.languages.map(lower).filter(Boolean)))
+      if(!config.strategies.locales[language])skipped.push({market_id:marketId,category_id:categoryId,language,
+        reason:'LANGUAGE_VOCABULARY_NOT_CONFIGURED',fallback_language:FALLBACK_LANGUAGE});
+    for(const language of effectiveLanguages(scope.languages,config.strategies.locales)){
       const dictionary=config.strategies.locales[language];
       for(const strategy of strategies){
         const note={market_id:marketId,category_id:categoryId,language,strategy_id:strategy.id,lane:strategy.lane};
@@ -93,7 +104,8 @@ export function planSearchQueries(snapshot,{config=loadSearchPlanningConfig(),pr
           const query={...note,strategy_version:config.strategies.version,provider_purpose:providerPurpose,
             buyer_type:strategy.buyer_type,selected_buyer_types:matchedBuyers,original_query:original,
             normalized_query:normalizeSearchQuery(original),status:'PLANNED',priority:strategy.priority,
-            domain_policy_version:config.domainPolicy.version};
+            domain_policy_version:config.domainPolicy.version,
+            ...(strategy.category_mode==='EXACT_AND_APPROVED_ALIAS'?{}:{category_independent:true})};
           query.fingerprint=queryFingerprint(query);
           if(!seen.has(query.fingerprint)){seen.add(query.fingerprint);queries.push(query);}
         }

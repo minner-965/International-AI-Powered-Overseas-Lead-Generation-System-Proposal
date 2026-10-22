@@ -20,6 +20,9 @@ export class SearchPlanService {
         throw Object.assign(new Error('SEARCH_PLAN_VERSION_CONFLICT'),{status:409});
       return prior.rows[0].plan;
     }
+    // A frozen plan without queries would otherwise "complete" without searching.
+    if(!(Number(plan.summary?.planned_query_count)>0))
+      throw Object.assign(new Error('SEARCH_PLAN_EMPTY'),{code:'SEARCH_PLAN_EMPTY',status:422,retryable:false});
     const inserted=await client.query(`INSERT INTO leadgen.research_query_plans
       (batch_id,research_job_id,strategy_version,scope_digest,config_digest,scope_snapshot,config_snapshot,plan)
       VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) ON CONFLICT DO NOTHING RETURNING id`,[

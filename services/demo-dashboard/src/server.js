@@ -49,6 +49,7 @@ import {SearchProviderRouter} from './search/SearchProviderRouter.js';
 import {CurrentCapacityRouter} from './search/CurrentCapacityRouter.js';
 import {FrozenSearchPlanExecutor} from './search/FrozenSearchPlanExecutor.js';
 import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
+import {SearchCostControl,loadSearchCostConfig} from './search/SearchCostControl.js';
 import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/AutomationControlService.js';
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
@@ -140,8 +141,10 @@ const providerStates=async()=>({exa:await exaProviderAccountState.getState(),tav
 const currentProviderState=async()=>{const states=await providerStates();const control=await automationControls.get(AUTOMATION_CONTROLS.RESEARCH_PROVIDER_EXECUTION);const order=(control.settings?.provider_order||['exa','tavily']).map(v=>String(v).toLowerCase());for(const p of order)if(states[p]?.status==='AVAILABLE')return states[p];return states[order[0]]||{provider_code:'SEARCH',status:'UNAVAILABLE'};};
 const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,providerState:currentProviderState,providerOrder:['exa','tavily'],audit});
 const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOrder:()=>phase13Automation.currentProviderOrder(),getStates:providerStates});
+const searchCostControl=new SearchCostControl({pool,config:loadSearchCostConfig(process.env),
+  providerOrder:()=>phase13Automation.currentProviderOrder()});
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
-  isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
+  costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
@@ -552,6 +555,7 @@ researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phas
   isEnabled:()=>phase13Automation.isSearchEnabled()});
 searchPlanService=new SearchPlanService({pool});
 const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,planning:searchPlanService,
+  costControl:searchCostControl,
   ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
   runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
 autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
