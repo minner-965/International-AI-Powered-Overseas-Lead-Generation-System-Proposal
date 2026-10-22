@@ -1684,9 +1684,9 @@ export class Phase7Repository {
     const companyId = company_id ? requiredUuid(company_id,'company_id') : null;
     const result = await this.pool.query(`SELECT i.id,i.provider,i.provider_message_id,i.thread_id,i.correlation_status,
       i.subject_sanitized,i.body_text_sanitized,i.attachment_status,i.received_at,
-      c.intent,c.confidence,c.review_status,coalesce(t.company_id,m.company_id) company_id,t.thread_status
+      c.id classification_id,c.classification_revision,c.intent,c.confidence,c.review_status,coalesce(t.company_id,m.company_id) company_id,t.thread_status
       FROM leadgen.inbound_messages i
-      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)c ON true
+      LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.classification_revision DESC,x.created_at DESC LIMIT 1)c ON true
       LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
       LEFT JOIN leadgen.outbound_messages m ON m.id=i.correlation_outbound_message_id
       WHERE ($2::uuid IS NULL OR coalesce(t.company_id,m.company_id)=$2)
