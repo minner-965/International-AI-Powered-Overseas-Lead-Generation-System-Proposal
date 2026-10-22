@@ -17,7 +17,7 @@ Could you let me know whether this is of interest, or point me to the right pers
 
 Best regards,
 Simon
-DPV International
+SIM International
 [Reply-To]`}),
   3:Object.freeze({key:'FOLLOWUP_3_LAST_NOTE',subject:'[Category] catalogue for [Company]',body_text:`Hello,
 
@@ -29,7 +29,7 @@ If this is not relevant, just reply and I will not follow up again.
 
 Best regards,
 Simon
-DPV International
+SIM International
 [Reply-To]`}),
 });
 

@@ -268,7 +268,7 @@ export class Phase7Service {
     return{items:[...decorated,...additions],sending_enabled:sendingReasons.length===0,sending_blocked_reasons:sendingReasons,
       marketing_context:context?{id:context.id,version:context.version,status:context.approval_decision||context.context_status}:null,
       sender_configured:Boolean(this.env.SMTP_FROM_EMAIL&&this.env.SMTP_REPLY_TO),
-      template:{subject:'Womenswear and general merchandise cooperation',body_text:'Hello,\n\nI am contacting you from DPV. We supply womenswear and Yiwu general merchandise. We would like to explore a potential cooperation based on the product categories relevant to your business.\n\nWould you be open to receiving a brief introduction to our relevant product offering?\n\nIf you prefer not to receive further emails, please reply unsubscribe and we will stop contacting this address.\n\nBest regards,\nDPV Sales Team'}};
+      template:{subject:'Womenswear and general merchandise cooperation',body_text:'Hello,\n\nI am contacting you from SIM International. We supply womenswear and Yiwu general merchandise. We would like to explore a potential cooperation based on the product categories relevant to your business.\n\nWould you be open to receiving a brief introduction to our relevant product offering?\n\nIf you prefer not to receive further emails, please reply unsubscribe and we will stop contacting this address.\n\nBest regards,\nDPV Sales Team'}};
   }
 
   async prepareWorkbenchDraft(companyId,body,user){
@@ -1337,7 +1337,7 @@ export class Phase7Service {
     importId:record.id,importType:record.import_type,status:record.api_status,sourceSha256:record.content_sha256,dryRun:{rows:rows.map(row=>({rowNumber:row.row_number,rowStatus:row.row_status,errorCodes:row.error_codes,warningCodes:[],reviewReasons:[]}))}
     });const normalized=report.map(row=>({...row,error_codes:(row.error_codes||[]).join('; '),warning_codes:(row.warning_codes||[]).join('; '),review_reasons:(row.review_reasons||[]).join('; ')}));
     const headers=['row_number','row_status','error_codes','warning_codes','review_reasons'];const buffer=await buildXlsxExportBuffer({worksheetName:'Import Errors',headers,rows:normalized});
-    return{buffer,filename:`DPV_Import_Errors_${record.id}.xlsx`,row_count:normalized.length};}
+    return{buffer,filename:`SIM_Import_Errors_${record.id}.xlsx`,row_count:normalized.length};}
 
   async createDataExport(body,user){const request={exportType:upper(body?.export_type),format:upper(body?.format||'XLSX'),mode:upper(body?.mode||'CURRENT_FILTER'),
     requesterRole:user.role,requesterIdentity:user.identity,financeAuthorized:user.role==='FINANCE'&&body?.finance_authorized===true,
@@ -1460,7 +1460,7 @@ export class Phase7Service {
       if(sha256(String(token||''))!==row.download_token_hash)throw Object.assign(new Error('Download token invalid'),{code:'DOWNLOAD_TOKEN_INVALID',status:403});
       const resolved=path.resolve(row.internal_file_path);const relative=path.relative(this.exportDir,resolved);if(relative.startsWith('..')||path.isAbsolute(relative))throw Object.assign(new Error('Export path invalid'),{code:'EXPORT_PATH_INVALID',status:500});
       const bytes=await readFile(resolved);authorizationStatus='AUTHORIZED';const audit=buildDownloadAuditEvent({job:{id:row.id},requesterIdentity:user.identity,authorizationStatus,downloadToken:token});await this.repository.auditDownload(audit);
-      return{bytes,filename:`DPV_${row.export_type}_${row.id}.${row.export_format.toLowerCase()}`,mimeType:row.export_format==='CSV'?'text/csv; charset=utf-8':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
+      return{bytes,filename:`SIM_${row.export_type}_${row.id}.${row.export_format.toLowerCase()}`,mimeType:row.export_format==='CSV'?'text/csv; charset=utf-8':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
     }catch(error){const audit=buildDownloadAuditEvent({job:{id:row.id},requesterIdentity:user.identity,authorizationStatus,downloadToken:token});await this.repository.auditDownload(audit);throw error;}
   }
 

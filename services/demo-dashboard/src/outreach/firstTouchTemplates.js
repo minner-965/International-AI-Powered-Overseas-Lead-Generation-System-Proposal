@@ -8,7 +8,7 @@ const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).for
 export const FIRST_TOUCH_TEMPLATES=freeze({
  A_NAMED_BUYER:{subject:'[Category] supply for [Company]',body_text:`Hi [First Name],
 
-I’m Simon from DPV International. We supply [Target Category] for overseas retailers, importers and distributors.
+I’m Simon from SIM International. We supply [Target Category] for overseas retailers, importers and distributors.
 
 I came across [Company] while researching businesses active in [Matched Category] in [Market].
 
@@ -20,11 +20,11 @@ Would you be the right person to discuss this with?
 
 Best regards,
 Simon
-DPV International
+SIM International
 [Reply-To]`},
  B_IMPORTER_WHOLESALER_DISTRIBUTOR:{subject:'Competitive [Category] range for [Company]',body_text:`Hi [First Name or Team],
 
-I’m Simon from DPV International. We supply [Target Category] to international importers, wholesalers and retail businesses.
+I’m Simon from SIM International. We supply [Target Category] to international importers, wholesalers and retail businesses.
 
 I noticed that [Company] is active in [Matched Category] in [Market], so I wanted to introduce our range.
 
@@ -36,11 +36,11 @@ Would this be relevant to your business?
 
 Best regards,
 Simon
-DPV International
+SIM International
 [Reply-To]`},
  C_OFFICIAL_GENERIC_MAILBOX:{subject:'[Category] enquiry for [Company]',body_text:`Hello,
 
-I’m Simon from DPV International. We supply [Target Category] for overseas retail, wholesale and distribution customers.
+I’m Simon from SIM International. We supply [Target Category] for overseas retail, wholesale and distribution customers.
 
 We found [Company] while researching businesses active in [Matched Category] in [Market].
 
@@ -52,7 +52,7 @@ If relevant, I can send a concise catalogue for review.
 
 Best regards,
 Simon
-DPV International
+SIM International
 [Reply-To]`}
 });
 const genericNames=new Set(['info','sales','contact','enquiries','enquiry','inquiries','inquiry','office','hello','support','admin']);

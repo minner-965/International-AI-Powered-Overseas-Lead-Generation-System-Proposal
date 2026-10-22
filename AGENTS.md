@@ -1,4 +1,6 @@
-# DPV Company-Facing Copy Rules
+# SIM外贸获客系统 Company-Facing Copy Rules
+
+The product name is **SIM外贸获客系统** (English: SIM Overseas Prospecting); the company name in customer-facing email is **SIM International**. Internal identifiers that still carry `DPV` (database objects, migration names, `DPV_*` environment variables, template keys such as `DPV_FIRST_TOUCH_V1`, file names) are kept for history and compatibility; never show them to users.
 
 ## Current execution boundary — CL14–CL16 and Exa verification
 
@@ -68,16 +70,17 @@ At the start of every task, complete both checks below before implementation beg
 - Existing features receive the shared UI without changing their APIs, data semantics, form names or values, request payloads, endpoints, or stable DOM hooks.
 - Future features must extend the same UI system. Reuse an existing component pattern before adding a new visual pattern.
 - Use semantic design tokens for colors, borders, radii, shadows, and states. Do not introduce raw component colors when an existing token covers the role.
-- Company-facing labels use the established `.bi` structure with Chinese above English at equal size and weight. Do not rewrite source evidence or returned business data.
+- Company-facing labels use the `.bi` structure: Chinese is the primary label; English is the same wording one size smaller, normal weight, muted colour (below the Chinese for navigation, table headers and form labels; inline after it for card titles, buttons, tabs and pills). Simon approved this in October 2026 (desktop mockup `docs/ui/mockup-v4/`). Do not rewrite source evidence or returned business data.
+- Phone layout (≤900px) follows mainstream mobile workbench / mobile CRM patterns: fixed bottom tab bar, a workbench grid exposing every function, edge-to-edge list rows, segmented detail pages and a fixed bottom action bar. Every function button stays visible with a text label and a ≥44px target; do not hide functions behind a hamburger or "more" menu.
 - Verify frontend changes in the browser at desktop and mobile widths, including keyboard focus, loading, empty, error, long-content, and reduced-motion states.
 
-## DPV user-visible frontend — Phase 12 authority
+## SIM user-visible frontend — Phase 12 authority
 
 - User correction (2026-09-07): faithfully reproduce the reference's content layout, proportions, density, spacing, typography hierarchy, cards and chart forms—not merely its shell or colors. Compare reference and implementation at the same viewport, inspect the actual screenshots, and record deviations. A page is not complete before this visual comparison passes. Preserve actual data, original business functionality and equal-size bilingual labels; explicitly document adaptations required by these constraints. Where the supplied reference does not contain a page, extend its exact shared component language rather than claiming an unseen page was reproduced pixel-for-pixel.
 - Mobile correction (2026-09-07): use a compact list-to-detail composition, not every desktop table field stacked into an oversized card. Prioritize company/job identity, main status, essential channel and next action; disclose secondary facts in the existing details, drawers or expandable sections. Keep bilingual labels equal and readable, retain 44px interactive targets and native zoom. Validate actual 375/390px screenshots after transitions and loading finish; an overflow check alone is not visual acceptance.
 
 - Before changing `public/`, frontend templates, workspace CSS, dashboard charts, user-visible labels or interaction flows, use `$dpv-workspace-ui`.
-- The sole visual reference is `docs/ui/reference/dpv-workspace-reference-dashboard.html`. Preserve its dark sidebar, white topbar, light-gray canvas, white rounded business cards, proportions, spacing, hierarchy and operational density. The user's explicit corrections override decorative examples in that file.
+- The visual reference is the approved V4 mockup `docs/ui/mockup-v4/` (sq-system style: 220px dark sidebar, white topbar, `#F3F5F8` canvas, primary `#2563EB`, one local stylesheet, no Tabler). `docs/ui/reference/dpv-workspace-reference-dashboard.html` is historical. Preserve its dark sidebar, white topbar, light-gray canvas, white rounded business cards, proportions, spacing, hierarchy and operational density. The user's explicit corrections override decorative examples in that file.
 - Retaining the stack means preserving business code, APIs, database, stable hooks, HTML/CSS/JS runtime and mature component interaction capabilities, **not the old UI appearance**. Sidebar, Topbar, colors, cards, KPI, tables, Company Detail, Opportunities, Contact Queue and Settings must all migrate into one V3 product family. No mixed old/new visual acceptance.
 - Do not copy sample companies, fake metrics, AI marketing copy, remote CDN dependencies, Google Fonts, Font Awesome, remote avatars, gradients/glow, shimmer or hardcoded percentages from the reference into production.
 - Preserve Phase 10 research and Phase 11 approval/SMTP/IMAP/reply/suppression/CRM/export semantics, API payloads, stable hooks, accessibility, mobile and keyboard support. UI work does not authorize new emails, approvals, database edits or research jobs.
@@ -94,8 +97,8 @@ At the start of every task, complete both checks below before implementation beg
 ## New-customer product opportunity rule
 
 - Treat new-customer product scoring as a category-level supply-opportunity decision.
-- Compare the target company's public procurement demand or operated product categories with DPV's approved supply categories/profile scope.
-- Exact, similar, or same approved profile scope means DPV can supply that category and therefore has a product-category cooperation opportunity.
+- Compare the target company's public procurement demand or operated product categories with SIM's approved supply categories/profile scope.
+- Exact, similar, or same approved profile scope means SIM can supply that category and therefore has a product-category cooperation opportunity.
 - Do not require or present an exact individual SKU match. Do not create product-master candidates or manual tasks to supplement a corresponding product.
 - Product and historical customer-deal imports are inputs for approved category/profile scope, historical ICP, and customer scoring baselines only.
 - Keep customer-side missing procurement/category evidence as `NEEDS_PRODUCT_EVIDENCE`; keep confirmed out-of-scope categories as `PRODUCT_MISMATCH`.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { FeishuBitableAdapter, buildFeishuFields, clientTokenFor, feishuConfigured, loadFeishuFieldMap } from '../src/crm/feishuBitableAdapter.js';
+import { FEISHU_LABELS, FeishuBitableAdapter, buildFeishuFields, clientTokenFor, feishuConfigured, loadFeishuFieldMap } from '../src/crm/feishuBitableAdapter.js';
 import { renderFollowupTemplate, FOLLOWUP_TEMPLATES } from '../src/crm/followupTemplates.js';
 import { CrmService } from '../src/crm/service.js';
 import { Phase7Service } from '../src/phase7/service.js';
@@ -37,7 +37,7 @@ test('field map turns an outbox payload into named Bitable columns with date col
   const fields=buildFeishuFields({outbox:OUTBOX,company:{company_name:'Al Noor Fashion Trading LLC',country_code:'AE'},
     payload:{activity_type:'CALL',summary:'Discussed linen dresses',owner:'li.na',occurred_at:'2026-10-21T08:30:00.000Z',source_reference:'activity=1'}},loadFeishuFieldMap());
   assert.equal(fields['同步编号'],'crm:activity:abc');assert.equal(fields['企业'],'Al Noor Fashion Trading LLC');
-  assert.equal(fields['事项'],'CALL');assert.equal(fields['时间'],Date.parse('2026-10-21T08:30:00.000Z'));
+  assert.equal(fields['事项'],'电话');assert.equal(fields['记录类型'],'跟进活动');assert.equal(fields['记录时间'],Date.parse('2026-10-21T08:30:00.000Z'));
   assert.equal(Object.hasOwn(fields,'截止时间'),false);
 });
 
@@ -130,4 +130,17 @@ test('CRM routes are mounted with role guards and the scan queue is opt-in',asyn
   assert.match(router,/followup-drafts\/:id\/decision',\.\.\.approve/);
   for(const line of router.split('\n').filter(value=>/router\.(post|patch)\(/.test(value)))assert.match(line,/\.\.\.(salesWrite|approve)/);
   assert.match(queue,/booleanEnv\(env\.CRM_FOLLOWUP_DRAFTS_ENABLED,false\)/);
+});
+
+test('Feishu rows use the business labels of the import template',()=>{
+  const map=loadFeishuFieldMap();
+  const row=(operation,payload)=>buildFeishuFields({outbox:{...OUTBOX,operation},payload,company:null},map);
+  assert.deepEqual([row('UPDATE_ACTIVITY',{activity_type:'CONTACTED',summary:'First-touch email sent'})['事项'],row('UPDATE_ACTIVITY',{activity_type:'CONTACTED',summary:'First-touch email sent'})['内容']],['已发开发信','已发送开发信']);
+  assert.equal(row('UPDATE_ACTIVITY',{activity_type:'CONTACTED',summary:'Follow-up email 3 sent'})['事项'],'已发跟进邮件');
+  assert.equal(row('UPDATE_ACTIVITY',{activity_type:'REPLIED',summary:'Reply received: HUMAN_POSITIVE'})['内容'],'收到客户回复');
+  assert.deepEqual([row('CREATE_TASK',{task_type:'QUOTATION'})['记录类型'],row('CREATE_TASK',{task_type:'QUOTATION'})['事项']],['新任务','报价']);
+  assert.equal(row('CREATE_TASK',{task_type:'MEETING'})['事项'],'会议安排');
+  assert.deepEqual([row('UPDATE_OPPORTUNITY',{stage:'NEGOTIATING'})['记录类型'],row('UPDATE_OPPORTUNITY',{stage:'NEGOTIATING'})['阶段']],['阶段变化','洽谈']);
+  assert.equal(row('UPDATE_ACTIVITY',{activity_type:'CALL',summary:'客户要求周五再联系'})['内容'],'客户要求周五再联系');
+  assert.equal(Object.keys(FEISHU_LABELS.stage).length,8);
 });

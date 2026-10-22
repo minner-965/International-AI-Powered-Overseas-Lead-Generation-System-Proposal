@@ -87,12 +87,12 @@ const FIELD_LABELS = Object.freeze({
   product_category_score_band:['类目评分等级','Category Score Band'],
   category_procurement_match:['目标类目匹配','Target Category Match'], supplier_access:['历史准入资料','Historical access data'],
   customer_procurement_categories:['客户采购/经营类目','Customer Procurement / Categories'],
-  dpv_supply_categories:['DPV 可供货类目','DPV Supply Categories'], category_opportunity_basis:['类目机会依据','Category Opportunity Basis'],
+  dpv_supply_categories:['SIM 可供货类目','SIM Supply Categories'], category_opportunity_basis:['类目机会依据','Category Opportunity Basis'],
   product_access_matrix:['类目与准入矩阵','Category Access Matrix'], readiness:['跟进准备状态','Readiness'], readiness_blockers:['阻碍项','Blockers'],
   decision_maker:['采购人员','Buying contact'], buying_department:['采购部门','Buying department'], business_contact:['商务联系方式','Business contact'],
   contact_verification:['联系核验','Contact verification'], draft_status:['开发信状态','Draft status'], approval_status:['消息审批','Message approval'],
   send_status:['联系状态','Outreach status'], reply_summary:['回复摘要','Reply summary'], owner:['负责人','Owner'], next_action:['下一步','Next action'],
-  dpv_score:['DPV 评分','DPV Score'], management_baseline_match:['管理基准匹配','Management Baseline Match'],
+  dpv_score:['SIM 评分','SIM Score'], management_baseline_match:['管理基准匹配','Management Baseline Match'],
   mexico_historical_reference_match:['墨西哥历史参考匹配','Mexico Historical Reference Match'], source_reference_urls:['来源链接','Source references'],
   last_assessed_at:['最近评估','Last assessed'], last_verified_at:['最近核验','Last verified'], external_lead_id:['外部线索编号','External lead ID'],
   source_system:['来源系统','Source system'], customer_sales_price:['客户成交价','Customer sales price'], supplier_cost:['供应成本','Supplier cost'], currency:['币种','Currency'],
@@ -308,7 +308,7 @@ function renderExportResult(payload) {
   document.querySelector('#data-export-download')?.addEventListener('click', async event => {
     const button = event.currentTarget;
     setBusy(button,true,['正在准备','Preparing','下载文件','Download file']);
-    try { await downloadResponse(href,`DPV_Export.${text(firstValue(job,['format','export_format'])).toLowerCase() || 'xlsx'}`); document.querySelector('#data-export-status').innerHTML=bi('文件已交给浏览器下载，请查看下载列表。','The file was handed to your browser. Check its downloads list.'); }
+    try { await downloadResponse(href,`SIM_Export.${text(firstValue(job,['format','export_format'])).toLowerCase() || 'xlsx'}`); document.querySelector('#data-export-status').innerHTML=bi('文件已交给浏览器下载，请查看下载列表。','The file was handed to your browser. Check its downloads list.'); }
     catch (error) { document.querySelector('#data-export-status').innerHTML = operationError(error); }
     finally { setBusy(button,false,['正在准备','Preparing','下载文件','Download file']); }
   });
@@ -337,7 +337,7 @@ function wireDataImport() {
     const button = event.currentTarget;
     const type = document.querySelector('#data-import-type')?.value || 'PROSPECT_LEADS';
     setBusy(button,true,['正在准备','Preparing','下载当前模板','Download template']);
-    try { await downloadResponse(`/api/data-imports/templates/${encodeURIComponent(type)}`,`DPV_${type}_Template.xlsx`); }
+    try { await downloadResponse(`/api/data-imports/templates/${encodeURIComponent(type)}`,`SIM_${type}_Template.xlsx`); }
     catch (error) { document.querySelector('#data-import-status').innerHTML = operationError(error); }
     finally { setBusy(button,false,['正在准备','Preparing','下载当前模板','Download template']); }
   });
@@ -383,7 +383,7 @@ function wireDataImport() {
     if (!id) return;
     const button = event.currentTarget;
     setBusy(button,true,['正在准备','Preparing','下载逐行结果','Download row results']);
-    try { await downloadResponse(`/api/data-imports/${encodeURIComponent(id)}/error-report`,'DPV_Import_Row_Results.xlsx'); }
+    try { await downloadResponse(`/api/data-imports/${encodeURIComponent(id)}/error-report`,'SIM_Import_Row_Results.xlsx'); }
     catch (error) { document.querySelector('#data-import-status').innerHTML = operationError(error); }
     finally { setBusy(button,false,['正在准备','Preparing','下载逐行结果','Download row results']); renderImportSummary(importState.record); }
   });

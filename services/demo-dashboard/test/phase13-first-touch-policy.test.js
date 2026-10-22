@@ -17,7 +17,7 @@ test('approved A/B/C deterministic precedence and generic identity separation',(
 test('exact approved immutable template renders Simon and verified variables only',()=>{
  const variables={category:'Dresses',target_category:'dresses',company:'Example',matched_category:'dresses',market:'UAE',reply_to:'sender@example.test',first_name:'Alice'},verified_fields=Object.keys(variables);
  const draft=renderFirstTouchTemplate({template_key:'A_NAMED_BUYER',variables,verified_fields});
- assert.equal(draft.sender_display_name,'Simon');assert.equal(draft.subject,'Dresses supply for Example');assert.match(draft.body_text,/Hi Alice,/);assert.match(draft.body_text,/Best regards,\nSimon\nDPV International\nsender@example.test$/);assert.deepEqual(draft.followups,[]);
+ assert.equal(draft.sender_display_name,'Simon');assert.equal(draft.subject,'Dresses supply for Example');assert.match(draft.body_text,/Hi Alice,/);assert.match(draft.body_text,/Best regards,\nSimon\nSIM International\nsender@example.test$/);assert.deepEqual(draft.followups,[]);
  assert.equal(Object.isFrozen(FIRST_TOUCH_TEMPLATES.A_NAMED_BUYER),true);assert.equal(Object.isFrozen(draft),true);
  assert.throws(()=>renderFirstTouchTemplate({template_key:'E04',variables,verified_fields}),{code:'FIRST_TOUCH_TEMPLATE_NOT_APPROVED'});
  assert.throws(()=>renderFirstTouchTemplate({template_key:'A_NAMED_BUYER',variables,verified_fields:[]}),{code:'FIRST_TOUCH_VERIFIED_VARIABLE_REQUIRED'});

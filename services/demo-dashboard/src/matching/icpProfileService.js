@@ -83,7 +83,7 @@ export class IcpProfileService {
     }));
   }
 
-  async buildHistoricalDraft({ name = 'DPV Historical Customer ICP', marketScope = [], productScope = [], actor = null } = {}) {
+  async buildHistoricalDraft({ name = 'SIM Historical Customer ICP', marketScope = [], productScope = [], actor = null } = {}) {
     const [customers, orders, outcomes, channels, imports] = await Promise.all([
       this.pool.query('SELECT buyer_type,country_code,company_size FROM leadgen.historical_customers'),
       this.pool.query('SELECT product_category,moq,revenue FROM leadgen.historical_orders'),
@@ -238,7 +238,7 @@ export class IcpProfileService {
          sample_size_wins,sample_size_losses,sample_size_orders,feature_coverage,calculation_version,
          activated_at,reference_market,application_markets,profile_basis,source_classification,
          sample_size_customers,win_loss_coverage_status,rebuilt_at,build_key)
-        VALUES ('DPV Mexico Historical Customer ICP','HISTORICAL_CUSTOMER_ICP',$6,'ACTIVE',
+        VALUES ('SIM Mexico Historical Customer ICP','HISTORICAL_CUSTOMER_ICP',$6,'ACTIVE',
           ARRAY['MX','AE'],ARRAY['WOMENSWEAR'],$1::uuid[],0,0,$2,$3,$7,now(),
           'MX',ARRAY['MX','AE'],'CONVERTED_ORDER_HISTORY','INTERNAL_BUSINESS',$4,'NONE',now(),$5)
         RETURNING *`, [imports.rows.map(row => row.id),orders.rowCount,featureCoverage,customers.rowCount,buildKey,

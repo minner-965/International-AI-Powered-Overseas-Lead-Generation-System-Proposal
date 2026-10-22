@@ -53,7 +53,7 @@ test('Phase 10 automation monitor uses compatible fields and one contextual live
 test('company detail presents category-level opportunity facts without specific product candidates',async()=>{
   const app=await readPublic('app.js');
   for(const label of [
-    '公司经营类目','Observed Company Categories','DPV 可供货批准类目','DPV Approved Supply Categories',
+    '公司经营类目','Observed Company Categories','SIM 可供货批准类目','SIM Approved Supply Categories',
     '类目机会依据','Category opportunity basis'
   ]) assert.ok(app.includes(label),`missing detail label ${label}`);
   for(const field of ['match_basis','matched_scopes','observed_customer_categories','auto_evidence_status']) {
@@ -89,7 +89,7 @@ test('new-customer product scoring is visibly category-level in filters, tables,
   assert.match(app,/data-label="匹配类目 \/ Matched Category"/);
   assert.match(app,/类目供货机会','Category supply opportunity/);
   assert.match(app,/公司经营类目/);
-  assert.match(app,/DPV 可供货批准类目/);
+  assert.match(app,/SIM 可供货批准类目/);
   assert.match(app,/公司类目证据','Company Category Evidence/);
   assert.match(css,/\.p8-evidence-score/);
   assert.doesNotMatch(`${html}\n${app}`,/>产品匹配<|>Product Match<|产品匹配 \/ Product Match/);

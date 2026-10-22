@@ -60,7 +60,7 @@ CONTACT_CHECK_MAX_PAGES_PER_CANDIDATE=4
 CONTACT_FETCH_TIMEOUT_MS=10000
 CONTACT_FETCH_DELAY_MS=500
 CONTACT_MAX_RESPONSE_BYTES=2000000
-CONTACT_USER_AGENT=DPVLeadResearchDemo/1.0
+CONTACT_USER_AGENT=SIMLeadResearch/1.0
 ```
 
 The local Tavily key is configured in the ignored `.env.phase2` file. The key is not returned to the browser, persisted in PostgreSQL, placed in workflow JSON, printed in logs or written into reports.

@@ -228,7 +228,7 @@ export async function buildTemplateWorkbook(importType) {
 export async function buildXlsxExportBuffer({ worksheetName = 'Export', headers, rows, headerLabels = {} }) {
   const ExcelJS = await loadExcelJs();
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'DPV';
+  workbook.creator = 'SIM';
   const worksheet = workbook.addWorksheet(worksheetName, {
     properties: { defaultColWidth: 24 },
     views: [{ state: 'frozen', ySplit: 1 }],

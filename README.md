@@ -1,6 +1,6 @@
-# DPV International Sales Workspace
+# SIM外贸获客系统 · SIM Overseas Prospecting
 
-DPV's overseas company research, category-based opportunity assessment, contact verification, email review and sales follow-up workspace.
+SIM International's overseas company research, category-based opportunity assessment, contact verification, email review and sales follow-up workspace.
 
 ## Current operating documents
 
@@ -11,6 +11,8 @@ DPV's overseas company research, category-based opportunity assessment, contact 
 - [Model runtime](docs/LLM_RUNTIME_ACTUAL_STATE.md): implemented capabilities versus planned integrations.
 - [UI system V3](docs/UI_SYSTEM_V3.md): shared frontend conventions.
 - [Version history](docs/VERSION_CHANGELOG.md): release records.
+- [Windows local deployment](docs/deploy/WINDOWS_本地部署.md): installing and starting the system on a Windows PC.
+- [System review 2026-10](docs/review/2026-10_SYSTEM_REVIEW.md) and [CRM follow-up result](docs/review/2026-10_CRM_FOLLOWUP_RESULT.md).
 
 Opportunity admission, contact readiness and email eligibility are separate states. A category-level match does not require an exact internal SKU. Email execution remains subject to persisted policy, address verification, approval, suppression and deduplication checks.
 

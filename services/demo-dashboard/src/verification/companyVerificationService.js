@@ -485,7 +485,7 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
     timeoutMs: Math.max(1000, Number(config.timeoutMs || 10000)),
     maxResponseBytes: Math.max(10000, Number(config.maxResponseBytes || 2000000)),
     delayMs: Math.max(0, Number(config.delayMs || 350)),
-    userAgent: config.userAgent || 'DPVLeadResearchDemo/1.0',
+    userAgent: config.userAgent || 'SIMLeadResearch/1.0',
     maxRedirects: 5,
     promote: config.promote !== false,
     allowSocialSearch: config.allowSocialSearch === true,

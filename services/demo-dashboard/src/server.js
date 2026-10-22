@@ -107,7 +107,7 @@ const searchConfig = Object.freeze({
     timeoutMs: Math.max(1000, Number(process.env.CONTACT_FETCH_TIMEOUT_MS || 10000)),
     delayMs: Math.max(0, Number(process.env.CONTACT_FETCH_DELAY_MS || 500)),
     maxResponseBytes: Math.max(10000, Number(process.env.CONTACT_MAX_RESPONSE_BYTES || 2000000)),
-    userAgent: String(process.env.CONTACT_USER_AGENT || 'DPVLeadResearchDemo/1.0'),
+    userAgent: String(process.env.CONTACT_USER_AGENT || 'SIMLeadResearch/1.0'),
     maxRedirects: 5
   }),
   companyVerifyConfig: Object.freeze({
@@ -115,7 +115,7 @@ const searchConfig = Object.freeze({
     timeoutMs: Math.max(1000, Number(process.env.COMPANY_VERIFY_TIMEOUT_MS || 10000)),
     delayMs: Math.max(0, Number(process.env.COMPANY_VERIFY_DELAY_MS || 350)),
     maxResponseBytes: Math.max(10000, Number(process.env.COMPANY_VERIFY_MAX_RESPONSE_BYTES || 2000000)),
-    userAgent: String(process.env.CONTACT_USER_AGENT || 'DPVLeadResearchDemo/1.0')
+    userAgent: String(process.env.CONTACT_USER_AGENT || 'SIMLeadResearch/1.0')
   })
 });
 const pool = new Pool({
@@ -840,7 +840,7 @@ function extractBusinessSocialProfiles($) {
 
 async function fetchText(url, timeout = 15000) {
   const response = await fetch(url, {
-    headers: { 'user-agent': 'DPVBusinessDirectory/1.0 (public-source research)' },
+    headers: { 'user-agent': 'SIMBusinessDirectory/1.0 (public-source research)' },
     signal: AbortSignal.timeout(timeout)
   });
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -980,7 +980,7 @@ async function collectOpenStreetMap() {
       const response = await fetch(endpoint, {
         method: 'POST', headers: {
           'content-type': 'application/x-www-form-urlencoded',
-          'user-agent': 'DPVBusinessDirectory/1.0 (public-source research)'
+          'user-agent': 'SIMBusinessDirectory/1.0 (public-source research)'
         }, body: new URLSearchParams({ data: query }), signal: AbortSignal.timeout(endpoint.includes('overpass-api.de') ? 15000 : 25000)
       });
       if (!response.ok) throw new Error(`${new URL(endpoint).hostname} returned ${response.status}`);

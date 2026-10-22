@@ -783,7 +783,7 @@ function opportunityProductSummaryCell(item) {
   const basis = String(item.match_basis || '').toUpperCase();
   if (!observed.length && !matched.length && !basis) return `<span class="crm-cell-empty">${bi('类目机会待评估','Category opportunity not assessed')}</span>`;
   const basisLabel=({EXACT_CATEGORY:['相同类目','Exact category'],SIMILAR_CATEGORY:['相似类目','Similar category'],PROFILE_SCOPE:['同一批准画像','Approved profile scope'],OUT_OF_SCOPE:['超出批准类目','Out of scope']})[basis]||['匹配依据待确认','Match basis to confirm'];
-  return `<span class="crm-product-opportunity-cell">${observed.length ? `<span>${bi('客户采购/经营类目','Customer procurement/category')}<strong>${observed.slice(0,2).map(productMatchBusinessValue).join(' · ')}</strong></span>` : ''}${matched.length ? `<span>${bi('DPV 可供货类目','DPV supply categories')}<strong>${matched.slice(0,2).map(productMatchBusinessValue).join(' · ')}</strong></span>` : ''}${basis ? `<span>${bi('类目机会依据','Category opportunity basis')}<strong>${pairHtml(basisLabel)}</strong></span>` : ''}</span>`;
+  return `<span class="crm-product-opportunity-cell">${observed.length ? `<span>${bi('客户采购/经营类目','Customer procurement/category')}<strong>${observed.slice(0,2).map(productMatchBusinessValue).join(' · ')}</strong></span>` : ''}${matched.length ? `<span>${bi('SIM 可供货类目','SIM supply categories')}<strong>${matched.slice(0,2).map(productMatchBusinessValue).join(' · ')}</strong></span>` : ''}${basis ? `<span>${bi('类目机会依据','Category opportunity basis')}<strong>${pairHtml(basisLabel)}</strong></span>` : ''}</span>`;
 }
 
 function opportunitySupplierAccessCell(item) {
@@ -800,7 +800,7 @@ function opportunitySecondaryScores(item) {
   const dpv = leadScoreValue(item);
   const tier = displayValue(item.tier || item.current_tier) || '-';
   const scoreValue = value => value == null ? bi('待计算','Not calculated') : `<b>${esc(Math.round(value))}/100</b>`;
-  return `<span class="crm-secondary-scores"><span>${bi('管理基准','Management')}${scoreValue(management)}</span><span>${bi('墨西哥历史参考','MX Historical')}${scoreValue(historical)}</span><span>${bi('DPV 评分 / 等级','DPV Score / Tier')}<b>${dpv == null ? '-' : `${esc(Math.round(dpv))}/100`} · ${esc(tier)}</b></span></span>`;
+  return `<span class="crm-secondary-scores"><span>${bi('管理基准','Management')}${scoreValue(management)}</span><span>${bi('墨西哥历史参考','MX Historical')}${scoreValue(historical)}</span><span>${bi('SIM 评分 / 等级','SIM Score / Tier')}<b>${dpv == null ? '-' : `${esc(Math.round(dpv))}/100`} · ${esc(tier)}</b></span></span>`;
 }
 
 function opportunitySupplierCell(item) {
@@ -1453,7 +1453,7 @@ function dimensionRows(dimensions, fallback = []) {
 
 function historyTable(items, type) {
   if (!items.length) return `<div class="crm-empty-inline">${bi(type === 'match' ? '暂无客户匹配历史。' : '暂无评分历史。',type === 'match' ? 'No Customer Match history is available.' : 'No score history is available.')}</div>`;
-  return `<div class="table-responsive" role="region" aria-label="${esc(type === 'match' ? '客户匹配历史 Customer Match history' : '评分历史 Score history')}" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi(type === 'match' ? '客户匹配' : 'DPV 评分',type === 'match' ? 'Customer Match' : 'DPV Score')}</th><th>${bi('资料覆盖率','Evidence coverage')}</th></tr></thead><tbody>${items.map(item=>`<tr><td>${esc(item.calculated_at || item.created_at ? new Date(item.calculated_at || item.created_at).toLocaleString() : '-')}</td><td>${esc(item.match_score ?? item.final_score ?? item.score ?? item.total_score ?? '-')}</td><td>${esc(item.coverage_percent ?? item.evidence_coverage ?? '-')}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-responsive" role="region" aria-label="${esc(type === 'match' ? '客户匹配历史 Customer Match history' : '评分历史 Score history')}" tabindex="0"><table class="table crm-table crm-history-table"><thead><tr><th>${bi('时间','Date')}</th><th>${bi(type === 'match' ? '客户匹配' : 'SIM 评分',type === 'match' ? 'Customer Match' : 'SIM Score')}</th><th>${bi('资料覆盖率','Evidence coverage')}</th></tr></thead><tbody>${items.map(item=>`<tr><td>${esc(item.calculated_at || item.created_at ? new Date(item.calculated_at || item.created_at).toLocaleString() : '-')}</td><td>${esc(item.match_score ?? item.final_score ?? item.score ?? item.total_score ?? '-')}</td><td>${esc(item.coverage_percent ?? item.evidence_coverage ?? '-')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 const LIFECYCLE_ACTION_LABELS = Object.freeze({
@@ -1623,7 +1623,7 @@ function categoryScopeRelationshipView(result, observed, matched) {
   })[automation] || ['状态待同步','Status pending'];
   return `<div class="p10-category-relationship">
     <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">公司经营类目</span><span lang="en">Observed Company Categories</span></h5>${productMatchTags(observed,'公司经营类目待确认。','Observed company categories to confirm.',{taxonomy:true})}</section>
-    <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">DPV 可供货批准类目</span><span lang="en">DPV Approved Supply Categories</span></h5>${productMatchTags(matched,'公司批准类目范围待确认。','Approved company category scope to confirm.',{taxonomy:true})}<div class="p10-category-basis"><small class="bi"><span lang="zh-CN">类目机会依据</span><span lang="en">Category opportunity basis</span></small>${pairHtml(basisLabel)}</div><div class="p10-category-basis"><small class="bi"><span lang="zh-CN">资料核验</span><span lang="en">Evidence review</span></small>${pairHtml(automationLabel)}</div></section>
+    <section class="p10-category-card"><h5 class="bi"><span lang="zh-CN">SIM 可供货批准类目</span><span lang="en">SIM Approved Supply Categories</span></h5>${productMatchTags(matched,'公司批准类目范围待确认。','Approved company category scope to confirm.',{taxonomy:true})}<div class="p10-category-basis"><small class="bi"><span lang="zh-CN">类目机会依据</span><span lang="en">Category opportunity basis</span></small>${pairHtml(basisLabel)}</div><div class="p10-category-basis"><small class="bi"><span lang="zh-CN">资料核验</span><span lang="en">Evidence review</span></small>${pairHtml(automationLabel)}</div></section>
   </div>`;
 }
 
@@ -2075,7 +2075,7 @@ async function showLead(id) {
     detailMetric('合作可行性','Cooperation feasibility',numericValue(currentFeasibility?.cooperation_feasibility_score) == null ? null : esc(Math.round(numericValue(currentFeasibility?.cooperation_feasibility_score)))),
     detailMetric('管理基准匹配','Management baseline',numericValue(currentMatch) == null ? null : esc(Math.round(numericValue(currentMatch)))),
     detailMetric('墨西哥历史参考','Mexico historical',numericValue(currentHistoricalMatch) == null ? null : esc(Math.round(numericValue(currentHistoricalMatch)))),
-    detailMetric('DPV 评分','DPV score',numericValue(currentScore) == null ? null : esc(Math.round(numericValue(currentScore)))),
+    detailMetric('SIM 评分','SIM score',numericValue(currentScore) == null ? null : esc(Math.round(numericValue(currentScore)))),
     detailMetric('等级','Tier',currentTier && currentTier !== '-' ? esc(currentTier) : null)
   ].filter(Boolean).join('');
   const reasonBlock = (titleZh,titleEn,items) => `<section class="crm-detail-section"><h4>${bi(titleZh,titleEn)}</h4>${items.length ? `<ul class="reason-list">${items.map(item=>`<li>${pairedValueHtml(reasonCodePair(typeof item === 'string' ? item : item.code || item.reason || ''))}</li>`).join('')}</ul>` : `<div class="crm-empty-inline">${bi('暂无记录。','No records available.')}</div>`}</section>`;
@@ -2108,7 +2108,7 @@ async function showLead(id) {
     <section id="detail-panel-product-match" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-product-match" hidden><div id="product-match-panel" aria-busy="true"><div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'loading')).join('')}</div></div></section>
     <section id="detail-panel-feasibility" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-feasibility" hidden>${cooperationFeasibilityView(feasibilityItems,contactRoutes)}</section>
     <section id="detail-panel-matching" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-matching" hidden><div class="crm-match-reference-grid">${matchReferencePanel(managementMatch,'management_baseline')}${matchReferencePanel(mexicoHistoricalMatch,'mx_historical_reference')}</div></section>
-    <section id="detail-panel-scoring" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-scoring" hidden>${factRows([['DPV 评分','DPV Score',`<b>${esc(currentScore ?? '-')}/100</b>`],['等级','Tier',esc(currentTier || '-')],['评分资格','Score eligibility',pairHtml(scoreEligibilityLabel(score?.score_eligibility || score?.eligibility))],['资料覆盖率','Evidence coverage',score?.evidence_coverage == null ? '-' : `${esc(score.evidence_coverage)}%`]])}<section class="crm-detail-section"><h4>${bi('评分维度','Score dimensions')}</h4>${dimensionRows(score?.dimension_scores,scores)}</section></section>
+    <section id="detail-panel-scoring" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-scoring" hidden>${factRows([['SIM 评分','SIM Score',`<b>${esc(currentScore ?? '-')}/100</b>`],['等级','Tier',esc(currentTier || '-')],['评分资格','Score eligibility',pairHtml(scoreEligibilityLabel(score?.score_eligibility || score?.eligibility))],['资料覆盖率','Evidence coverage',score?.evidence_coverage == null ? '-' : `${esc(score.evidence_coverage)}%`]])}<section class="crm-detail-section"><h4>${bi('评分维度','Score dimensions')}</h4>${dimensionRows(score?.dimension_scores,scores)}</section></section>
     </section>
     <section id="detail-section-buyer-contact" data-detail-section="buyer-contact" role="tabpanel" aria-labelledby="detail-section-tab-buyer-contact" hidden>
       <div class="p8-detail-subnav" role="tablist" aria-label="采购与联系内容 Buyer and contact records">${[['buying','采购联系人','Buying Contacts'],['contacts','联系方式','Contacts'],['social','社交账号','Social']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>

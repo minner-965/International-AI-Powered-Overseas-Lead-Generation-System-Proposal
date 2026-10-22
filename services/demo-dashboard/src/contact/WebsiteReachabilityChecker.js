@@ -87,7 +87,7 @@ function fetchStatusFromError(error) {
 }
 
 export class WebsiteReachabilityChecker {
-  constructor({ timeoutMs = 10000, maxResponseBytes = 2000000, userAgent = 'DPVLeadResearchDemo/1.0', maxRedirects = 5, fetchImpl = fetch, lookupImpl = lookup, blockedDomains = ['linkedin.com'] } = {}) {
+  constructor({ timeoutMs = 10000, maxResponseBytes = 2000000, userAgent = 'SIMLeadResearch/1.0', maxRedirects = 5, fetchImpl = fetch, lookupImpl = lookup, blockedDomains = ['linkedin.com'] } = {}) {
     this.timeoutMs = timeoutMs;
     this.maxResponseBytes = maxResponseBytes;
     this.userAgent = userAgent;
@@ -161,7 +161,7 @@ export class WebsiteReachabilityChecker {
   }
 }
 
-export function robotsAllowsPath(text, path, userAgent = 'DPVLeadResearchDemo/1.0') {
+export function robotsAllowsPath(text, path, userAgent = 'SIMLeadResearch/1.0') {
   const groups = [];
   let current = null;
   for (const rawLine of String(text || '').split(/\r?\n/)) {

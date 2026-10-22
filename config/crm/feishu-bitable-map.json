@@ -1,8 +1,9 @@
 {
-  "schema_version": "dpv-feishu-bitable-map-v1",
-  "description": "Column names in the Feishu Bitable follow-up log table. Rename the right-hand values to match the table; every column is a text column unless type is date.",
+  "schema_version": "sim-feishu-bitable-map-v1",
+  "description": "Column names in the Feishu Bitable table 'SIM跟进记录'. Change the right-hand column values if the table uses other names. Every column is text unless type is date; 记录类型, 事项 and 阶段 are best set up as single-select columns (see docs/crm/feishu/).",
   "fields": {
     "sync_key": {"column": "同步编号"},
+    "occurred_at": {"column": "记录时间", "type": "date"},
     "operation": {"column": "记录类型"},
     "company_name": {"column": "企业"},
     "country_code": {"column": "国家"},
@@ -10,7 +11,6 @@
     "stage": {"column": "阶段"},
     "summary": {"column": "内容"},
     "owner": {"column": "负责人"},
-    "occurred_at": {"column": "时间", "type": "date"},
     "due_at": {"column": "截止时间", "type": "date"},
     "source_reference": {"column": "系统编号"}
   }

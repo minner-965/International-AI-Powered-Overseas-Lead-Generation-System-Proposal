@@ -34,15 +34,48 @@ export function clientTokenFor(idempotencyKey){
   return`${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-${((parseInt(hex[16],16)&3)|8).toString(16)}${hex.slice(17,20)}-${hex.slice(20,32)}`;
 }
 
+// Business labels written to the table; option names match the import template.
+export const FEISHU_LABELS=Object.freeze({
+  operation:Object.freeze({UPDATE_ACTIVITY:'跟进活动',CREATE_TASK:'新任务',UPDATE_OPPORTUNITY:'阶段变化',CREATE_LEAD:'新线索',SUPPRESSION_NOTICE:'退订通知'}),
+  event:Object.freeze({CONTACTED:'已发开发信',FOLLOWUP_SENT:'已发跟进邮件',REPLIED:'收到回复',AUTO_REPLY:'自动回复',OPTED_OUT:'退订',BOUNCED:'退信',
+    FOLLOW_UP_REQUIRED:'需要跟进',CALL:'电话',WHATSAPP:'WhatsApp',MEETING:'会议',NOTE:'备注',EMAIL_MANUAL:'手动邮件',
+    QUOTATION:'报价',SAMPLE:'样品',FOLLOW_UP:'跟进',REPLY_REVIEW:'回复处理',CRM_HANDOFF:'移交',OTHER:'其他',
+    OPT_OUT:'退订',HARD_BOUNCE:'退信',COMPLAINT:'退订',MANUAL:'退订'}),
+  task_meeting:'会议安排',
+  stage:Object.freeze({NEW:'待联系',CONTACTED:'已联系',REPLIED:'已回复',QUOTED:'报价',SAMPLE:'样品',NEGOTIATING:'洽谈',WON:'成交',LOST:'流失'}),
+});
+// Summaries the system writes itself; text entered by people is passed through unchanged.
+const SYSTEM_SUMMARIES=[
+  [/^First-touch email sent$/,()=> '已发送开发信'],
+  [/^Follow-up email (\d) sent$/,match=>`已发送第 ${match[1]} 封跟进邮件`],
+  [/^Reply received(?:: (.+))?$/,()=> '收到客户回复'],
+  [/^Automatic reply received$/,()=> '收到自动回复'],
+  [/^Recipient opted out$/,()=> '对方退订'],
+  [/^Email bounced$/,()=> '邮件退信'],
+  [/^Follow-up required$/,()=> '需要人工跟进'],
+];
+function businessSummary(value){
+  const text=String(value||'').trim();
+  for(const [pattern,label] of SYSTEM_SUMMARIES){const match=text.match(pattern);if(match)return label(match);}
+  return text||null;
+}
+function eventLabel(outbox,payload){
+  if(outbox.operation==='CREATE_TASK')return payload.task_type==='MEETING'?FEISHU_LABELS.task_meeting:FEISHU_LABELS.event[payload.task_type]||'其他';
+  if(outbox.operation==='SUPPRESSION_NOTICE')return FEISHU_LABELS.event[payload.suppression_type]||'退订';
+  const type=String(payload.activity_type||'').toUpperCase();
+  if(type==='CONTACTED'&&/^Follow-up email/.test(String(payload.summary||'')))return FEISHU_LABELS.event.FOLLOWUP_SENT;
+  return FEISHU_LABELS.event[type]||null;
+}
+
 export function buildFeishuFields({outbox,payload,company},fieldMap){
   const values={
     sync_key:outbox.idempotency_key,
-    operation:outbox.operation,
+    operation:FEISHU_LABELS.operation[outbox.operation]||outbox.operation,
     company_name:company?.company_name||null,
     country_code:company?.country_code||null,
-    event_type:payload.activity_type||payload.task_type||payload.suppression_type||null,
-    stage:payload.stage||null,
-    summary:payload.summary||payload.reason||null,
+    event_type:eventLabel(outbox,payload),
+    stage:FEISHU_LABELS.stage[String(payload.stage||'').toUpperCase()]||null,
+    summary:businessSummary(payload.summary||payload.reason),
     owner:payload.owner||null,
     occurred_at:payload.occurred_at||payload.recorded_at||outbox.created_at||null,
     due_at:payload.due_at||null,
