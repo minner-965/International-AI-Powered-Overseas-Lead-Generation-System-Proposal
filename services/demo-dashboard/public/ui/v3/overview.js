@@ -2,7 +2,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 import { finiteCount, marketSeries, lazyChart } from './charts.js';
 import { initialContactPending } from '../contact-progress.js';
 import { hasOpportunityPool, isActiveBusinessOpportunity } from './opportunity-dimensions.js';
-import { crm, STAGES, taskTypePill, taskDot, when, stateBlock, skeletonRows } from '../v4/crm.js';
+import { overdueText, crm, STAGES, taskTypePill, taskDot, when, stateBlock, skeletonRows } from '../v4/crm.js';
 const bi = (zh,en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const number = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString();
 const empty = (zh,en) => `<p class="v3-overview-empty">${bi(zh,en)}</p>`;
@@ -200,7 +200,7 @@ function renderTodo(payload) {
   if(payload===null){host.innerHTML=stateBlock('error','待办暂未读取','Tasks unavailable',{retry:true});return;}
   const items=(payload?.items||[]).slice(0,5);
   if(!items.length){host.innerHTML=stateBlock('empty','今日没有待办','Nothing due today');return;}
-  host.innerHTML=`<ul class="rows">${items.map(task=>{const due=when(task.due_at);return `<li class="${task.overdue?'is-overdue':''}"><button class="row" type="button" data-overview-company="${esc(task.company_id)}"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span><span class="main-t"><span class="co">${esc(task.company_name||'—')}</span><span class="meta">${esc(task.title||task.next_action||'')}</span></span><span class="when${task.overdue?' overdue':''}">${due?esc(due.zh):'—'}${task.overdue&&due?`<small>${bi(`逾期 ${due.overdueDays} 天`,`${due.overdueDays} day${due.overdueDays>1?'s':''} overdue`)}</small>`:''}</span></button></li>`;}).join('')}</ul>`;
+  host.innerHTML=`<ul class="rows">${items.map(task=>{const due=when(task.due_at);return `<li class="${task.overdue?'is-overdue':''}"><button class="row" type="button" data-overview-company="${esc(task.company_id)}"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span><span class="main-t"><span class="co">${esc(task.company_name||'—')}</span><span class="meta">${esc(task.title||task.next_action||'')}</span></span><span class="when${task.overdue?' overdue':''}">${due?esc(due.zh):'—'}${task.overdue&&due?`<small>${bi(...overdueText(due))}</small>`:''}</span></button></li>`;}).join('')}</ul>`;
 }
 function renderApprovals(payload) {
   const host=document.getElementById('overview-approvals');

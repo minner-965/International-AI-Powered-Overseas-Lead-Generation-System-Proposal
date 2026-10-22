@@ -43,8 +43,12 @@ export function when(value, now = new Date()) {
   const [zh, en] = days === 0 ? ['今天', 'Today'] : days === -1 ? ['昨天', 'Yesterday'] : days === 1 ? ['明天', 'Tomorrow']
     : [`${pad(date.getMonth() + 1)}/${pad(date.getDate())}`, `${pad(date.getMonth() + 1)}/${pad(date.getDate())}`];
   const overdueDays = date < now ? Math.max(1, Math.floor((now - date) / 86400000)) : 0;
-  return { zh: `${zh} ${time}`, en: `${en} ${time}`, days, overdueDays, overdue: date < now };
+  const overdueHours = date < now ? Math.floor((now - date) / 3600000) : 0;
+  return { zh: `${zh} ${time}`, en: `${en} ${time}`, days, overdueDays, overdueHours, overdue: date < now };
 }
+/** Overdue note: whole days, or simply "overdue" within the first day. */
+export const overdueText = due => !due?.overdue ? null : due.overdueHours >= 24
+  ? [`逾期 ${due.overdueDays} 天`, `${due.overdueDays} day${due.overdueDays > 1 ? 's' : ''} overdue`] : ['已逾期', 'Overdue'];
 export const shortDate = value => { const w = when(value); return w ? w.zh : '—'; };
 export function toLocalInput(value) {
   if (!value) return '';

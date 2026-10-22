@@ -36,3 +36,17 @@ test('opportunities keep the category workspace hooks and add the stage pipeline
   assert.match(card, /bar.className = 'm-actbar v4-phone-only'/);
   assert.match(pipeline, /loadPipeline\(\{ force \}\)/);
 });
+
+test('follow-up group pages use the CRM task, draft and reply-review contracts', async () => {
+  const [html, tasks, drafts, review, replies] = await Promise.all([read('index.html'), read('ui/v4/tasks.js'), read('ui/v4/followups.js'), read('ui/v4/reply-review.js'), read('ui/v3/replies.js')]);
+  for (const view of ['tasks', 'followups']) assert.match(html, new RegExp(`data-app-view="${view}"`));
+  for (const script of ['tasks', 'followups', 'reply-review']) assert.match(html, new RegExp(`src="/ui/v4/${script}\\.js"`));
+  assert.match(tasks, /crm\.updateTask\(id, \{ task_status: 'COMPLETED' \}\)/);
+  assert.match(tasks, /crm\.createTask\(\{ company_id/);
+  assert.match(tasks, /due: range === 'all' \? undefined : range, mine:/);
+  assert.match(drafts, /crm\.decideDraft\(draft\.id, body\)/);
+  assert.match(drafts, /decision: 'APPROVE', subject: form\.subject\.value\.trim\(\), body_text/);
+  assert.match(drafts, /decision: 'DISCARD'/);
+  assert.match(review, /decision: 'CORRECT', intent: value/);
+  assert.match(replies, /data-classification-id=/);
+});

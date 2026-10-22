@@ -8,6 +8,7 @@ const EVENT_LABELS = {
   EMAIL_MANUAL: ['邮件', 'Email', 'k-mail'], CONTACTED: ['开发信已发送', 'Email sent', 'k-mail'], REPLIED: ['收到回复', 'Reply received', 'k-reply'],
   REPLY_RECEIVED: ['收到回复', 'Reply received', 'k-reply'], STAGE_CHANGED: ['阶段变更', 'Stage change', 'k-stage']
 };
+const TASK_STATUS = { OPEN: ['待办', 'Open'], IN_PROGRESS: ['进行中', 'In progress'], COMPLETED: ['已完成', 'Completed'], CANCELLED: ['已取消', 'Cancelled'] };
 const eventLabel = item => item.kind === 'TASK' ? [...(TASK_TYPES[item.event_type] || TASK_TYPES.OTHER).slice(0, 2), ''] : EVENT_LABELS[item.event_type] || [item.event_type || '记录', item.event_type || 'Record', ''];
 
 function timelineMarkup(items) {
@@ -19,7 +20,8 @@ function timelineMarkup(items) {
     if (item.kind === 'STAGE') {
       const from = item.from_stage ? stageLabel(item.from_stage) : null; const to = stageLabel(item.to_stage);
       text = `${from ? `${esc(from[1])} ${esc(from[2])} → ` : ''}${esc(to[1])} ${esc(to[2])}${item.actor ? ` · ${esc(item.actor)}` : ''}${item.result ? ` · ${esc(item.result)}` : ''}${item.summary ? ` · ${esc(item.summary)}` : ''}`;
-    } else if (item.result) text += `${text ? ' · ' : ''}${esc(item.result)}`;
+    } else if (item.kind === 'TASK') { const status = TASK_STATUS[item.result]; if (status) text += `${text ? ' · ' : ''}${esc(status[0])} ${esc(status[1])}`; }
+    else if (item.result) text += `${text ? ' · ' : ''}${esc(item.result)}`;
     return `<li class="${cls}"><div class="record"><span class="when">${esc(time ? time.zh : '—')} · ${bi(zh, en)}${item.kind !== 'STAGE' && item.actor ? ` · ${esc(item.actor)}` : ''}</span><span class="text">${text || '—'}</span></div></li>`;
   }).join('')}</ul>`;
 }
