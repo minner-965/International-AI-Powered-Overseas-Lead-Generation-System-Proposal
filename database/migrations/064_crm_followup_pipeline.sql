@@ -27,7 +27,10 @@ CREATE TABLE IF NOT EXISTS leadgen.opportunity_stage_history(
 );
 CREATE INDEX IF NOT EXISTS idx_opportunity_stage_history_company ON leadgen.opportunity_stage_history(company_id,changed_at DESC);
 
+-- People change stages through the application, which sets leadgen.stage_actor for the
+-- transaction; any change without it comes from the email funnel and is recorded as system.
 CREATE OR REPLACE FUNCTION leadgen.derive_pipeline_stage() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE actor text:=nullif(current_setting('leadgen.stage_actor',true),'');
 BEGIN
   IF TG_OP='INSERT' THEN
     IF NEW.pipeline_stage IS NULL THEN
@@ -44,13 +47,10 @@ BEGIN
     END IF;
   END IF;
   IF TG_OP='INSERT' OR NEW.pipeline_stage IS DISTINCT FROM OLD.pipeline_stage THEN
-    -- A change without a new actor/note was made by the email funnel, not a person.
-    IF TG_OP='UPDATE' AND NEW.stage_changed_by IS NOT DISTINCT FROM OLD.stage_changed_by THEN
-      NEW.stage_changed_by:='system';NEW.stage_note:=NULL;
-    END IF;
+    IF actor IS NULL THEN NEW.stage_changed_by:='system';NEW.stage_note:=NULL;
+    ELSE NEW.stage_changed_by:=actor; END IF;
     IF TG_OP='UPDATE' AND NEW.pipeline_stage<>'LOST' THEN NEW.lost_reason:=NULL; END IF;
     NEW.stage_changed_at:=now();
-    NEW.stage_changed_by:=coalesce(NEW.stage_changed_by,NEW.owner_identity,'system');
     INSERT INTO leadgen.opportunity_stage_history(opportunity_snapshot_id,company_id,from_stage,to_stage,lost_reason,note,changed_by)
     VALUES(NEW.opportunity_snapshot_id,NEW.company_id,CASE WHEN TG_OP='UPDATE' THEN OLD.pipeline_stage END,NEW.pipeline_stage,
       NEW.lost_reason,NEW.stage_note,NEW.stage_changed_by);

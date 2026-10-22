@@ -496,6 +496,7 @@ const phase5Queue = createPhase5Queue({
     [PHASE5_QUEUES.SEND_AUTO_FIRST_TOUCH]:data=>autoFirstTouchService.sendReservation(data.reservation_id),
     [PHASE5_QUEUES.CRM_FOLLOWUP_SCAN]:()=>crmService.scanFollowups(),
     [PHASE5_QUEUES.CRM_FOLLOWUP_SEND]:data=>crmService.sendApprovedFollowup(data),
+    [PHASE5_QUEUES.CRM_OUTBOX_DISPATCH]:()=>crmService.dispatchCrmOutbox(),
     [PHASE5_QUEUES.EXECUTE_RESEARCH_JOB]:data=>researchDirectDispatchService.execute(data)
   }
 });

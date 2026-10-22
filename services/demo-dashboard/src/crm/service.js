@@ -2,11 +2,13 @@ import {buildSalesTaskFromReply} from '../outreach/inbound.js';
 import {stableSmtpMessageId,stableSmtpMessageKey} from '../outreach/smtpImapProvider.js';
 import {FIRST_TOUCH_SENDER_NAME} from '../outreach/firstTouchTemplates.js';
 import {activityOutboxPayload} from './outboxPayloads.js';
+import {feishuConfigured} from './feishuBitableAdapter.js';
 import {FOLLOWUP_OFFSET_DAYS,MAX_FOLLOWUP_SEQUENCE,renderFollowupTemplate} from './followupTemplates.js';
 import {CrmRepository,FOLLOWUP_THREAD_OPEN_SQL,MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES,TASK_STATUSES,TASK_TYPES,crmUuid} from './repository.js';
 
 export const CRM_FOLLOWUP_SCAN_QUEUE='crm-followup-scan';
 export const CRM_FOLLOWUP_SEND_QUEUE='crm-followup-send';
+export const CRM_SYNC_QUEUE='sync-outreach-to-crm';
 const REPLY_INTENTS=Object.freeze(['CATALOGUE','SAMPLE','QUOTATION','MEETING','DEFER','DECLINE','OPT_OUT','AUTO_REPLY','IRRELEVANT','REVIEW']);
 const INTENT_TASK_TYPES=Object.freeze({CATALOGUE:'FOLLOW_UP',SAMPLE:'SAMPLE',QUOTATION:'QUOTATION',MEETING:'MEETING',DEFER:'FOLLOW_UP',DECLINE:'REPLY_REVIEW',REVIEW:'REPLY_REVIEW'});
 
@@ -111,6 +113,19 @@ export class CrmService{
     return draft;
   }
 
+  // Queues prospect CRM rows that are pending or due for a retry. Rows are written in the same
+  // transaction as the business change; this keeps delivery going after restarts and retries.
+  async dispatchCrmOutbox({limit=50}={}){
+    const provider=upper(this.env.CRM_PROVIDER);
+    const configured=provider==='FEISHU'?feishuConfigured(this.env):Boolean(String(this.env.CRM_BASE_URL||'').trim()&&String(this.env.CRM_API_KEY||'').trim()&&!/REPLACE_WITH|NOT_CONFIGURED/i.test(`${this.env.CRM_BASE_URL}|${this.env.CRM_API_KEY}`));
+    if(!configured)return{status:'NOT_CONFIGURED',queued:0};
+    const rows=(await this.pool.query(`SELECT id,attempt_count FROM leadgen.crm_sync_outbox
+      WHERE record_scope='PROSPECT' AND sync_status IN('PENDING','RETRYABLE_ERROR') AND coalesce(next_attempt_at,now())<=now()
+      ORDER BY created_at LIMIT $1`,[Math.min(Math.max(Number(limit)||50,1),200)])).rows;
+    for(const row of rows)await this.queue.enqueue(CRM_SYNC_QUEUE,{outbox_id:row.id},{singletonKey:`crm:dispatch:${row.id}:${row.attempt_count}`});
+    return{status:'COMPLETED',queued:rows.length};
+  }
+
   // Creates PENDING_APPROVAL drafts only; nothing is sent from a scan.
   async scanFollowups({now=new Date()}={}){
     if(!bool(this.env.CRM_FOLLOWUP_DRAFTS_ENABLED,false))return{status:'DISABLED',created:0};
@@ -123,7 +138,11 @@ export class CrmService{
         if(await this.repository.insertFollowupDraft({...candidate,...rendered}))created+=1;
       }catch(error){skipped.push({thread_id:candidate.thread_id,code:error.code||'CRM_FOLLOWUP_RENDER_FAILED'});}
     }
-    return{status:'COMPLETED',created,skipped};
+    // Approved drafts that waited (email paused, daily limit, sender change) are retried here;
+    // sending re-checks every condition and is idempotent per draft.
+    const approved=(await this.pool.query(`SELECT id FROM leadgen.crm_followup_drafts WHERE draft_status='APPROVED' ORDER BY approved_at LIMIT 50`)).rows;
+    if(this.queue)for(const row of approved)await this.queue.enqueue(CRM_FOLLOWUP_SEND_QUEUE,{draft_id:row.id},{singletonKey:`crm-followup-send:${row.id}`});
+    return{status:'COMPLETED',created,skipped,requeued:approved.length};
   }
 
   async sendApprovedFollowup({draft_id}){

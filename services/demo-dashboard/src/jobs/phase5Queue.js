@@ -46,7 +46,8 @@ export const PHASE5_QUEUES = Object.freeze({
   REFRESH_AUTO_EVIDENCE_EXCEPTION: 'refresh-auto-evidence-exception',
   EXECUTE_RESEARCH_JOB: 'execute-research-job',
   CRM_FOLLOWUP_SCAN: 'crm-followup-scan',
-  CRM_FOLLOWUP_SEND: 'crm-followup-send'
+  CRM_FOLLOWUP_SEND: 'crm-followup-send',
+  CRM_OUTBOX_DISPATCH: 'crm-outbox-dispatch'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -207,6 +208,8 @@ export function createPhase5Queue({
         // The scan only drafts follow-ups for human approval; it never sends.
         if (booleanEnv(env.CRM_FOLLOWUP_DRAFTS_ENABLED,false) && typeof boss.schedule === 'function')
           await boss.schedule(PHASE5_QUEUES.CRM_FOLLOWUP_SCAN,'17 * * * *',{}, { tz:'UTC' });
+        if (String(env.CRM_PROVIDER || env.CRM_BASE_URL || '').trim() && typeof boss.schedule === 'function')
+          await boss.schedule(PHASE5_QUEUES.CRM_OUTBOX_DISPATCH,'*/10 * * * *',{}, { tz:'UTC' });
         for (const name of workerQueueNames) {
           if (!processJobs) continue;
           if (!handlers[name]) continue;

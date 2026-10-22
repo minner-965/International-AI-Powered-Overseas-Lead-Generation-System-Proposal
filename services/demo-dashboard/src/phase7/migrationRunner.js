@@ -683,7 +683,19 @@ export async function verifyPhase13AutoReplyBridgeMigration(client){
   return{phase13_auto_reply_bridge_verified:true};
 }
 
+// A new database created by the PostgreSQL init scripts already contains every
+// migration but has an empty ledger. Baseline records the ledger without
+// re-running SQL; each migration's own verification still has to pass.
+async function assertFreshInstallBaseline(pool){
+  const state=(await pool.query(`SELECT to_regclass('leadgen.schema_migrations') ledger,
+    to_regclass('leadgen.crm_followup_drafts') latest`)).rows[0];
+  if(!state.latest)throw new Error('Baseline requires a database created from all migration files');
+  if(state.ledger&&Number((await pool.query('SELECT count(*)::int count FROM leadgen.schema_migrations')).rows[0].count)>0)
+    throw new Error('Baseline is only for a new database with an empty migration ledger');
+}
+
 export async function applyPhase7Migrations(options = {}) {
+  if(options.baseline)await assertFreshInstallBaseline(options.pool);
   const base=await applyPhase7Migration(options);
   const hardening=await applyPhase7Migration({...options,migrationPath:options.hardeningMigrationPath||hardeningPath,
     appliedBy:options.appliedBy||'dpv-phase7-explicit-migration-runner'});
@@ -862,7 +874,8 @@ export async function applyPhase7Migration({
   pool,
   migrationPath = defaultPath,
   expectedDatabase = null,
-  appliedBy = 'dpv-phase7-explicit-migration-runner'
+  appliedBy = 'dpv-phase7-explicit-migration-runner',
+  baseline = false
 } = {}) {
   if (!pool) throw new Error('applyPhase7Migration requires a PostgreSQL pool');
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -980,11 +993,11 @@ export async function applyPhase7Migration({
         ...verification
       };
     }
-    await client.query(migrationBody(sql));
+    if (!baseline) await client.query(migrationBody(sql));
     await client.query(
       `INSERT INTO leadgen.schema_migrations(migration_key,checksum_sha256,applied_by)
        VALUES($1,$2,$3)`,
-      [migrationKey, checksum, appliedBy]
+      [migrationKey, checksum, baseline ? 'fresh-install-baseline' : appliedBy]
     );
     const verification = migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
       ?await verifyCrmFollowupPipelineMigration(client)
@@ -1063,7 +1076,7 @@ export async function applyPhase7Migration({
     return {
       migration_key: migrationKey,
       checksum_sha256: checksum,
-      status: 'APPLIED',
+      status: baseline ? 'BASELINED' : 'APPLIED',
       database: database.rows[0].database,
       ...verification
     };
@@ -1086,7 +1099,8 @@ if (process.argv.includes('--apply')) {
   try {
     const result = await applyPhase7Migrations({
       pool,
-      expectedDatabase: process.env.POSTGRES_DB || null
+      expectedDatabase: process.env.POSTGRES_DB || null,
+      baseline: process.argv.includes('--baseline')
     });
     console.log(JSON.stringify(result));
   } finally {

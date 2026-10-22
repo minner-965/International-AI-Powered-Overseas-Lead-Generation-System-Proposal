@@ -73,13 +73,14 @@ export class CrmRepository{
 
   // Locks and returns the CRM state used for this opportunity's company/profile, creating it if needed.
   async lockState(client,opportunity,actor){
+    await client.query("SELECT set_config('leadgen.stage_actor',$1,true)",[actor]);
     const existing=(await client.query(`SELECT s.* FROM leadgen.opportunity_crm_states s
       JOIN leadgen.business_opportunity_decision_snapshots snap ON snap.id=s.opportunity_snapshot_id
       WHERE s.company_id=$1 AND snap.product_profile=$2 ORDER BY s.updated_at DESC LIMIT 1 FOR UPDATE OF s`,
       [opportunity.company_id,opportunity.product_profile])).rows[0];
     if(existing)return existing;
-    return(await client.query(`INSERT INTO leadgen.opportunity_crm_states(opportunity_snapshot_id,company_id,funnel_status,owner_identity,stage_changed_by)
-      VALUES($1,$2,'NOT_CONTACTED',$3,$3) RETURNING *`,[opportunity.id,opportunity.company_id,actor])).rows[0];
+    return(await client.query(`INSERT INTO leadgen.opportunity_crm_states(opportunity_snapshot_id,company_id,funnel_status,owner_identity)
+      VALUES($1,$2,'NOT_CONTACTED',$3) RETURNING *`,[opportunity.id,opportunity.company_id,actor])).rows[0];
   }
 
   async setStage(opportunityId,{stage,lost_reason=null,note=null,owner=null,next_action=null,next_action_due_at,expected_version=null},actor){
@@ -87,12 +88,12 @@ export class CrmRepository{
       const opportunity=await this.opportunity(client,opportunityId);
       const state=await this.lockState(client,opportunity,actor);
       if(expected_version!==null&&Number(expected_version)!==Number(state.version))throw fail('CRM_VERSION_CONFLICT','The opportunity was changed by someone else',409);
-      const updated=(await client.query(`UPDATE leadgen.opportunity_crm_states SET pipeline_stage=$2,lost_reason=$3,stage_note=$4,stage_changed_by=$5,
-          owner_identity=coalesce($6,owner_identity),next_action=coalesce($7,next_action),
-          next_action_due_at=CASE WHEN $9 THEN $8::timestamptz ELSE next_action_due_at END,
+      const updated=(await client.query(`UPDATE leadgen.opportunity_crm_states SET pipeline_stage=$2,lost_reason=$3,stage_note=$4,
+          owner_identity=coalesce($5,owner_identity),next_action=coalesce($6,next_action),
+          next_action_due_at=CASE WHEN $8 THEN $7::timestamptz ELSE next_action_due_at END,
           version=version+1,updated_at=now()
         WHERE opportunity_snapshot_id=$1 RETURNING *`,
-        [state.opportunity_snapshot_id,stage,stage==='LOST'?lost_reason:null,note,actor,owner,next_action,next_action_due_at??null,next_action_due_at!==undefined])).rows[0];
+        [state.opportunity_snapshot_id,stage,stage==='LOST'?lost_reason:null,note,owner,next_action,next_action_due_at??null,next_action_due_at!==undefined])).rows[0];
       if(updated.pipeline_stage!==state.pipeline_stage){
         await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,operation,payload,idempotency_key,sync_status,next_attempt_at)
           VALUES($1,'UPDATE_OPPORTUNITY',$2::jsonb,$3,'PENDING',now())`,

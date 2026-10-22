@@ -1,4 +1,4 @@
-// 样稿交互：手机菜单、标签页、对话框、草稿选择。仅用于静态样稿演示。
+// 样稿交互：标签页、对话框 / 底部弹层、草稿选择、手机底部栏辅助。仅用于静态样稿演示。
 (function () {
   var body = document.body;
   var menu = document.querySelector('.menu-btn');
@@ -38,7 +38,25 @@
   document.querySelectorAll('[data-open]').forEach(function (b) {
     b.addEventListener('click', function () {
       var d = document.getElementById(b.getAttribute('data-open'));
+      // 手机操作栏：按按钮预选记录类型
+      var t = b.getAttribute('data-type');
+      if (d && t && document.getElementById(t)) document.getElementById(t).checked = true;
       if (d && d.showModal) d.showModal();
+    });
+  });
+  // 点击遮罩关闭底部弹层
+  document.querySelectorAll('dialog').forEach(function (d) {
+    d.addEventListener('click', function (e) { if (e.target === d && !d.classList.contains('m-full')) d.close(); });
+  });
+
+  // 手机：开关按钮、搜索按钮
+  document.querySelectorAll('.m-toggle').forEach(function (b) {
+    b.addEventListener('click', function () { b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); });
+  });
+  document.querySelectorAll('[data-m-search]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = document.querySelector('.m-app input[type="search"]');
+      if (i) i.focus(); else location.href = 'opportunities.html';
     });
   });
   document.querySelectorAll('[data-close]').forEach(function (b) {

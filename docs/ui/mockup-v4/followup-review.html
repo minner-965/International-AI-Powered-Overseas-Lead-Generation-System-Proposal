@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>跟进邮件审批 · DPV 海外获客</title>
+<title>跟进邮件审批 · SIM外贸获客系统</title>
 <link rel="stylesheet" href="assets/mockup.css">
 </head>
 <body class="frame">
 <aside class="side" id="side" aria-label="主导航 Main navigation"><div class="side-in">
-  <div class="brand"><span class="brand-mark">DPV</span><div><b>DPV 海外获客</b><small>Overseas Prospecting</small></div></div>
+  <div class="brand"><span class="brand-mark">SIM</span><div><b>SIM外贸获客系统</b><small>SIM Overseas Prospecting</small></div></div>
   <nav class="nav">
     <h6>工作台<span>Workspace</span></h6>
     <a href="overview.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="t">总览<small>Overview</small></span></a>
@@ -30,7 +30,7 @@
 <div class="main">
     <header class="top">
       <button class="menu-btn" type="button" aria-controls="side" aria-expanded="false" aria-label="打开菜单 Open menu"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <a class="m-brand" href="overview.html"><span class="brand-mark">DPV</span>海外获客</a>
+      <a class="m-brand" href="overview.html"><span class="brand-mark">SIM</span>SIM外贸获客系统</a>
       <label class="search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="sr">搜索 Search</span><input type="search" placeholder="搜索企业、商务邮箱 / Search companies"></label>
       <div class="top-right">
         <span class="top-date">2026年10月22日 周四 · Thu, 22 Oct 2026</span>
@@ -63,7 +63,7 @@
             <dl class="to">
               <dt>收件人 To</dt><dd>compras@casalumbre.example <span class="pill ok">已验证<small>Verified</small></span></dd>
               <dt>计划发送 Scheduled</dt><dd>今天 14:00 · Today 14:00</dd>
-              <dt>发件人 From</dt><dd>Li Na · sales@dpv.example</dd>
+              <dt>发件人 From</dt><dd>Li Na · sales@sim.example</dd>
             </dl>
             <div class="field"><label for="subj">主题<small>Subject</small></label><input id="subj" type="text" value="Re: Linen dresses for Casa Lumbre — new colours available"></div>
             <div class="field"><label for="bd">正文<small>Body</small></label><textarea id="bd">Hola equipo de Casa Lumbre,
@@ -74,7 +74,7 @@ If useful, I can send the price list and two reference samples to Ciudad de Méx
 
 Saludos,
 Li Na
-DPV Apparel</textarea></div>
+SIM International</textarea></div>
             <div class="actions">
               <button class="btn danger" type="button">放弃<small>Discard</small></button>
               <span class="grow"></span>
@@ -88,6 +88,72 @@ Hola, we are a womenswear manufacturer in Guangzhou supplying linen and cotton d
       </div>
     </main>
 </div>
+<div class="m-app">
+  <header class="m-top"><h1>消息<small>Messages</small></h1><div class="m-top-r"><button class="m-ib" type="button" data-m-search aria-label="搜索 Search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button></div></header>
+  <main class="m-body">
+    <div class="m-seg" role="tablist" aria-label="消息 Messages"><div class="m-seg-in">
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="m-mp-reply">回复<b class="m-cnt">2</b></button>
+      <button type="button" role="tab" aria-selected="true" aria-controls="m-mp-appr">待审批<b class="m-cnt">4</b></button>
+    </div></div>
+    <div id="m-mp-appr" role="tabpanel">
+      <div class="m-quota"><span>今日剩余发送额度</span><span class="bar" role="img" aria-label="剩余 46 / 50"><i style="width:92%"></i></span><b>46/50</b></div>
+      <p class="m-count">待批准 4 封 · 批准后按计划时间发出</p>
+      <ul class="m-list">
+        <li><button class="m-draft" type="button" data-open="m-preview"><span class="l1"><b>Casa Lumbre Moda</b><span class="m-tag info">第 2 封</span></span><span class="l2">Re: Linen dresses for Casa Lumbre — new colours available</span><span class="l3">计划 今天 14:00 · compras@casalumbre.example</span><svg class="i go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></li>
+        <li><button class="m-draft" type="button" data-open="m-preview"><span class="l1"><b>Desert Rose Retail FZE</b><span class="m-tag info">第 2 封</span></span><span class="l2">Re: Modest wear supply — follow-up</span><span class="l3">计划 今天 16:00 · buying@desertrose.example</span><svg class="i go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></li>
+        <li><button class="m-draft" type="button" data-open="m-preview"><span class="l1"><b>Northfield Garment Supply</b><span class="m-tag info">第 3 封</span></span><span class="l2">Last note: SS27 womenswear samples</span><span class="l3">计划 明天 09:00 · info@northfield.example</span><svg class="i go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></li>
+        <li><button class="m-draft" type="button" data-open="m-preview"><span class="l1"><b>Moda Sol de Jalisco</b><span class="m-tag info">第 2 封</span></span><span class="l2">Re: Knit tops and dresses — price list</span><span class="l3">计划 10/24 10:00 · ventas@modasol.example</span><svg class="i go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></li>
+      </ul>
+    </div>
+    <div id="m-mp-reply" role="tabpanel" hidden>
+      <p class="m-count">最近 7 天 · 未处理 2</p>
+      <ul class="m-list">
+        <li><a class="m-draft" href="company.html"><span class="l1"><b><i class="m-unread" aria-label="未处理"></i>Al Noor Fashion Trading LLC</b><span class="m-time">10/21 16:42</span></span><span class="l2">“Could you send 3 samples of the linen dress series…”</span><span class="l3"><span class="m-tag info">要样品</span></span></a></li>
+        <li><a class="m-draft" href="company.html"><span class="l1"><b><i class="m-unread" aria-label="未处理"></i>Moda Rivera S.A. de C.V.</b><span class="m-time">10/20 22:05</span></span><span class="l2">“Please quote FOB Shenzhen for 600 pcs per style…”</span><span class="l3"><span class="m-tag info">询价</span></span></a></li>
+        <li><a class="m-draft" href="company.html"><span class="l1"><b>Harbor Lane Apparel Inc.</b><span class="m-time">10/20 09:14</span></span><span class="l2">“Do you have a catalog for Spring/Summer 2027?”</span><span class="l3"><span class="m-tag">要目录</span></span></a></li>
+        <li><a class="m-draft" href="company.html"><span class="l1"><b>Textiles del Norte S.A.</b><span class="m-time">10/19 23:40</span></span><span class="l2">“Thursday 5:30 pm Beijing time works for us.”</span><span class="l3"><span class="m-tag info">约会议</span></span></a></li>
+        <li><a class="m-draft" href="company.html"><span class="l1"><b>Jeddah Style House</b><span class="m-time">10/18 13:02</span></span><span class="l2">“We will review new suppliers after Ramadan.”</span><span class="l3"><span class="m-tag warn">以后再联系</span></span></a></li>
+      </ul>
+    </div>
+  </main>
+  <nav class="m-tab" aria-label="底部导航 Tab bar">
+    <a href="overview.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg></span><span>工作台<span class="sr"> Workbench</span></span></a>
+    <a href="opportunities.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M2 13h20"/></svg></span><span>机会<span class="sr"> Opportunities</span></span></a>
+    <a href="tasks.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><b class="m-badge" aria-label="4 项">4</b></span><span>任务<span class="sr"> Tasks</span></span></a>
+    <a href="followup-review.html" class="on" aria-current="page"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 9h8M8 12h5"/></svg><b class="m-badge" aria-label="6 项">6</b></span><span>消息<span class="sr"> Messages</span></span></a>
+    <a href="index.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span>我的<span class="sr"> Me</span></span></a>
+  </nav>
+</div>
+<dialog class="m-full" id="m-preview" aria-labelledby="mp-t">
+  <header class="m-top has-back"><button class="m-ib" type="button" data-close aria-label="返回 Back"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><h1 id="mp-t">邮件预览<small>Draft</small></h1><div class="m-top-r"><a class="m-tb" href="company.html">企业</a></div></header>
+  <div class="m-full-b">
+    <p class="m-count">Casa Lumbre Moda · 第 2 封跟进邮件 · 今日剩余 46/50</p>
+    <ul class="m-list m-kv">
+      <li><span class="k">收件人</span><span class="v">compras@casalumbre.example <span class="m-tag ok">已验证</span></span></li>
+      <li><span class="k">计划发送</span><span class="v">今天 14:00</span></li>
+      <li><span class="k">发件人</span><span class="v">Li Na · sales@sim.example</span></li>
+    </ul>
+    <div class="m-form">
+      <div class="field"><label for="m-subj">主题<small>Subject</small></label><input id="m-subj" type="text" value="Re: Linen dresses for Casa Lumbre — new colours available"></div>
+      <div class="field"><label for="m-bd">正文<small>Body</small></label><textarea id="m-bd" rows="12">Hola equipo de Casa Lumbre,
+
+Following up on my note from 15 October. Our linen dress line now comes in four new colours for spring, and we can support mixed-style orders from 300 pcs.
+
+If useful, I can send the price list and two reference samples to Ciudad de México this month.
+
+Saludos,
+Li Na
+SIM International</textarea></div>
+      <details class="prior"><summary>上一封邮件<small>10/15</small></summary><p>Subject: Linen dresses for Casa Lumbre
+Hola, we are a womenswear manufacturer in Guangzhou supplying linen and cotton dresses to retailers in Mexico…</p></details>
+    </div>
+  </div>
+  <div class="m-full-foot">
+    <button class="m-fb danger" type="button" data-close>放弃</button>
+    <button class="m-fb" type="button" data-close>修改后批准</button>
+    <button class="m-fb pri" type="button" data-close>批准发送</button>
+  </div>
+</dialog>
 
 <script src="assets/mockup.js"></script>
 </body>

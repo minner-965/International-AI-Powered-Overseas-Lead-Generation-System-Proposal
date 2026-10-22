@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>我的任务 · DPV 海外获客</title>
+<title>我的任务 · SIM外贸获客系统</title>
 <link rel="stylesheet" href="assets/mockup.css">
 </head>
 <body class="frame">
 <aside class="side" id="side" aria-label="主导航 Main navigation"><div class="side-in">
-  <div class="brand"><span class="brand-mark">DPV</span><div><b>DPV 海外获客</b><small>Overseas Prospecting</small></div></div>
+  <div class="brand"><span class="brand-mark">SIM</span><div><b>SIM外贸获客系统</b><small>SIM Overseas Prospecting</small></div></div>
   <nav class="nav">
     <h6>工作台<span>Workspace</span></h6>
     <a href="overview.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="t">总览<small>Overview</small></span></a>
@@ -30,7 +30,7 @@
 <div class="main">
     <header class="top">
       <button class="menu-btn" type="button" aria-controls="side" aria-expanded="false" aria-label="打开菜单 Open menu"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <a class="m-brand" href="overview.html"><span class="brand-mark">DPV</span>海外获客</a>
+      <a class="m-brand" href="overview.html"><span class="brand-mark">SIM</span>SIM外贸获客系统</a>
       <label class="search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="sr">搜索 Search</span><input type="search" placeholder="搜索企业、商务邮箱 / Search companies"></label>
       <div class="top-right">
         <span class="top-date">2026年10月22日 周四 · Thu, 22 Oct 2026</span>
@@ -258,6 +258,228 @@
       </section>
     </main>
 </div>
+<div class="m-app">
+  <header class="m-top"><h1>任务<small>Tasks</small></h1><div class="m-top-r"><button class="m-ib" type="button" data-m-search aria-label="搜索 Search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button><button class="m-ib" type="button" aria-label="新建任务 New task"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></header>
+  <main class="m-body">
+    <div class="m-seg" role="tablist" aria-label="任务范围 Task range"><div class="m-seg-in">
+      <button type="button" role="tab" aria-selected="true" aria-controls="m-tp-today">今日<span class="n">4</span></button>
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="m-tp-over">逾期<span class="n bad">1</span></button>
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="m-tp-week">本周<span class="n">7</span></button>
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="m-tp-all">全部<span class="n">11</span></button>
+    </div></div>
+    <div class="m-fbar">
+      <button type="button" data-open="m-tfilter"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>全部类型<small>Type</small></button>
+      <button type="button" class="m-toggle" aria-pressed="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>只看我的<small>Mine</small></button>
+    </div>
+    <ul class="m-list" id="m-tp-today" role="tabpanel">
+      <li class="m-task is-od">
+        <i class="m-dot d-quote" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Moda Rivera S.A. de C.V.</a><span class="m-time od">昨天 10:00 · 逾期1天</span></div>
+          <p class="l2">发送 FOB 报价单（600 件/款）</p>
+          <div class="l3"><span class="src">报价 · 回复：询价</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-reply" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Al Noor Fashion Trading LLC</a><span class="m-time">今天 11:00</span></div>
+          <p class="l2">确认样品款式与尺码</p>
+          <div class="l3"><span class="src">回复处理 · 回复：要样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-sample" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Riyadh Modest Wear Co.</a><span class="m-time">今天 15:00</span></div>
+          <p class="l2">确认寄样地址与收件人</p>
+          <div class="l3"><span class="src">样品 · 阶段：样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-meet" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Textiles del Norte S.A.</a><span class="m-time">今天 17:30</span></div>
+          <p class="l2">视频会议：账期与起订量</p>
+          <div class="l3"><span class="src">会议 · 回复：约会议</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+    </ul>
+    <ul class="m-list" id="m-tp-over" role="tabpanel" hidden>
+      <li class="m-task is-od">
+        <i class="m-dot d-quote" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Moda Rivera S.A. de C.V.</a><span class="m-time od">昨天 10:00 · 逾期1天</span></div>
+          <p class="l2">发送 FOB 报价单（600 件/款）</p>
+          <div class="l3"><span class="src">报价 · 回复：询价</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+    </ul>
+    <ul class="m-list" id="m-tp-week" role="tabpanel" hidden>
+      <li class="m-task is-od">
+        <i class="m-dot d-quote" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Moda Rivera S.A. de C.V.</a><span class="m-time od">昨天 10:00 · 逾期1天</span></div>
+          <p class="l2">发送 FOB 报价单（600 件/款）</p>
+          <div class="l3"><span class="src">报价 · 回复：询价</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-reply" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Al Noor Fashion Trading LLC</a><span class="m-time">今天 11:00</span></div>
+          <p class="l2">确认样品款式与尺码</p>
+          <div class="l3"><span class="src">回复处理 · 回复：要样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-sample" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Riyadh Modest Wear Co.</a><span class="m-time">今天 15:00</span></div>
+          <p class="l2">确认寄样地址与收件人</p>
+          <div class="l3"><span class="src">样品 · 阶段：样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-meet" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Textiles del Norte S.A.</a><span class="m-time">今天 17:30</span></div>
+          <p class="l2">视频会议：账期与起订量</p>
+          <div class="l3"><span class="src">会议 · 回复：约会议</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Harbor Lane Apparel Inc.</a><span class="m-time">10/23 09:00</span></div>
+          <p class="l2">发送 2027 春夏目录</p>
+          <div class="l3"><span class="src">跟进 · 回复：要目录</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Copper & Thread Wholesale</a><span class="m-time">10/23 14:00</span></div>
+          <p class="l2">审批开发信</p>
+          <div class="l3"><span class="src">跟进 · 新机会</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-sample" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Riyadh Modest Wear Co.</a><span class="m-time">10/24 10:00</span></div>
+          <p class="l2">跟踪样品物流</p>
+          <div class="l3"><span class="src">样品 · 阶段：样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+    </ul>
+    <ul class="m-list" id="m-tp-all" role="tabpanel" hidden>
+      <li class="m-task is-od">
+        <i class="m-dot d-quote" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Moda Rivera S.A. de C.V.</a><span class="m-time od">昨天 10:00 · 逾期1天</span></div>
+          <p class="l2">发送 FOB 报价单（600 件/款）</p>
+          <div class="l3"><span class="src">报价 · 回复：询价</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-reply" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Al Noor Fashion Trading LLC</a><span class="m-time">今天 11:00</span></div>
+          <p class="l2">确认样品款式与尺码</p>
+          <div class="l3"><span class="src">回复处理 · 回复：要样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-sample" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Riyadh Modest Wear Co.</a><span class="m-time">今天 15:00</span></div>
+          <p class="l2">确认寄样地址与收件人</p>
+          <div class="l3"><span class="src">样品 · 阶段：样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-meet" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Textiles del Norte S.A.</a><span class="m-time">今天 17:30</span></div>
+          <p class="l2">视频会议：账期与起订量</p>
+          <div class="l3"><span class="src">会议 · 回复：约会议</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Harbor Lane Apparel Inc.</a><span class="m-time">10/23 09:00</span></div>
+          <p class="l2">发送 2027 春夏目录</p>
+          <div class="l3"><span class="src">跟进 · 回复：要目录</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Copper & Thread Wholesale</a><span class="m-time">10/23 14:00</span></div>
+          <p class="l2">审批开发信</p>
+          <div class="l3"><span class="src">跟进 · 新机会</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-sample" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Riyadh Modest Wear Co.</a><span class="m-time">10/24 10:00</span></div>
+          <p class="l2">跟踪样品物流</p>
+          <div class="l3"><span class="src">样品 · 阶段：样品</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Jeddah Style House</a><span class="m-time">11/20 10:00</span></div>
+          <p class="l2">节后再联系</p>
+          <div class="l3"><span class="src">跟进 · 回复：以后再联系</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Casa Lumbre Moda</a><span class="m-time">10/27 10:00</span></div>
+          <p class="l2">审批第 2 封跟进邮件</p>
+          <div class="l3"><span class="src">跟进 · 跟进序列</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-quote" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Textiles del Norte S.A.</a><span class="m-time">10/28 10:00</span></div>
+          <p class="l2">更新阶梯报价</p>
+          <div class="l3"><span class="src">报价 · 阶段：洽谈</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+      <li class="m-task">
+        <i class="m-dot d-follow" aria-hidden="true"></i>
+        <div class="m-task-b">
+          <div class="l1"><a href="company.html">Desert Bloom Boutique LLC</a><span class="m-time">10/29 10:00</span></div>
+          <p class="l2">确认商务邮箱</p>
+          <div class="l3"><span class="src">跟进 · 新机会</span><span class="acts"><button class="m-btn pri-o" type="button">完成</button><button class="m-btn" type="button">改期</button><button class="m-btn" type="button">指派</button></span></div>
+        </div>
+      </li>
+    </ul>
+  </main>
+  <nav class="m-tab" aria-label="底部导航 Tab bar">
+    <a href="overview.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg></span><span>工作台<span class="sr"> Workbench</span></span></a>
+    <a href="opportunities.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M2 13h20"/></svg></span><span>机会<span class="sr"> Opportunities</span></span></a>
+    <a href="tasks.html" class="on" aria-current="page"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><b class="m-badge" aria-label="4 项">4</b></span><span>任务<span class="sr"> Tasks</span></span></a>
+    <a href="followup-review.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 9h8M8 12h5"/></svg><b class="m-badge" aria-label="6 项">6</b></span><span>消息<span class="sr"> Messages</span></span></a>
+    <a href="index.html"><span class="m-tab-i"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span>我的<span class="sr"> Me</span></span></a>
+  </nav>
+</div>
+<dialog class="sheet" id="m-tfilter" aria-labelledby="mt-t">
+  <form method="dialog">
+    <div class="sheet-head"><h3 id="mt-t">任务类型 <small>Task type</small></h3><button class="icon-btn" type="button" data-close aria-label="关闭 Close"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="sheet-body"><div class="field"><div class="seg-choice">
+      <input type="radio" name="tt" id="tt0" checked><label for="tt0">全部类型</label><input type="radio" name="tt" id="tt1"><label for="tt1">回复处理</label><input type="radio" name="tt" id="tt2"><label for="tt2">报价</label><input type="radio" name="tt" id="tt3"><label for="tt3">样品</label><input type="radio" name="tt" id="tt4"><label for="tt4">会议</label><input type="radio" name="tt" id="tt5"><label for="tt5">跟进</label></div></div></div>
+    <div class="sheet-foot"><button class="btn" type="reset">重置<small>Reset</small></button><button class="btn pri" value="ok">确定<small>Apply</small></button></div>
+  </form>
+</dialog>
 
 <script src="assets/mockup.js"></script>
 </body>

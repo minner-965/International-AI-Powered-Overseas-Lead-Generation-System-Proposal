@@ -245,6 +245,7 @@ async function json(url, options) {
   if (!response.ok) {
     const error = new Error(data.error || data.detail || response.statusText);
     error.payload = data;
+    error.status = response.status;
     throw error;
   }
   return data;
@@ -1159,10 +1160,14 @@ function ensureCrmHistoryPanel() {
   jobsView.append(panel);
 }
 
-function renderCrmHistoryImportSummary(summary, loadError = false) {
+function renderCrmHistoryImportSummary(summary, loadError = false, notImported = false) {
   const host = $('#crm-history-import-summary');
   if (!host) return;
   host.setAttribute('aria-busy','false');
+  if (notImported) {
+    host.innerHTML = `<div class="crm-state-placeholder">${bi('尚未导入历史客户资料','No historical customer records imported yet')}</div>`;
+    return;
+  }
   if (loadError || !summary) {
     host.innerHTML = `<div class="crm-state-placeholder">${bi('历史资料汇总暂时不可用','Historical record summary is temporarily unavailable')}</div>`;
     return;
@@ -1225,7 +1230,8 @@ async function loadCrmHistory() {
     state.crmHistory = [];
     renderCrmHistoryList([],true);
   }
-  renderCrmHistoryImportSummary(summaryResult.status === 'fulfilled' ? summaryResult.value : null,summaryResult.status === 'rejected');
+  renderCrmHistoryImportSummary(summaryResult.status === 'fulfilled' ? summaryResult.value : null,summaryResult.status === 'rejected',
+    summaryResult.status === 'rejected' && summaryResult.reason?.status === 404);
 }
 
 async function loadLeads() {
