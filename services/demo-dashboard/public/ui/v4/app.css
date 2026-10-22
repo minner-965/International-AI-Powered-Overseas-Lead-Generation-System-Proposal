@@ -3883,3 +3883,23 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
   .preview .actions .grow { display: none; }
   .preview .actions .btn { flex: 1 1 auto; }
 }
+/* Me (phone menu; also reachable on desktop) */
+.m-me { display: flex; align-items: center; gap: 14px; padding: 18px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.m-me .avatar { width: 52px; height: 52px; background: var(--primary); font-size: 15px; }
+.m-me b { font-size: 18px; font-weight: 600; }
+.m-me p { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }
+.m-gt { margin: 0; padding: 14px 16px 6px; color: var(--text-3); font-size: 13px; font-weight: 500; }
+.m-gt .bi > [lang="en"] { font-size: 11px; }
+.m-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.m-list > li { position: relative; }
+.m-list > li + li::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; height: 1px; background: var(--line); transform: scaleY(.6); }
+.m-menu { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px 0 16px; color: var(--text); font-size: 15px; text-decoration: none; }
+.m-menu:hover { background: var(--surface-2); text-decoration: none; color: var(--text); }
+.m-menu .t { flex: 1; min-width: 0; }
+.m-menu .t small { margin-left: 6px; color: var(--text-3); font-size: 11px; }
+.m-menu .r { color: var(--text-3); }
+.m-ico.sm { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font-size: 18px; }
+.m-ico.sm.b { background: var(--primary-soft); color: var(--primary); } .m-ico.sm.g { background: var(--ok-soft); color: var(--ok); }
+.m-ico.sm.a { background: var(--warn-soft); color: var(--warn); } .m-ico.sm.n { background: var(--neutral-soft); color: var(--text-2); }
+#me-root { display: grid; gap: 0; max-width: 640px; }
+@media (max-width: 900px) { .m-me, .m-list { border-right: 0; border-left: 0; border-radius: 0; } #view-me .head { display: none; } }
