@@ -158,3 +158,45 @@ test('migration 065 applies through the runner on a database at 064 and enforces
     await assert.rejects(pool.query('DELETE FROM leadgen.research_batch_cost_estimates WHERE batch_id=$1',[batch.batch_id]),/append-only/);
   });
 });
+
+test('registry markets: 065 seeds inactive markets, management toggle is audited and enabled markets plan in their language',{skip:!adminUrl},async()=>{
+  const {MarketRegistryService}=await import('../src/market/MarketRegistryService.js');
+  await withDatabase(null,async(pool,name)=>{
+    await databaseAt064(pool);
+    const before=(await pool.query(`SELECT market_code,status,search_enabled,languages,updated_at FROM leadgen.research_market_registry
+      WHERE market_code IN('AE','MX') ORDER BY market_code`)).rows;
+    await approveCategories(pool,['WOMENSWEAR:DRESSES']);
+    await applyPhase7Migrations({pool,expectedDatabase:name});
+    assert.deepEqual((await pool.query(`SELECT market_code,status,search_enabled,languages,updated_at FROM leadgen.research_market_registry
+      WHERE market_code IN('AE','MX') ORDER BY market_code`)).rows,before);
+    const seeded=(await pool.query(`SELECT count(*)::int total,count(*) FILTER(WHERE status='INACTIVE' AND NOT search_enabled)::int inactive
+      FROM leadgen.research_market_registry WHERE source_reference LIKE 'migration-065:%'`)).rows[0];
+    assert.deepEqual(seeded,{total:34,inactive:34});
+    assert.equal(Number((await pool.query(`SELECT count(*) FROM leadgen.research_market_registry r
+      WHERE NOT EXISTS(SELECT 1 FROM pg_timezone_names z WHERE z.name=r.timezone)`)).rows[0].count),0);
+
+    const markets=new MarketRegistryService({pool});
+    assert.ok((await markets.list()).some(row=>row.market_code==='DE'&&row.status==='INACTIVE'));
+    assert.ok(!(await markets.list()).some(row=>row.market_code==='BD'));
+    const enabled=await markets.setSearchEnabled('DE',{search_enabled:true,actor:'simon',role:'MANAGEMENT'});
+    assert.equal(enabled.status,'ACTIVE');assert.equal(enabled.search_enabled,true);assert.equal(enabled.changed,true);
+    assert.equal((await markets.setSearchEnabled('DE',{search_enabled:true,actor:'simon',role:'MANAGEMENT'})).changed,false);
+    await assert.rejects(markets.setSearchEnabled('BD',{search_enabled:true,actor:'simon',role:'MANAGEMENT'}),{code:'MARKET_HIDDEN'});
+    await assert.rejects(markets.setSearchEnabled('ZZ',{search_enabled:true,actor:'simon',role:'MANAGEMENT'}),{code:'MARKET_NOT_FOUND'});
+
+    const {batches}=services(pool,{});
+    const category=(await pool.query(`SELECT id FROM leadgen.dpv_product_category_scope_current WHERE normalized_category='DRESSES'`)).rows[0].id;
+    const preview=await batches.preview({market_codes:['DE'],category_scope_ids:[category]});
+    assert.deepEqual(preview.languages,['de','en']);
+    assert.ok(preview.search_plan.samples.PRECISION_LANE.some(q=>q.original_query.includes('Deutschland')));
+    assert.deepEqual(preview.research_scope_snapshot.scopes[0].country_terms,{de:'Deutschland',en:'Germany'});
+
+    const disabled=await markets.setSearchEnabled('DE',{search_enabled:false,actor:'simon',role:'MANAGEMENT'});
+    assert.equal(disabled.search_enabled,false);assert.equal(disabled.status,'ACTIVE');
+    await assert.rejects(batches.preview({market_codes:['DE'],category_scope_ids:[category]}),{code:'RESEARCH_ACTIVE_MARKET_REQUIRED'});
+    const events=await markets.events('DE');
+    assert.deepEqual(events.map(e=>[e.previous_search_enabled,e.search_enabled,e.actor]),[[true,false,'simon'],[false,true,'simon']]);
+    await assert.rejects(pool.query(`UPDATE leadgen.research_market_registry_events SET actor='x'`),/append-only/);
+    assert.deepEqual(await markets.activeMarketCodes(),['AE','DE','MX']);
+  });
+});

@@ -50,6 +50,8 @@ import {CurrentCapacityRouter} from './search/CurrentCapacityRouter.js';
 import {FrozenSearchPlanExecutor} from './search/FrozenSearchPlanExecutor.js';
 import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
 import {SearchCostControl,loadSearchCostConfig} from './search/SearchCostControl.js';
+import {MarketRegistryService} from './market/MarketRegistryService.js';
+import {createMarketRegistryRouter} from './market/marketRegistryRouter.js';
 import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/AutomationControlService.js';
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
@@ -639,6 +641,7 @@ app.post('/api/automation/reconcile',...automationWrite,async(req,res,next)=>{
 });
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
+app.use('/api/markets/registry',createMarketRegistryRouter({service:new MarketRegistryService({pool}),managementAuth,audit}));
 app.get('/api/research/jobs/:id/search-plan',managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'),async(req,res,next)=>{
     try{
@@ -1450,14 +1453,18 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate,
   managementAuth.requireRoles('DATA_ADMIN','MANAGEMENT'), async (req, res, next) => {
   try {
     await searchProviderRouter.ensureCanCreate('CONTACT_DISCOVERY');
-    const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : ['AE','MX'])
+    // Enrichment covers the registry's ACTIVE markets; an explicit list must be a subset of them.
+    const activeMarkets = (await pool.query(`SELECT market_code FROM leadgen.research_market_registry
+      WHERE status='ACTIVE' ORDER BY market_code`)).rows.map(row=>row.market_code).filter(code=>isMarketVisible(code));
+    const marketCodes = [...new Set((Array.isArray(req.body?.market_codes) ? req.body.market_codes : activeMarkets)
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
     let productProfiles = [...new Set((Array.isArray(req.body?.product_profiles) ? req.body.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE'])
       .map(value=>clean(value).toUpperCase()).filter(Boolean))];
     let companyIds = [...new Set((Array.isArray(req.body?.company_ids) ? req.body.company_ids : [])
       .map(value=>optionalUuid(value,'company_id')).filter(Boolean))];
-    if (!marketCodes.length || marketCodes.some(code=>!['AE','MX'].includes(code))) {
-      return res.status(400).json({ error:'Invalid enrichment job',detail:'market_codes must contain AE and/or MX' });
+    if (!marketCodes.length || marketCodes.some(code=>!activeMarkets.includes(code))) {
+      return res.status(400).json({ error:'Invalid enrichment job',code:'ENRICHMENT_MARKET_INACTIVE',
+        detail:`market_codes must be active markets: ${activeMarkets.join(', ')||'none'}` });
     }
     if (!productProfiles.length || productProfiles.some(value=>!['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(value))) {
       return res.status(400).json({ error:'Invalid enrichment job',detail:'product_profiles must contain WOMENSWEAR and/or GENERAL_MERCHANDISE' });
@@ -1488,14 +1495,14 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate,
       (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
        buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
        idempotency_key,request_digest,created_by_identity,created_by_role,research_wave,run_budget_cap_units)
-      VALUES ('AE / MX','XX','AE / MX','en','MULTI_MARKET','Buyer / Procurement Enrichment',$1,$2,$3,
+      VALUES ($14,'XX',$14,'en','MULTI_MARKET','Buyer / Procurement Enrichment',$1,$2,$3,
         'QUEUED',$13,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
       DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *, (xmax=0) AS inserted`,[
       productProfiles[0],['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],maxResults,
       marketCodes,productProfiles,companyIds,idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
       researchWave||null,Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000),
-      researchWave?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT'
+      researchWave?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT',marketCodes.join(' / ')
     ]);
     const job = result.rows[0];
     if(!job.inserted)return res.status(200).json({job_id:job.id,id:job.id,status:job.status,idempotent_replay:true});

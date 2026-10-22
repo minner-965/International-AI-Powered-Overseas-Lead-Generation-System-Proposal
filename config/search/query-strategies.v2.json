@@ -68,6 +68,121 @@
       "multi_category_retail": "متجر متعدد الفئات",
       "consumer_goods_importer": "مستورد سلع استهلاكية",
       "regional_retail_group": "مجموعة تجزئة إقليمية"
+    },
+    "de": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "Artikel des täglichen Bedarfs", "DRESSES": "Kleider", "GENERAL_MERCHANDISE": "Gemischtwaren",
+        "HOMEWARE": "Wohnaccessoires", "HOME_AND_LIVING": "Wohnen und Einrichten", "HOUSEHOLD_GOODS": "Haushaltswaren",
+        "KNITWEAR": "Strickwaren", "NON_FOOD": "Non-Food-Artikel", "OUTERWEAR": "Jacken und Mäntel",
+        "SKIRTS": "Röcke", "TOPS": "Oberteile", "TROUSERS": "Hosen",
+        "WOMENSWEAR": "Damenbekleidung"
+      },
+      "importer": "Importeur",
+      "wholesaler": "Großhändler",
+      "distributor": "Distributor",
+      "retailer": "Einzelhändler",
+      "retail_group": "Handelsgruppe",
+      "department_store": "Kaufhaus",
+      "trading_company": "Handelsunternehmen",
+      "fashion_group": "Modekonzern",
+      "lifestyle_group": "Lifestyle-Händler",
+      "general_trading": "Handelsgesellschaft",
+      "general_merchandise": "Gemischtwarengroßhändler",
+      "multi_category_retail": "Vollsortiment-Einzelhändler",
+      "consumer_goods_importer": "Konsumgüterimporteur",
+      "regional_retail_group": "regionale Handelskette"
+    },
+    "fr": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "produits de consommation courante", "DRESSES": "robes", "GENERAL_MERCHANDISE": "articles de bazar",
+        "HOMEWARE": "articles pour la maison", "HOME_AND_LIVING": "maison et décoration", "HOUSEHOLD_GOODS": "articles ménagers",
+        "KNITWEAR": "articles en maille", "NON_FOOD": "produits non alimentaires", "OUTERWEAR": "manteaux et vestes",
+        "SKIRTS": "jupes", "TOPS": "hauts", "TROUSERS": "pantalons",
+        "WOMENSWEAR": "prêt-à-porter féminin"
+      },
+      "importer": "importateur",
+      "wholesaler": "grossiste",
+      "distributor": "distributeur",
+      "retailer": "détaillant",
+      "retail_group": "groupe de distribution",
+      "department_store": "grand magasin",
+      "trading_company": "société de négoce",
+      "fashion_group": "groupe de mode",
+      "lifestyle_group": "enseigne lifestyle",
+      "general_trading": "société de négoce général",
+      "general_merchandise": "grossiste en articles de bazar",
+      "multi_category_retail": "distributeur multispécialiste",
+      "consumer_goods_importer": "importateur de biens de consommation",
+      "regional_retail_group": "groupe de distribution régional"
+    },
+    "pt": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "artigos de uso diário", "DRESSES": "vestidos", "GENERAL_MERCHANDISE": "artigos de variedades",
+        "HOMEWARE": "utilidades domésticas", "HOME_AND_LIVING": "casa e decoração", "HOUSEHOLD_GOODS": "artigos domésticos",
+        "KNITWEAR": "malhas", "NON_FOOD": "produtos não alimentícios", "OUTERWEAR": "casacos e jaquetas",
+        "SKIRTS": "saias", "TOPS": "blusas", "TROUSERS": "calças",
+        "WOMENSWEAR": "moda feminina"
+      },
+      "importer": "importador",
+      "wholesaler": "atacadista",
+      "distributor": "distribuidor",
+      "retailer": "varejista",
+      "retail_group": "grupo varejista",
+      "department_store": "loja de departamentos",
+      "trading_company": "empresa importadora e exportadora",
+      "fashion_group": "grupo de moda",
+      "lifestyle_group": "varejista de estilo de vida",
+      "general_trading": "empresa de comércio geral",
+      "general_merchandise": "distribuidor de variedades",
+      "multi_category_retail": "varejista multicategoria",
+      "consumer_goods_importer": "importador de bens de consumo",
+      "regional_retail_group": "rede varejista regional"
+    },
+    "it": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "articoli di uso quotidiano", "DRESSES": "abiti", "GENERAL_MERCHANDISE": "articoli bazar",
+        "HOMEWARE": "articoli per la casa", "HOME_AND_LIVING": "casa e arredo", "HOUSEHOLD_GOODS": "casalinghi",
+        "KNITWEAR": "maglieria", "NON_FOOD": "prodotti non alimentari", "OUTERWEAR": "capispalla",
+        "SKIRTS": "gonne", "TOPS": "top", "TROUSERS": "pantaloni",
+        "WOMENSWEAR": "abbigliamento donna"
+      },
+      "importer": "importatore",
+      "wholesaler": "grossista",
+      "distributor": "distributore",
+      "retailer": "rivenditore al dettaglio",
+      "retail_group": "gruppo della distribuzione",
+      "department_store": "grande magazzino",
+      "trading_company": "società commerciale",
+      "fashion_group": "gruppo moda",
+      "lifestyle_group": "rivenditore lifestyle",
+      "general_trading": "società di commercio generale",
+      "general_merchandise": "distributore di articoli bazar",
+      "multi_category_retail": "rivenditore multicategoria",
+      "consumer_goods_importer": "importatore di beni di consumo",
+      "regional_retail_group": "catena distributiva regionale"
+    },
+    "tr": {
+      "category_terms": {
+        "DAILY_USE_GOODS": "günlük kullanım ürünleri", "DRESSES": "elbise", "GENERAL_MERCHANDISE": "genel ürünler",
+        "HOMEWARE": "ev eşyası", "HOME_AND_LIVING": "ev ve yaşam", "HOUSEHOLD_GOODS": "ev gereçleri",
+        "KNITWEAR": "triko", "NON_FOOD": "gıda dışı ürünler", "OUTERWEAR": "dış giyim",
+        "SKIRTS": "etek", "TOPS": "üst giyim", "TROUSERS": "pantolon",
+        "WOMENSWEAR": "kadın giyim"
+      },
+      "importer": "ithalatçı",
+      "wholesaler": "toptancı",
+      "distributor": "distribütör",
+      "retailer": "perakendeci",
+      "retail_group": "perakende grubu",
+      "department_store": "büyük mağaza",
+      "trading_company": "dış ticaret şirketi",
+      "fashion_group": "moda grubu",
+      "lifestyle_group": "yaşam tarzı mağazası",
+      "general_trading": "genel ticaret şirketi",
+      "general_merchandise": "genel ürün distribütörü",
+      "multi_category_retail": "çok kategorili perakendeci",
+      "consumer_goods_importer": "tüketim malları ithalatçısı",
+      "regional_retail_group": "bölgesel perakende zinciri"
     }
   },
   "strategies": [

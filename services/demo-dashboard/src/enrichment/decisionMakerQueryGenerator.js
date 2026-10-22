@@ -1,4 +1,5 @@
 import { getMarketProfile } from '../market/marketProfiles.js';
+import { ENRICHMENT_TERMS, primaryMarketLanguage } from '../market/marketLanguages.js';
 
 function quote(value) {
   return `"${String(value || '').replaceAll('"', '').trim()}"`;
@@ -12,16 +13,11 @@ export function generateDecisionMakerQueries(company, { maxQueries = 5 } = {}) {
   const profile = getMarketProfile(company.country_code, company.country_name);
   const name = String(company.company_name || '').trim();
   const domain = String(company.official_root_domain || company.normalized_domain || '').trim().toLowerCase();
-  const isMx = profile.countryCode === 'MX';
-  const roleTerms = isMx
-    ? ['comprador','gerente de compras','abastecimiento','adquisiciones','buyer']
-    : ['buyer','procurement manager','purchasing manager','category manager','sourcing manager'];
-  const accessTerms = isMx
-    ? ['registro de proveedores','alta de proveedores','portal de proveedores','compras']
-    : ['supplier registration','vendor registration','procurement','become a supplier'];
-  const barrierTerms = isMx
-    ? ['proveedores aprobados','precalificación','solo por invitación']
-    : ['approved vendor','prequalification','invitation only'];
+  // Wording follows the market's primary search language; markets without it use English.
+  const terms = ENRICHMENT_TERMS[primaryMarketLanguage(profile.countryCode)] || ENRICHMENT_TERMS.en;
+  const roleTerms = terms.roles;
+  const accessTerms = terms.access;
+  const barrierTerms = terms.barriers;
   const rows = [];
   if (domain) rows.push({
     query_type:'procurement_route',

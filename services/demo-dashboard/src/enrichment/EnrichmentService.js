@@ -148,7 +148,9 @@ export class EnrichmentService {
   }
 
   async listEligibleCompanies(job) {
-    const marketCodes = job.market_codes?.length ? job.market_codes : ['AE','MX'];
+    // A job without explicit markets covers every ACTIVE registry market.
+    const marketCodes = job.market_codes?.length ? job.market_codes
+      : (await this.pool.query(`SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE' ORDER BY market_code`)).rows.map(row=>row.market_code);
     const requestedIds = job.requested_company_ids?.length ? job.requested_company_ids : null;
     const params = [marketCodes];
     let requestedClause = '';

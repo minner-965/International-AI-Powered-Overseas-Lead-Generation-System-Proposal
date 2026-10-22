@@ -42,7 +42,8 @@ test('POST creates a queued enrichment ResearchJob before n8n dispatch', () => {
   assert.match(block, /'QUEUED',\$13/);
   assert.match(block, /researchWave\?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT'/);
   assert.match(block, /res\.status\(202\)\.json\(\{ job_id:job\.id,id:job\.id,status:'QUEUED',dispatch:'accepted' \}\)/);
-  assert.match(block, /marketCodes\.some\(code=>!\['AE','MX'\]\.includes\(code\)\)/);
+  // Markets come from the registry's ACTIVE rows instead of an AE/MX whitelist.
+  assert.match(block, /marketCodes\.some\(code=>!activeMarkets\.includes\(code\)\)/);
   assert.match(block, /productProfiles\.some\(value=>!\['WOMENSWEAR','GENERAL_MERCHANDISE'\]\.includes\(value\)\)/);
 });
 

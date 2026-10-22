@@ -199,3 +199,26 @@ Reuse the existing JavaScript adapters, native Node fetch/AbortSignal, PostgreSQ
 - Native runtime and existing ledger: no new vendor, data residency, package license or maintenance burden. Database result cache stays on the existing local deployment and is excluded from Git exports. Frozen migration 057 remains unchanged.
 
 Sources: [Brave API](https://api-dashboard.search.brave.com/api-reference/web/search/get), [Tavily API](https://docs.tavily.com/documentation/api-reference/endpoint/search).
+
+# Global markets, categories and search cost — reuse review (2026-10-22)
+
+Scope: plan sections A2–A4 and D (any category, major global markets, search spend control). Decision summary: reuse public reference data at **development time** to generate the market seed (migration 065 and `config/search/market-registry-seed.v1.json`); add **no new runtime dependency**. Search cost control reuses the existing `provider_usage_events` ledger and frozen-plan executor.
+
+## Country names, languages, time zones, working days
+
+| Candidate | Version / license (verified) | Fit | Maintenance | Decision |
+|---|---|---|---|---|
+| [`i18n-iso-countries`](https://github.com/michaelwittig/node-i18n-iso-countries) | 7.14.0, MIT (package LICENSE read) | ISO 3166-1 country names in en/es/de/fr/pt/it/tr/ar used for localized search market names (`country_terms`) | Active project; 7.14.0 published 2025-02-17 | **Reuse at dev time** via `scripts/generate-market-registry-seed.mjs` |
+| [`countries-and-timezones`](https://github.com/manuelmhtr/countries-and-timezones) | 3.11.0, MIT (package LICENSE read) | IANA zones per country; validates the chosen business zone (multi-zone countries use a documented business-hub zone) | Active; 3.11.0 published 2026-10-16 (recent release — output was cross-checked against PostgreSQL `pg_timezone_names` in the Postgres test) | **Reuse at dev time** |
+| [Unicode CLDR `cldr-core`](https://github.com/unicode-org/cldr-json) | 48.2.0, Unicode License v3 (package LICENSE read) | `territoryInfo` official languages (≥25% share, intersected with search vocabulary, English kept as business lingua franca), `weekData` weekend days → business send days, `primaryZones` | Unicode Consortium, semi-annual releases | **Reuse at dev time** |
+| Hand-written country table | — | Error-prone, no source of truth | — | Rejected |
+
+Why not a runtime dependency: the registry is a small, curated, management-controlled table (36 markets); names/zones/languages change rarely and must be frozen per migration for audit. Generating once keeps the production image unchanged (no new packages, no extra license notices shipped, no network). Regenerate with the script when adding markets; review the diff.
+
+Integration boundary: seed data only. Market activation stays a management decision (`PUT /api/markets/registry/:code`); every new market is inserted `INACTIVE`/not search-enabled; AE/MX/BD rows are untouched.
+
+Search vocabulary for de/fr/pt/it/tr (buyer terms + the 13 approved category terms) was written as standard B2B trade terminology in `config/search/query-strategies.v2.json`; no machine-translation service was called. Native-speaker review is recommended before large paid runs. Languages without vocabulary fall back to English.
+
+## Search spend control
+
+Reused: `leadgen.provider_usage_events` (append-only rows; reuse is recorded as a new zero-cost `SKIPPED` row), `research_query_executions` stored response snapshots (cross-run reuse), the frozen search plan (query counts). Unit prices (`SEARCH_COST_USD_PER_QUERY_<PROVIDER>`) are configurable estimates; provider-reported `costDollars` is used when present. No billing SDK or external cost service is added.

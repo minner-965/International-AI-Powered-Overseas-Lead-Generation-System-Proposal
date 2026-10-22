@@ -1,14 +1,24 @@
 import {createHash} from 'node:crypto';
+import {BUYER_ROLE_TERMS,primaryMarketLanguage} from '../market/marketLanguages.js';
 
 const upper=value=>String(value??'').trim().toUpperCase();
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim().slice(0,390);
 const quote=value=>`"${String(value??'').replaceAll('"','').trim()}"`;
 const sha=value=>createHash('sha256').update(String(value)).digest('hex');
 
-export const MEXICO_BUYER_ROLE_TERMS=Object.freeze([
-  'Comprador','Compradora','Gerente de Compras','Director de Compras','Jefe de Compras',
-  'Abastecimiento','Gerente de Categoría','Importaciones','Sourcing'
-]);
+export const MEXICO_BUYER_ROLE_TERMS=BUYER_ROLE_TERMS.es;
+
+// Role wording follows the market's primary search language from the registry seed:
+// Spanish-speaking markets use Spanish titles; other markets use English plus local titles.
+export function marketRoleTerms(country){
+  const language=primaryMarketLanguage(country);
+  if(language==='es')return [...BUYER_ROLE_TERMS.es];
+  return [...new Set([...BUYER_ROLE_TERMS.en,...(language==='en'?[]:BUYER_ROLE_TERMS[language]||[])])];
+}
+export function marketStrategyLocale(country){
+  const language=primaryMarketLanguage(country);
+  return language==='en'?'en':language==='es'?`es-${country}`:`en-${language}-${country}`;
+}
 
 export const AUTO_EVIDENCE_STRATEGIES=Object.freeze([
   {code:'S01_OFFICIAL_CATEGORY',version:'phase10-wp09-v1',source_class:'OFFICIAL_SITE',target:'CATEGORY',
@@ -66,10 +76,8 @@ export function buildStrategyQuery(strategyCode,task={}){
     ||String(task.target_category_scope_key||'').replace(/^CATEGORY:/i,'')
     ||task.product_profile).replaceAll('_',' ').toLowerCase();
   const subject=domain?`site:${domain}`:quote(name);
-  const mxRoles=MEXICO_BUYER_ROLE_TERMS.map(quote).join(' OR ');
-  const aeRoles=['buyer','procurement manager','purchasing manager','category manager','sourcing manager','مدير المشتريات','مسؤول المشتريات'].map(quote).join(' OR ');
-  const roles=country==='MX'?mxRoles:aeRoles;
-  const locale=country==='MX'?'es-MX':country==='AE'?'en-ar-AE':'en';
+  const roles=marketRoleTerms(country).map(quote).join(' OR ');
+  const locale=marketStrategyLocale(country);
   const candidate=clean(task.candidate_buyer_name||'');
   const queryByCode={
     S01_OFFICIAL_CATEGORY:`${subject} (${quote(category)} OR category OR products OR marcas)`,

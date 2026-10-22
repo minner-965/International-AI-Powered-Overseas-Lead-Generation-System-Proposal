@@ -89,6 +89,8 @@ export async function findCanonicalCheckpointContinuation(client, task) {
 }
 
 const upper = value => String(value ?? '').trim().toUpperCase();
+// An explicit market list narrows selection; an empty list means every ACTIVE registry market.
+const marketCodeFilter = marketCodes => [...new Set((Array.isArray(marketCodes) ? marketCodes : []).map(upper).filter(value => /^[A-Z]{2}$/.test(value)))];
 
 function booleanEnv(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -178,7 +180,7 @@ export class AutoEvidenceRepository {
   }
 
   async selectCandidates({ limit, marketCodes = [], productProfiles = [], companyIds = [], sourceTtlDays = 90 } = {}) {
-    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const markets = marketCodeFilter(marketCodes);
     const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
     const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
       .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
@@ -244,7 +246,7 @@ export class AutoEvidenceRepository {
         AND c.explicit_exclusion_reason IS NULL
         AND o.relationship_status='NEW_PROSPECT'
         AND o.display_opportunity_status='EVIDENCE_REQUIRED'
-        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND (c.country_code=ANY($2::text[]) OR ($2::text[]='{}' AND c.country_code IN(SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE')))
         AND ($3::text[]='{}' OR o.product_profile=ANY($3::text[]))
         AND ($5::uuid[]='{}' OR o.company_id=ANY($5::uuid[]))
         AND NOT EXISTS (SELECT 1 FROM leadgen.company_suppressions s WHERE s.company_id=c.id AND s.lifted_at IS NULL)
@@ -301,7 +303,7 @@ export class AutoEvidenceRepository {
   }
 
   async selectDueFairnessRetries({ limit, marketCodes = [], productProfiles = [], companyIds = [] } = {}) {
-    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const markets = marketCodeFilter(marketCodes);
     const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
     const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
       .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
@@ -311,7 +313,7 @@ export class AutoEvidenceRepository {
       WHERE t.task_status='RETRY_SCHEDULED' AND t.retry_at<=now()
         AND t.current_stage IS NULL AND t.current_strategy_code IS NULL
         AND t.strategy_state IN ('READY','NEW_EVIDENCE_FOUND','NO_NEW_EVIDENCE')
-        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND (c.country_code=ANY($2::text[]) OR ($2::text[]='{}' AND c.country_code IN(SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE')))
         AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
         AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
       ORDER BY t.retry_at,t.last_strategy_started_at NULLS FIRST,t.created_at,t.id
@@ -320,7 +322,7 @@ export class AutoEvidenceRepository {
   }
 
   async selectStaleRunningTasks({ limit, marketCodes = [], productProfiles = [], companyIds = [], leaseMinutes = 15 } = {}) {
-    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const markets = marketCodeFilter(marketCodes);
     const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
     const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
       .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
@@ -330,7 +332,7 @@ export class AutoEvidenceRepository {
       JOIN leadgen.companies c ON c.id=t.company_id
       WHERE t.task_status='RUNNING' AND t.current_stage IS NOT NULL AND t.current_strategy_code IS NOT NULL
         AND t.updated_at<now()-($5::int*interval '1 minute')
-        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND (c.country_code=ANY($2::text[]) OR ($2::text[]='{}' AND c.country_code IN(SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE')))
         AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
         AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
       ORDER BY t.updated_at,t.created_at,t.id LIMIT $1`,[limit,markets,profiles,companies,lease]);
@@ -384,7 +386,7 @@ export class AutoEvidenceRepository {
   }
 
   async selectProviderCapacityWaits({ limit, marketCodes = [], productProfiles = [], companyIds = [] } = {}) {
-    const markets = [...new Set(marketCodes.map(upper).filter(value => ['AE', 'MX'].includes(value)))];
+    const markets = marketCodeFilter(marketCodes);
     const profiles = [...new Set(productProfiles.map(upper).filter(value => PRODUCT_PROFILES.has(value)))];
     const companies=[...new Set(companyIds.map(value=>String(value||'').trim())
       .filter(value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))];
@@ -393,7 +395,7 @@ export class AutoEvidenceRepository {
       JOIN leadgen.companies c ON c.id=t.company_id
       WHERE t.task_status='PROVIDER_CAPACITY_WAIT'
         AND t.current_stage IS NOT NULL AND t.current_strategy_code IS NOT NULL
-        AND ($2::text[]='{}' OR c.country_code=ANY($2::text[]))
+        AND (c.country_code=ANY($2::text[]) OR ($2::text[]='{}' AND c.country_code IN(SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE')))
         AND ($3::text[]='{}' OR t.product_profile IS NULL OR t.product_profile=ANY($3::text[]))
         AND ($4::uuid[]='{}' OR t.company_id=ANY($4::uuid[]))
       ORDER BY t.updated_at,t.created_at,t.id LIMIT $1`,[limit,markets,profiles,companies]);

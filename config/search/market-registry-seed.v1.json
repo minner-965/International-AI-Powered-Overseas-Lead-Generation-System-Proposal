@@ -1,0 +1,1142 @@
+{
+  "version": 1,
+  "generated_by": "scripts/generate-market-registry-seed.mjs",
+  "sources": [
+    "i18n-iso-countries@7.14.0",
+    "countries-and-timezones@3.11.0",
+    "cldr-core@48.2.0"
+  ],
+  "vocabulary_languages": [
+    "en",
+    "es",
+    "ar",
+    "de",
+    "fr",
+    "pt",
+    "it",
+    "tr"
+  ],
+  "existing_rows_unchanged": [
+    "AE",
+    "MX"
+  ],
+  "markets": [
+    {
+      "market_code": "US",
+      "country_name": "United States",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/New_York",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "United States"
+      }
+    },
+    {
+      "market_code": "CA",
+      "country_name": "Canada",
+      "languages": [
+        "en",
+        "fr"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Toronto",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Canada",
+        "fr": "Canada"
+      }
+    },
+    {
+      "market_code": "GB",
+      "country_name": "United Kingdom",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/London",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "United Kingdom"
+      }
+    },
+    {
+      "market_code": "DE",
+      "country_name": "Germany",
+      "languages": [
+        "de",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Berlin",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Germany",
+        "de": "Deutschland"
+      }
+    },
+    {
+      "market_code": "FR",
+      "country_name": "France",
+      "languages": [
+        "fr",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Paris",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "France",
+        "fr": "France"
+      }
+    },
+    {
+      "market_code": "IT",
+      "country_name": "Italy",
+      "languages": [
+        "it",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Rome",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Italy",
+        "it": "Italia"
+      }
+    },
+    {
+      "market_code": "ES",
+      "country_name": "Spain",
+      "languages": [
+        "es",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Madrid",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Spain",
+        "es": "España"
+      }
+    },
+    {
+      "market_code": "NL",
+      "country_name": "Netherlands",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Amsterdam",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Netherlands"
+      }
+    },
+    {
+      "market_code": "PL",
+      "country_name": "Poland",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Warsaw",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Poland"
+      }
+    },
+    {
+      "market_code": "SA",
+      "country_name": "Saudi Arabia",
+      "languages": [
+        "ar",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Riyadh",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          7
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Saudi Arabia",
+        "ar": "السعودية"
+      }
+    },
+    {
+      "market_code": "AE",
+      "country_name": "United Arab Emirates",
+      "languages": [
+        "ar",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Dubai",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "United Arab Emirates",
+        "ar": "الإمارات العربية المتحدة"
+      }
+    },
+    {
+      "market_code": "QA",
+      "country_name": "Qatar",
+      "languages": [
+        "ar",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Qatar",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          7
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Qatar",
+        "ar": "قطر"
+      }
+    },
+    {
+      "market_code": "KW",
+      "country_name": "Kuwait",
+      "languages": [
+        "ar",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Kuwait",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          7
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Kuwait",
+        "ar": "الكويت"
+      }
+    },
+    {
+      "market_code": "IL",
+      "country_name": "Israel",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Jerusalem",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          7
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Israel"
+      }
+    },
+    {
+      "market_code": "TR",
+      "country_name": "Turkey",
+      "languages": [
+        "tr",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Europe/Istanbul",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Turkey",
+        "tr": "Türkiye"
+      }
+    },
+    {
+      "market_code": "MX",
+      "country_name": "Mexico",
+      "languages": [
+        "es",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Mexico_City",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Mexico",
+        "es": "México"
+      }
+    },
+    {
+      "market_code": "BR",
+      "country_name": "Brazil",
+      "languages": [
+        "pt",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Sao_Paulo",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Brazil",
+        "pt": "Brasil"
+      }
+    },
+    {
+      "market_code": "CL",
+      "country_name": "Chile",
+      "languages": [
+        "es",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Santiago",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Chile",
+        "es": "Chile"
+      }
+    },
+    {
+      "market_code": "CO",
+      "country_name": "Colombia",
+      "languages": [
+        "es",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Bogota",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Colombia",
+        "es": "Colombia"
+      }
+    },
+    {
+      "market_code": "PE",
+      "country_name": "Peru",
+      "languages": [
+        "es",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "America/Lima",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Peru",
+        "es": "Perú"
+      }
+    },
+    {
+      "market_code": "AU",
+      "country_name": "Australia",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Australia/Sydney",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Australia"
+      }
+    },
+    {
+      "market_code": "NZ",
+      "country_name": "New Zealand",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Pacific/Auckland",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "New Zealand"
+      }
+    },
+    {
+      "market_code": "JP",
+      "country_name": "Japan",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Tokyo",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Japan"
+      }
+    },
+    {
+      "market_code": "KR",
+      "country_name": "South Korea",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Seoul",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "South Korea"
+      }
+    },
+    {
+      "market_code": "SG",
+      "country_name": "Singapore",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Singapore",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Singapore"
+      }
+    },
+    {
+      "market_code": "MY",
+      "country_name": "Malaysia",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Kuala_Lumpur",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Malaysia"
+      }
+    },
+    {
+      "market_code": "TH",
+      "country_name": "Thailand",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Bangkok",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Thailand"
+      }
+    },
+    {
+      "market_code": "VN",
+      "country_name": "Vietnam",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Ho_Chi_Minh",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Vietnam"
+      }
+    },
+    {
+      "market_code": "PH",
+      "country_name": "Philippines",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Manila",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Philippines"
+      }
+    },
+    {
+      "market_code": "ID",
+      "country_name": "Indonesia",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Jakarta",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Indonesia"
+      }
+    },
+    {
+      "market_code": "IN",
+      "country_name": "India",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Asia/Kolkata",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "India"
+      }
+    },
+    {
+      "market_code": "ZA",
+      "country_name": "South Africa",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Africa/Johannesburg",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "South Africa"
+      }
+    },
+    {
+      "market_code": "NG",
+      "country_name": "Nigeria",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Africa/Lagos",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Nigeria"
+      }
+    },
+    {
+      "market_code": "KE",
+      "country_name": "Kenya",
+      "languages": [
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Africa/Nairobi",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Kenya"
+      }
+    },
+    {
+      "market_code": "EG",
+      "country_name": "Egypt",
+      "languages": [
+        "ar",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Africa/Cairo",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          7
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Egypt",
+        "ar": "مصر"
+      }
+    },
+    {
+      "market_code": "MA",
+      "country_name": "Morocco",
+      "languages": [
+        "ar",
+        "fr",
+        "en"
+      ],
+      "buyer_types": [
+        "Department Store",
+        "Large Retail Group",
+        "Regional Retail Chain",
+        "Importer",
+        "Wholesaler",
+        "Distributor"
+      ],
+      "timezone": "Africa/Casablanca",
+      "business_send_window": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "country_terms": {
+        "en": "Morocco",
+        "ar": "المغرب",
+        "fr": "Maroc"
+      }
+    }
+  ]
+}
