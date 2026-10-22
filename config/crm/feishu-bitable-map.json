@@ -1,0 +1,17 @@
+{
+  "schema_version": "dpv-feishu-bitable-map-v1",
+  "description": "Column names in the Feishu Bitable follow-up log table. Rename the right-hand values to match the table; every column is a text column unless type is date.",
+  "fields": {
+    "sync_key": {"column": "同步编号"},
+    "operation": {"column": "记录类型"},
+    "company_name": {"column": "企业"},
+    "country_code": {"column": "国家"},
+    "event_type": {"column": "事项"},
+    "stage": {"column": "阶段"},
+    "summary": {"column": "内容"},
+    "owner": {"column": "负责人"},
+    "occurred_at": {"column": "时间", "type": "date"},
+    "due_at": {"column": "截止时间", "type": "date"},
+    "source_reference": {"column": "系统编号"}
+  }
+}

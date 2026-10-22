@@ -1592,9 +1592,13 @@ export class Phase7Repository {
     });
   }
 
-  async completeCrmOutbox(id) {
-    const result=await this.pool.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='SYNCED',
-      next_attempt_at=NULL,last_error=NULL,updated_at=now() WHERE id=$1 AND sync_status='PROCESSING' RETURNING *`,[requiredUuid(id,'outbox_id')]);
+  async completeCrmOutbox(id,{externalRecordId=null}={}) {
+    // external_record_id exists from migration 064; the generic adapter does not return one.
+    const result=externalRecordId
+      ?await this.pool.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='SYNCED',external_record_id=$2,
+        next_attempt_at=NULL,last_error=NULL,updated_at=now() WHERE id=$1 AND sync_status='PROCESSING' RETURNING *`,[requiredUuid(id,'outbox_id'),String(externalRecordId).slice(0,200)])
+      :await this.pool.query(`UPDATE leadgen.crm_sync_outbox SET sync_status='SYNCED',
+        next_attempt_at=NULL,last_error=NULL,updated_at=now() WHERE id=$1 AND sync_status='PROCESSING' RETURNING *`,[requiredUuid(id,'outbox_id')]);
     if(!result.rowCount)throw notFound('Processing CRM outbox item not found','CRM_OUTBOX_STATE_CONFLICT');
     return result.rows[0];
   }

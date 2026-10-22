@@ -33,6 +33,8 @@ import { hiddenMarketCodes, isMarketVisible } from '../public/market-visibility.
 import { Phase7Service } from './phase7/service.js';
 import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
 import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/router.js';
+import {CrmService} from './crm/service.js';
+import {createCrmRouter} from './crm/router.js';
 import { createManagementAuth } from './phase7/managementAuth.js';
 import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
 import { createResearchRouter } from './research/router.js';
@@ -443,6 +445,7 @@ let researchDirectDispatchService;
 let researchDirectExecutor;
 let searchPlanService;
 let autoFirstTouchService;
+let crmService;
 
 const phase5Queue = createPhase5Queue({
   telemetry,
@@ -491,6 +494,8 @@ const phase5Queue = createPhase5Queue({
     ...autoEvidenceQueueHandlers,
     ...phase7QueueHandlers,
     [PHASE5_QUEUES.SEND_AUTO_FIRST_TOUCH]:data=>autoFirstTouchService.sendReservation(data.reservation_id),
+    [PHASE5_QUEUES.CRM_FOLLOWUP_SCAN]:()=>crmService.scanFollowups(),
+    [PHASE5_QUEUES.CRM_FOLLOWUP_SEND]:data=>crmService.sendApprovedFollowup(data),
     [PHASE5_QUEUES.EXECUTE_RESEARCH_JOB]:data=>researchDirectDispatchService.execute(data)
   }
 });
@@ -552,6 +557,8 @@ autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,out
   automationControl:phase13Automation,
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
   env:process.env});
+crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
+  queue:phase7QueueProxy,env:process.env,audit});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -601,6 +608,7 @@ function requireInternalToken(req, res, next) {
 }
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
+app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth}));
 const automationRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
 const automationWrite=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN')];
 app.get('/api/automation/control',...automationRead,async(_req,res,next)=>{

@@ -43,6 +43,7 @@ export const PHASE13_SEARCH_PLANNING_MIGRATION_KEY = '060_phase13_search_plannin
 export const PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY = '061_phase13_automation_control_query_execution.sql';
 export const PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY = '062_phase13_auto_first_touch_reply_bridge.sql';
 export const CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY = '063_cleanup_optional_cohort_catalog_snapshot.sql';
+export const CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY = '064_crm_followup_pipeline.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -83,6 +84,7 @@ const phase13SearchPlanningPath = path.resolve(projectRoot,'database/migrations'
 const phase13AutomationControlPath = path.resolve(projectRoot,'database/migrations',PHASE13_AUTOMATION_CONTROL_MIGRATION_KEY);
 const phase13AutoReplyBridgePath = path.resolve(projectRoot,'database/migrations',PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY);
 const cleanupOptionalCatalogPath = path.resolve(projectRoot,'database/migrations',CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY);
+const crmFollowupPipelinePath = path.resolve(projectRoot,'database/migrations',CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -791,7 +793,10 @@ export async function applyPhase7Migrations(options = {}) {
   const cleanupOptionalCatalog=await applyPhase7Migration({...options,
     migrationPath:options.cleanupOptionalCatalogMigrationPath||cleanupOptionalCatalogPath,
     appliedBy:options.appliedBy||'dpv-cleanup-migration-runner'});
-  return {cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const crmFollowupPipeline=await applyPhase7Migration({...options,
+    migrationPath:options.crmFollowupPipelineMigrationPath||crmFollowupPipelinePath,
+    appliedBy:options.appliedBy||'dpv-crm-migration-runner'});
+  return {crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -830,6 +835,19 @@ export async function verifyPhase11ControlledApplicationMigration(client){
     EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='controlled_application_inbound_messages' AND column_name='from_address_hash') sender_hash`);
   const row=result.rows[0]||{};if(Number(row.controlled_tables)!==9||!row.production_links||!row.sender_hash)throw new Error('Phase 11 controlled application migration verification failed');
   return{controlled_application_tables_verified:9,production_data_isolation_verified:true,controlled_sender_hash_verified:true};
+}
+
+export async function verifyCrmFollowupPipelineMigration(client){
+  const columns=await client.query(`SELECT table_name,column_name,is_nullable FROM information_schema.columns
+    WHERE table_schema='leadgen' AND (table_name,column_name) IN
+      (('opportunity_crm_states','pipeline_stage'),('opportunity_activities','occurred_at'),('outbound_messages','followup_draft_id'))`);
+  if(columns.rowCount!==3)throw new Error('CRM follow-up pipeline columns are missing');
+  if(columns.rows.find(row=>row.column_name==='pipeline_stage')?.is_nullable!=='NO')throw new Error('pipeline_stage must be required');
+  const tables=await client.query(`SELECT to_regclass('leadgen.opportunity_stage_history') history,to_regclass('leadgen.crm_followup_drafts') drafts`);
+  if(!tables.rows[0].history||!tables.rows[0].drafts)throw new Error('CRM follow-up pipeline tables are missing');
+  const trigger=await client.query(`SELECT 1 FROM pg_trigger WHERE tgname='opportunity_crm_states_pipeline_stage' AND NOT tgisinternal`);
+  if(!trigger.rowCount)throw new Error('Pipeline stage trigger is missing');
+  return{pipeline_stage:'REQUIRED',followup_drafts:'APPROVAL_REQUIRED'};
 }
 
 export async function verifyCleanupOptionalCatalogMigration(client){
@@ -880,7 +898,9 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
+      const verification = migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
+        ?await verifyCrmFollowupPipelineMigration(client)
+        :migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
         ?await verifyCleanupOptionalCatalogMigration(client)
         :migrationKey===PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY
         ?await verifyPhase13AutoReplyBridgeMigration(client)
@@ -966,7 +986,9 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, appliedBy]
     );
-    const verification = migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
+    const verification = migrationKey===CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY
+      ?await verifyCrmFollowupPipelineMigration(client)
+      :migrationKey===CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY
       ?await verifyCleanupOptionalCatalogMigration(client)
       :migrationKey===PHASE13_AUTO_REPLY_BRIDGE_MIGRATION_KEY
       ?await verifyPhase13AutoReplyBridgeMigration(client)

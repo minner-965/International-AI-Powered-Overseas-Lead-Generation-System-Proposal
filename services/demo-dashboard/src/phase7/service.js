@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {normalizeLegacyCrmPayload} from '../crm/outboxPayloads.js';
+import {FeishuBitableAdapter,feishuConfigured} from '../crm/feishuBitableAdapter.js';
 import {
   buildApprovalDigest,
   buildContentHash,
@@ -1185,6 +1186,7 @@ export class Phase7Service {
       const failed=await this.repository.failCrmOutbox(claim.outbox.id,{retryable:false,error:error.code||'CRM_PAYLOAD_UNSAFE'});
       return{status:failed.sync_status,outbox_id:failed.id,error_code:error.code||'CRM_PAYLOAD_UNSAFE',network_calls:0};
     }
+    if(upper(this.env.CRM_PROVIDER)==='FEISHU')return this.syncCrmOutboxToFeishu(claim.outbox,outboundPayload);
     const baseUrl=String(this.env.CRM_BASE_URL||'').trim().replace(/\/$/,'');
     const apiKey=String(this.env.CRM_API_KEY||'').trim();
     const configured=baseUrl&&apiKey&&!/REPLACE_WITH|NOT_CONFIGURED/i.test(`${baseUrl}|${apiKey}`);
@@ -1210,6 +1212,25 @@ export class Phase7Service {
       const failed=await this.repository.failCrmOutbox(claim.outbox.id,{retryable:true,error:`CRM_TRANSPORT_ERROR:${String(error?.message||error)}`,retryAfterSeconds:300});
       return{status:failed.sync_status,outbox_id:failed.id,error_code:'CRM_TRANSPORT_ERROR',network_calls:1};
     }
+  }
+
+  async syncCrmOutboxToFeishu(outbox,payload){
+    if(!feishuConfigured(this.env)){
+      const failed=await this.repository.failCrmOutbox(outbox.id,{retryable:true,error:'CRM_ADAPTER_NOT_CONFIGURED',retryAfterSeconds:3600});
+      return{status:failed.sync_status,configuration_status:'ADAPTER_NOT_CONFIGURED',outbox_id:failed.id,
+        attempt_count:failed.attempt_count,next_attempt_at:failed.next_attempt_at,network_calls:0};
+    }
+    this.feishuAdapter||=new FeishuBitableAdapter({env:this.env});
+    const company=outbox.company_id?(await this.pool.query('SELECT company_name,country_code FROM leadgen.companies WHERE id=$1',[outbox.company_id])).rows[0]:null;
+    let result;
+    try{result=await this.feishuAdapter.sync({outbox,payload,company});}
+    catch(error){result={status:'FAILED',retryable:true,code:`CRM_TRANSPORT_ERROR:${String(error?.message||error)}`,retry_after_seconds:300,network_calls:1};}
+    if(result.status==='SYNCED'){
+      const synced=await this.repository.completeCrmOutbox(outbox.id,{externalRecordId:result.external_record_id});
+      return{status:synced.sync_status,outbox_id:synced.id,provider:'FEISHU',attempt_count:synced.attempt_count,network_calls:result.network_calls};
+    }
+    const failed=await this.repository.failCrmOutbox(outbox.id,{retryable:result.retryable,error:result.code,retryAfterSeconds:result.retry_after_seconds});
+    return{status:failed.sync_status,outbox_id:failed.id,provider:'FEISHU',error_code:result.code,network_calls:result.network_calls};
   }
 
   async createImportDryRun(body,user){

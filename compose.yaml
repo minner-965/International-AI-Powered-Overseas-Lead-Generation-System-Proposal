@@ -211,12 +211,21 @@ services:
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
       RESEND_USE_CASE: "DISABLED"
-      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send"
+      PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send,crm-followup-scan,crm-followup-send"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
       CRM_BASE_URL: ${CRM_BASE_URL:-}
       CRM_API_KEY: ${CRM_API_KEY:-}
       CRM_TIMEOUT_MS: ${CRM_TIMEOUT_MS:-10000}
+      CRM_PROVIDER: ${CRM_PROVIDER:-}
+      FEISHU_BASE_URL: ${FEISHU_BASE_URL:-https://open.feishu.cn}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_BITABLE_APP_TOKEN: ${FEISHU_BITABLE_APP_TOKEN:-}
+      FEISHU_BITABLE_TABLE_ID: ${FEISHU_BITABLE_TABLE_ID:-}
+      CRM_FOLLOWUP_DRAFTS_ENABLED: ${CRM_FOLLOWUP_DRAFTS_ENABLED:-false}
+      CRM_FOLLOWUP_MAX_SEQUENCE: ${CRM_FOLLOWUP_MAX_SEQUENCE:-3}
+      CRM_FOLLOWUP_DAILY_LIMIT: ${CRM_FOLLOWUP_DAILY_LIMIT:-50}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}

@@ -44,7 +44,9 @@ export const PHASE5_QUEUES = Object.freeze({
   VERIFY_PROFILE_BUYER_EMAIL: 'verify-profile-buyer-email',
   REFRESH_BUSINESS_OPPORTUNITY_V3: 'refresh-business-opportunity-v3',
   REFRESH_AUTO_EVIDENCE_EXCEPTION: 'refresh-auto-evidence-exception',
-  EXECUTE_RESEARCH_JOB: 'execute-research-job'
+  EXECUTE_RESEARCH_JOB: 'execute-research-job',
+  CRM_FOLLOWUP_SCAN: 'crm-followup-scan',
+  CRM_FOLLOWUP_SEND: 'crm-followup-send'
 });
 
 export const PHASE5_QUEUE_NAMES = Object.freeze(Object.values(PHASE5_QUEUES));
@@ -65,6 +67,7 @@ function queuePolicy(name) {
       PHASE5_QUEUES.VERIFY_OUTREACH_CONTACT,
       PHASE5_QUEUES.SEND_OUTREACH_EMAIL,
       PHASE5_QUEUES.SEND_AUTO_FIRST_TOUCH,
+      PHASE5_QUEUES.CRM_FOLLOWUP_SEND,
       PHASE5_QUEUES.PROCESS_EMAIL_PROVIDER_EVENT,
       PHASE5_QUEUES.PROCESS_INBOUND_MESSAGE,
       PHASE5_QUEUES.GMAIL_INBOUND_SYNC,
@@ -201,6 +204,9 @@ export function createPhase5Queue({
           const minutes=Math.max(1,Math.min(59,Number(env.INBOUND_EMAIL_SYNC_INTERVAL_MINUTES||env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
           await boss.schedule(PHASE5_QUEUES.INBOUND_EMAIL_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });
         }
+        // The scan only drafts follow-ups for human approval; it never sends.
+        if (booleanEnv(env.CRM_FOLLOWUP_DRAFTS_ENABLED,false) && typeof boss.schedule === 'function')
+          await boss.schedule(PHASE5_QUEUES.CRM_FOLLOWUP_SCAN,'17 * * * *',{}, { tz:'UTC' });
         for (const name of workerQueueNames) {
           if (!processJobs) continue;
           if (!handlers[name]) continue;

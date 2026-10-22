@@ -9,6 +9,7 @@ COPY services/demo-dashboard/scripts ./scripts
 COPY scripts ./project-scripts
 COPY database/migrations ./database/migrations
 COPY config/search ./config/search
+COPY config/crm ./config/crm
 COPY .env.example ./.env.example
 COPY .env.phase7-outreach.example ./.env.phase7-outreach.example
 COPY rules ./rules
