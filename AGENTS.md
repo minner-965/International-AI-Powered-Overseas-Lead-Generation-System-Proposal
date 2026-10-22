@@ -88,11 +88,15 @@ At the start of every task, complete both checks below before implementation beg
 - Every implementation handoff requires actual browser screenshots, console/network checks, keyboard/focus checks, no page-level overflow, no synthetic production data and applicable business regression. Baseline screenshots record old defects; they do not constitute V3 acceptance.
 - Remove replaced old CSS/JS/assets only after HTML, JS, tests and runtime references are all absent and regression passes. Do not add a giant override stylesheet. WP-UI00–02 install rules and preserve the old runtime unchanged; implementation starts only with subsequent authorization.
 
-## Phase 5+ reuse-first rule
+## Reuse-first rule (all work)
 
-- Before implementing any Phase 5 or later capability, evaluate mature official/open-source modules first. Record the candidate's license, deployment fit, data privacy, operating cost, maintenance activity, and integration boundary, and reuse a suitable module instead of rebuilding the same infrastructure.
-- Use `docs/PHASE5_REUSE_RESEARCH.md` as the initial shortlist, then re-check current official documentation and release status before adoption.
-- This rule does not authorize Phase 5 work during Phase 4: do not add these dependencies, change Phase 4 scope, or begin Phase 5 until Phase 4 has passed and Phase 5 is explicitly started.
+- Do not rebuild what already exists. Before implementing any capability — features, data sets, integrations, UI components, scripts — first look for a mature open-source project, official SDK or public data source (for example category taxonomies, country/language/time-zone data, authentication, charting, CRM views) and reuse it when its license, deployment fit, data privacy, operating cost and maintenance activity are acceptable.
+- Record each evaluation in `docs/REUSE_CANDIDATE_REGISTRY.md` (official source, license, maintenance status, why it is or is not used) before adding the dependency or writing the replacement. Write only the integration and the genuinely missing parts.
+- `docs/PHASE5_REUSE_RESEARCH.md` remains a starting shortlist; re-check current official documentation and release status before adoption.
+
+## Business model
+
+- SIM operates one hosted system for small and medium export companies: SIM finds leads and sends introductory email for each client, and the client signs in to see its own leads and follow them up itself (managed lead delivery). Self-service multi-tenant SaaS is not the target. Planned per-client pieces: a client project (categories, markets, sender identity) to which leads, opportunities and email belong, client accounts that only see their own project, and sending under the client's company name, preferably from the client's own mailbox.
 
 ## New-customer product opportunity rule
 

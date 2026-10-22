@@ -5,7 +5,7 @@
 ## 0. 用 Claude Code 桌面端在这台电脑上操作
 
 云端会话控制不了你的电脑。要让 Claude 在电脑上执行下面的步骤：
-1. Claude Code 桌面端 → 新建会话 → 环境选 **本地（Local）**，文件夹选一个空目录，例如 `D:\SIM`。
+1. Claude Code 桌面端 → 新建会话 → 环境选 **本地（Local）**，文件夹选 `E:\claude`。
 2. 在那个会话里说："克隆 `https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal` 的 `claude/gifted-hypatia-59rtaf` 分支，按 `docs/deploy/WINDOWS_LOCAL_SETUP.md` 安装"。
 
 也可以自己在 PowerShell 里按下面做。
@@ -13,11 +13,14 @@
 ## 1. 下载并安装
 
 ```powershell
-cd D:\
+New-Item -ItemType Directory -Force E:\claude | Out-Null
+cd E:\claude
 git clone -b claude/gifted-hypatia-59rtaf https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal.git SIM
 cd SIM
 powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 ```
+
+以后更新：在 `E:\claude\SIM` 里 `git pull`，再运行一次 `scripts\local-setup.ps1`（数据保留）。
 
 脚本会：检查 Git 和 Docker → 生成 `.env`、`.env.phase2`（随机数据库密码和内部令牌）、`.env.phase7-outreach`、`.env.phase7-api` → 构建并启动数据库、工作台和后台任务 → 等工作台能打开 → 登记数据库迁移 → 列出可批准的供应类目。完成后打开 **http://localhost:3000**。
 
@@ -31,11 +34,13 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 node scripts\setup-supply-categories.mjs --list
 ```
 
-再批准要做的类目，例如女装四类：
+当前决定：**女装全品类 + 百货**，即批准全部候选：
 
 ```powershell
-node scripts\setup-supply-categories.mjs --categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS,WOMENSWEAR:TROUSERS,WOMENSWEAR:KNITWEAR
+node scripts\setup-supply-categories.mjs --all
 ```
+
+只做部分类目时用 `--categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS` 这种写法。
 
 （电脑没装 Node.js 时，把 `node scripts\` 换成 `docker compose exec -T demo-dashboard node project-scripts/`，并加 `--base http://127.0.0.1:3000`。）
 
