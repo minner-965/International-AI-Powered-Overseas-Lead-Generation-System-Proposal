@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { deriveOpportunityDecision } from './opportunityDecision.js';
 import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
+import {activityOutboxPayload} from '../crm/outboxPayloads.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -1503,7 +1504,7 @@ export class Phase7Repository {
       if(activity&&input.close_followups)await client.query(`UPDATE leadgen.sales_tasks SET task_status='CANCELLED',closed_at=now(),close_reason='OPT_OUT',updated_at=now() WHERE thread_id=$1 AND task_status IN('OPEN','IN_PROGRESS')`,[input.thread_id]);
       let task=null;if(input.task){task=(await client.query(`INSERT INTO leadgen.sales_tasks(company_id,thread_id,inbound_message_id,task_type,task_status,owner,due_at,details,opportunity_snapshot_id,classification_id,effect_key)
         VALUES($1,$2,$3,$4,'OPEN',$5,$6,$7::jsonb,$8,$9,$10) ON CONFLICT(effect_key) WHERE effect_key IS NOT NULL DO NOTHING RETURNING *`,[input.company_id,input.thread_id,input.inbound_message_id,input.task.task_type,input.owner||null,input.due_at||null,JSON.stringify(input.task.details||{}),input.opportunity_snapshot_id||null,input.classification_id,`${baseKey}:task`])).rows[0]||null;}
-      const payload={activity_id:activity?.id||null,inbound_message_id:input.inbound_message_id,classification_id:input.classification_id,opportunity_snapshot_id:input.opportunity_snapshot_id||null,activity_type:input.activity_type,funnel_status:input.funnel_status,owner:input.owner||null,due_at:input.due_at||null};
+      const payload=activityOutboxPayload({activity_type:input.activity_type,owner:input.owner,summary:input.details?.reply_category?`Reply received: ${input.details.reply_category}`:null,references:{activity:activity?.id,inbound:input.inbound_message_id,classification:input.classification_id,opportunity:input.opportunity_snapshot_id,funnel:input.funnel_status}});
       const activityOutbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,task_id,operation,payload,idempotency_key,sync_status,next_attempt_at) VALUES($1,NULL,'UPDATE_ACTIVITY',$2::jsonb,$3,'PENDING',now()) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,JSON.stringify(payload),`${baseKey}:crm:activity`])).rows[0]||null;
       let taskOutbox=null;if(task)taskOutbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,task_id,operation,payload,idempotency_key,sync_status,next_attempt_at) VALUES($1,$2,'CREATE_TASK',$3::jsonb,$4,'PENDING',now()) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,task.id,JSON.stringify({task_id:task.id,task_type:task.task_type,due_at:task.due_at,source:'INBOUND_FOLLOWUP'}),`${baseKey}:crm:task`])).rows[0]||null;
       return{activity,task,outboxes:[activityOutbox,taskOutbox].filter(Boolean),replay:!activity&&!task&&!activityOutbox&&!taskOutbox};

@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import {normalizeLegacyCrmPayload} from '../crm/outboxPayloads.js';
 import {
   buildApprovalDigest,
   buildContentHash,
@@ -1180,7 +1181,7 @@ export class Phase7Service {
     const claim=await this.repository.claimCrmOutbox(outbox_id);
     if(!claim.claimed)return{status:claim.outbox.sync_status,outbox_id:claim.outbox.id,replay:claim.outbox.sync_status==='SYNCED',network_calls:0};
     let outboundPayload;
-    try{outboundPayload=validateCrmPayload(claim.outbox.operation,claim.outbox.payload||{});}catch(error){
+    try{outboundPayload=validateCrmPayload(claim.outbox.operation,normalizeLegacyCrmPayload(claim.outbox.operation,claim.outbox.payload||{}));}catch(error){
       const failed=await this.repository.failCrmOutbox(claim.outbox.id,{retryable:false,error:error.code||'CRM_PAYLOAD_UNSAFE'});
       return{status:failed.sync_status,outbox_id:failed.id,error_code:error.code||'CRM_PAYLOAD_UNSAFE',network_calls:0};
     }

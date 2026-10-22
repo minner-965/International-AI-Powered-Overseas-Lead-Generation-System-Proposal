@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {renderFirstTouchTemplate,FIRST_TOUCH_SENDER_NAME} from './firstTouchTemplates.js';
 import {evaluatePhase13EmailEligibility,phase13EmailQueueState} from './phase13EmailEligibility.js';
 import {stableSmtpMessageId} from './smtpImapProvider.js';
+import {activityOutboxPayload} from '../crm/outboxPayloads.js';
 
 export const AUTO_FIRST_TOUCH_QUEUE='send-auto-first-touch';
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -95,7 +96,7 @@ export class AutoFirstTouchService {
         owner_identity=coalesce(leadgen.opportunity_crm_states.owner_identity,EXCLUDED.owner_identity),version=leadgen.opportunity_crm_states.version+1,updated_at=now()`,[activity.opportunity_snapshot_id,existing.company_id]);
     await c.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,operation,payload,idempotency_key,sync_status,next_attempt_at)
       VALUES($1,'UPDATE_ACTIVITY',$2::jsonb,$3,'PENDING',now()) ON CONFLICT(idempotency_key) DO NOTHING`,
-      [existing.company_id,JSON.stringify({activity_id:activity?.id||null,outbound_message_id:attempt.m.id,activity_type:'CONTACTED',funnel_status:'CONTACTED'}),`phase13-first-touch:${id}:crm:contacted`]);
+      [existing.company_id,JSON.stringify(activityOutboxPayload({activity_type:'CONTACTED',owner:'phase13-automation',references:{activity:activity?.id,outbound:attempt.m.id,funnel:'CONTACTED'}})),`phase13-first-touch:${id}:crm:contacted`]);
    }
   });
   if(status!=='PROVIDER_ACCEPTED')await this.automationControl.pauseEmail(result.code||status);
