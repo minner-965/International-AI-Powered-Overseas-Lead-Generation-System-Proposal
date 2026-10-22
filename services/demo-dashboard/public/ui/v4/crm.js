@@ -83,3 +83,20 @@ export function stateBlock(kind, zh, en, { retry = false } = {}) {
   return `<div class="state" ${kind === 'error' ? 'role="alert"' : kind === 'loading' ? 'aria-busy="true"' : ''}><div class="glyph" aria-hidden="true"><i class="ti ti-${icon}"></i></div><b>${bi(zh, en)}</b>${retry ? `<button class="btn btn-sm" type="button" data-state-retry>${bi('重试', 'Retry')}</button>` : ''}</div>`;
 }
 export const skeletonRows = (rows = 3) => `<div class="skel-rows" aria-busy="true" aria-label="正在加载 Loading">${Array.from({ length: rows }, () => '<div class="skel-row"><span class="skel"></span><span class="skel"></span><span class="skel"></span></div>').join('')}</div>`;
+
+// Shared pipeline snapshot (one request serves the list, the company card and pickers).
+let pipelineCache = null; let pipelineAt = 0; let pipelineLoading = null;
+export function loadPipeline({ force = false } = {}) {
+  if (!force && pipelineCache && Date.now() - pipelineAt < 15000) return Promise.resolve(pipelineCache);
+  if (pipelineLoading) return pipelineLoading;
+  pipelineLoading = crm.pipeline({ limit: 500 }).then(payload => { pipelineCache = payload; pipelineAt = Date.now(); return payload; })
+    .finally(() => { pipelineLoading = null; });
+  return pipelineLoading;
+}
+export const invalidatePipeline = () => { pipelineAt = 0; };
+if (typeof document !== 'undefined') document.addEventListener('crm:changed', invalidatePipeline);
+export async function pipelineItemFor(companyId, productProfile) {
+  const payload = await loadPipeline();
+  const items = (payload?.items || []).filter(item => String(item.company_id) === String(companyId));
+  return items.find(item => !productProfile || item.product_profile === productProfile) || items[0] || null;
+}

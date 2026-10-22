@@ -71,6 +71,8 @@ import { subscribeCommunicationChanges } from './ui/communication-sync.js';
 import { mountRecordViews } from './ui/v3/records.js';
 import { upgradeCompanyDetail, mountContactReady, mountCompanyFilters } from './ui/v3/companies.js';
 import { mountAutomationControl } from './ui/v3/automation-control.js';
+import { mountFollowupCard } from './ui/v4/followup-card.js';
+import { pipelineItemFor } from './ui/v4/crm.js';
 
 mountOverview();
 mountRecordViews();
@@ -2013,6 +2015,11 @@ async function showLead(id) {
       lead_review_id: lead.lead_review_id || null };
   } else if (!lead) lead = currentOpportunity;
   if (!lead) {
+    // Opportunities that exist only in the sales pipeline still open with their identity and follow-up.
+    const item = await pipelineItemFor(id).catch(()=>null);
+    if (item) lead = { company_id:item.company_id, company_name:item.company_name, country_code:item.country_code, city:item.city, website_url:item.website_url, product_profile:item.product_profile };
+  }
+  if (!lead) {
     detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('客户详情读取失败','Company detail could not be loaded')}</h3><button type="button" class="btn btn-outline-secondary detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
     wireDetailCloseButtons(detail);
     detail.querySelector('.detail-retry')?.addEventListener('click',()=>showLead(id));
@@ -2139,7 +2146,7 @@ async function showLead(id) {
   wireDetailCloseButtons(detail);
   const outreachEntry=document.createElement('button');
   outreachEntry.type='button';outreachEntry.className='btn btn-outline-primary';
-  outreachEntry.innerHTML=bi('邮件审核与联系','Email Review & Contact');
+  outreachEntry.innerHTML=bi('开发信审核','First-touch review');
   outreachEntry.addEventListener('click',()=>{
     detail.close();
     document.dispatchEvent(new CustomEvent('crm:openoutreach',{detail:{companyId}}));
@@ -2151,6 +2158,7 @@ async function showLead(id) {
     productProfile:lead.product_profile || lead.productProfile || productProfileCode(lead) || '',
     contactIds:contactRoutes.map(route=>route.contact_id || route.contactId).filter(Boolean)
   });
+  void mountFollowupCard(detail,{companyId,productProfile:lead.product_profile || matchScope || ''});
   detail.querySelectorAll('.actions button[data-status]').forEach(button=>button.addEventListener('click',()=>approve(id,button.dataset.status,button)));
   if (hasLegacyReview) await loadLeads();
   const selectedRow = [...document.querySelectorAll('#leads tr')].find(row => row.dataset.id === String(id));

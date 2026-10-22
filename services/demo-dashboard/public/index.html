@@ -108,11 +108,20 @@
             <div class="opw-page-identity">
               <span class="opw-page-icon" aria-hidden="true"><i class="ti ti-target-arrow"></i></span>
               <div>
-                <h2 id="opportunities-title"><span lang="zh-CN">业务机会</span><small lang="en">Opportunities</small></h2>
+                <h2 id="opportunities-title" class="bi"><span lang="zh-CN">销售机会</span><span lang="en">Opportunities</span></h2><p id="pipeline-meta" class="meta"></p>
               </div>
             </div>
-            <div class="crm-opportunity-actions"><button id="start-enrichment" class="btn btn-primary opw-enrichment-button" type="button"><i class="ti ti-user-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">更新联系人资料</span><span lang="en">Update Contact Details</span></span></button><div id="enrichment-job-status" tabindex="0" aria-label="联系人资料更新 Contact detail updates" class="crm-enrichment-status" role="status" aria-live="polite" aria-atomic="true"></div></div>
+            <div class="crm-opportunity-actions"><button id="start-enrichment" class="btn opw-enrichment-button" type="button"><i class="ti ti-user-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">更新联系人资料</span><span lang="en">Update Contact Details</span></span></button><div id="enrichment-job-status" tabindex="0" aria-label="联系人资料更新 Contact detail updates" class="crm-enrichment-status" role="status" aria-live="polite" aria-atomic="true"></div></div>
           </header>
+          <div class="tabs v4-pane-tabs" role="tablist" aria-label="销售机会视图 Opportunity views"><button type="button" role="tab" id="opp-pane-tab-pipeline" aria-controls="opportunity-pipeline" aria-selected="true" data-opp-pane-tab="pipeline"><span class="bi"><span lang="zh-CN">跟进阶段</span><span lang="en">Pipeline</span></span></button><button type="button" role="tab" id="opp-pane-tab-assessment" aria-controls="opportunity-assessment" aria-selected="false" tabindex="-1" data-opp-pane-tab="assessment"><span class="bi"><span lang="zh-CN">类目评估</span><span lang="en">Category assessment</span></span></button></div>
+          <section id="opportunity-pipeline" class="card v4-pipeline" role="tabpanel" aria-labelledby="opp-pane-tab-pipeline" data-opp-pane="pipeline">
+            <div class="stage-tabs"><div id="pipeline-stage-tabs" class="tabs" role="tablist" aria-label="销售阶段 Pipeline stages"></div></div>
+            <div class="toolbar"><label class="v4-select-label" for="pipeline-owner"><span class="sr-only">负责人 Owner</span><select id="pipeline-owner" class="select"><option value="">全部负责人 All owners</option></select></label><label class="v4-select-label" for="pipeline-market"><span class="sr-only">市场 Market</span><select id="pipeline-market" class="select"><option value="">全部市场 All markets</option></select></label><span class="grow"></span><label class="search inline" for="pipeline-search"><i class="ti ti-search" aria-hidden="true"></i><span class="sr-only">企业名称 Company name</span><input id="pipeline-search" type="search" autocomplete="off" placeholder="企业名称 / Company name"></label></div>
+            <div id="pipeline-list" aria-live="polite"></div>
+            <div class="table-foot"><span id="pipeline-count"></span><button id="pipeline-more" class="btn btn-sm" type="button" hidden><span class="bi"><span lang="zh-CN">加载更多</span><span lang="en">Load more</span></span></button></div>
+          </section>
+          <div id="opportunity-assessment" class="v4-assessment" role="tabpanel" aria-labelledby="opp-pane-tab-assessment" data-opp-pane="assessment" hidden>
+
 
           <section id="opportunity-workspace-summary" class="opw-summary" aria-label="业务机会摘要 Opportunity summary" aria-busy="true">
             <div class="opw-kpi-grid">
@@ -181,6 +190,7 @@
           <section id="evidence-required-list" class="card crm-panel crm-evidence-required-list" aria-label="待研究公司 Exploratory companies" hidden></section>
           <nav id="opportunity-pagination" role="navigation" class="opw-pagination" aria-label="业务机会分页 Opportunity pagination" hidden></nav>
           </section>
+          </div>
         </section>
 
         <section id="view-replies" class="app-view" data-app-view="replies" aria-label="回复与跟进 Replies & Follow-up" hidden></section>
@@ -294,5 +304,6 @@
   <dialog id="workspace-search-dialog" class="v3-search-dialog" aria-labelledby="workspace-search-title"><header><h2 id="workspace-search-title" class="bi"><span lang="zh-CN">公司搜索</span><span lang="en">Company search</span></h2><button id="workspace-search-close" class="btn btn-icon" type="button" aria-label="关闭搜索 Close search"><i class="ti ti-x" aria-hidden="true"></i></button></header><div class="v3-search-body"><label for="workspace-search-input" class="bi"><span lang="zh-CN">公司名称、网站或市场</span><span lang="en">Company name, website or market</span></label><input id="workspace-search-input" class="form-control" type="search" autocomplete="off"><p id="workspace-search-count" role="status"></p><div id="workspace-search-results" class="v3-search-results" aria-live="polite"></div></div></dialog>
   <script type="module" src="/ui/v3/shell.js"></script>
   <script type="module" src="/ui/v4/nav-counts.js"></script>
+  <script type="module" src="/ui/v4/pipeline.js"></script>
 </body>
 </html>
