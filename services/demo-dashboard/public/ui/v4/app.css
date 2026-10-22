@@ -3566,7 +3566,7 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
   .v4-overview .kpi .val small, .v4-overview .kpi-sub { display: none; }
   .v4-overview .kpi .lab { margin-top: 3px; font-size: 13px; line-height: 1.25; }
   .v4-overview .kpi .lab .bi { display: flex; flex-direction: column; align-items: center; }
-  .v4-overview .kpi .lab .bi > [lang="en"] { margin: 0; font-size: 10px; white-space: nowrap; }
+  .v4-overview .kpi .lab .bi > [lang="en"] { margin: 0; font-size: 10px; line-height: 1.2; white-space: normal; text-align: center; }
   .v4-overview .card { margin: 10px 12px 0; border: 0; border-radius: 10px; }
   .v4-overview .grid2, .v4-overview .grid2b, .v4-overview .grid3 { gap: 0; }
   .m-card { display: block; margin: 10px 12px 0; border-radius: 10px; background: var(--surface); }
