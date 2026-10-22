@@ -9,13 +9,13 @@ test('Opportunity Workspace replaces the legacy text-first hero with real decisi
     publicFile('index.html'),
     publicFile('app.js'),
     publicFile('ui/opportunity-workspace.js'),
-    publicFile('ui/opportunity-workspace.css')
+    publicFile('ui/v4/app.css')
   ]);
   for (const hook of [
     'opportunity-workspace-summary', 'opportunity-priority-list', 'opportunity-status-chart',
     'opw-result-summary', 'opportunity-status-tabs', 'opportunity-primary-filters', 'opportunity-table'
   ]) assert.match(html, new RegExp(`id="${hook}"`));
-  assert.match(html, /href="\/ui\/opportunity-workspace\.css\?v=20260901"/);
+  assert.match(html, /href="\/ui\/v4\/app\.css"/);
   assert.equal((html.match(/class="opw-kpi is-/g) || []).length, 5);
   assert.match(module, /items\s*\.filter\(item => getStatus\(item\) === 'EXPLORATORY'\)/);
   assert.match(module, /opw-chart-track/);
@@ -30,7 +30,7 @@ test('Opportunity Workspace keeps the released decision contracts and avoids dec
   const [html, module, css] = await Promise.all([
     publicFile('index.html'),
     publicFile('ui/opportunity-workspace.js'),
-    publicFile('ui/opportunity-workspace.css')
+    publicFile('ui/v4/app.css')
   ]);
   const statuses = ['ACTIVE','PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','MANAGEMENT_APPROVED','HOLD','NOT_SUITABLE','ALL'];
   for (const status of statuses) assert.equal((html.match(new RegExp(`data-opportunity-status="${status}"`, 'g')) || []).length, 1);

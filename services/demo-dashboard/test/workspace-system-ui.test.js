@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { cssSection, tokenCss } from './v4-css.js';
 
 const readPublic = name => readFile(new URL(`../public/${name}`, import.meta.url), 'utf8');
 
@@ -8,14 +9,13 @@ test('V3 workspace assets replace the old global layer and retain every applicat
   const [html, module, css] = await Promise.all([
     readPublic('index.html'),
     readPublic('crm-shell.js'),
-    readPublic('ui/v3/components.css')
+    readPublic('ui/v4/app.css')
   ]);
   assert.doesNotMatch(html, /(?:href|src)="\/ui\/workspace-system\.(?:css|js)/);
-  for (const asset of ['tokens', 'foundation', 'components', 'shell', 'overview']) {
-    assert.match(html, new RegExp(`href="/ui/v3/${asset}\\.css"`));
-  }
-  assert.ok(html.indexOf('/ui/v3/components.css') > html.indexOf('/ui/opportunity-workspace.css'));
-  assert.equal((html.match(/data-app-view="/g) || []).length, 13);
+  assert.match(html, /href="\/ui\/v4\/app\.css"/);
+  for (const section of ['components', 'opportunities', 'shared-components', 'overview', 'v4-base', 'shell']) assert.match(css, new RegExp(`/\\* ==== section: ${section} ==== \\*/`));
+  assert.equal((html.match(/data-app-view="/g) || []).length, 16);
+  for (const view of ['tasks', 'followups', 'me']) assert.match(html, new RegExp(`data-app-view="${view}"`));
   assert.match(html,/data-app-nav="replies"/);
   assert.match(html,/data-app-nav="contact-ready"/);
   assert.match(module,/views\['contact-ready'\]/);
@@ -29,10 +29,10 @@ test('V3 workspace assets replace the old global layer and retain every applicat
 });
 
 test('opportunity status navigation uses stacked bilingual labels and compact phone scrolling', async () => {
-  const css = await readPublic('ui/opportunity-workspace.css');
+  const css = await readPublic('ui/v4/app.css');
   assert.match(css, /\.opw-workspace \.crm-status-tabs\s*\{[^}]*display:\s*grid/);
   assert.match(css, /\.opw-workspace \.crm-status-tabs\s*\{[^}]*repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(await readPublic('ui/v3/foundation.css'), /\.bi\s*\{[^}]*flex-direction:\s*column/);
+  assert.match(await readPublic('ui/v4/app.css'), /\.bi\s*\{[^}]*flex-direction:\s*column/);
   assert.match(css, /\.opw-workspace \.crm-status-tab\s*\{[^}]*min-height:\s*52px/);
   assert.match(css, /@media \(max-width:\s*767px\)[\s\S]*?\.crm-opportunity-table tbody/);
   assert.match(css, /@media \(max-width:\s*767px\)[\s\S]*?\.crm-status-tabs[^}]*overflow-x:auto/);
@@ -63,7 +63,7 @@ test('record-heavy views use structured adaptive components instead of legacy wi
     readPublic('index.html'),
     readPublic('app.js'),
     readPublic('ui/phase9-research-workbench.js'),
-    readPublic('ui/v3/responsive.css')
+    readPublic('ui/v4/app.css')
   ]);
   assert.match(app, /class="crm-op-cell"/);
   assert.match(app, /class="crm-op-cell-details"/);
@@ -74,10 +74,10 @@ test('record-heavy views use structured adaptive components instead of legacy wi
   assert.match(app, /function detailMetric\(/);
   assert.match(app, /company-col-company/);
   assert.match(app, /data-label="相关机会 \/ Related opportunity"/);
-  const opportunityCss=await readPublic('ui/opportunity-workspace.css');
+  const opportunityCss=await readPublic('ui/v4/app.css');
   assert.match(opportunityCss, /\.opw-workspace \.crm-opportunity-table\s*\{[^}]*min-width:\s*1180px/);
   assert.match(opportunityCss, /@media \(max-width: 767px\)[\s\S]*?\.crm-opportunity-table tbody\s*\{[^}]*min-width:0/);
-  const companyCss = await readPublic('ui/v3/companies.css');
+  const companyCss = await readPublic('ui/v4/app.css');
   assert.match(companyCss, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.crm-company-table tbody[\s\S]*?display:grid/);
   assert.match(css, /\.p8-evidence-row\s*\{[^}]*grid-template-columns/);
   assert.match(companyCss, /\.v3-company-detail \.crm-detail-header\s*\{[^}]*display:flex/);
@@ -90,15 +90,13 @@ test('record-heavy views use structured adaptive components instead of legacy wi
   assert.match(html, /class="table table-vcenter card-table crm-table crm-company-table"/);
 });
 
-test('V3 reference colors, bilingual hierarchy and overview proportions replace old visual conventions', async () => {
-  const [tokens, foundation, overview] = await Promise.all([
-    readPublic('ui/v3/tokens.css'), readPublic('ui/v3/foundation.css'), readPublic('ui/v3/overview.css')
-  ]);
-  for (const [name, value] of [['canvas', '#f4f6f8'], ['surface', '#ffffff'], ['sidebar', '#0f172a'], ['primary', '#2563eb']]) {
+test('V4 reference colors, bilingual hierarchy and overview proportions replace old visual conventions', async () => {
+  const tokens = tokenCss(); const foundation = cssSection('v4-base'); const overview = cssSection('overview');
+  for (const [name, value] of [['canvas', '#f3f5f8'], ['surface', '#ffffff'], ['sidebar', '#1b2230'], ['primary', '#2563eb']]) {
     assert.match(tokens, new RegExp(`--dpv-${name}:\\s*${value}`, 'i'));
   }
-  assert.match(foundation, /\.bi\s*\{[^}]*flex-direction:\s*column/);
-  assert.match(foundation, /\.bi > \[lang="zh-CN"\], \.bi > \[lang="en"\]\s*\{[^}]*font-size:\s*1em[^}]*font-weight:\s*inherit/);
+  assert.match(foundation, /\.bi > \[lang="en"\]\s*\{[^}]*color: var\(--text-3\)[^}]*font-size: \.86em; font-weight: 400/);
+  assert.match(cssSection('shell'), /\.nav \.nav-link \.bi\s*\{[^}]*flex-direction:\s*column/);
   assert.match(overview, /grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(overview, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(overview, /v3-overview-analysis>section:first-child\{grid-column:span 2\}/);

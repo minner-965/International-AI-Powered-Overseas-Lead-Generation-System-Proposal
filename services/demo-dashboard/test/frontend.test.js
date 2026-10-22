@@ -195,10 +195,11 @@ test('research result display removes legacy null placeholders without rewriting
   assert.match(app, /map\(displayValue\)\.filter\(Boolean\)/);
 });
 
-test('V3 shell retains pinned Tabler capabilities and the complete CRM information architecture', async () => {
+test('V4 shell uses one local stylesheet, local icons and the complete CRM information architecture', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /href="\/vendor\/tabler\/css\/tabler\.min\.css"/);
+  assert.doesNotMatch(html, /href="\/vendor\/tabler\/css\/tabler\.min\.css"|src="\/vendor\/tabler\/js/);
   assert.match(html, /href="\/vendor\/tabler-icons\/tabler-icons\.min\.css"/);
+  assert.deepEqual([...html.matchAll(/rel="stylesheet" href="([^"]+)"/g)].map(match => match[1]), ['/vendor/tabler-icons/tabler-icons.min.css', '/ui/v4/app.css']);
   assert.match(html, /<aside id="app-sidebar" class="v3-sidebar"/);
   for (const view of ['overview','research','companies','opportunities','customer-match','evidence','jobs','settings']) {
     assert.match(html, new RegExp(`data-app-nav="${view}"`));
@@ -333,7 +334,7 @@ test('V3 opportunity labels and filter query remain deterministic and bilingual'
 test('V3 opportunity UI adds buyer/category filters, semantic columns and keeps the Express enrichment trigger', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  const css = await readFile(new URL('../public/ui/opportunity-workspace.css', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
   assert.match(html,/id="opportunity-filter-disclosure"[^>]*verification-filter-disclosure/);
   for (const id of ['opportunity-filters','opportunity-market','opportunity-product-profile','opportunity-buyer-business-model','opportunity-buyer-subtype','opportunity-category-procurement-band','opportunity-category-procurement-status','opportunity-feasibility-band','opportunity-decision-maker-status','opportunity-role','opportunity-contact-type','opportunity-contact-verification','opportunity-historical-status','opportunity-management-match','opportunity-historical-match','opportunity-tier','opportunity-sort','opportunity-clear-filters']) assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/id="opportunity-sort"[\s\S]*<option value="category_procurement_desc" selected>/);
@@ -392,7 +393,7 @@ test('Phase 6.1 capabilities remain available behind the compact eight-column de
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const phase7Ui = await readFile(new URL('../public/phase7-ui.js', import.meta.url), 'utf8');
-  const css = `${await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/v3/companies.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/opportunity-workspace.css', import.meta.url), 'utf8')}`;
+  const css = `${await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8')}\n${await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8')}`;
   const productStart = app.indexOf('const PRODUCT_MATCH_PROFILES');
   const productEnd = app.indexOf('const crmBusinessText',productStart);
   assert.ok(productStart >= 0 && productEnd > productStart);
@@ -416,7 +417,7 @@ test('Phase 6.1 capabilities remain available behind the compact eight-column de
   assert.match(css,/@media \(max-width:\s*767px\)[\s\S]*\.crm-opportunity-table td::before\s*\{[^}]*content:\s*none/);
   assert.match(css,/\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css,/@media \(max-width:\s*560px\)[\s\S]*\.crm-product-match-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
-  const companyCss = await readFile(new URL('../public/ui/v3/companies.css', import.meta.url), 'utf8');
+  const companyCss = await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
   assert.match(companyCss,/\.crm-detail-tabs button\s*\{[^}]*min-height:\s*44px/);
   assert.doesNotMatch(productSegment,/supplier_price|supplier_currency|customer_sales_price|customer_sales_currency|profit|historical_customer_id|historical_order_id|source_import_row_id|source_identity_key|shared_folder_path|asset_reference|raw_internal_payload|internal_description/i);
 });
@@ -507,7 +508,7 @@ test('Phase 5 V2.3 renders dynamic ICP and match codes as equal bilingual lines'
 
 test('Phase 5 V2.3.1 presents sanitized OKKI history in Jobs and the reusable detail dialog', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
   for (const endpoint of [
     "/api/crm-history?limit=200",
     "/api/crm-history/import-summary",
@@ -541,8 +542,8 @@ test('Phase 5 V2.3.1 presents sanitized OKKI history in Jobs and the reusable de
 
 test('responsive table and content-sized detail dialog preserve native browser zoom', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  const css = await readFile(new URL('../public/phase5.css', import.meta.url), 'utf8');
-  const companyCss = await readFile(new URL('../public/ui/v3/companies.css', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
+  const companyCss = await readFile(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
   assert.match(html, /content="width=device-width,initial-scale=1"/);
   assert.doesNotMatch(html,/maximum-scale|user-scalable/i);
   assert.match(css,/\.table-responsive[\s\S]*overflow:\s*auto/);

@@ -34,7 +34,7 @@ test('controlled email UI uses existing APIs in approval order and never renders
 });
 
 test('controlled email layout keeps touch targets and collapses without page-level horizontal overflow',async()=>{
-  const [pages,responsive]=await Promise.all([read('public/ui/phase8-pages.css'),read('public/ui/phase8-responsive.css')]);
+  const [pages,responsive]=await Promise.all([read('public/ui/v4/app.css'),read('public/ui/v4/app.css')]);
   assert.match(pages,/\.p11-controlled-context[\s\S]*?min-height:\s*44px/);
   assert.match(pages,/\.p11-controlled-action \.btn,[\s\S]*?min-height:\s*44px/);
   assert.match(pages,/\.p11-controlled-layout[\s\S]*?min-width:\s*0/);

@@ -58,7 +58,7 @@ test('job navigation restores the exact opener and keeps safe evidence links',as
 test('Phase 9 responsive surface uses internal scrolling without disabling browser zoom',async()=>{
   const [html,css]=await Promise.all([
     readPublic('index.html'),
-    readPublic('ui/phase9-research-workbench.css')
+    readPublic('ui/v4/app.css')
   ]);
   assert.match(css,/\.p9-jobs-list-panel \.table-responsive\s*\{[\s\S]*?max-height:[\s\S]*?overflow:\s*auto/);
   assert.match(css,/100dvh/);

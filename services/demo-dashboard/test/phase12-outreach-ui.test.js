@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {cssSection} from './v4-css.js';
 const ui=await readFile(new URL('../public/ui/outreach-workbench.js',import.meta.url),'utf8');
-const css=await readFile(new URL('../public/ui/v3/outreach.css',import.meta.url),'utf8');
+const css=cssSection('outreach');
 const replies=await readFile(new URL('../public/ui/v3/replies.js',import.meta.url),'utf8');
 test('review reuses exact form and approval handlers in three columns',()=>{
   for(const name of ['v3-email-company','v3-email-composer','v3-email-gates'])assert.match(ui,new RegExp(name));

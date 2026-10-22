@@ -23,20 +23,14 @@ const opportunityFilterNames = [
   'tier', 'feasibility_band', 'sort'
 ];
 
-test('V3 foundations replace Phase 8 foundations in a documented load order', async () => {
-  const html = await readPublic('index.html');
-  const styles = [
-    '/ui/v3/tokens.css', '/ui/v3/foundation.css', '/ui/phase8-components.css',
-    '/ui/phase8-pages.css', '/ui/phase8-responsive.css'
-  ];
-  for (let index = 0; index < styles.length; index += 1) {
-    assert.match(html, new RegExp(`href="${styles[index].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
-    if (index) assert.ok(position(html, styles[index - 1]) < position(html, styles[index]));
-  }
-  assert.doesNotMatch(html, /href="\/[^"/]*phase8\.css"/);
-  assert.doesNotMatch(html, /href="\/ui\/phase8-(?:tokens|foundation)\.css"/);
-  assert.ok(position(html, '/ui/v3/components.css') > position(html, '/ui/phase8-responsive.css'));
-  assert.ok(position(html, '/ui/v3/shell.css') > position(html, '/ui/v3/components.css'));
+test('V4 workspace loads one stylesheet whose tokens precede every component section', async () => {
+  const [html, css] = await readMany(['index.html', 'ui/v4/app.css']);
+  assert.equal((html.match(/rel="stylesheet"/g) || []).length, 2);
+  assert.match(html, /href="\/ui\/v4\/app\.css"/);
+  assert.doesNotMatch(html, /href="\/(?:styles|phase5|phase7|bilingual|contact-results)\.css"|href="\/ui\/(?:v3|phase8-|phase9-|phase10-|opportunity-workspace)/);
+  assert.ok(position(css, '/* ==== V4 design tokens') < position(css, '/* ==== section: components ==== */'));
+  assert.ok(position(css, '/* ==== section: components ==== */') < position(css, '/* ==== section: v4-base ==== */'));
+  assert.ok(position(css, '/* ==== section: v4-base ==== */') < position(css, '/* ==== section: shell ==== */'));
   for (const module of ['shell', 'filters', 'contact-queue']) {
     assert.match(html, new RegExp(`src="/ui/${module}\\.js"`));
   }
@@ -46,11 +40,10 @@ test('V3 foundations replace Phase 8 foundations in a documented load order', as
 test('Opportunities is the default view and primary navigation is grouped with exactly one active item', async () => {
   const [html, shell] = await readMany(['index.html', 'crm-shell.js']);
   const aside = html.slice(position(html, '<aside id="app-sidebar"'), position(html, '</aside>'));
-  for (const group of ['工作台', '执行', '资料', '数据']) assert.match(aside, new RegExp(group));
-  assert.ok(position(aside, '工作台') < position(aside, '执行'));
-  assert.ok(position(aside, '执行') < position(aside, '资料'));
-  assert.ok(position(aside, '资料') < position(aside, '数据'));
   const navTags = aside.match(/<button[^>]+data-app-nav="[^"]+"[^>]*>/g) || [];
+  const groups = ['工作台', '获客', '跟进', '数据'].map(group => `<span lang="zh-CN">${group}</span><span lang="en">`);
+  for (let index = 1; index < groups.length; index += 1) assert.ok(position(aside, groups[index - 1]) < position(aside, groups[index]));
+  assert.equal(navTags.length, 9, 'nine primary navigation items in four groups');
   assert.equal(navTags.filter(tag => /\bactive\b/.test(tag)).length, 1);
   assert.equal(navTags.filter(tag => /aria-current="page"/.test(tag)).length, 1);
   assert.match(tagWith(aside, 'data-app-nav', 'opportunities'), /\bactive\b/);
@@ -107,7 +100,7 @@ test('Phase 8 preserves stable DOM hooks, form names and API enum values', async
 });
 
 test('CL03 current opportunity query parameters retain deterministic values after retiring access gates', async () => {
-  const [html, filtersUi, components] = await readMany(['index.html', 'ui/filters.js', 'ui/phase8-components.css']);
+  const [html, filtersUi, components] = await readMany(['index.html', 'ui/filters.js', 'ui/v4/app.css']);
   const filters = Object.fromEntries(opportunityFilterNames.map((name, index) => [name, `VALUE_${index}`]));
   const query = buildOpportunityQuery(filters, 500);
   assert.equal(opportunityFilterNames.length, 17);
@@ -237,7 +230,7 @@ test('Data Import and Data Export communicate explicit step progression without 
 });
 
 test('theme, density and bilingual display preferences preserve light, dark, system, comfortable and compact modes', async () => {
-  const [html, shell, p8Shell, tokens] = await readMany(['index.html', 'crm-shell.js', 'ui/shell.js', 'ui/v3/tokens.css']);
+  const [html, shell, p8Shell, tokens] = await readMany(['index.html', 'crm-shell.js', 'ui/shell.js', 'ui/v4/app.css']);
   for (const mode of ['auto', 'light', 'dark']) assert.match(html, new RegExp(`<option value="${mode}"`));
   assert.match(html, /跟随系统 \/ System/);
   for (const density of ['comfortable', 'compact']) assert.match(html, new RegExp(`<option value="${density}"`));
@@ -252,7 +245,7 @@ test('theme, density and bilingual display preferences preserve light, dark, sys
 
 test('all interaction modes retain a 44px target and native zoom', async () => {
   const [html, tokens, foundation, components, shell] = await readMany([
-    'index.html', 'ui/v3/tokens.css', 'ui/v3/components.css', 'ui/phase8-components.css', 'ui/v3/shell.css'
+    'index.html', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css'
   ]);
   assert.match(html, /content="width=device-width,initial-scale=1"/);
   assert.doesNotMatch(html, /maximum-scale|minimum-scale|user-scalable/i);
@@ -261,40 +254,40 @@ test('all interaction modes retain a 44px target and native zoom', async () => {
   assert.doesNotMatch(tokens, /--(?:p8|dpv)-control-height:\s*(?:[0-3]?\d|4[0-3])px/);
   assert.match(foundation, /min-height:\s*44px/);
   assert.match(components, /\.crm-status-tab[\s\S]*?min-height:\s*44px/);
-  assert.match(shell, /\.v3-nav \.nav-link\s*\{[^}]*min-height:\s*48px/);
-  const [companyCss] = await readMany(['ui/v3/companies.css']);
+  assert.match(shell, /\.v3-nav \.nav-link\s*\{[^}]*min-height:\s*44px/);
+  assert.match(shell, /\.m-tab a\s*\{[^}]*min-height:\s*56px/);
+  const [companyCss] = await readMany(['ui/v4/app.css']);
   assert.match(companyCss, /\.v3-company-detail-nav button[\s\S]*?min-height:\s*44px/);
 });
 
 test('responsive CSS covers all six acceptance viewports without shrinking tables into unreadable columns', async () => {
   const [foundation, pages, responsive] = await readMany([
-    'ui/v3/foundation.css', 'ui/phase8-pages.css', 'ui/phase8-responsive.css'
+    'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css'
   ]);
-  const v3Shell = await readPublic('ui/v3/shell.css');
+  const v3Shell = await readPublic('ui/v4/app.css');
   const css = `${foundation}\n${pages}\n${responsive}\n${v3Shell}`;
   const viewports = [[1440, 900], [1024, 768], [768, 900], [390, 844], [375, 667], [844, 390]];
   assert.equal(viewports.length, 6);
   for (const query of [
-    /@media \(min-width:\s*992px\)/,
-    /@media \(max-width:\s*1199px\)/,
-    /@media\s*\(max-width:\s*991px\)/,
+    /@media \(max-width:\s*1100px\)/,
+    /@media \(max-width:\s*900px\)/,
     /@media \(max-width:\s*767px\)/,
     /@media \(max-width:\s*390px\)/,
     /@media \(max-height:\s*450px\) and \(orientation:\s*landscape\)/
   ]) assert.match(css, query);
-  const opportunityCss = await readPublic('ui/opportunity-workspace.css');
+  const opportunityCss = await readPublic('ui/v4/app.css');
   assert.match(opportunityCss, /\.crm-opportunity-table,[\s\S]*?display:\s*grid/);
   assert.match(opportunityCss, /\.crm-opportunity-table thead\s*\{\s*display:\s*none/);
   assert.match(responsive, /env\(safe-area-inset-bottom\)/);
   assert.match(v3Shell, /\.v3-nav\s*\{[^}]*overflow-y:\s*auto/);
-  assert.match(v3Shell, /body\[data-sidebar-open\] \.v3-sidebar\s*\{[^}]*visibility:\s*visible/);
+  assert.match(v3Shell, /\.m-tab\s*\{[^}]*position:\s*fixed[^}]*padding-bottom:\s*env\(safe-area-inset-bottom\)/);
   assert.match(foundation, /\.crm-content,[\s\S]*?min-width:\s*0/);
   assert.match(opportunityCss, /table-layout:\s*fixed/);
 });
 
 test('focus, dialog recovery, async status and reduced-motion contracts are explicit', async () => {
   const [html, app, filters, shell, foundation] = await readMany([
-    'index.html', 'app.js', 'ui/filters.js', 'crm-shell.js', 'ui/v3/foundation.css'
+    'index.html', 'app.js', 'ui/filters.js', 'crm-shell.js', 'ui/v4/app.css'
   ]);
   assert.match(foundation, /:focus-visible/);
   assert.match(foundation, /@media \(prefers-reduced-motion:\s*reduce\)/);
@@ -310,9 +303,9 @@ test('focus, dialog recovery, async status and reduced-motion contracts are expl
 
 test('Phase 8 company-facing sources contain no gradient, glow, emoji structure, fake metrics or internal narration', async () => {
   const names = [
-    'index.html', 'app.js', 'phase7-ui.js', 'styles.css', 'phase5.css', 'phase7.css',
-    'ui/v3/tokens.css', 'ui/v3/foundation.css', 'ui/v3/components.css', 'ui/v3/shell.css', 'ui/v3/overview.css', 'ui/phase8-components.css',
-    'ui/phase8-pages.css', 'ui/phase8-responsive.css', 'ui/contact-queue.js', 'ui/filters.js', 'ui/shell.js', 'ui/status.js'
+    'index.html', 'app.js', 'phase7-ui.js', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css',
+    'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css', 'ui/v4/app.css',
+    'ui/v4/app.css', 'ui/v4/app.css', 'ui/contact-queue.js', 'ui/filters.js', 'ui/shell.js', 'ui/status.js'
   ];
   const sources = (await readMany(names)).join('\n');
   assert.doesNotMatch(sources, /(?:linear|radial|conic)-gradient\s*\(/i);

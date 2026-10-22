@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { cssSection, componentCss } from './v4-css.js';
 
 const readPublic=name=>readFile(new URL(`../public/${name}`,import.meta.url),'utf8');
 
@@ -80,7 +81,7 @@ test('new-customer product scoring is visibly category-level in filters, tables,
   const [html,app,css]=await Promise.all([
     readPublic('index.html'),
     readPublic('app.js'),
-    readPublic('ui/v3/responsive.css')
+    readPublic('ui/v4/app.css')
   ]);
   assert.match(html,/<span lang="zh-CN">匹配类目<\/span><span lang="en">Matched Category<\/span>/);
   assert.match(html,/商品类目评分 \/ Product Category Score/);
@@ -98,12 +99,13 @@ test('new-customer product scoring is visibly category-level in filters, tables,
 test('Phase 10 responsive UI uses tokens, internal scrolling and safe async controls',async()=>{
   const [html,css,research]=await Promise.all([
     readPublic('index.html'),
-    readPublic('ui/phase10-workbench.css'),
+    readPublic('ui/v4/app.css'),
     readPublic('ui/phase9-research-workbench.js')
   ]);
-  assert.match(html,/href="\/ui\/phase10-workbench\.css\?v=20260901"/);
-  assert.doesNotMatch(css,/#[0-9a-f]{3,8}\b/i);
-  assert.match(await readPublic('ui/opportunity-workspace.css'),/\.p10-workstream-list\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto/);
+  assert.match(html,/href="\/ui\/v4\/app\.css"/);
+  assert.doesNotMatch(cssSection('research-automation'),/#[0-9a-f]{3,8}\b/i);
+  assert.doesNotMatch(componentCss(),/#[0-9a-f]{3,8}\b/i);
+  assert.match(await readPublic('ui/v4/app.css'),/\.p10-workstream-list\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto/);
   assert.match(css,/@media \(max-width: 767px\)/);
   assert.match(css,/prefers-reduced-motion: reduce/);
   assert.match(research,/event\.currentTarget\.disabled=true/);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { persistedProgress, profileLabel, outreachTaskRows, outreachTaskLabel } from '../public/ui/v3/research-jobs.js';
+import { cssSection } from './v4-css.js';
 
 test('V3 job progress uses persisted progress only and never infers completion from result count', () => {
   assert.equal(persistedProgress({companies_selected:9,max_results:10}),null);
@@ -38,7 +39,7 @@ test('V3 Research keeps one existing form, all request fields, four native steps
   assert.match(js,/state\.dialogOpener\.focus/);
 });
 test('V3 Research uses semantic layout replacement and mobile cards without old palette or document scaling',async()=>{
-  const css=await readFile(new URL('../public/ui/phase9-research-workbench.css',import.meta.url),'utf8');
+  const css=cssSection('research');
   assert.doesNotMatch(css,/--p8-|linear-gradient|shimmer|!important|zoom\s*:|scale\(/);
   assert.match(css,/repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css,/max-height:70dvh/);

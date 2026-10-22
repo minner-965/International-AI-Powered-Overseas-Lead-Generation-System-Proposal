@@ -4,11 +4,11 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {bindDialogTabBoundary} from '../public/ui/v3/components.js';
 const read=name=>readFile(new URL(`../public/${name}`,import.meta.url),'utf8');
-const [shell,app,outreach,css]=await Promise.all(['crm-shell.js','app.js','ui/outreach-workbench.js','ui/v3/shell.css'].map(read));
+const [shell,app,outreach,css]=await Promise.all(['crm-shell.js','app.js','ui/outreach-workbench.js','ui/v4/app.css'].map(read));
 
 test('desktop breakpoint releases the mobile sidebar boundary',()=>{
   let listener,closed=0;
-  const line=shell.split('\n').find(line=>line.startsWith("matchMedia('(min-width: 992px)')"));
+  const line=shell.split('\n').find(line=>line.startsWith("matchMedia('(min-width: 901px)')"));
   vm.runInNewContext(line,{matchMedia:()=>({addEventListener:(_type,fn)=>listener=fn}),closeSidebar:()=>closed++});
   listener({matches:false});assert.equal(closed,0);listener({matches:true});assert.equal(closed,1);
   assert.match(shell,/removeAttribute\('inert'\)/);

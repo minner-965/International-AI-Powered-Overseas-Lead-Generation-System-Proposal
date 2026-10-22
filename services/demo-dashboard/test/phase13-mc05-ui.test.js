@@ -15,5 +15,5 @@ test('MC05 selection is persistent, scopes preview is live and in-flight Create 
 test('MC05 city filtering is limited to single market and existing V3 business hooks remain',async()=>{
   assert.match(source,/input.disabled=markets.length!==1/);
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.match(app,/dataset.researchBatch === 'true'\) return/);
-  const css=await readFile(new URL('../public/ui/phase9-research-workbench.css',import.meta.url),'utf8');assert.match(css,/\.v3-registry-option\{min-height:44px/);assert.doesNotMatch(source,/smtp|\/api\/outreach\/send|BRAVE_API/);
+  const css=await readFile(new URL('../public/ui/v4/app.css',import.meta.url),'utf8');assert.match(css,/\.v3-registry-option\{min-height:44px/);assert.doesNotMatch(source,/smtp|\/api\/outreach\/send|BRAVE_API/);
 });

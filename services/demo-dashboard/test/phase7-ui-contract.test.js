@@ -12,7 +12,7 @@ test('Phase 7 adds Data Import and Data Export to the established CRM shell', as
     assert.match(html,new RegExp(`data-app-view="${view}"`));
     assert.match(shell,new RegExp(`'${view}'`));
   }
-  assert.match(html,/href="\/phase7\.css"/);
+  assert.match(html,/href="\/ui\/v4\/app\.css"/);
   assert.match(html,/src="\/app\.js"/);
 });
 
@@ -112,7 +112,7 @@ test('Phase 7 customer-facing values use deterministic bilingual mappings', () =
 });
 
 test('Phase 7 responsive CSS keeps dense data inside components and practical actions', async () => {
-  const [html,css,records,ui] = await Promise.all([read('index.html'),read('phase7.css'),read('ui/v3/records.css'),read('phase7-ui.js')]);
+  const [html,css,records,ui] = await Promise.all([read('index.html'),read('ui/v4/app.css'),read('ui/v4/app.css'),read('phase7-ui.js')]);
   assert.match(records,/\.crm-data-exchange-layout\s*\{[^}]*grid-template-columns/);
   assert.match(records,/\.crm-data-row-table\s*\{[^}]*min-width/);
   assert.doesNotMatch(ui,/crm-opportunity-readiness-stack/);

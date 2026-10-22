@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { recordViews, evidenceUrl, evidenceRecords, renderEvidenceRecords, discloseOriginal, coveragePercent } from '../public/ui/v3/records.js';
+import { cssSection } from './v4-css.js';
 
 test('records package covers all five authorized surfaces',()=>{
   assert.deepEqual(recordViews,['evidence','customer-match','data-import','data-export','settings']);
@@ -46,7 +47,7 @@ test('records adapter uses existing read endpoints without business submission',
   assert.doesNotMatch(source,/cloneNode|localStorage|\.submit\(/);
 });
 test('record styles keep compact mobile, scrollable stepper and visible native focus',async()=>{
-  const css=await readFile(new URL('../public/ui/v3/records.css',import.meta.url),'utf8');
+  const css=cssSection('records');
   assert.match(css,/max-width:600px/);
   assert.match(css,/font-size:18px/);
   assert.match(css,/summary:focus-visible/);

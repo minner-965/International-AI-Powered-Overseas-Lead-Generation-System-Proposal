@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { componentStates, bilingual, stateMarkup, bindDialog } from '../public/ui/v3/components.js';
+import { tokenCss } from './v4-css.js';
 
 test('V3 bilingual labels escape all source text equally', () => {
   const html = bilingual('<客户>', 'A & B');
@@ -29,8 +30,8 @@ test('V3 dialog preserves dirty content and restores exact opener after clean cl
   assert.equal(focused, 1);
   adapter.dispose(); assert.equal(handlers.size, 0);
 });
-test('V3 tokens resolve all aliases and preserve control/contrast pairs', () => {
-  const css = readFileSync(new URL('../public/ui/v3/tokens.css', import.meta.url), 'utf8');
+test('V4 tokens resolve all aliases and preserve control/contrast pairs', () => {
+  const css = tokenCss();
   const definitions = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1]));
   for (const [, variable] of css.matchAll(/var\((--[\w-]+)/g)) assert.ok(definitions.has(variable), `Undefined ${variable}`);
   assert.match(css, /--dpv-primary: #2563eb/);
@@ -38,7 +39,7 @@ test('V3 tokens resolve all aliases and preserve control/contrast pairs', () => 
   assert.doesNotMatch(css, /#(?:5146e5|4f46e5|817bf6)/i);
 });
 test('V3 light and dark semantic text pairs meet contrast and controls remain visible', () => {
-  const css = readFileSync(new URL('../public/ui/v3/tokens.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../public/ui/v4/app.css', import.meta.url), 'utf8');
   const sections = css.split('[data-bs-theme="dark"]');
   const colors = section => Object.fromEntries([...section.matchAll(/--dpv-([\w-]+): (#[\da-f]{6});/g)].map(m => [m[1], m[2]]));
   const light = colors(sections[0]); const dark = { ...light, ...colors(sections[1]) };

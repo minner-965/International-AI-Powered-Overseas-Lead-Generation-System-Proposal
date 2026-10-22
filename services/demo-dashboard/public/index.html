@@ -3,80 +3,63 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#1b2230">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M9 8h6.5c5.2 0 8.5 3 8.5 8s-3.3 8-8.5 8H9V8zm6.2 12c2.7 0 4.3-1.3 4.3-4s-1.6-4-4.3-4H13.5v8h1.7z' fill='white'/%3E%3C/svg%3E">
   <title>SIM外贸获客系统</title>
   <script>if(location.protocol==='file:')location.replace('http://127.0.0.1:3000/#opportunities');</script>
-  <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
   <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/bilingual.css">
-  <link rel="stylesheet" href="/contact-results.css">
-  <link rel="stylesheet" href="/phase5.css">
-  <link rel="stylesheet" href="/phase7.css">
-  <link rel="stylesheet" href="/ui/v3/tokens.css">
-  <link rel="stylesheet" href="/ui/v3/foundation.css">
-  <link rel="stylesheet" href="/ui/phase8-components.css">
-  <link rel="stylesheet" href="/ui/phase8-pages.css">
-  <link rel="stylesheet" href="/ui/phase8-responsive.css">
-  <link rel="stylesheet" href="/ui/opportunity-workspace.css?v=20260901">
-  <link rel="stylesheet" href="/ui/phase10-workbench.css?v=20260901">
-  <link rel="stylesheet" href="/ui/v3/components.css">
-  <link rel="stylesheet" href="/ui/v3/shell.css">
-  <link rel="stylesheet" href="/ui/v3/overview.css">
-  <link rel="stylesheet" href="/ui/v3/responsive.css">
-  <link rel="stylesheet" href="/ui/v3/companies.css">
-  <link rel="stylesheet" href="/ui/phase9-research-workbench.css">
-  <link rel="stylesheet" href="/ui/v3/outreach.css">
-  <link rel="stylesheet" href="/ui/v3/records.css">
-  <link rel="stylesheet" href="/ui/v3/automation-control.css">
+  <link rel="stylesheet" href="/ui/v4/app.css">
 </head>
 <body>
   <a class="skip-link" href="#main-content"><span class="bi"><span lang="zh-CN">跳至主要内容</span><span lang="en">Skip to main content</span></span></a>
   <div class="v3-shell">
     <aside id="app-sidebar" class="v3-sidebar" aria-label="主导航 Primary navigation">
-      <div class="v3-sidebar-inner">
-        <div class="v3-brand"><span class="v3-brand-mark" aria-hidden="true">S</span><div><strong>SIM外贸获客系统</strong><span>SIM Overseas Prospecting</span></div></div>
-        <nav class="v3-nav" aria-label="工作台页面 Workspace pages">
+      <div class="v3-sidebar-inner side-in">
+        <div class="brand"><span class="v3-brand-mark brand-mark" aria-hidden="true">SIM</span><div><b>SIM外贸获客系统</b><small lang="en">SIM Overseas Prospecting</small></div></div>
+        <nav class="v3-nav nav" aria-label="工作台页面 Workspace pages">
           <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">工作台</span><span lang="en">Workspace</span></div>
-            <button class="nav-link" type="button" data-app-nav="overview"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">总览</span><span lang="en">Overview</span></span></button>
-            <button class="nav-link active" type="button" data-app-nav="opportunities" aria-current="page"><i class="ti ti-target-arrow" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">业务机会</span><span lang="en">Opportunities</span></span></button>
+            <button class="nav-link" type="button" data-app-nav="overview" data-nav-group="overview me"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">总览</span><span lang="en">Overview</span></span></button>
           </div>
-          <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">执行</span><span lang="en">Act</span></div>
-            <button class="nav-link" type="button" data-app-nav="contact-queue"><i class="ti ti-mail" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">邮件审核与联系</span><span lang="en">Email Review &amp; Contact</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="replies"><i class="ti ti-messages" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">回复与跟进</span><span lang="en">Replies &amp; Follow-up</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="research"><i class="ti ti-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">市场研究</span><span lang="en">Research</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="jobs"><i class="ti ti-list-check" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">研究任务</span><span lang="en">Jobs</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="contact-ready"><i class="ti ti-address-book" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">待联系公司</span><span lang="en">Contact-ready</span></span></button>
+          <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">获客</span><span lang="en">Prospecting</span></div>
+            <button class="nav-link" type="button" data-app-nav="companies" data-nav-group="companies contact-ready evidence"><i class="ti ti-building" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">客户名录</span><span lang="en">Company Directory</span></span></button>
+            <button class="nav-link active" type="button" data-app-nav="opportunities" aria-current="page"><i class="ti ti-briefcase" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">销售机会</span><span lang="en">Opportunities</span></span></button>
+            <button class="nav-link" type="button" data-app-nav="research" data-nav-group="research jobs"><i class="ti ti-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">研究任务</span><span lang="en">Research</span></span></button>
           </div>
-          <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">资料</span><span lang="en">Records</span></div>
-            <button class="nav-link" type="button" data-app-nav="companies"><i class="ti ti-building-store" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">客户名录</span><span lang="en">Companies</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="customer-match"><i class="ti ti-adjustments-check" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">客户匹配 / ICP</span><span lang="en">Customer Match / ICP</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="evidence"><i class="ti ti-file-certificate" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">资料依据</span><span lang="en">Evidence</span></span></button>
+          <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">跟进</span><span lang="en">Follow-up</span></div>
+            <button class="nav-link" type="button" data-app-nav="tasks"><i class="ti ti-checkbox" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">我的任务</span><span lang="en">My tasks</span></span><span class="count" data-nav-count="tasks" hidden></span></button>
+            <button class="nav-link" type="button" data-app-nav="replies"><i class="ti ti-message-2" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">回复与跟进</span><span lang="en">Replies</span></span><span class="count" data-nav-count="replies" hidden></span></button>
+            <button class="nav-link" type="button" data-app-nav="followups" data-nav-group="followups contact-queue"><i class="ti ti-mail" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">跟进邮件审批</span><span lang="en">Follow-up approval</span></span><span class="count mute" data-nav-count="followups" hidden></span></button>
           </div>
           <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">数据</span><span lang="en">Data</span></div>
-            <button class="nav-link" type="button" data-app-nav="data-import"><i class="ti ti-file-import" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">数据导入</span><span lang="en">Data Import</span></span></button>
-            <button class="nav-link" type="button" data-app-nav="data-export"><i class="ti ti-file-export" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">数据导出</span><span lang="en">Data Export</span></span></button>
-          </div>
-          <div class="crm-nav-group"><div class="crm-nav-group-title bi"><span lang="zh-CN">系统</span><span lang="en">System</span></div>
-            <button class="nav-link" type="button" data-app-nav="settings"><i class="ti ti-settings" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">设置</span><span lang="en">Settings</span></span></button>
+            <button class="nav-link" type="button" data-app-nav="data-import" data-nav-group="data-import data-export"><i class="ti ti-download" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">数据导入导出</span><span lang="en">Import / Export</span></span></button>
+            <button class="nav-link" type="button" data-app-nav="settings" data-nav-group="settings customer-match"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">系统设置</span><span lang="en">Settings</span></span></button>
           </div>
         </nav>
-        <div id="market-visibility-summary" class="v3-sidebar-foot"><span class="market-code" aria-hidden="true">AE / MX</span><span class="bi"><span lang="zh-CN">阿联酋、墨西哥</span><span lang="en">UAE and Mexico</span></span></div>
+        <div class="me"><span class="avatar" aria-hidden="true">SIM</span><div id="market-visibility-summary"><p class="bi v4-stack"><span lang="zh-CN">阿联酋、墨西哥</span><span lang="en">UAE and Mexico</span></p><small class="market-code">AE / MX</small></div></div>
       </div>
     </aside>
     <div class="v3-sidebar-scrim" data-sidebar-close hidden></div>
-    <div class="crm-main v3-main">
-      <header class="v3-topbar">
+    <div class="crm-main v3-main main">
+      <header class="v3-topbar top">
         <div class="v3-topbar-inner">
-          <button id="sidebar-toggle" class="btn btn-icon btn-ghost-secondary crm-mobile-menu" type="button" aria-controls="app-sidebar" aria-expanded="false" aria-label="打开主导航 Open primary navigation"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
-          <div class="sr-only"><p id="page-kicker" class="bi"><span lang="zh-CN">业务工作台</span><span lang="en">Business workspace</span></p><h1 id="page-heading" class="bi"><span lang="zh-CN">业务机会</span><span lang="en">Opportunities</span></h1></div>
-          <button id="workspace-search-open" class="v3-search-trigger" type="button" aria-haspopup="dialog"><i class="ti ti-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">搜索公司</span><span lang="en">Search companies</span></span><kbd>Ctrl K</kbd></button>
-          <div class="v3-topbar-actions"><button id="workspace-attention-open" class="btn btn-icon" type="button" aria-label="待处理事项 Pending actions"><i class="ti ti-bell" aria-hidden="true"></i></button><button id="theme-toggle" class="btn btn-icon" type="button" aria-label="切换显示模式 Toggle color mode" aria-pressed="false"><i class="ti ti-moon" aria-hidden="true"></i></button><button id="density-toggle" class="btn btn-icon" type="button" aria-label="切换到紧凑模式 Switch to compact density"><i class="ti ti-spacing-horizontal" aria-hidden="true"></i><span class="bi sr-only"><span lang="zh-CN">紧凑</span><span lang="en">Compact</span></span></button><button class="v3-workspace-identity btn btn-icon" type="button" data-open-view="settings" aria-label="工作区设置 Workspace settings"><i class="ti ti-user-circle" aria-hidden="true"></i></button><button id="workspace-new-research" class="btn btn-primary" type="button"><i class="ti ti-plus" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">新建研究</span><span lang="en">New research</span></span></button></div>
+          <button id="sidebar-toggle" class="btn btn-icon crm-mobile-menu" type="button" aria-controls="app-sidebar" aria-expanded="false" aria-label="打开主导航 Open primary navigation" hidden><i class="ti ti-menu-2" aria-hidden="true"></i></button>
+          <div class="m-title"><p id="page-kicker" class="sr-only bi"><span lang="zh-CN">销售机会</span><span lang="en">Opportunities</span></p><h1 id="page-heading" class="bi"><span lang="zh-CN">销售机会</span><span lang="en">Opportunities</span></h1></div>
+          <button id="workspace-search-open" class="v3-search-trigger" type="button" aria-haspopup="dialog"><i class="ti ti-search" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">搜索企业、商务邮箱</span><span lang="en">Search companies</span></span><kbd>Ctrl K</kbd></button>
+          <div class="v3-topbar-actions top-right"><span id="workspace-date" class="top-date"></span><button id="workspace-attention-open" class="btn btn-icon icon-btn" type="button" aria-label="待处理事项 Pending actions"><i class="ti ti-bell" aria-hidden="true"></i><span class="dot" data-attention-dot hidden></span></button></div>
         </div>
       </header>
 
       <main id="main-content" class="page-body" tabindex="-1"><div class="container-xl crm-content">
+        <nav id="view-subtabs" class="v4-subtabs" aria-label="页面分区 Page sections">
+          <div class="tabs" data-subtab-group="companies" hidden><button type="button" data-app-nav="companies"><span class="bi"><span lang="zh-CN">全部企业</span><span lang="en">All companies</span></span></button><button type="button" data-app-nav="contact-ready"><span class="bi"><span lang="zh-CN">待联系企业</span><span lang="en">Contact-ready</span></span></button><button type="button" data-app-nav="evidence"><span class="bi"><span lang="zh-CN">评估依据</span><span lang="en">Evidence</span></span></button></div>
+          <div class="tabs" data-subtab-group="research" hidden><button type="button" data-app-nav="research"><span class="bi"><span lang="zh-CN">研究概览</span><span lang="en">Overview</span></span></button><button type="button" data-app-nav="jobs"><span class="bi"><span lang="zh-CN">任务列表</span><span lang="en">Jobs</span></span></button></div>
+          <div class="tabs" data-subtab-group="followups" hidden><button type="button" data-app-nav="followups"><span class="bi"><span lang="zh-CN">跟进邮件</span><span lang="en">Follow-up drafts</span></span></button><button type="button" data-app-nav="contact-queue"><span class="bi"><span lang="zh-CN">开发信审核</span><span lang="en">First-touch review</span></span></button><button type="button" class="v4-phone-only" data-app-nav="replies" data-subtab-phone><span class="bi"><span lang="zh-CN">回复</span><span lang="en">Replies</span></span></button></div>
+          <div class="tabs" data-subtab-group="data" hidden><button type="button" data-app-nav="data-import"><span class="bi"><span lang="zh-CN">数据导入</span><span lang="en">Import</span></span></button><button type="button" data-app-nav="data-export"><span class="bi"><span lang="zh-CN">数据导出</span><span lang="en">Export</span></span></button></div>
+          <div class="tabs" data-subtab-group="settings" hidden><button type="button" data-app-nav="settings"><span class="bi"><span lang="zh-CN">通用设置</span><span lang="en">General</span></span></button><button type="button" data-app-nav="customer-match"><span class="bi"><span lang="zh-CN">客户画像</span><span lang="en">Customer profile</span></span></button></div>
+        </nav>
+        <section id="view-tasks" class="app-view" data-app-view="tasks" aria-labelledby="tasks-title" hidden><div class="head"><div><h2 id="tasks-title" class="bi"><span lang="zh-CN">我的任务</span><span lang="en">My tasks</span></h2></div></div><div id="tasks-root"></div></section>
+        <section id="view-followups" class="app-view" data-app-view="followups" aria-labelledby="followups-title" hidden><div class="head"><div><h2 id="followups-title" class="bi"><span lang="zh-CN">跟进邮件审批</span><span lang="en">Follow-up approval</span></h2></div></div><div id="followups-root"></div></section>
+        <section id="view-me" class="app-view" data-app-view="me" aria-labelledby="me-title" hidden><div class="head"><div><h2 id="me-title" class="bi"><span lang="zh-CN">我的</span><span lang="en">Me</span></h2></div></div><div id="me-root"></div></section>
         <section id="view-contact-ready" class="app-view" data-app-view="contact-ready" aria-label="待联系公司 Contact-ready" hidden></section>
         <section id="view-overview" class="app-view" data-app-view="overview" aria-labelledby="overview-title" hidden>
           <!-- Overview content is mounted using the retained business hooks. -->
@@ -257,7 +240,7 @@
 
         <section id="view-settings" class="app-view" data-app-view="settings" aria-labelledby="settings-title" hidden>
           <div class="crm-section-head"><div><h2 id="settings-title" class="bi"><span lang="zh-CN">工作台显示</span><span lang="en">Workspace Display</span></h2></div></div>
-          <section class="card crm-panel"><div class="card-body crm-settings-grid"><label for="density-mode"><span class="bi"><span lang="zh-CN">信息密度</span><span lang="en">Display density</span></span><select id="density-mode" class="form-select"><option value="comfortable">舒适 / Comfortable</option><option value="compact">紧凑 / Compact</option></select></label><label for="theme-mode"><span class="bi"><span lang="zh-CN">显示模式</span><span lang="en">Color mode</span></span><select id="theme-mode" class="form-select"><option value="auto">跟随系统 / System</option><option value="light">浅色 / Light</option><option value="dark">深色 / Dark</option></select></label><label for="bilingual-detail-mode"><span class="bi"><span lang="zh-CN">双语详情</span><span lang="en">Bilingual detail</span></span><select id="bilingual-detail-mode" class="form-select"><option value="standard">标准 / Standard</option><option value="compact">紧凑 / Compact</option></select></label><label for="default-opportunity-view"><span class="bi"><span lang="zh-CN">默认机会视图</span><span lang="en">Default opportunity view</span></span><select id="default-opportunity-view" class="form-select" disabled><option value="ACTIVE">业务机会 / Active opportunities</option></select></label></div></section>
+          <section class="card crm-panel" aria-labelledby="settings-display-title"><header class="card-header crm-panel-header"><h3 id="settings-display-title" class="card-title bi"><span lang="zh-CN">显示设置</span><span lang="en">Display</span></h3><div class="btns"><button id="theme-toggle" class="btn btn-icon" type="button" aria-label="切换显示模式 Toggle color mode" aria-pressed="false"><i class="ti ti-moon" aria-hidden="true"></i></button><button id="density-toggle" class="btn btn-icon" type="button" aria-label="切换到紧凑模式 Switch to compact density"><i class="ti ti-spacing-horizontal" aria-hidden="true"></i><span class="bi sr-only"><span lang="zh-CN">紧凑</span><span lang="en">Compact</span></span></button></div></header><div class="card-body crm-settings-grid"><label for="density-mode"><span class="bi"><span lang="zh-CN">信息密度</span><span lang="en">Display density</span></span><select id="density-mode" class="form-select"><option value="comfortable">舒适 / Comfortable</option><option value="compact">紧凑 / Compact</option></select></label><label for="theme-mode"><span class="bi"><span lang="zh-CN">显示模式</span><span lang="en">Color mode</span></span><select id="theme-mode" class="form-select"><option value="auto">跟随系统 / System</option><option value="light">浅色 / Light</option><option value="dark">深色 / Dark</option></select></label><label for="bilingual-detail-mode"><span class="bi"><span lang="zh-CN">双语详情</span><span lang="en">Bilingual detail</span></span><select id="bilingual-detail-mode" class="form-select"><option value="standard">标准 / Standard</option><option value="compact">紧凑 / Compact</option></select></label><label for="default-opportunity-view"><span class="bi"><span lang="zh-CN">默认机会视图</span><span lang="en">Default opportunity view</span></span><select id="default-opportunity-view" class="form-select" disabled><option value="ACTIVE">业务机会 / Active opportunities</option></select></label></div></section>
           <section class="card crm-panel p11-controlled-mail" aria-labelledby="controlled-mail-title">
             <header class="card-header crm-panel-header"><div><h3 id="controlled-mail-title" class="card-title bi"><span lang="zh-CN">受控邮箱验证</span><span lang="en">Controlled email verification</span></h3><p class="crm-panel-summary bi"><span lang="zh-CN">单封测试邮件 · 分步审批</span><span lang="en">Single test email · Step-by-step approval</span></p></div><div class="p11-controlled-header-actions"><button id="controlled-context-create" class="btn btn-primary" type="button"><i class="ti ti-plus" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">创建验证记录</span><span lang="en">Create verification</span></span></button><button id="controlled-mail-refresh" class="btn btn-outline-primary" type="button"><i class="ti ti-refresh" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">刷新状态</span><span lang="en">Refresh status</span></span></button></div></header>
             <div id="controlled-mail-panel" class="card-body p11-controlled-mail-body" aria-busy="true">
@@ -287,12 +270,18 @@
           <section class="card crm-panel p10-settings-automation" aria-labelledby="settings-automation-title"><header class="card-header crm-panel-header"><div><h3 id="settings-automation-title" class="card-title bi"><span lang="zh-CN">资料核验监控</span><span lang="en">Evidence Review Monitor</span></h3></div><div class="p9-command-actions"><button id="phase10-provider-refresh" class="btn btn-outline-primary" type="button" aria-describedby="phase10-automation-live"><i class="ti ti-refresh-dot" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">重新检查搜索服务</span><span lang="en">Recheck search service</span></span></button><button id="phase10-automation-refresh" class="btn btn-outline-primary" type="button"><i class="ti ti-refresh" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">刷新状态</span><span lang="en">Refresh status</span></span></button></div></header><div id="settings-automation-monitor" class="p10-automation-monitor card-body" aria-label="资料核验设置状态 Evidence review setting status" aria-busy="true"></div></section>
         </section>
       </div></main>
+      <nav id="m-tabbar" class="m-tab" aria-label="底部导航 Tab bar">
+        <a href="#overview" data-m-views="overview"><span class="m-tab-i"><i class="ti ti-home" aria-hidden="true"></i></span><span>工作台<span class="sr-only"> Workbench</span></span></a>
+        <a href="#opportunities" data-m-views="opportunities companies contact-ready evidence"><span class="m-tab-i"><i class="ti ti-briefcase" aria-hidden="true"></i></span><span>机会<span class="sr-only"> Opportunities</span></span></a>
+        <a href="#tasks" data-m-views="tasks"><span class="m-tab-i"><i class="ti ti-square-check" aria-hidden="true"></i><b class="m-badge" data-nav-count="tasks" hidden></b></span><span>任务<span class="sr-only"> Tasks</span></span></a>
+        <a href="#followups" data-m-views="followups contact-queue replies"><span class="m-tab-i"><i class="ti ti-message-2" aria-hidden="true"></i><b class="m-badge" data-nav-count="messages" hidden></b></span><span>消息<span class="sr-only"> Messages</span></span></a>
+        <a href="#me" data-m-views="me research jobs data-import data-export settings customer-match"><span class="m-tab-i"><i class="ti ti-user" aria-hidden="true"></i></span><span>我的<span class="sr-only"> Me</span></span></a>
+      </nav>
     </div>
   </div>
   <dialog id="detail" class="crm-detail-drawer" aria-label="客户详情 Prospect details"><div class="empty"><p><span class="bi"><span lang="zh-CN">选择企业查看客户详情</span><span lang="en">Select a company to view details</span></span></p></div></dialog>
   <dialog id="verification-detail" class="verification-detail crm-detail-drawer" aria-labelledby="verification-dialog-title"><div class="verification-dialog-toolbar"><strong id="verification-dialog-title" class="bi"><span lang="zh-CN">企业核验详情</span><span lang="en">Company verification detail</span></strong><button id="verification-detail-close" class="btn btn-outline-secondary" type="button"><i class="ti ti-x" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">关闭</span><span lang="en">Close</span></span></button></div><div id="verification-detail-content" aria-busy="false"></div></dialog>
   <div id="phase10-automation-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/vendor/tabler/js/tabler.min.js" defer></script>
   <script type="module" src="/crm-shell.js"></script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/ui/shell.js"></script>

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { communicationViews, filterOpportunityCommunication, opportunityCommunicationRecord, paginateOpportunityItems } from '../public/ui/opportunity-workspace.js';
+import { cssSection } from './v4-css.js';
 
 const opportunities = [
   { company_id:'one',product_profile:'WOMENSWEAR' },
@@ -37,7 +38,7 @@ test('pagination clamps edge cases without mutation, duplication or lost records
   assert.equal(data.length,23);
 });
 test('V3 opportunity styling has no obsolete palette, hover lift, hidden English or desktop card substitution',async()=>{
-  const css=await readFile(new URL('../public/ui/opportunity-workspace.css',import.meta.url),'utf8');
+  const css=cssSection('opportunities');
   assert.doesNotMatch(css,/#(?:5146e5|3730a3|eeedff)|--opw-purple|translateY|gradient|\[lang="en"\][^}]*display:\s*none/);
   assert.match(css,/--dpv-surface/);
   assert.match(css,/@media \(max-width: 767px\)/);
@@ -57,7 +58,7 @@ test('current five-band and communication views retain stable hooks, table is co
   assert.match(app,/setOpportunityResultSummary\(matching.length,selectedStatus\)/);
 });
 test('phone uses summary cards and moves the same filter controls into the drawer',async()=>{
-  const css=await readFile(new URL('../public/ui/opportunity-workspace.css',import.meta.url),'utf8');
+  const css=await readFile(new URL('../public/ui/v4/app.css',import.meta.url),'utf8');
   const filters=await readFile(new URL('../public/ui/filters.js',import.meta.url),'utf8');
   const phone=css.slice(css.indexOf('@media (max-width: 767px)'));
   assert.match(phone,/\.opw-page-head h2 \{ font-size:18px/);

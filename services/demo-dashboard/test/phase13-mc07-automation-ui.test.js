@@ -80,8 +80,8 @@ test('MC07 UI normalizes the persisted automation facade response', () => {
 
 test('MC07 automation UI remains in the V3 family and has compact mobile rules', () => {
   const html=read('../public/index.html');
-  const css=read('../public/ui/v3/automation-control.css');
-  assert.match(html,/ui\/v3\/automation-control\.css/);
+  const css=read('../public/ui/v4/app.css');
+  assert.match(html,/href="\/ui\/v4\/app\.css"/);
   assert.match(css,/var\(--dpv-surface\)/);
   assert.match(css,/@media\(max-width:600px\)/);
   assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);

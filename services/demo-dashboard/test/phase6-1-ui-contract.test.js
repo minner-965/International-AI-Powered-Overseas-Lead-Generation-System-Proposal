@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { cssSection } from './v4-css.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
 const publicDir=path.join(root,'services/demo-dashboard/public');
@@ -11,7 +12,7 @@ const html=read('index.html');
 const app=read('app.js');
 const opportunities=read('opportunity-ui.js');
 const productMatch=read('product-match-ui.js');
-const css=read('phase5.css');
+const css=read('ui/v4/app.css');
 
 test('desktop Opportunities exposes eight compact decision columns and preserves V3 detail capabilities',()=>{
   for(const className of [
@@ -48,7 +49,7 @@ test('Opportunities renderer preserves category and score fields with access mat
 });
 
 test('mobile prioritizes company/category/status/action and retains secondary facts in detail',()=>{
-  const opportunityCss=read('ui/opportunity-workspace.css');
+  const opportunityCss=cssSection('opportunities');
   const mobileStart=opportunityCss.indexOf('@media (max-width: 767px)');
   const mobileEnd=opportunityCss.indexOf('@media',mobileStart+1);
   const mediaBlocks=opportunityCss.slice(mobileStart,mobileEnd>mobileStart?mobileEnd:undefined);
@@ -62,7 +63,7 @@ test('mobile prioritizes company/category/status/action and retains secondary fa
   assert.match(mediaBlocks,/\.crm-opportunity-table td::before\s*\{[^}]*content:none/);
   for(const preserved of ['opportunityBuyerModelCell','opportunitySupplierAccessCell','opportunityReadinessLabel','detail-panel-product-match'])assert.match(app,new RegExp(preserved));
   assert.match(app,/function opportunityCategorySummary[\s\S]*Product Category Score/);
-  assert.match(read('ui/v3/components.css'),/\.dpv-badge, \.data-state-badge, \.p8-status\s*\{[^}]*white-space:\s*normal[^}]*word-break:\s*normal/);
+  assert.match(read('ui/v4/app.css'),/\.dpv-badge, \.data-state-badge, \.p8-status[^{]*\{[^}]*white-space:\s*normal[^}]*word-break:\s*normal/);
 });
 
 test('Company Detail retains the category-score tab and renders both independent product profiles',()=>{
