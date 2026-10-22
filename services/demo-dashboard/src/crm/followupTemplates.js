@@ -1,6 +1,6 @@
 export const FOLLOWUP_TEMPLATE_SET='DPV_FOLLOWUP_V1';
-// Days after the first touch for follow-up 2 and 3. Every draft still
-// needs a person to approve it; these texts are proposals pending Simon's review.
+// Days after the first touch for follow-up 2 and 3. Texts approved by Simon on
+// 2026-10-22; every generated draft still needs a person to approve it before sending.
 export const FOLLOWUP_OFFSET_DAYS=Object.freeze({2:4,3:9});
 export const MAX_FOLLOWUP_SEQUENCE=3;
 

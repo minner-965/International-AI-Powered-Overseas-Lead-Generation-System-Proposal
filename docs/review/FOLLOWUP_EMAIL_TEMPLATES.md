@@ -1,4 +1,4 @@
-# 跟进邮件模板（待 Simon 审定）
+# 跟进邮件模板（Simon 已于 2026-10-22 审定）
 
 代码位置（在 `claude/gifted-hypatia-59rtaf` 分支，默认分支上还没有）：
 [`services/demo-dashboard/src/crm/followupTemplates.js`](https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal/blob/claude/gifted-hypatia-59rtaf/services/demo-dashboard/src/crm/followupTemplates.js)
@@ -51,4 +51,4 @@
 
 首封开发信三套模板（已审定版本）只把落款和自我介绍中的 "DPV International" 改成了 "SIM International"，其余文字未改：[`firstTouchTemplates.js`](https://github.com/minner-965/International-AI-Powered-Overseas-Lead-Generation-System-Proposal/blob/claude/gifted-hypatia-59rtaf/services/demo-dashboard/src/outreach/firstTouchTemplates.js)。
 
-**请审定**：直接回复要改的句子即可，我来改代码和测试。
+文字已审定，不再修改。以后要调整时，改代码中的模板并同步更新本文件。
