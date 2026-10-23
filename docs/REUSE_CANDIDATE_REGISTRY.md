@@ -219,6 +219,8 @@ Integration boundary: seed data only. Market activation stays a management decis
 
 Search vocabulary for de/fr/pt/it/tr (buyer terms + the 13 approved category terms) was written as standard B2B trade terminology in `config/search/query-strategies.v2.json`; no machine-translation service was called. Native-speaker review is recommended before large paid runs. Languages without vocabulary fall back to English.
 
+Round 4 (strategy version 2.1.0): category terms for de/fr/pt/it/tr now use the official localized names of the vendored Shopify Standard Product Taxonomy wherever it has an equivalent node (dresses aa-1-4, skirts aa-1-15, trousers aa-1-12 / tr aa-1-12-11, outerwear aa-1-10-2 / tr aa-1-10, pt tops aa-1-13). The remaining codes (womenswear, knitwear, general merchandise, homeware, home and living, household goods, daily-use goods, non-food, most tops) have no equivalent or a catalogue-only label and keep the reviewed trade term. Each term's provenance is recorded in `category_term_sources`; `test/search-vocabulary-locales.test.js` checks completeness, the taxonomy names and English leftovers (allowed loanwords: Non-Food, Lifestyle, Distributor in German, top in Italian). Native-speaker review is still recommended.
+
 ## Any-category source (multilingual product taxonomy)
 
 | Candidate | License / terms (verified) | Languages | Decision |
