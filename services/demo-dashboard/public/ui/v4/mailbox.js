@@ -205,6 +205,6 @@ if (typeof document !== 'undefined') {
   if (root) {
     wire(root);
     document.addEventListener('crm:viewchange', event => { if (event.detail?.view === 'mailbox') void loadMailbox(); });
-    sessionReady.then(() => loadMailbox());
+    sessionReady.then(user => { if (user.merchant) void loadMailbox(); });
   }
 }

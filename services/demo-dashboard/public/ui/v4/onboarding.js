@@ -3,7 +3,7 @@
 // the account has no checklist; each step has one big button that opens the right page.
 import { bi, esc } from './crm.js';
 import { tip } from './tooltips.js';
-import { sessionReady } from './session.js';
+import { session, sessionReady } from './session.js';
 import { managementRequest } from '../../phase7-ui.js';
 
 export const STEPS = Object.freeze([
@@ -43,6 +43,7 @@ function place() {
 }
 
 export async function loadOnboarding() {
+  if (!session.user?.merchant) return;
   try { model = onboardingModel(await managementRequest('/api/merchant/onboarding')); }
   catch { model = null; }
   place();
@@ -60,5 +61,5 @@ if (typeof document !== 'undefined' && document.getElementById('view-overview'))
   });
   document.addEventListener('crm:viewchange', event => { if (event.detail?.view === 'overview') void loadOnboarding(); });
   document.addEventListener('crm:onboarding', () => void loadOnboarding());
-  sessionReady.then(() => loadOnboarding());
+  sessionReady.then(user => { if (user.merchant) void loadOnboarding(); });
 }

@@ -608,7 +608,7 @@ async function loadMetrics() {
   if (lastRefresh) lastRefresh.innerHTML = data
     ? bi(`概览更新于：${new Date().toLocaleString()}`,`Overview updated: ${new Date().toLocaleString()}`)
     : bi('数据更新时间待确认','Data refresh time to confirm');
-  if (lastRefresh?.dataset.partial === 'true') lastRefresh.insertAdjacentHTML('beforeend', bi('部分资料待恢复','Some information is temporarily unavailable'));
+  if (lastRefresh?.dataset.partial === 'true' && document.documentElement.dataset.role !== 'MERCHANT') lastRefresh.insertAdjacentHTML('beforeend', bi('部分资料待恢复','Some information is temporarily unavailable'));
   $('#run-status').innerHTML = data && allOpportunities ? '' : bi('部分资料读取未完成，请刷新重试。','Some information could not be loaded. Refresh to retry.');
 }
 
@@ -2156,7 +2156,7 @@ async function showLead(id) {
   wireDetailSections(detail);
   wireDetailCloseButtons(detail);
   const outreachEntry=document.createElement('button');
-  outreachEntry.type='button';outreachEntry.className='btn btn-outline-primary';
+  outreachEntry.type='button';outreachEntry.className='btn btn-outline-primary';outreachEntry.dataset.roles='ADMIN';
   outreachEntry.innerHTML=bi('开发信审核','First-touch review');outreachEntry.dataset.tip='查看并审核发给这家企业的第一封开发信|Review the first-touch email for this company';
   outreachEntry.addEventListener('click',()=>{
     detail.close();

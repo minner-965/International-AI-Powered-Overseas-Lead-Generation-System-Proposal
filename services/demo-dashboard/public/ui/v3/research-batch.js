@@ -70,7 +70,7 @@ async function loadPreview() {
   try {
     const result=await api.request('/api/research/batches/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});
     if(requestId!==sequence)return;
-    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('研究范围已就绪','Research scope ready')}${result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
+    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('研究范围已就绪','Research scope ready')}${quotaText(result)?` · ${api.bi(...quotaText(result))}`:result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
     batchScopeReview();updateCounts();
   }catch{
     if(requestId!==sequence)return;preview=null;updateCounts();
@@ -78,6 +78,14 @@ async function loadPreview() {
     $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" data-tip="重新计算范围与费用预估|Recalculate the scope and cost estimate" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
+}
+/** Merchant monthly search quota from the batch preview (merchant_search_quota); null for SIM. */
+export function quotaText(result){
+  const q=result?.merchant_search_quota;if(!q)return null;
+  const used=Number(q.searches_this_month)||0,limit=Number(q.monthly_searches)||0,planned=Number(q.planned_queries??result?.estimated_queries)||0;
+  if(result?.creation_blocked_code==='MERCHANT_SEARCH_QUOTA_EXCEEDED')return[`本月找客户额度不足：已用 ${used} / ${limit} 次，本次约需 ${planned} 次，请减少市场或类目，或联系 SIM`,`Monthly search quota too low: ${used} / ${limit} used, about ${planned} needed`];
+  const remaining=q.remaining??Math.max(0,limit-used);
+  return[`本月找客户额度：已用 ${used} / ${limit} 次，剩余 ${remaining} 次，本次约 ${planned} 次`,`Monthly searches: ${used} / ${limit} used, ${remaining} left, about ${planned} this time`];
 }
 // Search cost estimate from the batch preview; unconfigured prices are stated rather than shown as zero.
 export function costText(result){const cost=result?.estimated_cost_usd;return cost==null||!Number.isFinite(Number(cost))?'未配置单价 / price not configured':`US$ ${Number(cost).toFixed(2)}`;}
@@ -89,7 +97,7 @@ export function batchScopeReview(){
     ['目标类目','Target categories',(snapshot?.categories||options?.categories?.filter(item=>categories.includes(categoryId(item)))||[]).map(item=>categoryLabel(item).join(' / ')).join(' · ')],
     ['客户类型','Buyer types',(preview?.buyer_types||checked('buyer_type')).join(' · ')],
     ['研究语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5],
-    ['预计查询','Estimated queries',preview?.estimated_queries==null?'—':Number(preview.estimated_queries).toLocaleString()],['预计费用','Estimated cost',costText(preview)]];
+    ['预计查询','Estimated queries',preview?.estimated_queries==null?'—':Number(preview.estimated_queries).toLocaleString()],quotaText(preview)?['本月找客户额度','Monthly search quota',quotaText(preview)[0]]:['预计费用','Estimated cost',costText(preview)]];
   $('#research-scope-review').innerHTML=fields.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('');
   renderSearchPlan();
 }

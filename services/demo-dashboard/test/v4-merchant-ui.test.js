@@ -43,8 +43,9 @@ test('Company Detail follows the company.html layout and keeps every existing ho
 });
 
 // ---------- P3: sign-in, roles, trial, onboarding, mailbox, scope, merchant admin, feedback ----------
-import { viewAllowed, trialDaysLeft, isReadOnly, loginUrl, ADMIN_VIEWS, REFUSALS } from '../public/ui/v4/session.js';
-import { bannerMarkup } from '../public/ui/v4/account.js';
+import { viewAllowed, trialDaysLeft, isReadOnly, loginUrl, ADMIN_VIEWS, REFUSALS, merchantApiAllowed } from '../public/ui/v4/session.js';
+import { quotaText } from '../public/ui/v3/research-batch.js';
+import { bannerMarkup, searchUsageMarkup } from '../public/ui/v4/account.js';
 import { onboardingModel, onboardingMarkup } from '../public/ui/v4/onboarding.js';
 import { helpFor, testResultText, mailboxProblem, FALLBACK_PRESETS } from '../public/ui/v4/mailbox.js';
 import { scopeModel } from '../public/ui/v4/merchant-scope.js';
@@ -114,14 +115,29 @@ test('mailbox binding: presets, provider help, plain test results and form check
   assert.match(mailboxProblem({ ...body, from_email: 'nope' }, true)[0], /发件邮箱/);
 });
 
-test('business scope lists approved active categories and active markets with the saved choice', () => {
-  const model = scopeModel({ category_scope_ids: ['c1'], market_codes: ['ae'] },
-    { items: [{ id: 'c1', product_profile: 'WOMENSWEAR', normalized_category: 'DRESSES', scope_status: 'ACTIVE' }, { id: 'c2', product_profile: 'WOMENSWEAR', normalized_category: 'OLD', scope_status: 'RETIRED' }] },
-    { items: [{ market_code: 'AE', country_name: 'United Arab Emirates', status: 'ACTIVE', search_enabled: true }, { market_code: 'BD', status: 'ACTIVE', search_enabled: false }] });
-  assert.deepEqual(model.categories.map(c => c.id), ['c1']);
-  assert.equal(model.categories[0].en, 'Dresses');
-  assert.deepEqual(model.markets.map(m => m.code), ['AE']);
+test('business scope shows the merchant scope choices with Chinese names first and no fixed market fallback', async () => {
+  const model = scopeModel({ category_scope_ids: ['c1'], market_codes: ['ae'],
+    available_categories: [{ id: 'c1', code: 'DRESSES', product_profile: 'WOMENSWEAR', name_en: 'Dresses', name_zh: '连衣裙' }, { id: 'c2', code: 'SWIMWEAR', product_profile: 'WOMENSWEAR', name_en: 'Swimwear', name_zh: null }],
+    available_markets: [{ code: 'AE', name_zh: '阿拉伯联合酋长国', name_en: 'United Arab Emirates' }, { code: 'DE', name_zh: null, name_en: 'Germany' }] });
+  assert.deepEqual(model.categories.map(c => [c.id, c.zh, c.en]), [['c1', '连衣裙', 'Dresses'], ['c2', '', 'Swimwear']]);
+  assert.deepEqual(model.markets.map(m => [m.code, m.zh, m.en]), [['AE', '阿拉伯联合酋长国', 'United Arab Emirates'], ['DE', '', 'Germany']]);
   assert.ok(model.chosenCategories.has('c1') && model.chosenMarkets.has('AE'));
+  assert.deepEqual(scopeModel({}).markets, []);
+  const source = await read('ui/v4/merchant-scope.js');
+  assert.doesNotMatch(source, /\/api\/markets|registry|Intl\.DisplayNames/);
+});
+
+test('merchant sessions never call SIM-only endpoints; research preview shows the monthly quota', async () => {
+  for (const [method, url] of [['GET', '/api/opportunities?status=ALL'], ['GET', '/api/crm/tasks?due=today'], ['GET', '/api/outreach/inbox'], ['POST', '/api/research/batches/preview'], ['GET', '/api/merchant/scope'], ['GET', '/api/category-scopes/current'], ['GET', '/api/companies/7b904157-785d-445b-9ca9-0357e8f4890c/score']]) assert.equal(merchantApiAllowed(method, url), true, url);
+  for (const [method, url] of [['GET', '/api/automation/status'], ['GET', '/api/research/workbench-summary'], ['GET', '/api/research/tasks'], ['GET', '/api/research/provider-status'], ['GET', '/api/outreach/workbench'], ['GET', '/api/outreach/drafts'], ['GET', '/api/markets/registry'], ['GET', '/api/category-scopes/revisions'], ['POST', '/api/data-exports'], ['GET', '/api/data-imports'], ['GET', '/api/contact-queue'], ['GET', '/api/workspace/contact-queue']]) assert.equal(merchantApiAllowed(method, url), false, url);
+  assert.match(quotaText({ estimated_queries: 12, merchant_search_quota: { searches_this_month: 40, monthly_searches: 300, remaining: 260 } })[0], /已用 40 \/ 300 次，剩余 260 次，本次约 12 次/);
+  assert.match(quotaText({ creation_blocked_code: 'MERCHANT_SEARCH_QUOTA_EXCEEDED', merchant_search_quota: { searches_this_month: 295, planned_queries: 12, monthly_searches: 300 } })[0], /额度不足/);
+  assert.equal(quotaText({ estimated_queries: 12 }), null);
+  assert.match(searchUsageMarkup({ merchant: { usage: { searches_this_month: 250 }, quotas: { monthly_searches: 300 } } }), /本月找客户 250 \/ 300 次/);
+  assert.equal(searchUsageMarkup({ role: 'ADMIN', merchant: null }), '');
+  const [replies, css] = await Promise.all([read('ui/v3/replies.js'), read('ui/v4/app.css')]);
+  assert.match(replies, /request\('\/api\/outreach\/inbox'\)/);
+  assert.match(css, /html\[data-role="MERCHANT"\] :is\(#automation-overview/);
 });
 
 test('merchant admin: referral tree, restore status, filters, create checks and one-time password', () => {

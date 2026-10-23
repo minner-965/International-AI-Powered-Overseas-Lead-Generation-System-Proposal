@@ -25,6 +25,13 @@ export function bannerMarkup(user, now = new Date()) {
   return '';
 }
 
+/** Merchant search usage from /api/auth/me (merchant.usage vs merchant.quotas), shown on the research page. */
+export function searchUsageMarkup(user) {
+  const used = user?.merchant?.usage?.searches_this_month; const limit = user?.merchant?.quotas?.monthly_searches;
+  if (used == null || limit == null) return '';
+  const tone = used >= limit ? 'bad' : used >= limit * 0.8 ? 'warn' : 'info';
+  return `<span id="research-quota" class="pill ${tone} v4-research-quota">${bi(`本月找客户 ${used} / ${limit} 次`, `Searches this month ${used} / ${limit}`)}</span>`;
+}
 export const roleText = user => user?.role === 'ADMIN' ? ['管理员', 'Admin'] : [user?.merchant?.company_name || '商家', 'Merchant'];
 const initial = user => (user?.display_name || user?.merchant?.company_name || user?.email || 'S').trim().slice(0, 1).toUpperCase();
 
@@ -37,6 +44,9 @@ function render(user) {
   if (avatar) avatar.textContent = initial(user);
   const logoutButton = document.getElementById('logout-button');
   if (logoutButton) logoutButton.hidden = !session.authEnabled;
+  const quota = searchUsageMarkup(user);
+  const actions = document.querySelector('#view-research .p9-command-actions');
+  if (actions && quota && !document.getElementById('research-quota')) actions.insertAdjacentHTML('afterbegin', quota);
   const banner = document.getElementById('account-banner');
   if (banner) { banner.innerHTML = bannerMarkup(user); banner.hidden = !banner.innerHTML; }
 }

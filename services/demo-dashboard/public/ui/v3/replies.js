@@ -49,7 +49,12 @@ export function mountReplies(host,{request=managementRequest}={}){
     if(busy){generation++;queued=true;return;}const ticket=++generation;
     busy=true;button.disabled=true;list.setAttribute('aria-busy','true');status.innerHTML=bi('正在读取客户往来','Loading customer correspondence');
     try{
-      const rows=replyRows(await request('/api/outreach/workbench')).map(communicationRow);if(ticket!==generation)return;
+      // Merchant accounts read their own inbox; the outreach workbench is SIM-only.
+      const workbench=await request('/api/outreach/workbench').catch(async error=>{if(error?.status!==403)throw error;return{inbox:await request('/api/outreach/inbox')};});
+      if(workbench?.inbox){if(ticket!==generation)return;const messages=(Array.isArray(workbench.inbox)?workbench.inbox:workbench.inbox?.items||[]).filter(row=>row.thread_id||row.company_id);
+        list.innerHTML=messages.length?`<div class="v3-merchant-inbox">${renderInboxRows(messages)}</div>`:`<div class="p8-empty-state">${bi('暂无客户回复','No customer replies yet')}</div>`;
+        status.innerHTML=bi(`当前 ${messages.length} 封客户来信`,`${messages.length} customer messages`);lastFingerprint=null;return;}
+      const rows=replyRows(workbench).map(communicationRow);if(ticket!==generation)return;
       const fingerprint=JSON.stringify(rows);if(fingerprint===lastFingerprint){status.innerHTML=bi(`当前 ${rows.length} 条客户往来记录`,`${rows.length} customer correspondence records`);return;}
       const opened=new Set([...list.querySelectorAll('.v3-reply-row')].flatMap(article=>[...article.querySelectorAll('details')].map((detail,index)=>detail.open?`${article.querySelector('[data-reply-company]')?.dataset.replyCompany}:${index}`:null).filter(Boolean)));
       list.innerHTML=rows.length?renderReplyRows(rows):`<div class="p8-empty-state">${bi('暂无客户往来记录','No customer correspondence yet')}</div>`;

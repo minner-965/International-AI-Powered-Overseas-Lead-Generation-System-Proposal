@@ -4034,6 +4034,7 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
 /* ---------- Roles and feature switches (session.js mirrors them on <html>) ---------- */
 html[data-role="MERCHANT"] [data-roles="ADMIN"], html[data-feature-research="off"] [data-feature="research"] { display: none !important; }
 html:not([data-role]) .v3-nav [data-roles="ADMIN"] { visibility: hidden; }
+html[data-role="ADMIN"][data-session="signed-in"] [data-merchant-only] { display: none !important; }
 .nav .count.warn { background: var(--warn-soft); color: var(--warn); font-size: 11px; }
 .nav .count.warn .bi > [lang="en"] { display: none; }
 .me .v4-logout { flex: 0 0 auto; width: 36px; min-width: 36px; height: 36px; color: var(--side-text); }
@@ -4184,3 +4185,9 @@ html:not([data-role]) .v3-nav [data-roles="ADMIN"] { visibility: hidden; }
   .v4-account-actions .btn { flex: 1 1 100%; min-height: 44px; }
   .v4-referral .btn { min-height: 44px; }
 }
+/* Merchant accounts: SIM-only panels (automation, provider status, service usage, review queues,
+   import/export and email-task tabs, first-touch review, contact enrichment) are not shown. */
+html[data-role="MERCHANT"] :is(#automation-overview, #automation-research, #automation-jobs, #research-workbench-summary, #research-provider-status, #research-workbench-alerts, .v3-research-details, .p10-review-panel, [data-jobs-tab="import"], [data-jobs-tab="export"], [data-jobs-tab="outreach"], #start-enrichment, #enrichment-job-status, #research-workbench-as-of, section[aria-labelledby="overview-attention-title"], [data-detail-section-tab="opportunity"], [data-detail-section-tab="communication"], [data-detail-section-tab="activity"], #detail-tab-data-history) { display: none !important; }
+@media (min-width: 901px) { html[data-role="MERCHANT"] .v4-overview-ops { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
+.v4-research-quota { align-self: center; min-height: 28px; }
+html[data-role="MERCHANT"] .p10-research-grid { grid-template-columns: minmax(0, 1fr); }

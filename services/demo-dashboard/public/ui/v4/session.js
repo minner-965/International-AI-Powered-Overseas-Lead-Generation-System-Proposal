@@ -7,7 +7,10 @@ import { toast } from './toast.js';
 
 export const LOGIN_PAGE = '/login.html';
 /** Pages only SIM (role ADMIN) uses. */
-export const ADMIN_VIEWS = Object.freeze(['settings', 'categories', 'markets', 'customer-match', 'data-import', 'data-export', 'merchants', 'feedback-inbox']);
+export const ADMIN_VIEWS = Object.freeze(['contact-queue', 'settings', 'categories', 'markets', 'customer-match', 'data-import', 'data-export', 'merchants', 'feedback-inbox']);
+/** Pages that need a merchant feature switch. */
+/** Pages that belong to a merchant account (SIM's own administrator account has none). */
+export const MERCHANT_VIEWS = Object.freeze(['mailbox', 'scope']);
 /** Pages that need a merchant feature switch. */
 export const FEATURE_VIEWS = Object.freeze({ research: 'research', jobs: 'research' });
 
@@ -27,6 +30,7 @@ export function goToLogin(reason = '') {
 export function viewAllowed(view, user = session.user) {
   if (!user) return true;
   if (user.role !== 'ADMIN' && ADMIN_VIEWS.includes(view)) return false;
+  if (!user.merchant && session.authEnabled && MERCHANT_VIEWS.includes(view)) return false;
   const feature = FEATURE_VIEWS[view];
   if (feature && user.merchant?.features && user.merchant.features[feature] === false) return false;
   return true;
@@ -50,13 +54,48 @@ export const REFUSALS = Object.freeze({
   MERCHANT_MAILBOX_NOT_VERIFIED: ['请先绑定并验证您的发信邮箱，才能发出邮件。', 'Bind and verify your sending mailbox before email can be sent.', { zh: '去绑定发信邮箱', en: 'Bind mailbox', href: '#mailbox' }]
 });
 
+// API paths a merchant may call (mirror of src/merchant/auth.js MERCHANT_ROUTES). Anything else under
+// /api is SIM-only; for merchants it is answered here with ADMIN_REQUIRED and never sent, so pages
+// fall back to their "not available" state without failed requests.
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+export const MERCHANT_API = Object.freeze([
+  ['GET', '^/api/auth/me$'], ['POST', '^/api/auth/(login|logout|password)$'],
+  ['GET', '^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|scope)$'],
+  ['PATCH', '^/api/merchant/profile$'], ['PUT', '^/api/merchant/(mailbox|scope)$'], ['POST', '^/api/merchant/mailbox/(test-connection|test-email)$'],
+  ['POST', '^/api/feedback$'],
+  ['GET', '^/api/(opportunities|opportunity-pool/summary|metrics|leads|export/leads|markets|category-scopes/current)$'],
+  ['GET', `^/api/opportunities/${UUID}/decision-history$`],
+  ['GET', `^/api/leads/${UUID}(/(decision-makers|contact-routes))?$`],
+  ['GET', `^/api/companies/${UUID}/(score|score-history|customer-match|customer-match-history|lifecycle-history|cooperation-feasibility|category-procurement-matches|buyer-business-model|commercial-product-fit|product-opportunities)$`],
+  ['GET', '^/api/crm/(pipeline|tasks|followup-drafts)$'], ['GET', `^/api/crm/companies/${UUID}/timeline$`],
+  ['POST', `^/api/crm/opportunities/${UUID}/(stage|activities)$`], ['POST', '^/api/crm/tasks$'], ['PATCH', `^/api/crm/tasks/${UUID}$`],
+  ['POST', `^/api/crm/replies/${UUID}/review$`], ['POST', `^/api/crm/followup-drafts/${UUID}/decision$`],
+  ['GET', '^/api/outreach/(inbox|operations-summary)$'], ['GET', `^/api/outreach/threads/${UUID}$`],
+  ['GET', `^/api/research/batches(/options|/${UUID})?$`], ['POST', '^/api/research/batches(/preview)?$'],
+  ['GET', `^/api/research/jobs(/${UUID}(/results)?)?$`]
+].map(([method, pattern]) => [method, new RegExp(pattern, 'i')]));
+export function merchantApiAllowed(method, url) {
+  let path = String(url || '');
+  try { path = new URL(path, 'http://local').pathname; } catch { /* keep as is */ }
+  const verb = String(method || 'GET').toUpperCase();
+  return MERCHANT_API.some(([m, re]) => (m === verb || (m === 'GET' && verb === 'HEAD')) && re.test(path));
+}
+const adminOnlyResponse = () => new Response(JSON.stringify({ error: 'This function is available to the SIM administrator only', code: 'ADMIN_REQUIRED' }), { status: 403, headers: { 'content-type': 'application/json' } });
+
 const apiUrl = input => { const url = typeof input === 'string' ? input : input?.url || ''; return /(^|\/\/[^/]+)\/api\//.test(url) || url.startsWith('/api/'); };
 if (typeof window !== 'undefined' && typeof window.fetch === 'function' && !window.fetch.simSession) {
   const nativeFetch = window.fetch.bind(window);
   const wrapped = async (input, init) => {
-    const response = await nativeFetch(input, init);
-    if (!apiUrl(input)) return response;
+    if (!apiUrl(input)) return nativeFetch(input, init);
     const url = typeof input === 'string' ? input : input?.url || '';
+    const method = init?.method || (typeof input === 'object' && input?.method) || 'GET';
+    if (!/\/api\/auth\//.test(url)) {
+      const user = await sessionReady;
+      if (user?.role !== 'ADMIN' && session.authEnabled && !merchantApiAllowed(method, url)) return adminOnlyResponse();
+      // Expired (read-only) accounts: writes are refused by the server anyway; answer them here.
+      if (isReadOnly(user) && !/^(GET|HEAD)$/i.test(method) && !/\/api\/feedback\b/.test(url)) return new Response(JSON.stringify({ error: REFUSALS.MERCHANT_READ_ONLY[1], code: 'MERCHANT_READ_ONLY' }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }
+    const response = await nativeFetch(input, init);
     if (response.status === 401 && !/\/api\/auth\/(login|password|me)\b/.test(url)) goToLogin('expired');
     else if ([403, 409].includes(response.status) && (response.headers.get('content-type') || '').includes('json')) {
       response.clone().json().then(body => {

@@ -9,19 +9,12 @@ import { toast } from './toast.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const PROFILES = { WOMENSWEAR: ['女装', 'Womenswear'], GENERAL_MERCHANDISE: ['日用百货', 'General merchandise'] };
 const humanCode = code => String(code || '').toLowerCase().replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
-let regionNames = null;
-try { regionNames = { zh: new Intl.DisplayNames(['zh-CN'], { type: 'region' }), en: new Intl.DisplayNames(['en'], { type: 'region' }) }; } catch { regionNames = null; }
-export const countryName = (code, fallback = '') => {
-  try { return [regionNames?.zh.of(code) || fallback || code, regionNames?.en.of(code) || fallback || code]; } catch { return [fallback || code, fallback || code]; }
-};
 
-/** Options + current choice from the scope payload, with the approved lists as fallback sources. */
-export function scopeModel(scope, categories, markets) {
-  const categoryItems = (scope?.available_categories || categories?.items || []).filter(item => !item.scope_status || item.scope_status === 'ACTIVE')
-    .map(item => ({ id: String(item.id ?? item.category_scope_id), profile: item.product_profile || '', zh: item.name_zh || item.names?.zh || item.display_name_zh || '', en: item.name_en || item.names?.en || humanCode(item.normalized_category || item.name || item.id) }));
-  const marketItems = (scope?.available_markets || markets?.items || []).filter(item => (item.status ?? 'ACTIVE') === 'ACTIVE' && item.search_enabled !== false)
-    .map(item => { const code = String(item.market_code || item.code).toUpperCase(); const [zh, en] = countryName(code, item.country_name); return { code, zh, en }; });
-  return { categories: categoryItems, markets: marketItems, chosenCategories: new Set((scope?.category_scope_ids || []).map(String)), chosenMarkets: new Set((scope?.market_codes || []).map(code => String(code).toUpperCase())) };
+/** Options + current choice from GET /api/merchant/scope (available_categories / available_markets). */
+export function scopeModel(scope) {
+  const categories = (scope?.available_categories || []).map(item => ({ id: String(item.id), profile: item.product_profile || '', zh: item.name_zh || '', en: item.name_en || humanCode(item.code) }));
+  const markets = (scope?.available_markets || []).map(item => { const code = String(item.code).toUpperCase(); return { code, zh: item.name_zh || '', en: item.name_en || code }; });
+  return { categories, markets, chosenCategories: new Set((scope?.category_scope_ids || []).map(String)), chosenMarkets: new Set((scope?.market_codes || []).map(code => String(code).toUpperCase())) };
 }
 
 const state = { model: null, error: false, saving: false };
@@ -34,7 +27,7 @@ function categoriesMarkup(model) {
 }
 function marketsMarkup(model) {
   if (!model.markets.length) return stateBlock('empty', 'SIM 还没有开放可选市场，请联系 SIM', 'No markets are open yet; contact SIM');
-  return `<div class="v4-choice-grid">${model.markets.map(item => `<label class="v4-choice"${tip(`勾选后会在${item.zh}寻找客户`, `Searches will include ${item.en}`)}><input type="checkbox" name="market" value="${esc(item.code)}"${model.chosenMarkets.has(item.code) ? ' checked' : ''}><span>${esc(item.zh)}<small>${esc(item.en)} · ${esc(item.code)}</small></span></label>`).join('')}</div>`;
+  return `<div class="v4-choice-grid">${model.markets.map(item => `<label class="v4-choice"${tip(`勾选后会在${item.zh || item.en}寻找客户`, `Searches will include ${item.en}`)}><input type="checkbox" name="market" value="${esc(item.code)}"${model.chosenMarkets.has(item.code) ? ' checked' : ''}><span>${item.zh ? `${esc(item.zh)}<small>${esc(item.en)} · ${esc(item.code)}</small>` : `${esc(item.en)}<small>${esc(item.code)}</small>`}</span></label>`).join('')}</div>`;
 }
 
 function summary(form) {
@@ -57,13 +50,8 @@ function render() {
 
 export async function loadScope() {
   state.error = false;
-  const settle = promise => promise.catch(error => ({ __error: error }));
-  const [scope, categories, registry] = await Promise.all([settle(managementRequest('/api/merchant/scope')), settle(managementRequest('/api/category-scopes/current')), settle(managementRequest('/api/markets/registry'))]);
-  // Merchants may not read the registry; the public market list is the next source.
-  const markets = !registry?.__error ? registry : await managementRequest('/api/markets').then(payload => ({ items: (payload?.markets || []).map(item => ({ market_code: item.country_code, country_name: item.country_name, status: 'ACTIVE' })) })).catch(() => ({ __error: true }));
-  const scopeData = scope?.__error ? (scope.__error.status === 404 ? {} : null) : scope;
-  if (!scopeData) { state.error = true; render(); return; }
-  state.model = scopeModel(scopeData, categories?.__error ? null : categories, markets?.__error ? null : markets);
+  try { state.model = scopeModel(await managementRequest('/api/merchant/scope')); }
+  catch { state.error = true; state.model = null; }
   render();
 }
 
