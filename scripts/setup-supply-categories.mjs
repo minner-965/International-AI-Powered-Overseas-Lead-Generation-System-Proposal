@@ -5,15 +5,15 @@
 //   node scripts/setup-supply-categories.mjs --list
 //   node scripts/setup-supply-categories.mjs --categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS
 //   node scripts/setup-supply-categories.mjs --all
-//   option: --base http://127.0.0.1:3000 (default: DASHBOARD_PORT from .env, else 3000)
+//   option: --base http://127.0.0.1:3100 (default: DASHBOARD_PORT from .env, else 3100; inside the container use http://127.0.0.1:3000)
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const option = name => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 function dashboardPort() {
-  try { return readFileSync(new URL('../.env', import.meta.url), 'utf8').match(/^DASHBOARD_PORT=(\d+)\s*$/m)?.[1] || '3000'; }
-  catch { return '3000'; }
+  try { return readFileSync(new URL('../.env', import.meta.url), 'utf8').match(/^DASHBOARD_PORT=(\d+)\s*$/m)?.[1] || '3100'; }
+  catch { return '3100'; }
 }
 const base = (option('--base') || process.env.APP_BASE_URL || `http://127.0.0.1:${dashboardPort()}`).replace(/\/$/, '');
 

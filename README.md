@@ -20,7 +20,7 @@ Opportunity admission, contact readiness and email eligibility are separate stat
 
 The application uses the existing HTML/CSS/JavaScript frontend, Express services, PostgreSQL, transactional work queues and configured integrations. Read current status and the operations runbook before starting workers: startup may resume persisted jobs and automation.
 
-Workspace: <http://localhost:3000>. Local setup guidance: [Company computer setup](docs/COMPANY_PC_SETUP.md).
+Workspace: <http://localhost:3100>. Local setup guidance: [Company computer setup](docs/COMPANY_PC_SETUP.md).
 
 ## Historical records
 

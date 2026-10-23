@@ -27,7 +27,8 @@ function RunNative([scriptblock]$command) {
 }
 function WaitForWorkspace {
   for ($i = 0; $i -lt 90; $i++) {
-    try { if ((Invoke-RestMethod -Uri "$baseUrl/api/health" -TimeoutSec 3).status -eq 'ok') { return } } catch { }
+    # Another system on the same port would also answer; require this workspace's identity.
+    try { $health = Invoke-RestMethod -Uri "$baseUrl/api/health" -TimeoutSec 3; if ($health.status -eq 'ok' -and $health.service -eq 'sim-leadgen') { return } } catch { }
     Start-Sleep -Seconds 2
   }
   Fail 'The workspace did not start. Run: docker compose logs --tail 80 demo-dashboard'
@@ -58,13 +59,13 @@ foreach ($name in '.env.phase7-outreach', '.env.phase7-api') {
   } else { Write-Host "$name already exists - kept." }
 }
 
-# DASHBOARD_PORT in .env moves the workspace off port 3000 when another app already uses it.
+# DASHBOARD_PORT in .env sets the workspace port (default 3100; sq-system uses 3000).
 $portLine = Select-String -Path '.env' -Pattern '^DASHBOARD_PORT=(\d+)\s*$' | Select-Object -First 1
-$port = if ($portLine) { $portLine.Matches[0].Groups[1].Value } else { '3000' }
+$port = if ($portLine) { $portLine.Matches[0].Groups[1].Value } else { '3100' }
 $baseUrl = "http://localhost:$port"
 $running = RunNative { docker compose ps -q demo-dashboard }
 if (-not $running.Trim() -and (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
-  Fail "Port $port is already used by another program. Set DASHBOARD_PORT=3100 (or another free port) in .env and run this script again."
+  Fail "Port $port is already used by another program. Set DASHBOARD_PORT=<another free port> in .env and run this script again."
 }
 
 Step 'Building and starting the system (first build takes several minutes)'

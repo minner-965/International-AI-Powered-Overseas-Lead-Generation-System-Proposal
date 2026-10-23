@@ -22,11 +22,11 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 
 以后更新：在 `E:\claude\SIM` 里 `git pull`，再运行一次 `scripts\local-setup.ps1`（数据保留）。
 
-脚本会：检查 Git 和 Docker → 生成 `.env`、`.env.phase2`（随机数据库密码和内部令牌）、`.env.phase7-outreach`、`.env.phase7-api` → 构建并启动数据库、工作台和后台任务 → 等工作台能打开 → 登记或执行数据库迁移 → 列出可批准的供应类目。完成后打开 **http://localhost:3000**。
+脚本会：检查 Git 和 Docker → 生成 `.env`、`.env.phase2`（随机数据库密码和内部令牌）、`.env.phase7-outreach`、`.env.phase7-api` → 构建并启动数据库、工作台和后台任务 → 等工作台能打开 → 登记或执行数据库迁移 → 列出可批准的供应类目。完成后打开 **http://localhost:3100**（sq-system 继续用 3000，两套系统可同时运行、数据互不影响）。
 
 可以重复运行：已有的 `.env*` 会保留，数据库不会被清空。更新后再运行时，脚本会执行新增的数据库迁移并重启服务。
 
-端口 3000 已被其他程序占用时，脚本会停下并提示：在根目录 `.env` 里把 `DASHBOARD_PORT=3000` 改成空闲端口（例如 `DASHBOARD_PORT=3100`），再运行一次脚本，之后用 http://localhost:3100 打开。`setup-supply-categories.mjs` 也会自动使用这个端口。
+端口由根目录 `.env` 的 `DASHBOARD_PORT` 决定（默认 3100）。端口被其他程序占用时，脚本会停下并提示，改成空闲端口后再运行一次即可。`setup-supply-categories.mjs` 也会自动使用这个端口。
 
 ## 2. 批准供应类目（新装必做）
 

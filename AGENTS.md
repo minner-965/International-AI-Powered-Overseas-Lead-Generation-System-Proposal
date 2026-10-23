@@ -96,7 +96,10 @@ At the start of every task, complete both checks below before implementation beg
 
 ## Business model
 
-- SIM operates one hosted system for small and medium export companies: SIM finds leads and sends introductory email for each client, and the client signs in to see its own leads and follow them up itself (managed lead delivery). Self-service multi-tenant SaaS is not the target. Planned per-client pieces: a client project (categories, markets, sender identity) to which leads, opportunities and email belong, client accounts that only see their own project, and sending under the client's company name, preferably from the client's own mailbox.
+- SIM (Simon) is the administrator of one hosted system. He creates merchant accounts for small and medium export companies; each starts with a 7-day trial (adjustable), then becomes paid, expired or disabled — all set from the admin account. Merchants may refer friends; Simon opens their accounts (no self-registration, no online payment yet).
+- One system and one database serve all merchants; every lead, task, reply and email belongs to a merchant and merchants never see each other's data. Search runs on SIM's resources (local SearXNG first, paid providers as fallback) within each merchant's monthly quota and SIM's global cap.
+- Merchants bind their own sending mailbox in the workspace and send introductory email under their own company name; replies come back to their account.
+- Design every page from the merchant's point of view: obvious buttons, a first-login checklist, a hover/focus tooltip explaining every button, and a feedback button on every page.
 
 ## New-customer product opportunity rule
 

@@ -1230,7 +1230,7 @@ app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
     const queue = await phase5Queue.health();
-    res.json({ status: 'ok', database: 'ready', phase5_jobs: queue.status });
+    res.json({ status: 'ok', service: 'sim-leadgen', database: 'ready', phase5_jobs: queue.status });
   }
   catch (error) { res.status(503).json({ status: 'error', error: error.message }); }
 });
