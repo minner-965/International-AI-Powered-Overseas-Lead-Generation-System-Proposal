@@ -14,7 +14,11 @@ export function createPhase7QueueHandlers({ service }) {
     [PHASE5_QUEUES.SEND_OUTREACH_EMAIL]: data => service.sendMessageWork(data),
     [PHASE5_QUEUES.RECONCILE_GMAIL_AMBIGUOUS_SEND]: data => service.reconcileGmailAmbiguousSendWork(data),
     [PHASE5_QUEUES.GMAIL_INBOUND_SYNC]: () => service.syncGmailInboundWork(),
-    [PHASE5_QUEUES.INBOUND_EMAIL_SYNC]: () => service.syncInboundEmailWork(),
+    [PHASE5_QUEUES.INBOUND_EMAIL_SYNC]: async () => {
+      const sim = await service.syncInboundEmailWork();
+      if (!service.merchantSending) return sim;
+      return { ...sim, merchant_mailboxes: await service.syncMerchantInboundWork(service.merchantSending) };
+    },
     [PHASE5_QUEUES.SEND_CONTROLLED_APPLICATION_EMAIL]: data => service.sendControlledApplicationWork(data),
     [PHASE5_QUEUES.CONTROLLED_APPLICATION_INBOUND_SYNC]: () => service.syncControlledApplicationInboundWork(),
     [PHASE5_QUEUES.PROCESS_CONTROLLED_APPLICATION_INBOUND]: data => service.processControlledApplicationInboundWork(data),

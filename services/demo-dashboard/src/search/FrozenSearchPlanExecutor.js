@@ -11,8 +11,10 @@ export function searchPause(error){
 // One existing job, its immutable plan, and the existing usage ledger. Storage
 // owns transactional candidate/hit persistence; the worker owns stage handoff.
 export class FrozenSearchPlanExecutor {
- constructor({store,router,isEnabled=async()=>true,accountState=null,accountStates={},pool=null,auditFactory=null,costControl=null,reuseDays=0}={}){
-  Object.assign(this,{store,router,isEnabled,accountState,accountStates,pool,costControl});
+ // jobAllowed(jobId) is the merchant guard: a job created by a merchant batch pauses when that
+ // merchant is read-only, has research disabled or reached its monthly search quota.
+ constructor({store,router,isEnabled=async()=>true,accountState=null,accountStates={},pool=null,auditFactory=null,costControl=null,reuseDays=0,jobAllowed=null}={}){
+  Object.assign(this,{store,router,isEnabled,accountState,accountStates,pool,costControl,jobAllowed});
   this.reuseDays=Number(costControl?.config?.reuseDays??reuseDays)||0;
   this.auditFactory=auditFactory||((provider)=>new SearchUsageAudit({provider,pool,retrySafeFailures:true}));
  }
@@ -29,6 +31,7 @@ export class FrozenSearchPlanExecutor {
    if(prior?.response_snapshot){await this.store.persist(frozen,query,prior,prior.response_snapshot);completed++;replayed++;continue;}
    if(prior&&['CLAIMED','REVIEW_REQUIRED','FAILED','TEMPORARY_ERROR'].includes(prior.status))return pause('PAUSED_SEARCH_REVIEW');
    if(signal?.aborted||!await this.isEnabled())return pause('PAUSED_AUTOMATION_OFF');
+   if(this.jobAllowed){const allowed=await this.jobAllowed(jobId);if(!allowed?.allowed)return pause(allowed?.code==='MERCHANT_SEARCH_QUOTA_EXCEEDED'?'PAUSED_MERCHANT_SEARCH_QUOTA':'PAUSED_MERCHANT_ACCOUNT');}
    // Fallback chain: a provider that fails with `fallback:true` (local SearXNG errors, 429,
    // CAPTCHA) or returns an empty page with `fallbackOnEmpty` hands the same query to the
    // next available provider in the configured order. Paid providers never fall back.

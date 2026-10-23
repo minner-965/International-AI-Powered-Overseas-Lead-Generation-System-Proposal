@@ -246,3 +246,18 @@ Reused: `leadgen.provider_usage_events` (append-only rows; reuse is recorded as 
 | MediaCrawler (sq-system) | NC license | Social-media crawler (Xiaohongshu/Douyin), not web search | — | Not applicable |
 
 Integration boundary: `src/search/SearxngSearchProvider.js` implements the existing `SearchProvider` interface; `CurrentCapacityRouter` reads `SEARCH_PROVIDER_ORDER` (default `searxng,exa,tavily`) and the frozen-plan executor moves a query to the next provider on any SearXNG error, 429, CAPTCHA-blocked engines or an empty page. Usage-ledger rows are written as for paid providers (provider `SEARXNG`, cost 0, `SEARCH_COST_USD_PER_QUERY_SEARXNG=0`), so SearXNG hits are visible in usage counts. Results still pass `resultFilter`/domain policy. Pin a newer image tag only after reading its release notes.
+
+## Merchant accounts: sign-in, sessions, password hashing, secret storage (round 4, P3)
+
+| Candidate | Version / license (verified with `npm view`) | Fit, privacy and cost | Maintenance | Decision |
+|---|---|---|---|---|
+| [`express-session`](https://github.com/expressjs/session) | `1.19.0` (published 2026-01-22), MIT | Official Express session middleware; cookie only carries a signed id; data stays in our PostgreSQL | expressjs organisation, active | **Reuse** (exact pin) |
+| [`connect-pg-simple`](https://github.com/voxpelli/node-connect-pg-simple) | `10.0.0` (2024-09-13), MIT; depends on `pg ^8.12` (already used) | PostgreSQL session store; no Redis needed; table `leadgen.workspace_sessions` created by migration 066 using the project's documented layout (`createTableIfMissing:false`) | Stable, low churn | **Reuse** (exact pin) |
+| [`@node-rs/argon2`](https://github.com/napi-rs/node-rs/tree/main/packages/argon2) | `2.2.2` (2026-10-06), MIT; prebuilt native binaries incl. `linux-x64-musl` for the `node:24-alpine` image (recorded in package-lock) | Argon2id password hashing with OWASP default parameters; no node-gyp build | napi-rs, active | **Reuse** (exact pin). Alternatives: `argon2` (needs node-gyp/prebuild), `bcrypt` (weaker, 72-byte limit), Node `scrypt` (usable but hand-rolled encoding) |
+| Node `crypto` AES-256-GCM | built in | Encrypts merchant mailbox passwords; key `MERCHANT_SECRET_KEY` only in `.env` | Node core | **Reuse**, thin wrapper `src/merchant/secretBox.js` |
+| Passport.js / Auth0 / Clerk | MIT / hosted SaaS | Only email + password for a handful of accounts; hosted services would move merchant data off SIM's machine and add cost | — | Not adopted (overkill; privacy/cost) |
+| `express-rate-limit` | MIT | Only the sign-in endpoint needs throttling | — | Not adopted; an 20-line in-memory limiter in `src/merchant/router.js` covers one process |
+
+`npm audit --omit=dev` after the install reports the same 7 pre-existing advisories (brace-expansion, http-cache-semantics, ip-address, nodemailer, proxy-addr, source-map-js, undici) and none from the three new packages.
+
+Integration boundary: `src/merchant/auth.js` (session + `/api` gate with a deny-by-default merchant route list), `src/merchant/scope.js` (central data scope), `src/merchant/MerchantService.js`, `src/merchant/router.js`. Business services keep their existing role checks; `AUTH_REQUIRED=false` restores the previous `DPV_WORKSPACE_ACTOR` development identity.

@@ -1,3 +1,4 @@
+import {researchJobScopeSql} from '../merchant/scope.js';
 import { projectResearchTask,compareResearchTasks,rankCohortCandidate } from './researchTaskProjection.js';
 import { createHash } from 'node:crypto';
 import {firstContactPendingSql} from '../outreach/contactProgress.js';
@@ -341,7 +342,7 @@ export class ResearchWorkbenchService {
       auto_evidence:autoEvidence};
   }
 
-  async listJobs(query={}) {
+  async listJobs(query={},scope=null) {
     const limit=boundedInt(query.limit,{min:1,max:100,fallback:50});
     const offset=decodeCursor(query.cursor);
     // $1 is reserved for the contact-verification TTL used by the projection.
@@ -357,6 +358,7 @@ export class ResearchWorkbenchService {
         WHERE e.research_job_id=j.id AND c.company_name ILIKE $${params.length})
       OR EXISTS(SELECT 1 FROM leadgen.research_job_cohort_items ci JOIN leadgen.companies c ON c.id=ci.company_id
         WHERE ci.research_job_id=j.id AND c.company_name ILIKE $${params.length}))`);}
+    if(scope?.restrict)clauses.push(researchJobScopeSql(scope,'j',params));
     const result=await this.pool.query(`SELECT j.*,
       pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
       pu.provider_temporary_error_count,pu.provider_failed_count,pu.reserved_units,pu.used_units,

@@ -200,7 +200,8 @@ export function createPhase5Queue({
         await boss.start();
         for (const name of PHASE5_QUEUE_NAMES) await registerQueue(name);
         const inboundProvider=String(env.INBOUND_EMAIL_PROVIDER||'').trim().toUpperCase();
-        const inboundEnabled=inboundProvider==='IMAP'?booleanEnv(env.SMTP_IMAP_INBOUND_SYNC_ENABLED,false):inboundProvider==='GMAIL_API'&&booleanEnv(env.GMAIL_INBOUND_SYNC_ENABLED,false);
+        const inboundEnabled=booleanEnv(env.MERCHANT_INBOUND_SYNC_ENABLED,true)||(inboundProvider==='IMAP'?booleanEnv(env.SMTP_IMAP_INBOUND_SYNC_ENABLED,false):inboundProvider==='GMAIL_API'&&booleanEnv(env.GMAIL_INBOUND_SYNC_ENABLED,false));
+        // Merchant mailboxes are synced by the same job (MERCHANT_INBOUND_SYNC_ENABLED, default on).
         if (inboundEnabled && typeof boss.schedule === 'function') {
           const minutes=Math.max(1,Math.min(59,Number(env.INBOUND_EMAIL_SYNC_INTERVAL_MINUTES||env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
           await boss.schedule(PHASE5_QUEUES.INBOUND_EMAIL_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });

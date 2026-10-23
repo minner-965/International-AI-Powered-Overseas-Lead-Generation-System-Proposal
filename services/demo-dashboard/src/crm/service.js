@@ -46,82 +46,89 @@ const actorOf=user=>text(user?.identity,'actor',{required:true,max:200});
 const limitOf=value=>Math.min(Math.max(Number.parseInt(value,10)||100,1),500);
 
 export class CrmService{
-  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{}}={}){
+  // merchantSending: {providerFor(merchantId), emailAllowance(merchantId,client), senderFor(merchantId)}
+  // (MerchantService). A merchant's follow-ups go out from the merchant's own mailbox.
+  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{},merchantSending=null}={}){
     this.repository=repository||new CrmRepository({pool});
-    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit});
+    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit,merchantSending});
   }
 
-  async listPipeline(query={}){
+  async listPipeline(query={},scope=null){
     return this.repository.listPipeline({stage:oneOf(query.stage,PIPELINE_STAGES,'stage',{required:false}),
-      owner:text(query.owner,'owner',{max:200}),q:text(query.q,'search',{max:200}),limit:limitOf(query.limit)});
+      owner:text(query.owner,'owner',{max:200}),q:text(query.q,'search',{max:200}),limit:limitOf(query.limit),scope});
   }
 
-  async setStage(opportunityId,body={},user){
+  async setStage(opportunityId,body={},user,scope=null){
     const stage=oneOf(body.stage,PIPELINE_STAGES,'stage');
     const lostReason=text(body.lost_reason,'lost reason',{max:500});
     if(stage==='LOST'&&!lostReason)throw fail('CRM_LOST_REASON_REQUIRED','A reason is required when an opportunity is lost');
     return this.repository.setStage(crmUuid(opportunityId,'opportunity_id'),{stage,lost_reason:lostReason,note:text(body.note,'note'),
       owner:text(body.owner,'owner',{max:200}),next_action:text(body.next_action,'next action',{max:500}),
       next_action_due_at:timestamp(body.next_action_due_at,'next follow-up'),
-      expected_version:body.expected_version===undefined||body.expected_version===null?null:Number(body.expected_version)},actorOf(user));
+      expected_version:body.expected_version===undefined||body.expected_version===null?null:Number(body.expected_version)},actorOf(user),scope);
   }
 
-  async addActivity(opportunityId,body={},user){
+  async addActivity(opportunityId,body={},user,scope=null){
     const occurredAt=timestamp(body.occurred_at,'occurred at')||new Date().toISOString();
     if(new Date(occurredAt).getTime()>Date.now()+5*60_000)throw fail('CRM_DATE_INVALID','An activity cannot be recorded in the future');
     return this.repository.addActivity(crmUuid(opportunityId,'opportunity_id'),{activity_type:oneOf(body.activity_type,MANUAL_ACTIVITY_TYPES,'activity type'),
       occurred_at:occurredAt,summary:text(body.summary,'summary',{required:true,max:2000}),result:text(body.result,'result',{max:200}),
-      next_follow_up_at:timestamp(body.next_follow_up_at,'next follow-up')||null},actorOf(user));
+      next_follow_up_at:timestamp(body.next_follow_up_at,'next follow-up')||null},actorOf(user),scope);
   }
 
-  async timeline(companyId,query={}){return this.repository.timeline(crmUuid(companyId,'company_id'),{limit:limitOf(query.limit)});}
+  async timeline(companyId,query={},scope=null){return this.repository.timeline(crmUuid(companyId,'company_id'),{limit:limitOf(query.limit),scope});}
 
-  async listTasks(query={},user){
+  async listTasks(query={},user,scope=null){
     const due=query.due?oneOf(query.due,['OVERDUE','TODAY','WEEK'],'due').toLowerCase():null;
     const owner=bool(query.mine)?actorOf(user):text(query.owner,'owner',{max:200});
     return this.repository.listTasks({owner,status:oneOf(query.status,TASK_STATUSES,'status',{required:false}),due,
-      company_id:query.company_id?crmUuid(query.company_id,'company_id'):null,limit:limitOf(query.limit)});
+      company_id:query.company_id?crmUuid(query.company_id,'company_id'):null,limit:limitOf(query.limit),scope});
   }
 
-  async createTask(body={},user){
+  async createTask(body={},user,scope=null){
     return this.repository.createTask({company_id:crmUuid(body.company_id,'company_id'),task_type:oneOf(body.task_type,TASK_TYPES,'task type'),
       owner:text(body.owner,'owner',{max:200}),due_at:timestamp(body.due_at,'due date')||null,title:text(body.title,'title',{required:true,max:200}),
-      next_action:text(body.next_action,'next action',{max:500})},actorOf(user));
+      next_action:text(body.next_action,'next action',{max:500})},actorOf(user),scope);
   }
 
-  async updateTask(taskId,body={},user){
+  async updateTask(taskId,body={},user,scope=null){
     const input={task_status:oneOf(body.task_status,TASK_STATUSES,'status',{required:false}),owner:text(body.owner,'owner',{max:200}),
       due_at:timestamp(body.due_at,'due date'),note:text(body.note,'note',{max:1000})};
     if(!input.task_status&&!input.owner&&input.due_at===undefined&&!input.note)throw fail('CRM_NO_CHANGE','Nothing to update');
-    return this.repository.updateTask(crmUuid(taskId,'task_id'),input,actorOf(user));
+    return this.repository.updateTask(crmUuid(taskId,'task_id'),input,actorOf(user),scope);
   }
 
-  async reviewReply(classificationId,body={},user){
+  async reviewReply(classificationId,body={},user,scope=null){
     const decision=oneOf(body.decision,['CONFIRM','CORRECT'],'decision');
     const intent=decision==='CORRECT'?oneOf(body.intent,REPLY_INTENTS,'intent'):null;
     return this.repository.reviewReply(crmUuid(classificationId,'classification_id'),{decision,intent},actorOf(user),input=>{
       const built=buildSalesTaskFromReply({classification:{intent:input.intent,sanitized_subject:input.subject,sanitized_body_text:input.body_text},
         company_id:input.company_id,thread_id:input.thread_id});
       return built.create_task?{task:built.task,task_type:INTENT_TASK_TYPES[input.intent]||'REPLY_REVIEW'}:null;
-    });
+    },scope);
   }
 
-  async listFollowupDrafts(query={}){
+  async listFollowupDrafts(query={},scope=null){
     const status=query.status==='ALL'?null:oneOf(query.status||'PENDING_APPROVAL',['PENDING_APPROVAL','APPROVED','SENDING','SENT','DISCARDED','BLOCKED'],'status');
-    return this.repository.listFollowupDrafts({status,limit:limitOf(query.limit)});
+    return this.repository.listFollowupDrafts({status,limit:limitOf(query.limit),scope});
   }
 
   followupDailyLimit(){return Number(this.env.CRM_FOLLOWUP_DAILY_LIMIT||50);}
-  async followupQuota(){
+  async followupQuota(scope=null){
+    if(scope?.restrict&&this.merchantSending){
+      const allowance=await this.merchantSending.emailAllowance(scope.merchantId);
+      const sent_today=Number(allowance.sent_today??0);const daily_limit=Number(allowance.daily_limit??allowance.merchant?.daily_email_quota??0);
+      return{sent_today,daily_limit,remaining:Math.max(0,daily_limit-sent_today)};
+    }
     const daily_limit=this.followupDailyLimit();
     const sent_today=await countColdOutreachToday(this.pool);
     return{sent_today,daily_limit,remaining:Math.max(0,daily_limit-sent_today)};
   }
 
-  async decideFollowupDraft(draftId,body={},user){
+  async decideFollowupDraft(draftId,body={},user,scope=null){
     const decision=oneOf(body.decision,['APPROVE','DISCARD'],'decision');
     const draft=await this.repository.decideFollowupDraft(crmUuid(draftId,'draft_id'),{decision,
-      subject:text(body.subject,'subject',{max:240}),body_text:text(body.body_text,'body',{max:12000}),reason:text(body.reason,'reason',{max:500})},actorOf(user));
+      subject:text(body.subject,'subject',{max:240}),body_text:text(body.body_text,'body',{max:12000}),reason:text(body.reason,'reason',{max:500})},actorOf(user),scope);
     if(draft.draft_status==='APPROVED'&&this.queue)
       await this.queue.enqueue(CRM_FOLLOWUP_SEND_QUEUE,{draft_id:draft.id},{singletonKey:`crm-followup-send:${draft.id}`});
     return draft;
@@ -134,7 +141,7 @@ export class CrmService{
     const configured=provider==='FEISHU'?feishuConfigured(this.env):Boolean(String(this.env.CRM_BASE_URL||'').trim()&&String(this.env.CRM_API_KEY||'').trim()&&!/REPLACE_WITH|NOT_CONFIGURED/i.test(`${this.env.CRM_BASE_URL}|${this.env.CRM_API_KEY}`));
     if(!configured)return{status:'NOT_CONFIGURED',queued:0};
     const rows=(await this.pool.query(`SELECT id,attempt_count FROM leadgen.crm_sync_outbox
-      WHERE record_scope='PROSPECT' AND sync_status IN('PENDING','RETRYABLE_ERROR') AND coalesce(next_attempt_at,now())<=now()
+      WHERE record_scope='PROSPECT' AND merchant_id IS NULL AND sync_status IN('PENDING','RETRYABLE_ERROR') AND coalesce(next_attempt_at,now())<=now()
       ORDER BY created_at LIMIT $1`,[Math.min(Math.max(Number(limit)||50,1),200)])).rows;
     for(const row of rows)await this.queue.enqueue(CRM_SYNC_QUEUE,{outbox_id:row.id},{singletonKey:`crm:dispatch:${row.id}:${row.attempt_count}`});
     return{status:'COMPLETED',queued:rows.length};
@@ -148,7 +155,8 @@ export class CrmService{
     let created=0;const skipped=[];
     for(const candidate of candidates){
       try{
-        const rendered=renderFollowupTemplate({sequence_no:candidate.sequence_no,company_name:candidate.company_name,product_profile:candidate.product_profile,reply_to:candidate.reply_to});
+        const sender=candidate.merchant_id&&this.merchantSending?await this.merchantSending.senderFor(candidate.merchant_id):null;
+        const rendered=renderFollowupTemplate({sequence_no:candidate.sequence_no,company_name:candidate.company_name,product_profile:candidate.product_profile,reply_to:candidate.reply_to,sender});
         if(await this.repository.insertFollowupDraft({...candidate,...rendered}))created+=1;
       }catch(error){skipped.push({thread_id:candidate.thread_id,code:error.code||'CRM_FOLLOWUP_RENDER_FAILED'});}
     }
@@ -163,7 +171,14 @@ export class CrmService{
     const id=crmUuid(draft_id,'draft_id');
     const policy=this.automationControl?await this.automationControl.getState():null;
     if(policy?.auto_first_touch_email!==true)return{status:'WAITING',code:'EMAIL_PAUSED',draft_id:id};
-    if(!this.outboundProvider?.senderEmail)return{status:'WAITING',code:'SENDER_NOT_CONFIGURED',draft_id:id};
+    const owner=(await this.pool.query('SELECT merchant_id FROM leadgen.crm_followup_drafts WHERE id=$1',[id])).rows[0]?.merchant_id||null;
+    let provider=this.outboundProvider;let fromName=FIRST_TOUCH_SENDER_NAME;
+    if(owner){
+      if(!this.merchantSending)return{status:'WAITING',code:'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};
+      try{const context=await this.merchantSending.providerFor(owner);provider=context.provider;fromName=context.fromName;}
+      catch(error){return{status:'WAITING',code:error.code||'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};}
+    }
+    if(!provider?.senderEmail)return{status:'WAITING',code:'SENDER_NOT_CONFIGURED',draft_id:id};
     const dailyLimit=this.followupDailyLimit();
     const prepared=await this.repository.transaction(async client=>{
       const draft=(await client.query('SELECT * FROM leadgen.crm_followup_drafts WHERE id=$1 FOR UPDATE',[id])).rows[0];
@@ -177,14 +192,21 @@ export class CrmService{
         await client.query(`UPDATE leadgen.crm_followup_drafts SET draft_status='BLOCKED',reason_codes=ARRAY['THREAD_NOT_OPEN'],updated_at=now() WHERE id=$1`,[id]);
         return{blocked:'THREAD_NOT_OPEN'};
       }
-      if(thread.sender_identity!==this.outboundProvider.senderEmail||thread.reply_to!==this.outboundProvider.replyToEmail)return{waiting:'SENDER_CHANGED'};
-      const sentToday=await countColdOutreachToday(client);
-      if(sentToday>=dailyLimit)return{waiting:'DAILY_LIMIT_REACHED'};
+      if(thread.sender_identity!==provider.senderEmail||thread.reply_to!==provider.replyToEmail)return{waiting:'SENDER_CHANGED'};
+      if(owner){
+        // Per-merchant daily email quota (first touch and follow-ups of that merchant).
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`merchant:email-quota:${owner}`]);
+        const allowance=await this.merchantSending.emailAllowance(owner,client);
+        if(!allowance.allowed)return{waiting:allowance.code};
+      }else{
+        const sentToday=await countColdOutreachToday(client);
+        if(sentToday>=dailyLimit)return{waiting:'DAILY_LIMIT_REACHED'};
+      }
       const key=`crm-followup:${id}`;
       const message=(await client.query(`INSERT INTO leadgen.outbound_messages(company_id,followup_draft_id,provider,provider_purpose,idempotency_key,send_execution_key,
           rfc_message_id,message_key_header,send_status,send_reserved_at,reason_codes)
         VALUES($1,$2,'SMTP','COLD_OUTREACH',$3,$3,$4,$5,'SENDING',now(),'{}') RETURNING *`,
-        [draft.company_id,id,key,stableSmtpMessageId(key,this.outboundProvider.messageIdDomain),stableSmtpMessageKey(key)])).rows[0];
+        [draft.company_id,id,key,stableSmtpMessageId(key,provider.messageIdDomain),stableSmtpMessageKey(key)])).rows[0];
       const attempt=(await client.query(`INSERT INTO leadgen.outbound_message_attempts(outbound_message_id,attempt_number,attempt_status,provider,provider_call_started_at)
         VALUES($1,1,'STARTED','SMTP',now()) RETURNING *`,[message.id])).rows[0];
       await client.query(`UPDATE leadgen.crm_followup_drafts SET draft_status='SENDING',updated_at=now() WHERE id=$1`,[id]);
@@ -196,7 +218,7 @@ export class CrmService{
     // A committed SENDING row forbids replay after a crash or ambiguous SMTP outcome.
     let result;
     try{
-      result=await this.outboundProvider.send({from:`${FIRST_TOUCH_SENDER_NAME} <${prepared.thread.sender_identity}>`,to:prepared.thread.normalized_recipient,
+      result=await provider.send({from:`${fromName} <${prepared.thread.sender_identity}>`,to:prepared.thread.normalized_recipient,
         reply_to:prepared.thread.reply_to,subject:prepared.draft.subject,body_text:prepared.draft.body_text,in_reply_to:prepared.thread.first_rfc||null,
         purpose:'COLD_OUTREACH',send_scope:'PROSPECT_PILOT'},prepared.message.idempotency_key);
     }catch{result={status:'AMBIGUOUS',code:'SMTP_SEND_AMBIGUOUS'};}
@@ -222,7 +244,8 @@ export class CrmService{
             owner:prepared.draft.approved_by,references:{activity:activity?.id,outbound:prepared.message.id}})),`crm-followup:${id}:crm`]);
       }
     });
-    if(status!=='PROVIDER_ACCEPTED')await this.automationControl?.pauseEmail?.(result.code||status);
+    // A merchant mailbox problem never pauses SIM's sending; the draft is BLOCKED with the reason.
+    if(status!=='PROVIDER_ACCEPTED'&&!owner)await this.automationControl?.pauseEmail?.(result.code||status);
     this.audit('crm_followup_send',{draft_id:id,status});
     return{status,draft_id:id,outbound_message_id:prepared.message.id};
   }

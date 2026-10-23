@@ -1,5 +1,6 @@
 import {buildContentHash} from './approvalDigest.js';
 import {validateOutreachDraft} from './draftValidator.js';
+import {applySenderSignature} from '../crm/followupTemplates.js';
 
 export const FIRST_TOUCH_TEMPLATE_SET='DPV_FIRST_TOUCH_V1';
 export const FIRST_TOUCH_SENDER_NAME='Simon';
@@ -72,7 +73,8 @@ export function selectFirstTouchTemplate({recipient={},company_types=[]}={}){
  if(generic&&['OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(upper(recipient.recipient_type)))return'C_OFFICIAL_GENERIC_MAILBOX';
  return null;
 }
-export function renderFirstTouchTemplate({template_key,variables={},verified_fields=[]}={}){
+// `sender` ({sender_name,company_name}) signs a merchant's email; SIM's own mail is unchanged.
+export function renderFirstTouchTemplate({template_key,variables={},verified_fields=[],sender=null}={}){
  const template=FIRST_TOUCH_TEMPLATES[template_key];if(!template)throw Object.assign(new Error('FIRST_TOUCH_TEMPLATE_NOT_APPROVED'),{code:'FIRST_TOUCH_TEMPLATE_NOT_APPROVED'});
  const verified=new Set(verified_fields),required=['category','target_category','company','matched_category','market','reply_to'];
  if(template_key==='A_NAMED_BUYER')required.push('first_name');
@@ -84,7 +86,7 @@ export function renderFirstTouchTemplate({template_key,variables={},verified_fie
  if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(values.reply_to))throw Object.assign(new Error('FIRST_TOUCH_REPLY_TO_INVALID'),{code:'FIRST_TOUCH_REPLY_TO_INVALID'});
  const map={'Category':values.category,'Target Category':values.target_category,'Company':values.company,'Matched Category':values.matched_category,'Market':values.market,'Reply-To':values.reply_to,'First Name':values.first_name,'First Name or Team':'Team'};
  const render=value=>value.replace(/\[([^\]]+)\]/g,(_,key)=>map[key]);
- const draft={template_set_key:FIRST_TOUCH_TEMPLATE_SET,template_key,template_version:`${FIRST_TOUCH_TEMPLATE_SET}:${template_key}`,sender_display_name:FIRST_TOUCH_SENDER_NAME,language:'en',subject:render(template.subject),body_text:render(template.body_text),followups:[]};
+ const draft={template_set_key:FIRST_TOUCH_TEMPLATE_SET,template_key,template_version:`${FIRST_TOUCH_TEMPLATE_SET}:${template_key}`,sender_display_name:sender?.sender_name||FIRST_TOUCH_SENDER_NAME,language:'en',subject:render(template.subject),body_text:applySenderSignature(render(template.body_text),sender),followups:[]};
  if(draft.subject.length>240)throw Object.assign(new Error('FIRST_TOUCH_SUBJECT_TOO_LONG'),{code:'FIRST_TOUCH_SUBJECT_TOO_LONG'});
  const validation=validateOutreachDraft(draft,{target_language:'en'});
  if(!validation.valid)throw Object.assign(new Error('FIRST_TOUCH_FORBIDDEN_CLAIM'),{code:'FIRST_TOUCH_FORBIDDEN_CLAIM',reason_codes:validation.reason_codes});

@@ -399,6 +399,11 @@ export class MerchantService{
       fromName:row.from_name||merchant.sender_name||merchant.company_name};
   }
 
+  async senderFor(merchantId){
+    const merchant=await this.requireMerchant(merchantId);
+    return{sender_name:merchant.sender_name||merchant.contact_name||merchant.company_name,company_name:merchant.company_name};
+  }
+
   async scope(merchantId){
     const row=(await this.pool.query('SELECT * FROM leadgen.merchant_scope WHERE merchant_id=$1',[merchantUuid(merchantId)])).rows[0];
     return{category_scope_ids:row?.category_scope_ids||[],market_codes:row?.market_codes||[],updated_at:row?.updated_at||null};

@@ -36,7 +36,7 @@ export async function attachContactProgress(pool, rows) {
     FROM leadgen.outbound_messages m
     JOIN leadgen.outreach_approvals a ON a.id=m.approval_id
     JOIN leadgen.business_opportunity_decision_snapshots s ON s.id=a.opportunity_snapshot_id
-    LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=a.opportunity_snapshot_id
+    LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=a.opportunity_snapshot_id AND crm.merchant_id IS NULL
     LEFT JOIN LATERAL(SELECT rc.reply_category,i.received_at FROM leadgen.inbound_messages i
       JOIN LATERAL(SELECT classification.reply_category FROM leadgen.reply_classifications classification
         WHERE classification.inbound_message_id=i.id ORDER BY classification.created_at DESC,classification.id DESC LIMIT 1)rc ON true

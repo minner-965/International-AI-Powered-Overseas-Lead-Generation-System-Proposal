@@ -58,6 +58,10 @@ import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/Automat
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
+import {MerchantService} from './merchant/MerchantService.js';
+import {createSessionMiddleware,createWorkspaceGate} from './merchant/auth.js';
+import {createMerchantRouter} from './merchant/router.js';
+import {requestScope,companyScopeSql,filterRowsByCompany,researchJobScopeSql,assertResearchJobVisible} from './merchant/scope.js';
 
 const { Pool } = pg;
 const app = express();
@@ -137,6 +141,7 @@ const pool = new Pool({
 });
 instrumentPgPool(pool, telemetry);
 const opportunityPoolService=new OpportunityPoolService({pool});
+const merchantService=new MerchantService({pool,env:process.env});
 const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:searchConfig.tavilyApiKey,
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
   refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
@@ -155,6 +160,7 @@ const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOr
 const searchCostControl=new SearchCostControl({pool,config:loadSearchCostConfig(process.env),
   providerOrder:()=>phase13Automation.currentProviderOrder()});
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
+  jobAllowed:jobId=>merchantService.searchAllowedForJob(jobId),
   costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{searxng:searxngProviderAccountState,exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
 
 const scoringService = new ScoringService({ pool });
@@ -566,15 +572,17 @@ researchDirectDispatchService=new ResearchDirectDispatchService({pool,queue:phas
   isEnabled:()=>phase13Automation.isSearchEnabled()});
 searchPlanService=new SearchPlanService({pool});
 const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,planning:searchPlanService,
+  merchantQuota:(merchantId,planned,client)=>merchantService.assertSearchQuota(merchantId,planned,client),
   costControl:searchCostControl,
   ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
   runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
 autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
   automationControl:phase13Automation,
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
-  env:process.env});
+  env:process.env,merchantSending:merchantService});
 crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
-  queue:phase7QueueProxy,env:process.env,audit});
+  queue:phase7QueueProxy,env:process.env,audit,merchantSending:merchantService});
+phase7Service.merchantSending=merchantService;
 
 const publicDataOrigins = [
   'live_discovered',
@@ -608,6 +616,11 @@ app.use((_req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '16mb' }));
+// Merchant accounts: session sign-in, deny-by-default merchant routes and data scope (round 4).
+if(process.env.TRUST_PROXY)app.set('trust proxy',/^\d+$/.test(process.env.TRUST_PROXY)?Number(process.env.TRUST_PROXY):process.env.TRUST_PROXY);
+app.use('/api',createSessionMiddleware({pool,env:process.env}));
+app.use(createWorkspaceGate({merchants:merchantService,env:process.env,pool}));
+app.use(createMerchantRouter({merchants:merchantService,env:process.env}));
 app.use('/vendor/tabler', express.static(new URL('../node_modules/@tabler/core/dist', import.meta.url).pathname));
 app.use('/vendor/tabler-icons', express.static(new URL('../node_modules/@tabler/icons-webfont/dist', import.meta.url).pathname));
 app.use(express.static(new URL('../public', import.meta.url).pathname));
@@ -1192,7 +1205,8 @@ async function collectLive(limit = 50) {
   } finally { client.release(); }
 }
 
-async function metrics(db = pool) {
+async function metrics(db = pool,scope=null) {
+  const scopeParams=[];const scopeClause=companyScopeSql(scope,'c',scopeParams);
   const { rows } = await db.query(`
     SELECT
       count(*)::int AS unique_companies,
@@ -1226,9 +1240,9 @@ async function metrics(db = pool) {
       ON s.company_id = c.id
     WHERE c.data_origin IN (${publicDataOriginSql})
       AND ${companyMarketVisibleSql('c')}
-      AND ${companyDirectoryAdmittedSql('c')}`);
+      AND ${companyDirectoryAdmittedSql('c')} AND ${scopeClause}`,scopeParams);
   const lastRun = await db.query('SELECT new_companies,updated_companies,fetched_records,completed_at FROM leadgen.collection_runs ORDER BY completed_at DESC LIMIT 1');
-  const opportunities=await queryCategoryProcurementOpportunities({pool:db,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql});
+  const opportunities=await filterRowsByCompany(db,scope,await queryCategoryProcurementOpportunities({pool:db,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql}));
   return { ...rows[0],active_business_opportunities:opportunities.filter(r=>r.is_active_business_opportunity).length,
     opportunity_pool_bands:Object.fromEntries(['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'].map(b=>[b,opportunities.filter(r=>r.opportunity_pool_band===b).length])),
     data_origin: 'mixed_public_provenance', last_run: lastRun.rows[0] || null };
@@ -1253,12 +1267,12 @@ app.post('/api/live/collect', managementAuth.authenticate,
   } catch (e) { next(e); }
 });
 
-app.get('/api/metrics', async (_req, res, next) => {
-  try { res.json(await metrics(pool)); } catch (e) { next(e); }
+app.get('/api/metrics', async (req, res, next) => {
+  try { res.json(await metrics(pool,requestScope(req))); } catch (e) { next(e); }
 });
 
-app.get('/api/opportunity-pool/summary',async(_req,res,next)=>{try{
-  const rows=await queryCategoryProcurementOpportunities({pool,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql});
+app.get('/api/opportunity-pool/summary',async(req,res,next)=>{try{
+  const rows=await filterRowsByCompany(pool,requestScope(req),await queryCategoryProcurementOpportunities({pool,query:{status:'ALL',limit:5000},publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql}));
   const active=rows.filter(r=>r.is_active_business_opportunity);
   res.json({total_companies:rows.length,active_business_opportunities:active.length,
     bands:Object.fromEntries(['PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY','NOT_SUITABLE'].map(b=>[b,rows.filter(r=>r.opportunity_pool_band===b).length])),
@@ -1445,21 +1459,24 @@ app.post('/api/research/jobs', managementAuth.authenticate,
   } catch (error) { next(error); }
 });
 
-app.get('/api/research/jobs', async (_req, res, next) => {
+app.get('/api/research/jobs', async (req, res, next) => {
   try {
+    const jobParams=[];const jobScope=researchJobScopeSql(requestScope(req),'j',jobParams);
     const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
       pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
       pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
       (SELECT count(*)::int FROM leadgen.research_candidate_verifications v
         WHERE v.research_job_id=j.id) candidate_verifications_completed
       FROM leadgen.research_jobs j LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
-      ORDER BY j.created_at DESC,j.id DESC LIMIT 100`);
+      WHERE ${jobScope}
+      ORDER BY j.created_at DESC,j.id DESC LIMIT 100`,jobParams);
     res.json(rows.map(researchJobResponse));
   } catch (error) { next(error); }
 });
 
 app.get('/api/research/jobs/:id', async (req, res, next) => {
   try {
+    await assertResearchJobVisible(pool,requestScope(req),req.params.id);
     const { rows } = await pool.query(`SELECT j.*,pu.provider_call_count,pu.provider_completed_count,
       pu.provider_not_found_count,pu.provider_temporary_error_count,pu.provider_failed_count,
       pu.reserved_units,pu.used_units,pu.released_units,pu.last_provider_event_at,pu.projection_updated_at,
@@ -2295,7 +2312,7 @@ app.get('/api/opportunities', async (req,res,next) => {
     const rows=await queryCategoryProcurementOpportunities({
       pool,query:filters,publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
     });
-    res.json(rows);
+    res.json(await filterRowsByCompany(pool,requestScope(req),rows));
   }catch(error){next(error);}
 });
 
@@ -2423,6 +2440,7 @@ app.get('/api/leads', async (req, res, next) => {
     if (req.query.size === 'large') clauses.push("c.company_size_band IN ('large','enterprise')");
     if (req.query.size === 'unknown') clauses.push("c.company_size_band = 'unknown'");
     if (req.query.country) { params.push(String(req.query.country).toUpperCase()); clauses.push(`c.country_code = $${params.length}`); }
+    clauses.push(companyScopeSql(requestScope(req),'c',params));
     const { rows } = await pool.query(`
       SELECT c.id, c.company_name, c.city, c.company_type, c.normalized_domain,
         c.website_url, c.data_origin, c.importer_wholesaler_fit, c.chain_supply_fit, c.source_record_count,
@@ -2437,8 +2455,9 @@ app.get('/api/leads', async (req, res, next) => {
 });
 
 app.get('/api/export/leads', managementAuth.authenticate,
-  managementAuth.requireRoles('SALES','MANAGEMENT'), async (_req, res, next) => {
+  managementAuth.requireRoles('SALES','MANAGEMENT'), async (req, res, next) => {
   try {
+    const exportParams=[];const exportScope=companyScopeSql(requestScope(req),'c',exportParams);
     const { rows } = await pool.query(`
       SELECT c.id,c.company_name,c.city,c.website_url,c.company_type,c.company_description,
         c.data_origin,c.research_job_id,
@@ -2469,7 +2488,8 @@ app.get('/api/export/leads', managementAuth.authenticate,
         AND ${companyMarketVisibleSql('c')}
         AND ${excludesConfirmedExistingCustomerSql('c')}
         AND ${companyDirectoryAdmittedSql('c')}
-      ORDER BY r.lead_score DESC,c.company_name`);
+        AND ${exportScope}
+      ORDER BY r.lead_score DESC,c.company_name`,exportParams);
     res.json({ generated_at: new Date().toISOString(), target_product: '全品类女装（包括但不限于连衣裙、上衣、半身裙、裤装、套装、外套、针织衫、内搭及其他女装）', leads: await opportunityPoolService.decorateRows(rows) });
   } catch (e) { next(e); }
 });
@@ -2537,7 +2557,7 @@ async function reconcileAutoFirstTouch({limit=1}={}){
     WHERE p.is_active_business_opportunity=true
       AND p.opportunity_pool_band=ANY($1::text[])
       AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id)
+      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id AND r.merchant_id IS NULL)
     ORDER BY CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
       p.observed_at DESC,p.company_id LIMIT 50`,[state.allowed_bands]);
   const outcomes=[];let reserved=0;
@@ -2553,7 +2573,36 @@ async function reconcileAutoFirstTouch({limit=1}={}){
       if(/MINUTE_LIMIT|DAY_LIMIT|OUTSIDE_BUSINESS_WINDOW|SENDER|AUTOMATION_DISABLED/.test(code))break;
     }
   }
-  return{status:'COMPLETED',reserved,recovered,replayed,evaluated:outcomes.length,outcomes};
+  const merchantOutcomes=await reconcileMerchantFirstTouch(state);
+  return{status:'COMPLETED',reserved,recovered,replayed,evaluated:outcomes.length,outcomes,merchants:merchantOutcomes};
+}
+
+// Each merchant with a verified mailbox gets first touches for its own companies, from its
+// own mailbox and within its daily quota. One reservation per merchant per run.
+async function reconcileMerchantFirstTouch(state){
+  const results=[];
+  for(const merchant of await merchantService.sendingMerchants()){
+    const candidates=await pool.query(`SELECT p.company_id FROM leadgen.merchant_companies mc
+      JOIN leadgen.opportunity_pool_current p ON p.company_id=mc.company_id
+      JOIN leadgen.companies c ON c.id=p.company_id
+      WHERE mc.merchant_id=$2 AND p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[])
+        AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+        AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id AND r.merchant_id=$2)
+      ORDER BY CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,p.observed_at DESC,p.company_id LIMIT 20`,
+      [state.allowed_bands,merchant.id]);
+    for(const row of candidates.rows){
+      try{
+        const result=await autoFirstTouchService.reserve(row.company_id,{merchantId:merchant.id});
+        results.push({merchant_id:merchant.id,company_id:row.company_id,status:result.reservation?.status||result.queue_status});
+        if(result.reservation)break;
+      }catch(error){
+        const code=String(error?.code==='P0001'&&error?.message?error.message:(error?.code||error?.message||'FIRST_TOUCH_RECONCILE_ERROR')).slice(0,160);
+        results.push({merchant_id:merchant.id,company_id:row.company_id,status:'HELD',reason_codes:[code]});
+        if(/MINUTE_LIMIT|DAY_LIMIT|QUOTA|OUTSIDE_BUSINESS_WINDOW|SENDER|AUTOMATION_DISABLED|MAILBOX|READ_ONLY|FEATURE/.test(code))break;
+      }
+    }
+  }
+  return results;
 }
 
 async function reconcileContactResearch({limit=5}={}){

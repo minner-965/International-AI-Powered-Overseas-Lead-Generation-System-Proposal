@@ -37,14 +37,22 @@ export function followupCategoryLabel(productProfile){
   return CATEGORY_LABELS[String(productProfile||'').toUpperCase()]||'our product range';
 }
 
-export function renderFollowupTemplate({sequence_no,company_name,product_profile,reply_to}){
+// Merchant mail is signed with the merchant's sender name and company; the approved text is
+// otherwise unchanged. SIM's own mail keeps "Simon / SIM International".
+export function applySenderSignature(text,sender){
+  if(!sender?.sender_name||!sender?.company_name)return text;
+  return String(text).split('I’m Simon from SIM International').join(`I’m ${sender.sender_name} from ${sender.company_name}`)
+    .split('Best regards,\nSimon\nSIM International').join(`Best regards,\n${sender.sender_name}\n${sender.company_name}`);
+}
+
+export function renderFollowupTemplate({sequence_no,company_name,product_profile,reply_to,sender=null}){
   const template=FOLLOWUP_TEMPLATES[Number(sequence_no)];
   if(!template)throw Object.assign(new Error('Follow-up sequence is not supported'),{code:'CRM_FOLLOWUP_SEQUENCE_INVALID',status:400});
   const company=String(company_name||'').trim();const replyTo=String(reply_to||'').trim();
   if(!company||!replyTo)throw Object.assign(new Error('Follow-up template variables are incomplete'),{code:'CRM_FOLLOWUP_VARIABLES_MISSING',status:409});
   const values={'[Company]':company,'[Category]':followupCategoryLabel(product_profile),'[Reply-To]':replyTo};
   const fill=text=>Object.entries(values).reduce((out,[token,value])=>out.split(token).join(value),text);
-  const subject=fill(template.subject);const body_text=fill(template.body_text);
+  const subject=fill(template.subject);const body_text=applySenderSignature(fill(template.body_text),sender);
   // Keep the first character of a category label upper-case at the start of a subject.
   const normalizedSubject=subject.charAt(0).toUpperCase()+subject.slice(1);
   return{template_key:template.key,template_set_key:FOLLOWUP_TEMPLATE_SET,subject:normalizedSubject,body_text};

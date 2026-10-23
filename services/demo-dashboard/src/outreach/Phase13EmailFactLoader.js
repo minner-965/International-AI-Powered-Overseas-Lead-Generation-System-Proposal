@@ -11,7 +11,8 @@ const companyTypes=value=>{
  * Reads only persisted, independently verifiable facts used by the MC07 gate.
  * It never creates a recipient, opportunity, category match, or authorization.
  */
-export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservationId=null,client=pool,replyToEmail=null}={}){
+// merchantId: earlier contact is counted per sender (SIM = NULL, or one merchant); suppressions stay global.
+export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservationId=null,client=pool,replyToEmail=null,merchantId=null}={}){
   if(!pool?.query||!client?.query)throw new TypeError('queryable pool and client are required');
   if(!UUID.test(String(companyId||'')))throw Object.assign(new Error('company_id must be a UUID'),{code:'PHASE13_INVALID_COMPANY_ID'});
   if(reservationId!==null&&!UUID.test(String(reservationId)))throw Object.assign(new Error('reservation_id must be a UUID'),{code:'PHASE13_INVALID_RESERVATION_ID'});
@@ -96,14 +97,14 @@ export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservati
       OR EXISTS(SELECT 1 FROM leadgen.outbound_messages message WHERE message.company_id=candidate.id
         AND message.send_status='HARD_BOUNCED' AND ($2::uuid IS NULL OR message.first_touch_reservation_id IS DISTINCT FROM $2)) hard_bounced,
     EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations reservation WHERE reservation.company_id=candidate.id
-      AND ($2::uuid IS NULL OR reservation.id<>$2) AND reservation.status IN('RESERVED','SENDING','PROVIDER_ACCEPTED','AMBIGUOUS')) has_prior_first_touch,
+      AND reservation.merchant_id IS NOT DISTINCT FROM $3::uuid AND ($2::uuid IS NULL OR reservation.id<>$2) AND reservation.status IN('RESERVED','SENDING','PROVIDER_ACCEPTED','AMBIGUOUS')) has_prior_first_touch,
     EXISTS(SELECT 1 FROM leadgen.outbound_messages message WHERE message.company_id=candidate.id
-      AND ($2::uuid IS NULL OR message.first_touch_reservation_id IS DISTINCT FROM $2)
+      AND message.merchant_id IS NOT DISTINCT FROM $3::uuid AND ($2::uuid IS NULL OR message.first_touch_reservation_id IS DISTINCT FROM $2)
       AND (message.sent_at IS NOT NULL OR message.transport_status='SMTP_ACCEPTED' OR message.send_status IN('PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS'))) has_prior_company_contact,
     EXISTS(SELECT 1 FROM leadgen.inbound_messages inbound WHERE inbound.correlation_outbound_message_id IN(
-      SELECT message.id FROM leadgen.outbound_messages message WHERE message.company_id=candidate.id)
+      SELECT message.id FROM leadgen.outbound_messages message WHERE message.company_id=candidate.id AND message.merchant_id IS NOT DISTINCT FROM $3::uuid)
       AND inbound.correlation_status='MATCHED') has_reply
-  FROM candidate`,[companyId,reservationId]);
+  FROM candidate`,[companyId,reservationId,merchantId]);
   if(!result.rowCount)return{company:{id:companyId},recipient:null,market:{},company_types:[],verified_template_fields:[],template_variables:{}};
   const row=result.rows[0];
   const recipient=row.decision_maker_contact_id||row.recipient_id?{
@@ -142,5 +143,5 @@ export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservati
 
 export function createPhase13EmailEligibilityFactLoader({pool,replyToEmail=null}={}){
   if(!pool?.query)throw new TypeError('pool.query is required');
-  return(companyId,options={})=>loadPhase13EmailEligibilityFacts(pool,companyId,{...options,replyToEmail});
+  return(companyId,options={})=>loadPhase13EmailEligibilityFacts(pool,companyId,{...options,replyToEmail:options.replyToEmail??replyToEmail});
 }

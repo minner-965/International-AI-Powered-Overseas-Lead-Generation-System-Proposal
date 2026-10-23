@@ -116,6 +116,16 @@ services:
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
+      SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-72}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-auto}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      MERCHANT_TRIAL_DAYS: ${MERCHANT_TRIAL_DAYS:-7}
+      MERCHANT_DEFAULT_MONTHLY_SEARCHES: ${MERCHANT_DEFAULT_MONTHLY_SEARCHES:-300}
+      MERCHANT_DEFAULT_DAILY_EMAILS: ${MERCHANT_DEFAULT_DAILY_EMAILS:-30}
+      OVERVIEW_WEEK_TIMEZONE: ${OVERVIEW_WEEK_TIMEZONE:-Asia/Shanghai}
       # Legacy manual API gate; Phase13 automatic delivery uses its separate policy.
       OUTREACH_MANUAL_SEND_ONLY: "true"
       GMAIL_API_ENABLED: "false"
@@ -243,6 +253,9 @@ services:
       GMAIL_API_ENABLED: "false"
       GMAIL_INBOUND_SYNC_ENABLED: "false"
       RESEND_USE_CASE: "DISABLED"
+      MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
+      MERCHANT_INBOUND_SYNC_ENABLED: ${MERCHANT_INBOUND_SYNC_ENABLED:-true}
+      OVERVIEW_WEEK_TIMEZONE: ${OVERVIEW_WEEK_TIMEZONE:-Asia/Shanghai}
       PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send,crm-followup-scan,crm-followup-send,crm-outbox-dispatch"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports

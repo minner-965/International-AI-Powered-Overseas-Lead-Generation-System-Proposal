@@ -144,7 +144,7 @@ export class Phase7Repository {
         ORDER BY x.queued_at DESC,x.id DESC LIMIT 1)m ON true
       LEFT JOIN leadgen.contact_work_queue q ON q.company_id=c.id AND q.product_profile=o.product_profile AND q.decision_snapshot_id=o.id AND q.queue_status='ACTIVE'
       LEFT JOIN leadgen.business_opportunity_management_events me ON me.id=q.management_event_id
-      LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=o.id
+      LEFT JOIN leadgen.opportunity_crm_states crm ON crm.opportunity_snapshot_id=o.id AND crm.merchant_id IS NULL
       LEFT JOIN LATERAL(SELECT i.received_at,rc.reply_category FROM leadgen.inbound_messages i
         LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC LIMIT 1)rc ON true
         WHERE i.correlation_outbound_message_id=m.id AND i.correlation_status='MATCHED' ORDER BY i.received_at DESC LIMIT 1)reply ON true
@@ -172,6 +172,19 @@ export class Phase7Repository {
     return{this_week:Number(row.this_week||0),last_week:Number(row.last_week||0),week_start:row.week_start||null,timezone,week_basis:'ISO_WEEK_MONDAY'};
   }
 
+  // A merchant's overview counts only its own messages, replies and tasks.
+  async getMerchantOperationsSummary(merchantId){
+    const row=(await this.pool.query(`SELECT
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE merchant_id=$1 AND sent_at IS NOT NULL) smtp_accepted,
+      (SELECT count(*)::int FROM leadgen.outbound_messages m WHERE m.merchant_id=$1 AND m.sent_at IS NOT NULL AND m.followup_draft_id IS NULL
+        AND NOT EXISTS(SELECT 1 FROM leadgen.inbound_messages i WHERE i.correlation_outbound_message_id=m.id AND i.correlation_status='MATCHED')) sent_no_reply,
+      (SELECT count(*)::int FROM leadgen.inbound_messages i WHERE i.merchant_id=$1 AND i.correlation_status='MATCHED') replies,
+      (SELECT count(*)::int FROM leadgen.sales_tasks WHERE merchant_id=$1 AND record_scope='PROSPECT' AND task_status IN('OPEN','IN_PROGRESS')) pending_followups,
+      (SELECT count(*)::int FROM leadgen.crm_followup_drafts WHERE merchant_id=$1 AND draft_status='PENDING_APPROVAL') pending_drafts,
+      (SELECT count(*)::int FROM leadgen.outbound_messages WHERE merchant_id=$1 AND send_status IN('QUEUED','SENDING')) queued`,[merchantId])).rows[0];
+    return{prospect:row,controlled:null,merchant_scope:true};
+  }
+
   async getOutreachOperationsSummary(){
     const result=await this.pool.query(`SELECT
       (SELECT count(*)::int FROM leadgen.outbound_messages m
@@ -181,6 +194,7 @@ export class Phase7Repository {
            JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.company_id=current.company_id
             AND reservation.id=m.first_touch_reservation_id
            WHERE current.product_profile=reservation.eligibility_snapshot->>'product_profile' LIMIT 1))
+          AND crm.merchant_id IS NOT DISTINCT FROM m.merchant_id
         LEFT JOIN LATERAL(SELECT rc.reply_category FROM leadgen.inbound_messages i
           LEFT JOIN LATERAL(SELECT x.reply_category FROM leadgen.reply_classifications x
             WHERE x.inbound_message_id=i.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1)rc ON true
@@ -1466,11 +1480,11 @@ export class Phase7Repository {
     return this.transaction(async client => {
       const result = await client.query(`INSERT INTO leadgen.inbound_messages
         (provider,provider_message_id,webhook_inbox_id,thread_id,correlation_status,from_address_hash,
-         subject_sanitized,body_text_sanitized,attachment_status,received_at,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,header_classification,correlation_outbound_message_id,correlation_method,correlation_evidence_digest)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19)
+         subject_sanitized,body_text_sanitized,attachment_status,received_at,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,header_classification,correlation_outbound_message_id,correlation_method,correlation_evidence_digest,merchant_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20)
         ON CONFLICT(provider,provider_message_id) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id RETURNING *`,
       [input.provider,input.provider_message_id,input.webhook_inbox_id,input.thread_id,input.correlation_status,
-        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at,input.mailbox_identity_hash||null,input.folder_path||null,input.imap_uidvalidity||null,input.imap_uid||null,input.internet_message_id||null,JSON.stringify(input.header_classification||{}),input.correlation_outbound_message_id||null,input.correlation_method||null,input.correlation_evidence_digest||null]);
+        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at,input.mailbox_identity_hash||null,input.folder_path||null,input.imap_uidvalidity||null,input.imap_uid||null,input.internet_message_id||null,JSON.stringify(input.header_classification||{}),input.correlation_outbound_message_id||null,input.correlation_method||null,input.correlation_evidence_digest||null,input.merchant_id||null]);
       if (input.thread_id) {
         await client.query(`UPDATE leadgen.outreach_threads SET thread_status='REPLIED',last_message_at=$2,updated_at=now()
           WHERE id=$1 AND thread_status='OPEN'`, [input.thread_id,input.received_at]);
@@ -1515,7 +1529,7 @@ export class Phase7Repository {
       const activity=(await client.query(`INSERT INTO leadgen.opportunity_activities(company_id,opportunity_snapshot_id,inbound_message_id,classification_id,activity_type,owner_identity,due_at,details,idempotency_key)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *`,[input.company_id,input.opportunity_snapshot_id||null,input.inbound_message_id,input.classification_id,input.activity_type,input.owner||null,input.due_at||null,JSON.stringify(input.details||{}),activityKey])).rows[0]||null;
       if(activity&&input.opportunity_snapshot_id)await client.query(`INSERT INTO leadgen.opportunity_crm_states(opportunity_snapshot_id,company_id,funnel_status,owner_identity,next_action,next_action_due_at,source_inbound_message_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(opportunity_snapshot_id) DO UPDATE SET funnel_status=EXCLUDED.funnel_status,owner_identity=coalesce(EXCLUDED.owner_identity,leadgen.opportunity_crm_states.owner_identity),next_action=EXCLUDED.next_action,next_action_due_at=EXCLUDED.next_action_due_at,source_inbound_message_id=EXCLUDED.source_inbound_message_id,version=leadgen.opportunity_crm_states.version+1,updated_at=now()`,[input.opportunity_snapshot_id,input.company_id,input.funnel_status,input.owner||null,input.next_action||null,input.due_at||null,input.inbound_message_id]);
+        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(opportunity_snapshot_id,merchant_key) DO UPDATE SET funnel_status=EXCLUDED.funnel_status,owner_identity=coalesce(EXCLUDED.owner_identity,leadgen.opportunity_crm_states.owner_identity),next_action=EXCLUDED.next_action,next_action_due_at=EXCLUDED.next_action_due_at,source_inbound_message_id=EXCLUDED.source_inbound_message_id,version=leadgen.opportunity_crm_states.version+1,updated_at=now()`,[input.opportunity_snapshot_id,input.company_id,input.funnel_status,input.owner||null,input.next_action||null,input.due_at||null,input.inbound_message_id]);
       if(activity&&input.close_followups)await client.query(`UPDATE leadgen.sales_tasks SET task_status='CANCELLED',closed_at=now(),close_reason='OPT_OUT',updated_at=now() WHERE thread_id=$1 AND task_status IN('OPEN','IN_PROGRESS')`,[input.thread_id]);
       let task=null;if(input.task){task=(await client.query(`INSERT INTO leadgen.sales_tasks(company_id,thread_id,inbound_message_id,task_type,task_status,owner,due_at,details,opportunity_snapshot_id,classification_id,effect_key)
         VALUES($1,$2,$3,$4,'OPEN',$5,$6,$7::jsonb,$8,$9,$10) ON CONFLICT(effect_key) WHERE effect_key IS NOT NULL DO NOTHING RETURNING *`,[input.company_id,input.thread_id,input.inbound_message_id,input.task.task_type,input.owner||null,input.due_at||null,JSON.stringify(input.task.details||{}),input.opportunity_snapshot_id||null,input.classification_id,`${baseKey}:task`])).rows[0]||null;}
@@ -1686,16 +1700,17 @@ export class Phase7Repository {
     return result.rows[0] || null;
   }
 
-  async getThread(id) {
+  async getThread(id,merchantId=null) {
     const result = await this.pool.query(`SELECT t.*,
       coalesce(json_agg(json_build_object('id',i.id,'subject',i.subject_sanitized,'body',i.body_text_sanitized,
         'received_at',i.received_at)) FILTER(WHERE i.id IS NOT NULL),'[]') inbound_messages
       FROM leadgen.outreach_threads t LEFT JOIN leadgen.inbound_messages i ON i.thread_id=t.id
-      WHERE t.id=$1 GROUP BY t.id`, [requiredUuid(id, 'thread_id')]);
+      WHERE t.id=$1 AND ($2::uuid IS NULL OR t.merchant_id=$2) GROUP BY t.id`, [requiredUuid(id, 'thread_id'),merchantId]);
     return result.rows[0] || null;
   }
 
-  async listInbox({ limit = 100, company_id = null } = {}) {
+  // merchantId restricts to replies received by that merchant's mailbox/threads.
+  async listInbox({ limit = 100, company_id = null, merchantId = null } = {}) {
     const companyId = company_id ? requiredUuid(company_id,'company_id') : null;
     const result = await this.pool.query(`SELECT i.id,i.provider,i.provider_message_id,i.thread_id,i.correlation_status,
       i.subject_sanitized,i.body_text_sanitized,i.attachment_status,i.received_at,
@@ -1704,8 +1719,8 @@ export class Phase7Repository {
       LEFT JOIN LATERAL(SELECT x.* FROM leadgen.reply_classifications x WHERE x.inbound_message_id=i.id ORDER BY x.classification_revision DESC,x.created_at DESC LIMIT 1)c ON true
       LEFT JOIN leadgen.outreach_threads t ON t.id=i.thread_id
       LEFT JOIN leadgen.outbound_messages m ON m.id=i.correlation_outbound_message_id
-      WHERE ($2::uuid IS NULL OR coalesce(t.company_id,m.company_id)=$2)
-      ORDER BY i.received_at DESC LIMIT $1`, [Math.max(1, Math.min(500, Number(limit) || 100)),companyId]);
+      WHERE ($2::uuid IS NULL OR coalesce(t.company_id,m.company_id)=$2) AND ($3::uuid IS NULL OR i.merchant_id=$3)
+      ORDER BY i.received_at DESC LIMIT $1`, [Math.max(1, Math.min(500, Number(limit) || 100)),companyId,merchantId]);
     return result.rows;
   }
 

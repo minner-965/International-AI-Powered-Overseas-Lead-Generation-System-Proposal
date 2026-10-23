@@ -21,7 +21,7 @@ export async function lockResearchCreation(client) {
 // Called inside either the existing direct-outbox transaction or the batch transaction.
 // Scope deduplication intentionally ignores requested result limits and buyer overrides:
 // an active market/category scope is reused without changing its actual execution input.
-export async function createOrReuseResearchJob(client,{payload,idempotencyKey,requestDigest,identity,role,runBudgetCapUnits=20000,beforeInsert=async()=>{}}) {
+export async function createOrReuseResearchJob(client,{payload,idempotencyKey,requestDigest,identity,role,runBudgetCapUnits=20000,beforeInsert=async()=>{},merchantId=null}) {
   await lockResearchCreation(client);
   if(idempotencyKey){
     const alias=await client.query(`SELECT j.*,a.request_digest alias_digest,a.requested_by alias_actor
@@ -52,11 +52,11 @@ export async function createOrReuseResearchJob(client,{payload,idempotencyKey,re
   const result=await client.query(`INSERT INTO leadgen.research_jobs
     (country,country_code,country_name,city,region,preferred_language,market_profile,
      product_category,product_profile,buyer_types,max_results,status,idempotency_key,request_digest,
-     created_by_identity,created_by_role,run_budget_cap_units)
-    VALUES($1,$2,$1,$3,$4,$5,$6,$7,$8,$9,$10,'QUEUED',$11,$12,$13,$14,$15) RETURNING *`,[
+     created_by_identity,created_by_role,run_budget_cap_units,merchant_id)
+    VALUES($1,$2,$1,$3,$4,$5,$6,$7,$8,$9,$10,'QUEUED',$11,$12,$13,$14,$15,$16) RETURNING *`,[
     payload.country_name,payload.country_code,payload.city||null,payload.region||null,payload.preferred_language,
     payload.market_profile||payload.country_code,payload.product_category,payload.product_profile,
-    payload.buyer_types,payload.max_results,idempotencyKey||randomUUID(),requestDigest,identity,role,runBudgetCapUnits]);
+    payload.buyer_types,payload.max_results,idempotencyKey||randomUUID(),requestDigest,identity,role,runBudgetCapUnits,merchantId]);
   return recordAlias({...result.rows[0],inserted:true});
 }
 
@@ -101,6 +101,7 @@ export function buildScopeSnapshot(input,options,now=new Date()) {
     selection:{select_all_markets:input.select_all_markets,select_all_categories:input.select_all_categories},scopes};
 }
 
+const billableQueries=estimate=>Math.max(0,Number(estimate?.estimated_billable_queries??(Number(estimate?.estimated_queries||0)-Number(estimate?.estimated_reused_queries||0)))||0);
 function previewResponse(snapshot) {
   return {research_scope_snapshot:snapshot,selected_market_count:snapshot.markets.length,
     selected_category_count:snapshot.categories.length,total_scopes:snapshot.scopes.length,
@@ -118,8 +119,10 @@ function configurationDiffers(scope,job) {
 }
 
 export class ResearchBatchService {
-  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null,costControl=null}={}) {
+  // merchantQuota(merchantId,plannedQueries,client) throws MERCHANT_SEARCH_QUOTA_EXCEEDED (MerchantService.assertSearchQuota).
+  constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null,costControl=null,merchantQuota=null}={}) {
     if(!pool)throw new Error('ResearchBatchService requires a PostgreSQL pool');
+    this.merchantQuota=merchantQuota;
     this.pool=pool;this.directDispatch=directDispatch;this.ensureCanCreate=ensureCanCreate;this.runBudgetCapUnits=runBudgetCapUnits;
     this.planning=planning;this.costControl=costControl;
   }
@@ -157,18 +160,25 @@ export class ResearchBatchService {
     }
     return {markets:markets.rows.filter(m=>isMarketVisible(m.market_code)),categories:categories.rows,buyer_types:[...BUYERS]};
   }
-  async preview(input={}) {
+  async preview(input={},actor={}) {
     const result=previewResponse(buildScopeSnapshot(normalizeBatchInput(input),await this.options()));
     if(!this.planning)return result;
     const {plan,estimate}=await this.searchCost(result.research_scope_snapshot);
     let blocked=null;
     try{this.assertSearchCost(estimate);}catch(error){if(!error.estimate)throw error;blocked=error.code;}
+    let merchantQuota=null;
+    if(!blocked&&actor?.merchant_id&&this.merchantQuota){
+      try{merchantQuota=await this.merchantQuota(actor.merchant_id,billableQueries(estimate));}
+      catch(error){if(error.code!=='MERCHANT_SEARCH_QUOTA_EXCEEDED')throw error;blocked=error.code;merchantQuota=error.details||null;}
+    }
     return {...result,search_plan:this.planning.present(plan),estimated_queries:estimate.estimated_queries,
-      estimated_cost_usd:estimate.estimated_cost_usd,search_cost:estimate,creation_allowed:!blocked,creation_blocked_code:blocked};
+      estimated_cost_usd:estimate.estimated_cost_usd,search_cost:estimate,creation_allowed:!blocked,creation_blocked_code:blocked,
+      ...(merchantQuota?{merchant_search_quota:merchantQuota}:{})};
   }
   async create(input={},actor={}) {
     const identity=clean(actor.identity||actor.requested_by);
     const role=clean(actor.role).toUpperCase();
+    const merchantId=actor.merchant_id||null;
     if(!identity||!['MANAGEMENT','DATA_ADMIN'].includes(role))throw error('RESEARCH_BATCH_ROLE_FORBIDDEN',403);
     const normalized=normalizeBatchInput(input);
     const key=clean(input.idempotency_key);
@@ -192,6 +202,8 @@ export class ResearchBatchService {
         const scopeDigest=digest(snapshot.scopes);
         // Spend guard before any child job or outbox row exists; the creation lock serializes the monthly check.
         const searchCost=this.planning?this.assertSearchCost((await this.searchCost(snapshot,client)).estimate):null;
+        // Merchant monthly search quota, on top of SIM's global monthly budget above.
+        if(merchantId&&this.merchantQuota)await this.merchantQuota(merchantId,searchCost?billableQueries(searchCost):snapshot.scopes.length,client);
         const same=await client.query(`SELECT b.* FROM leadgen.research_batches b
           WHERE requested_by=$1 AND scope_digest=$2 AND status IN('QUEUED','RUNNING')
           ORDER BY created_at DESC LIMIT 1`,[identity,scopeDigest]);
@@ -203,7 +215,7 @@ export class ResearchBatchService {
           for(const scope of snapshot.scopes){
             const child=await createOrReuseResearchJob(client,{payload:scope,
               idempotencyKey:`batch:${batchId}:${digest(canonicalResearchScope(scope))}`,
-              requestDigest:digest(scope),identity,role,runBudgetCapUnits:this.runBudgetCapUnits,
+              requestDigest:digest(scope),identity,role,runBudgetCapUnits:this.runBudgetCapUnits,merchantId,
               beforeInsert:async()=>{if(!providerChecked){await this.ensureCanCreate('COMPANY_DISCOVERY');providerChecked=true;}}});
             if(child.inserted){
               await client.query(`INSERT INTO leadgen.research_job_dispatch_outbox(research_job_id,execution_key)
@@ -213,9 +225,9 @@ export class ResearchBatchService {
             children.push({scope,child});
           }
           await client.query(`INSERT INTO leadgen.research_batches
-            (id,requested_by,requested_role,idempotency_key,request_digest,scope_digest,research_scope_snapshot,total_scopes,created_child_count,reused_child_count)
-            VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)`,[batchId,identity,role,key,requestDigest,scopeDigest,
-            JSON.stringify(snapshot),snapshot.scopes.length,createdIds.length,snapshot.scopes.length-createdIds.length]);
+            (id,requested_by,requested_role,idempotency_key,request_digest,scope_digest,research_scope_snapshot,total_scopes,created_child_count,reused_child_count,merchant_id)
+            VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11)`,[batchId,identity,role,key,requestDigest,scopeDigest,
+            JSON.stringify(snapshot),snapshot.scopes.length,createdIds.length,snapshot.scopes.length-createdIds.length,merchantId]);
           if(searchCost)await client.query(`INSERT INTO leadgen.research_batch_cost_estimates
             (batch_id,estimated_queries,estimated_cost_usd,estimate) VALUES($1,$2,$3,$4::jsonb)`,
             [batchId,searchCost.estimated_queries,searchCost.estimated_cost_usd,JSON.stringify(searchCost)]);
@@ -236,9 +248,9 @@ export class ResearchBatchService {
     if(this.directDispatch)for(const id of createdIds){try{await this.directDispatch.dispatch(id);}catch{/* durable outbox retries */}}
     return {...await this.get(batchId),idempotent_replay:replay};
   }
-  async get(id) {
+  async get(id,scope=null) {
     if(!uuid.test(clean(id)))throw error('RESEARCH_BATCH_ID_INVALID',400);
-    const result=await this.pool.query('SELECT * FROM leadgen.research_batches WHERE id=$1',[id]);
+    const result=await this.pool.query('SELECT * FROM leadgen.research_batches WHERE id=$1 AND ($2::uuid IS NULL OR merchant_id=$2)',[id,scope?.restrict?scope.merchantId:null]);
     if(!result.rowCount)throw error('RESEARCH_BATCH_NOT_FOUND',404);
     const children=await this.pool.query(`SELECT c.*,c.research_job_id job_id,j.status,j.dispatch_state,
       j.created_at job_created_at,j.completed_at FROM leadgen.research_batch_children c
@@ -252,9 +264,9 @@ export class ResearchBatchService {
         search_cost:cost.rows[0].estimate}:{})};
     return this.planning?{...detail,search_plan:await this.planning.forBatch(detail)}:detail;
   }
-  async list({limit=50}={}) {
-    const result=await this.pool.query(`SELECT * FROM leadgen.research_batches ORDER BY created_at DESC,id DESC LIMIT $1`,
-      [Math.max(1,Math.min(100,Number(limit)||50))]);
+  async list({limit=50}={},scope=null) {
+    const result=await this.pool.query(`SELECT * FROM leadgen.research_batches WHERE ($2::uuid IS NULL OR merchant_id=$2)
+      ORDER BY created_at DESC,id DESC LIMIT $1`,[Math.max(1,Math.min(100,Number(limit)||50)),scope?.restrict?scope.merchantId:null]);
     return {items:result.rows.map(row=>({...row,batch_id:row.id,...previewResponse(row.research_scope_snapshot)}))};
   }
 }

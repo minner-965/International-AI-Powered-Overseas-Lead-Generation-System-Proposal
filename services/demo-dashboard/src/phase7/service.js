@@ -220,7 +220,12 @@ export class Phase7Service {
 
   async getMarketingContext() { return this.repository.getMarketingContext(); }
 
-  async getOutreachOperationsSummary(){
+  async getOutreachOperationsSummary(scope=null){
+    if(scope?.restrict){
+      const [summary,firstTouch]=await Promise.all([this.repository.getMerchantOperationsSummary(scope.merchantId),
+        this.repository.getFirstTouchWeekly({timezone:this.env.OVERVIEW_WEEK_TIMEZONE||'Asia/Shanghai',merchantId:scope.merchantId})]);
+      return{...summary,first_touch:firstTouch};
+    }
     const [summary,monitor,firstTouch]=await Promise.all([this.repository.getOutreachOperationsSummary(),this.repository.getOutreachMonitoring(),
       this.repository.getFirstTouchWeekly?this.repository.getFirstTouchWeekly({timezone:this.env.OVERVIEW_WEEK_TIMEZONE||'Asia/Shanghai'}).catch(()=>null):null]);
     const {last_inbound_sync,last_successful_sync,...counts}=monitor;
@@ -1007,9 +1012,25 @@ export class Phase7Service {
     const provider=upper(this.env.INBOUND_EMAIL_PROVIDER||'');
     if(provider==='GMAIL_API')return this.syncGmailInboundWork();
     if(provider!=='IMAP'||upper(this.env.OUTBOUND_EMAIL_PROVIDER||'NONE')!=='SMTP')return{status:'DISABLED',code:'INBOUND_PROVIDER_NOT_SELECTED',messages:0,network_calls:0};
-    const mailbox=String(this.env.IMAP_USER||'').trim().toLowerCase();const folder=String(this.env.IMAP_INBOX||'INBOX');
+    return this.syncImapMailbox({provider:this.outboundProvider,mailbox:String(this.env.IMAP_USER||'').trim().toLowerCase(),folder:String(this.env.IMAP_INBOX||'INBOX')});
+  }
+
+  // Inbound sync of every verified merchant mailbox; replies are attributed to that merchant.
+  async syncMerchantInboundWork(merchantSending){
+    if(!merchantSending)return{status:'DISABLED',mailboxes:0};
+    const results=[];
+    for(const merchant of await merchantSending.sendingMerchants()){
+      try{
+        const context=await merchantSending.providerFor(merchant.id);
+        results.push({merchant_id:merchant.id,...await this.syncImapMailbox({provider:context.provider,mailbox:String(context.mailbox.username).trim().toLowerCase(),folder:'INBOX',merchantId:merchant.id})});
+      }catch(error){results.push({merchant_id:merchant.id,status:'FAILED',code:error.code||'MERCHANT_INBOUND_SYNC_FAILED'});}
+    }
+    return{status:'COMPLETED',mailboxes:results.length,results};
+  }
+
+  async syncImapMailbox({provider,mailbox,folder,merchantId=null}){
     const checkpoint=await this.repository.getImapCheckpoint(mailbox,folder);
-    const changes=await this.outboundProvider.readMailboxChanges({folder,checkpoint,rescanWindow:Number(this.env.IMAP_UIDVALIDITY_RESCAN_WINDOW||100)});
+    const changes=await provider.readMailboxChanges({folder,checkpoint,rescanWindow:Number(this.env.IMAP_UIDVALIDITY_RESCAN_WINDOW||100)});
     if(changes.status!=='COMPLETED')return{...changes,messages:0};
     let queued=0;for(const item of changes.messages){
       const providerEventId=`imap:${sha256(mailbox)}:${folder}:${item.uidvalidity}:${item.uid}`;
@@ -1017,7 +1038,7 @@ export class Phase7Service {
         metadata:{from:item.from,to:[item.to],subject:item.subject},subject:sanitizeInboundText(item.subject,500),body_text:sanitizeInboundText(item.body_text,20000),from:text(item.from,320),
         in_reply_to:item.in_reply_to||null,references:item.references||null,message_key:item.message_key||null,automatic:item.automatic===true,out_of_office:item.out_of_office===true,dsn:item.dsn===true,dsn_details:item.dsn_details||null,
         mailbox_identity_hash:sha256(mailbox),folder_path:folder,imap_uidvalidity:item.uidvalidity,imap_uid:item.uid,internet_message_id:item.message_id||null,
-        header_classification:{auto_submitted:item.auto_submitted||'',precedence:item.precedence||'',x_auto_response_suppress:item.x_auto_response_suppress||'',return_path:item.return_path||''},attachment_status:'NONE'};
+        header_classification:{auto_submitted:item.auto_submitted||'',precedence:item.precedence||'',x_auto_response_suppress:item.x_auto_response_suppress||'',return_path:item.return_path||''},attachment_status:'NONE',...(merchantId?{merchant_id:merchantId}:{})};
       const row=await this.repository.persistWebhook({provider:'SMTP',provider_event_id:providerEventId,signature_status:'VERIFIED',event_type:'INBOUND_RECEIVED',raw_body_digest:digestCanonical(payload),sanitized_payload:payload,processing_status:'RECEIVED'});
       const receipt=await this.repository.recordImapReceipt({mailbox_identity_hash:payload.mailbox_identity_hash,folder_path:folder,uidvalidity:item.uidvalidity,uid:item.uid,internet_message_id:item.message_id,webhook_inbox_id:row.id});
       if(receipt.replay)continue;
@@ -1097,6 +1118,7 @@ export class Phase7Service {
       attachment_status:payload.attachment_status||'NONE',received_at:payload.occurred_at||webhook.received_at,
       mailbox_identity_hash:payload.mailbox_identity_hash,folder_path:payload.folder_path,imap_uidvalidity:payload.imap_uidvalidity,imap_uid:payload.imap_uid,internet_message_id:payload.internet_message_id,
       header_classification:payload.header_classification,correlation_outbound_message_id:correlated?.outbound_message_id,correlation_method:correlated?.correlation_method||'REVIEW',
+      merchant_id:payload.merchant_id||null,
       correlation_evidence_digest:digestCanonical({in_reply_to:payload.in_reply_to||null,references,message_key:payload.message_key||null,provider_thread_id:payload.provider_thread_id||null,matched:correlated?.outbound_message_id||null})});
     if(payload.dsn===true&&payload.dsn_details?.status){
       const dsnReferences=[...references,payload.dsn_details.original_message_id].filter(Boolean);

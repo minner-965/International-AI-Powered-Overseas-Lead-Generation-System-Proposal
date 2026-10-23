@@ -3,6 +3,7 @@ import { PHASE5_QUEUES } from '../jobs/phase5Queue.js';
 import { DataExchangeContractError } from '../dataExchange/index.js';
 import { createManagementAuth } from './managementAuth.js';
 import { requiredUuid } from './repository.js';
+import { requestScope } from '../merchant/scope.js';
 
 const DRAFT_ROLES = Object.freeze(['SALES','MANAGEMENT']);
 const MANAGEMENT_APPROVER_ROLES = Object.freeze(['MANAGEMENT','MANAGEMENT_APPROVER']);
@@ -54,7 +55,7 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
 
   router.get('/api/outreach/marketing-context', ...read, asyncRoute(async(_req,res)=>res.json(await service.getMarketingContext())));
   router.get('/api/outreach/workbench', ...read, asyncRoute(async(_req,res)=>res.json(await service.getOutreachWorkbench())));
-  router.get('/api/outreach/operations-summary', ...read, asyncRoute(async(_req,res)=>res.json(await service.getOutreachOperationsSummary())));
+  router.get('/api/outreach/operations-summary', ...read, asyncRoute(async(req,res)=>res.json(await service.getOutreachOperationsSummary(requestScope(req)))));
   router.post('/api/outreach/workbench/:companyId/prepare', ...draftWrite, asyncRoute(async(req,res)=>res.status(201).json(await service.prepareWorkbenchDraft(req.params.companyId,req.body,req.managementUser))));
   router.get('/api/outreach/gmail/health', ...read, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth())));
   router.post('/api/outreach/gmail/health-check', ...dataWrite, asyncRoute(async(_req,res)=>res.json(await service.gmailHealth({verify_oauth:true}))));
@@ -104,9 +105,9 @@ export function createPhase7Router({ service, queue, requireInternalToken, env =
   }));
   router.get('/api/outreach/messages/:id/events', ...read, asyncRoute(async(req,res)=>res.json(await service.repository.getOutboundEvents(req.params.id))));
   router.get('/api/outreach/threads/:id', ...read, asyncRoute(async(req,res)=>{
-    const thread=await service.repository.getThread(req.params.id);if(!thread)return res.status(404).json({error:'Thread not found',code:'OUTREACH_THREAD_NOT_FOUND'});res.json(thread);
+    const scope=requestScope(req);const thread=await service.repository.getThread(req.params.id,scope.restrict?scope.merchantId:null);if(!thread)return res.status(404).json({error:'Thread not found',code:'OUTREACH_THREAD_NOT_FOUND'});res.json(thread);
   }));
-  router.get('/api/outreach/inbox', ...read, asyncRoute(async(req,res)=>res.json(await service.repository.listInbox(req.query))));
+  router.get('/api/outreach/inbox', ...read, asyncRoute(async(req,res)=>res.json(await service.repository.listInbox({...req.query,merchantId:requestScope(req).restrict?requestScope(req).merchantId:null}))));
 
   router.post('/api/crm-sync-outbox', ...dataWrite, asyncRoute(async(req,res)=>res.status(201).json(await service.createCrmOutbox(req.body))));
   router.get('/api/crm-sync-outbox/:id', ...read, asyncRoute(async(req,res)=>res.json(await service.getCrmOutbox(req.params.id,req.managementUser))));

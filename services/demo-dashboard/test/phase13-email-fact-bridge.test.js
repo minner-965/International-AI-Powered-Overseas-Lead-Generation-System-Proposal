@@ -17,7 +17,7 @@ test('fact bridge is one read, excludes its current reservation, and exposes ver
   const calls=[];const queryable={async query(sql,values){calls.push({sql,values});return{rowCount:1,rows:[row]};}};
   const facts=await loadPhase13EmailEligibilityFacts(queryable,companyId,{reservationId,replyToEmail:'sales@dpv.example'});
   assert.equal(calls.length,1);assert.match(calls[0].sql,/first_touch_reservation_id IS DISTINCT FROM \$2/);
-  assert.match(calls[0].sql,/reservation\.id<>\$2/);assert.deepEqual(calls[0].values,[companyId,reservationId]);
+  assert.match(calls[0].sql,/reservation\.id<>\$2/);assert.deepEqual(calls[0].values,[companyId,reservationId,null]);// $3 = sender owner (NULL = SIM)
   assert.equal(facts.recipient.normalized_recipient,'info@rizqe.co');assert.equal(facts.recipient.official_source_verified,true);
   assert.equal(facts.category_id,row.category_id);assert.equal(facts.template_variables.matched_category,'Tops');
   assert.deepEqual(facts.company_types,['IMPORTER','WHOLESALER']);

@@ -1,4 +1,5 @@
 import express from 'express';
+import {requestScope} from '../merchant/scope.js';
 
 export function createResearchBatchRouter({service,managementAuth,creationMaintenance=false}={}) {
   if(!service||!managementAuth)throw new Error('Research batch service and authentication required');
@@ -10,9 +11,9 @@ export function createResearchBatchRouter({service,managementAuth,creationMainte
   // Spend refusals carry the estimate so the caller can show why creation was refused.
   const costRefusal=(error,res,next)=>error?.estimate&&error.status?
     res.status(error.status).json({error:error.message,code:error.code,search_cost:error.estimate}):next(error);
-  router.post('/preview',async(req,res,next)=>{try{res.json(await service.preview(req.body||{}));}catch(error){costRefusal(error,res,next);}});
-  router.get('/',async(req,res,next)=>{try{res.json(await service.list(req.query));}catch(error){next(error);}});
-  router.get('/:id',async(req,res,next)=>{try{res.json(await service.get(req.params.id));}catch(error){next(error);}});
+  router.post('/preview',async(req,res,next)=>{try{res.json(await service.preview(req.body||{},req.managementUser||{}));}catch(error){costRefusal(error,res,next);}});
+  router.get('/',async(req,res,next)=>{try{res.json(await service.list(req.query,requestScope(req)));}catch(error){next(error);}});
+  router.get('/:id',async(req,res,next)=>{try{res.json(await service.get(req.params.id,requestScope(req)));}catch(error){next(error);}});
   router.post('/',creators,async(req,res,next)=>{
     try{
       if(creationMaintenance)return res.status(503).json({code:'RESEARCH_CREATION_MAINTENANCE',retryable:true});
