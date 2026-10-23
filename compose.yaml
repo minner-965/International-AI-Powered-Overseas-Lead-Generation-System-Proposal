@@ -87,7 +87,7 @@ services:
       phase7-runtime-init:
         condition: service_completed_successfully
     ports:
-      - "3000:3000"
+      - "${DASHBOARD_PORT:-3000}:3000"
     environment:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"

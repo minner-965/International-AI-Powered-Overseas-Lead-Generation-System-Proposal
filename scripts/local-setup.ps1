@@ -18,6 +18,20 @@ function SetValue($text, $name, $value) {
   if ($text -match $pattern) { return [regex]::Replace($text, $pattern, "$name=$value") }
   return $text.TrimEnd() + "`n$name=$value`n"
 }
+# Windows PowerShell 5.1 turns a native command's stderr into a terminating error under
+# ErrorActionPreference=Stop; collect it as text and let the caller check $LASTEXITCODE.
+function RunNative([scriptblock]$command) {
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { return (& $command 2>&1 | ForEach-Object { "$_" }) -join "`n" } finally { $ErrorActionPreference = $previous }
+}
+function WaitForWorkspace {
+  for ($i = 0; $i -lt 90; $i++) {
+    try { if ((Invoke-RestMethod -Uri "$baseUrl/api/health" -TimeoutSec 3).status -eq 'ok') { return } } catch { }
+    Start-Sleep -Seconds 2
+  }
+  Fail 'The workspace did not start. Run: docker compose logs --tail 80 demo-dashboard'
+}
 
 Step 'Checking tools'
 if (-not (Test-Path 'compose.yaml')) { Fail 'Run this script from the repository root (the folder that contains compose.yaml).' }
@@ -44,6 +58,15 @@ foreach ($name in '.env.phase7-outreach', '.env.phase7-api') {
   } else { Write-Host "$name already exists - kept." }
 }
 
+# DASHBOARD_PORT in .env moves the workspace off port 3000 when another app already uses it.
+$portLine = Select-String -Path '.env' -Pattern '^DASHBOARD_PORT=(\d+)\s*$' | Select-Object -First 1
+$port = if ($portLine) { $portLine.Matches[0].Groups[1].Value } else { '3000' }
+$baseUrl = "http://localhost:$port"
+$running = RunNative { docker compose ps -q demo-dashboard }
+if (-not $running.Trim() -and (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
+  Fail "Port $port is already used by another program. Set DASHBOARD_PORT=3100 (or another free port) in .env and run this script again."
+}
+
 Step 'Building and starting the system (first build takes several minutes)'
 # The init and worker services reuse the image built for demo-dashboard; build it first
 # so compose never tries to pull that name from a registry.
@@ -52,31 +75,30 @@ if ($LASTEXITCODE -ne 0) { Fail 'docker compose build failed. Copy the messages 
 docker compose up -d postgres demo-dashboard category-worker outreach-worker data-worker
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose up failed. Copy the messages above and send them to Claude.' }
 
-Step 'Waiting for the workspace to answer on http://localhost:3000'
-$ready = $false
-for ($i = 0; $i -lt 90 -and -not $ready; $i++) {
-  try { $health = Invoke-RestMethod -Uri 'http://localhost:3000/api/health' -TimeoutSec 3; $ready = ($health.status -eq 'ok') } catch { Start-Sleep -Seconds 2 }
-}
-if (-not $ready) { Fail 'The workspace did not start. Run: docker compose logs --tail 80 demo-dashboard' }
+Step "Waiting for the workspace to answer on $baseUrl"
+WaitForWorkspace
 
-Step 'Recording the database migration ledger'
+Step 'Applying database migrations'
 # A new database already contains every migration from the PostgreSQL init scripts;
-# --baseline records them once. On later runs the normal apply replays as already applied.
-$output = docker compose exec -T demo-dashboard node src/phase7/migrationRunner.js --apply --baseline 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) {
-  if ($output -match 'empty migration ledger') {
-    $output = docker compose exec -T demo-dashboard node src/phase7/migrationRunner.js --apply 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { Write-Host $output; Fail 'Migration check failed.' }
-    Write-Host 'Migrations already recorded - verified.'
-  } else { Write-Host $output; Fail 'Migration baseline failed.' }
-} else { Write-Host 'Migration ledger recorded for the new database.' }
+# --baseline records them once. An existing database (ledger already filled, or created
+# before the newest migration) refuses the baseline, so it gets the normal apply instead.
+$output = RunNative { docker compose exec -T demo-dashboard node src/phase7/migrationRunner.js --apply --baseline }
+if ($LASTEXITCODE -eq 0) { Write-Host 'Migration ledger recorded for the new database.' }
+elseif ($output -match 'empty migration ledger|created from all migration files') {
+  $output = RunNative { docker compose exec -T demo-dashboard node src/phase7/migrationRunner.js --apply }
+  if ($LASTEXITCODE -ne 0) { Write-Host $output; Fail 'Migration apply failed.' }
+  $applied = ([regex]::Matches($output, '"migration_key":"([^"]+)","checksum_sha256":"[^"]+","status":"APPLIED"') | ForEach-Object { $_.Groups[1].Value }) -join ', '
+  if ($applied) { Write-Host "Applied new migrations: $applied" } else { Write-Host 'Database already up to date.' }
+  # Services started before the new migrations; restart them so they see the new schema.
+  if ($applied) { docker compose restart demo-dashboard category-worker outreach-worker data-worker | Out-Null; WaitForWorkspace }
+} else { Write-Host $output; Fail 'Migration baseline failed.' }
 
 Step 'Supply categories'
 node --version *> $null
-if ($LASTEXITCODE -eq 0) { node scripts/setup-supply-categories.mjs --list }
+if ($LASTEXITCODE -eq 0) { node scripts/setup-supply-categories.mjs --base $baseUrl --list }
 else { docker compose exec -T demo-dashboard node project-scripts/setup-supply-categories.mjs --base http://127.0.0.1:3000 --list }
 
-Write-Host "`nSIM workspace is running: http://localhost:3000" -ForegroundColor Green
+Write-Host "`nSIM workspace is running: $baseUrl" -ForegroundColor Green
 Write-Host @'
 Next steps (see docs/deploy/WINDOWS_LOCAL_SETUP.md):
   1. Approve supply categories, for example:

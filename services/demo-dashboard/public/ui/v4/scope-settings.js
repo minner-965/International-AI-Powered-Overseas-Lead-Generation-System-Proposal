@@ -154,7 +154,7 @@ function wireCategories(root) {
 
 /* ---------------- 目标市场 / Target markets ---------------- */
 const mk = { payload: null };
-const marketStatus = { ACTIVE: ['启用', 'Active', 'ok'], AVAILABLE: ['可启用', 'Available', ''], PAUSED: ['已暂停', 'Paused', 'warn'], PLANNED: ['规划中', 'Planned', ''] };
+const marketStatus = { ACTIVE: ['启用', 'Active', 'ok'], INACTIVE: ['未启用', 'Inactive', ''], HIDDEN: ['已隐藏', 'Hidden', ''], AVAILABLE: ['可启用', 'Available', ''], PAUSED: ['已暂停', 'Paused', 'warn'], PLANNED: ['规划中', 'Planned', ''] };
 function marketsMarkup() {
   if (mk.payload?.error) return stateBlock('error', '目标市场暂未读取', 'Markets unavailable', { retry: true });
   if (!mk.payload) return skeletonRows(4);

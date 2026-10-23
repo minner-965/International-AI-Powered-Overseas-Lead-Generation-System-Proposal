@@ -579,3 +579,7 @@ The user authorized CL14–CL16 followed by bounded Exa verification. The one-re
 ## Historical evidence
 
 The prior complete status is archived at [pre-CL02 snapshot](history/status/20260908-pre-cl02-current-project-status.md). Current parsers do not read that snapshot. Historical acceptance is not presented as a live service-health check. Migration files and the operational migration ledger are reported separately because earlier bootstrap migrations predate that ledger.
+
+## Local installation (2026-10-23)
+
+SIM now also runs on the owner's Windows PC from `scripts/local-setup.ps1` (branch `claude/gifted-hypatia-59rtaf`, migrations through 065 applied, 13 supply categories approved). The JSON block above is still the 2026-09-13 server snapshot; regenerate it with `node scripts/generate-current-project-status.mjs` on the runtime it should describe. Any commit that changes files outside `docs/` must also commit this file, or the CI status check fails.
