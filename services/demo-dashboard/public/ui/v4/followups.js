@@ -1,12 +1,12 @@
 // 跟进邮件审批 / Follow-up approval: drafts created by the follow-up scan, approved or discarded by a person.
 // Approval only queues the draft; sending re-checks thread, opt-out, daily limit and the email switch.
-import { crm, bi, esc, when, stateBlock, skeletonRows, notifyCrmChange, errorText } from './crm.js';
+import { crm, bi, esc, when, stateBlock, skeletonRows, notifyCrmChange, errorText, quotaMarkup } from './crm.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const STATUS = { PENDING_APPROVAL: ['待批准', 'Pending', 'warn'], APPROVED: ['已批准', 'Approved', 'info'], SENDING: ['发送中', 'Sending', 'info'],
   SENT: ['已发送', 'Sent', 'ok'], DISCARDED: ['已放弃', 'Discarded', ''], BLOCKED: ['未发送', 'Not sent', 'bad'], SUPERSEDED: ['已替换', 'Superseded', ''] };
 const ordinal = n => ({ 2: '2nd', 3: '3rd', 4: '4th' }[n] || `${n}th`);
-const state = { status: 'PENDING_APPROVAL', items: null, error: false, selected: null, generation: 0 };
+const state = { status: 'PENDING_APPROVAL', items: null, error: false, selected: null, generation: 0, quota: null };
 
 const statusPill = code => { const [zh, en, tone] = STATUS[code] || ['状态待确认', 'Unknown', '']; return `<span class="pill ${tone}">${bi(zh, en)}</span>`; };
 
@@ -38,6 +38,7 @@ function previewMarkup(draft) {
 
 function render() {
   const list = $('#followups-list'); const preview = $('#followups-preview');
+  const quota = $('#followups-quota'); if (quota) { quota.innerHTML = quotaMarkup(state.quota); quota.hidden = !quota.innerHTML; }
   if (!list || !preview) return;
   list.innerHTML = listMarkup();
   const draft = state.items?.find(item => item.id === state.selected) || null;
@@ -80,6 +81,7 @@ export async function loadFollowups() {
     const payload = await crm.drafts({ status: state.status });
     if (generation !== state.generation) return;
     state.items = payload?.items || [];
+    state.quota = payload?.quota || null;
     if (!state.items.some(item => item.id === state.selected)) state.selected = window.matchMedia('(max-width: 900px)').matches ? null : state.items[0]?.id || null;
   } catch { if (generation !== state.generation) return; state.error = true; state.items = null; }
   render();
@@ -89,7 +91,7 @@ function mount() {
   const root = $('#followups-root');
   if (!root) return;
   $('#view-followups .head').innerHTML = `<div><h2 id="followups-title" class="bi"><span lang="zh-CN">跟进邮件审批</span><span lang="en">Follow-up approval</span></h2><p id="followups-count" class="meta"></p></div><div class="btns"><label for="followups-status"><span class="sr-only">状态 Status</span><select id="followups-status" class="select">${[['PENDING_APPROVAL', '待批准 Pending'], ['APPROVED', '已批准 Approved'], ['SENT', '已发送 Sent'], ['BLOCKED', '未发送 Not sent'], ['DISCARDED', '已放弃 Discarded'], ['ALL', '全部 All']].map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label></div>`;
-  root.innerHTML = `<div class="split"><section class="card v4-drafts-card" aria-labelledby="followups-list-title"><div class="ph"><div><h3 id="followups-list-title">${bi('跟进邮件', 'Follow-up drafts')}</h3><p>${bi('按计划发送时间', 'By scheduled time')}</p></div></div><div id="followups-list" aria-live="polite"></div></section><section id="followups-preview" class="card v4-preview-card" aria-labelledby="followup-preview-title"></section></div>`;
+  root.innerHTML = `<div id="followups-quota" hidden></div><div class="split"><section class="card v4-drafts-card" aria-labelledby="followups-list-title"><div class="ph"><div><h3 id="followups-list-title">${bi('跟进邮件', 'Follow-up drafts')}</h3><p>${bi('按计划发送时间', 'By scheduled time')}</p></div></div><div id="followups-list" aria-live="polite"></div></section><section id="followups-preview" class="card v4-preview-card" aria-labelledby="followup-preview-title"></section></div>`;
   render();
   $('#followups-status').addEventListener('change', event => { state.status = event.target.value; state.items = null; state.selected = null; void loadFollowups(); });
   root.addEventListener('click', event => {

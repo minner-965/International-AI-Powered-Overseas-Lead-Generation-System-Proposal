@@ -151,11 +151,13 @@ export async function mountFollowupCard(detail, { companyId, productProfile = ''
   detail.querySelector('.v4-followup')?.remove();
   detail.querySelector('.m-actbar')?.remove();
   const block = document.createElement('div');
-  block.className = 'cols v4-followup';
+  const slot = detail.querySelector('[data-followup-slot]');
+  block.className = slot ? 'stack v4-followup' : 'cols v4-followup';
   block.dataset.companyId = companyId;
   block.innerHTML = `<div class="v4-followup-main">${stateBlock('loading', '正在读取跟进', 'Loading follow-up')}</div><section class="card v4-activity-card" aria-labelledby="activity-title"><div class="ph"><div><h3 id="activity-title">${bi('跟进记录', 'Activity')}</h3><p>${bi('最新在前', 'Newest first')}</p></div></div><div class="pb v4-timeline-host"></div></section>`;
   const header = detail.querySelector('.crm-detail-header');
-  if (header) header.after(block); else detail.querySelector('.crm-detail-body')?.prepend(block);
+  if (slot) slot.replaceChildren(block);
+  else if (header) header.after(block); else detail.querySelector('.crm-detail-body')?.prepend(block);
   const timeline = block.querySelector('.v4-timeline-host');
   timeline.addEventListener('click', event => { if (event.target.closest('[data-state-retry]')) void loadTimeline(timeline, companyId); });
   void loadTimeline(timeline, companyId);

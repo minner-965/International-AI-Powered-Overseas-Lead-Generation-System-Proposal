@@ -72,6 +72,7 @@ import { mountRecordViews } from './ui/v3/records.js';
 import { upgradeCompanyDetail, mountContactReady, mountCompanyFilters } from './ui/v3/companies.js';
 import { mountAutomationControl } from './ui/v3/automation-control.js';
 import { mountFollowupCard } from './ui/v4/followup-card.js';
+import { basicInfoCard, evaluationCard, companyLayout, wireCompanyLayout } from './ui/v4/company-layout.js';
 import { pipelineItemFor } from './ui/v4/crm.js';
 
 mountOverview();
@@ -2107,8 +2108,18 @@ async function showLead(id) {
     ])}<section class="crm-detail-section"><h4>${bi('匹配维度','Match dimensions')}</h4>${dimensionRows(record?.dimension_scores)}</section>${reasonBlock('匹配依据','Match evidence',matchReasons)}${reasonBlock('不匹配依据','Mismatch evidence',mismatchReasons)}${reasonBlock('待补充信息','Missing information',missingReasons)}</article>`;
   };
   detail.classList.add('has-detail','v3-company-detail');
-  detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body">
-    <header role="presentation" class="crm-detail-header"><div class="crm-detail-identity"><p class="crm-context">${bi('客户主档','Company record')}<span class="crm-detail-context-value">${esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')}</span></p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${displayOpportunity ? opportunityDisplayBadge(lead) : ''}</div>${lead.website_url ? `<a class="crm-detail-website" href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer"><i class="ti ti-world" aria-hidden="true"></i>${bi('企业网站','Official website')}</a>` : ''}</div>${detailMetrics ? `<div class="crm-detail-score-set" role="group" aria-label="企业评分 Company metrics">${detailMetrics}</div>` : ''}</header>
+  const locationText = esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-');
+  const companyHead = `<header role="presentation" class="crm-detail-header v4-company-head"><div class="crm-detail-identity"><p class="crm-context">${bi('客户主档','Company record')}<span class="crm-detail-context-value">${locationText}</span></p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${displayOpportunity ? opportunityDisplayBadge(lead) : ''}</div></div><div class="btns v4-company-actions"><button class="btn btn-primary" type="button" data-company-log data-tip="记录一次电话、WhatsApp、会议或备注，会出现在跟进记录里|Log a call, WhatsApp, meeting or note to the timeline"><i class="ti ti-pencil" aria-hidden="true"></i>${bi('记录跟进','Log activity')}</button></div></header>`;
+  const basicCard = basicInfoCard({ website: lead.website_url ? safeUrl(lead.website_url) : '', location: esc([lead.city,lead.country_code].filter(Boolean).join(' · ')), countryCode: '', email: lead.business_email || '', emailState: lead.business_email ? bi(verify[0],verify[1]) : '', band: lead.opportunity_pool_band, categoryScore: categoryProcurementScore(lead), sourceCount: sourceCountValue(lead) || sources.length });
+  const evaluation = evaluationCard({ metrics: detailMetrics, rows: [
+    ['商品类目评分','Product Category Score',opportunityProductMatchCell(lead)],
+    ['类目机会','Category opportunity',opportunityProductSummaryCell(lead)],
+    ['客户采购模式','Buyer model',opportunityBuyerModelCell(lead)],
+    ['跟进准备状态','Opportunity readiness',currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : ''],
+    ['企业规模','Company size',bi(size[0],size[1])],
+    ['核验状态','Verification',verificationBadge(lead)]
+  ] });
+  detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body">${companyLayout({ head: companyHead, basic: basicCard, evaluation, more: `
     <div id="detail-section-nav" class="crm-detail-tabs p8-detail-section-nav" role="tablist" aria-label="客户详情主要区域 Company detail sections">
       ${[['snapshot','摘要','Snapshot'],['business-fit','业务匹配','Business Fit'],['buyer-contact','采购与联系','Buyer & Contact'],['activity-records','活动与记录','Activity & Records']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-section-tab="${key}" id="detail-section-tab-${key}" aria-controls="detail-section-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
     </div><div class="crm-detail-workspace">
@@ -2138,7 +2149,7 @@ async function showLead(id) {
     <section id="detail-panel-data-history" class="crm-tab-panel crm-phase7-tab-panel" role="tabpanel" aria-labelledby="detail-tab-data-history" aria-busy="false" hidden></section>
     <section id="detail-panel-evidence" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-evidence" hidden><section class="crm-detail-section"><h4>${bi('资料来源','Source references')}</h4>${sources.length ? `<div class="sources">${sources.map(s=>{ const kind = evidenceTypeLabels[String(s.evidence_kind || s.evidence_type || '').toUpperCase()] || ['企业资料','Company source']; return `<a href="${esc(safeUrl(s.url || s.source_url))}" target="_blank" rel="noreferrer">${pairHtml(kind)}${bi('查看来源页面','Open source page')}</a>`; }).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无来源链接。','No source URL is available.')}</div>`}</section></section>
     <section id="detail-panel-history" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-history" hidden><section class="crm-detail-section"><h4>${bi('历史客户记录','Historical CRM record')}</h4>${linkedCrmHistoryView(linkedCrmHistory)}</section><section class="crm-detail-section"><h4>${bi('企业状态历史','Company status history')}</h4>${lifecycleHistoryView(lifecycleHistory)}</section><section class="crm-detail-section"><h4>${bi('评分历史','Score history')}</h4>${historyTable(scoreHistory,'score')}</section><section class="crm-detail-section"><h4>${bi('客户匹配历史','Customer Match history')}</h4>${historyTable(matchHistory,'match')}</section></section>
-    </section></div>
+    </section></div>` })}
   </div>${hasLegacyReview ? `<footer class="crm-detail-actions actions" aria-label="公司主档审核 Company record review"><div class="crm-detail-action-copy"><strong>${bi('公司主档审核','Company record review')}</strong><span class="crm-detail-action-status" role="status" aria-live="polite" aria-atomic="true"></span></div><div class="crm-detail-action-buttons"><button class="btn reject" data-tip="确认这家企业不合适，不再跟进|Exclude this company record" type="button" data-status="rejected">${bi('排除公司记录','Exclude Company Record')}</button><button class="btn btn-primary approve" data-tip="确认这家企业的资料无误|Confirm this company record" type="button" data-status="approved">${bi('确认公司记录','Confirm Company Record')}</button></div></footer>` : ''}`;
   upgradeCompanyDetail(detail);
   wireDetailTabs(detail);
@@ -2151,7 +2162,8 @@ async function showLead(id) {
     detail.close();
     document.dispatchEvent(new CustomEvent('crm:openoutreach',{detail:{companyId}}));
   });
-  detail.querySelector('.crm-detail-identity')?.append(outreachEntry);
+  (detail.querySelector('.v4-company-actions') || detail.querySelector('.crm-detail-identity'))?.prepend(outreachEntry);
+  wireCompanyLayout(detail);
   attachPhase7CompanyDetail(detail,{
     companyId,
     opportunityId:lead.opportunity_id || lead.opportunityId || '',

@@ -104,3 +104,14 @@ export async function pipelineItemFor(companyId, productProfile) {
   const items = (payload?.items || []).filter(item => String(item.company_id) === String(companyId));
   return items.find(item => !productProfile || item.product_profile === productProfile) || items[0] || null;
 }
+
+const quotaCount = value => value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+/** Today's sending quota (same count the sender uses): sent today, daily limit and what is left. */
+export function quotaMarkup(quota) {
+  const sent = quotaCount(quota?.sent_today); const limit = quotaCount(quota?.daily_limit);
+  if (sent === null || limit === null) return '';
+  const remaining = quotaCount(quota.remaining) ?? Math.max(0, limit - sent);
+  const share = limit ? Math.min(100, Math.round(sent / limit * 100)) : 100;
+  const tone = remaining === 0 ? ' is-full' : share >= 80 ? ' is-high' : '';
+  return `<section class="card v4-quota${tone}" aria-label="今日发信额度 Today's sending quota"><div class="v4-quota-head"><span class="v4-quota-title">${bi('今日发信额度', "Today's sending quota")}</span><span class="v4-quota-nums"><b>${sent}</b> / ${limit} ${bi('封', 'emails')}</span><span class="v4-quota-left">${bi(`今日剩余 ${remaining} 封`, `${remaining} left today`)}</span></div><div class="progress" role="progressbar" aria-label="今日已发 Sent today" aria-valuemin="0" aria-valuemax="${limit}" aria-valuenow="${sent}"><span style="width:${share}%"></span></div>${remaining === 0 ? `<p class="v4-quota-note">${bi('今日额度已用完，已批准的邮件会在明天按顺序发出。', 'Today\'s quota is used up; approved emails go out tomorrow in order.')}</p>` : ''}</section>`;
+}

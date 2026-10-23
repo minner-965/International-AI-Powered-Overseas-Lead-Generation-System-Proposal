@@ -113,6 +113,14 @@ function kpi({zh,en,value,unit,sub='',attn=false,view}) {
   return `<a class="card kpi${attn?' attn':''}" href="#${view}" data-open-view="${view}"${viewTip(view)}><div class="lab">${bi(zh,en)}</div><div class="val">${number(value)}${value===null||value===undefined?'':`<small>${esc(unit)}</small>`}</div><div class="kpi-sub">${sub}</div></a>`;
 }
 let lastMetrics=null;
+/** "本周 x 封 · 上周 y 封" from the overview first_touch metric; null until the backend provides it. */
+export function firstTouchWeeks(metrics,operations) {
+  const weeks=metrics?.first_touch ?? operations?.first_touch ?? operations?.prospect?.first_touch;
+  const thisWeek=finiteCount(weeks?.this_week); const lastWeek=finiteCount(weeks?.last_week);
+  if(thisWeek===null||lastWeek===null)return null;
+  const trend=thisWeek>lastWeek?' up':thisWeek<lastWeek?' down':'';
+  return `<span class="v4-week${trend}">${bi(`本周 ${number(thisWeek)} 封 · 上周 ${number(lastWeek)} 封`,`This week ${number(thisWeek)} · last week ${number(lastWeek)}`)}</span>`;
+}
 function renderKpis() {
   const host=document.getElementById('metrics');
   if(!host||!lastMetrics)return;
@@ -123,7 +131,7 @@ function renderKpis() {
   const overdue=summary?.overdue ?? null;
   host.innerHTML=[
     kpi({zh:'有效机会',en:'Active opportunities',value:active,unit:'家',view:'opportunities',sub:bands?[['PRECISION','精准'],['RELEVANT','相关'],['GENERAL_RELEVANT','一般相关']].map(([key,zh])=>`<span class="tag">${zh} ${number(bands[key])}</span>`).join(''):''}),
-    kpi({zh:'已发开发信',en:'First-touch sent',value:operations?.prospect?.smtp_accepted ?? null,unit:'封',view:'contact-queue',sub:model.sent===null?'':bi(`已发未回复 ${number(model.sent)}`,`Awaiting reply ${number(model.sent)}`)}),
+    kpi({zh:'已发开发信',en:'First-touch sent',value:operations?.prospect?.smtp_accepted ?? null,unit:'封',view:'contact-queue',sub:firstTouchWeeks(metrics,operations)||(model.sent===null?'':bi(`已发未回复 ${number(model.sent)}`,`Awaiting reply ${number(model.sent)}`))}),
     kpi({zh:'收到回复',en:'Replies',value:operations?.prospect?.replies ?? null,unit:'封',view:'replies',sub:operations?.prospect?.pending_followups==null?'':bi(`待处理 ${number(operations.prospect.pending_followups)}`,`To review ${number(operations.prospect.pending_followups)}`)}),
     kpi({zh:'今日待办',en:'Due today',value:summary?.due_today ?? null,unit:'项',view:'tasks',attn:overdue>0,sub:crmState.tasks===null?bi('待办暂未读取','Tasks unavailable'):overdue>0?`<span class="down">${bi(`逾期 ${number(overdue)} 项`,`${number(overdue)} overdue`)}</span>`:summary?bi(`未完成 ${number(summary.open)} 项`,`${number(summary.open)} open`):''})
   ].join('');
