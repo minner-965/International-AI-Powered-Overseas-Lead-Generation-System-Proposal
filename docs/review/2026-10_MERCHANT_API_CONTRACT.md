@@ -36,5 +36,5 @@ Model: SIM (ADMIN) creates merchant accounts with a trial (default 7 days). One 
 - Settings, category approval, market toggles, merchant admin: ADMIN only.
 
 ## Other round-4 additions
-- `GET /api/crm/followup-drafts` adds `quota:{sent_today,daily_limit,remaining}`.
-- Overview metrics add `first_touch:{this_week,last_week}` (existing overview endpoint; backend documents the field).
+- `GET /api/crm/followup-drafts` → `{items,quota:{sent_today,daily_limit,remaining}}`. `sent_today` is the same count the send gate uses (cold-outreach messages — first touch and follow-ups — reserved, sent or ambiguous since the start of the database day); `daily_limit` = `CRM_FOLLOWUP_DAILY_LIMIT` (default 50), or the merchant's `daily_emails` quota for a merchant user. `quota` is `null` if the count cannot be read.
+- Overview metrics: `GET /api/outreach/operations-summary` (the endpoint `overview.js` already reads as `operations`) adds top-level `first_touch:{this_week,last_week,week_start,timezone,week_basis:'ISO_WEEK_MONDAY'}` — introductory emails accepted by the provider (outbound messages that are not CRM follow-ups), counted per ISO week starting Monday 00:00 in `OVERVIEW_WEEK_TIMEZONE` (default `Asia/Shanghai`). For a merchant user the count covers that merchant's messages only.

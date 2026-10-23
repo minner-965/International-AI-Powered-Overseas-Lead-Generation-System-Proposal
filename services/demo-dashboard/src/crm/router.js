@@ -23,7 +23,10 @@ export function createCrmRouter({service,env=process.env,managementAuth=null}){
 
   router.post('/replies/:classificationId/review',...salesWrite,asyncRoute(async(req,res)=>res.json(await service.reviewReply(req.params.classificationId,req.body,req.managementUser))));
 
-  router.get('/followup-drafts',...read,asyncRoute(async(req,res)=>res.json({items:await service.listFollowupDrafts(req.query)})));
+  router.get('/followup-drafts',...read,asyncRoute(async(req,res)=>{
+    const [items,quota]=await Promise.all([service.listFollowupDrafts(req.query),service.followupQuota?service.followupQuota().catch(()=>null):null]);
+    res.json({items,quota});
+  }));
   router.post('/followup-drafts/:id/decision',...approve,asyncRoute(async(req,res)=>res.json(await service.decideFollowupDraft(req.params.id,req.body,req.managementUser))));
   return router;
 }

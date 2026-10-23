@@ -157,6 +157,21 @@ export class Phase7Repository {
     return attachContactProgress(this.pool,result.rows);
   }
 
+  // first_touch: introductory emails accepted by the provider (outbound messages that are not
+  // CRM follow-ups), counted per ISO week (Monday 00:00) in OVERVIEW_WEEK_TIMEZONE, default Asia/Shanghai.
+  async getFirstTouchWeekly({timezone='Asia/Shanghai',merchantId}={}){
+    const params=[timezone];let scope='';
+    if(merchantId!==undefined){params.push(merchantId);scope=`AND m.merchant_id IS NOT DISTINCT FROM $2::uuid`;}
+    const row=(await this.pool.query(`WITH w AS(SELECT date_trunc('week',now() AT TIME ZONE $1) start)
+      SELECT count(*) FILTER(WHERE (m.sent_at AT TIME ZONE $1)>=w.start)::int this_week,
+        count(*) FILTER(WHERE (m.sent_at AT TIME ZONE $1)>=w.start-interval '7 days' AND (m.sent_at AT TIME ZONE $1)<w.start)::int last_week,
+        to_char(w.start,'YYYY-MM-DD') week_start
+      FROM w LEFT JOIN leadgen.outbound_messages m ON m.sent_at IS NOT NULL AND m.followup_draft_id IS NULL
+        AND m.sent_at>=(w.start-interval '8 days') AT TIME ZONE $1 ${scope}
+      GROUP BY w.start`,params)).rows[0]||{};
+    return{this_week:Number(row.this_week||0),last_week:Number(row.last_week||0),week_start:row.week_start||null,timezone,week_basis:'ISO_WEEK_MONDAY'};
+  }
+
   async getOutreachOperationsSummary(){
     const result=await this.pool.query(`SELECT
       (SELECT count(*)::int FROM leadgen.outbound_messages m

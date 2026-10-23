@@ -221,11 +221,12 @@ export class Phase7Service {
   async getMarketingContext() { return this.repository.getMarketingContext(); }
 
   async getOutreachOperationsSummary(){
-    const [summary,monitor]=await Promise.all([this.repository.getOutreachOperationsSummary(),this.repository.getOutreachMonitoring()]);
+    const [summary,monitor,firstTouch]=await Promise.all([this.repository.getOutreachOperationsSummary(),this.repository.getOutreachMonitoring(),
+      this.repository.getFirstTouchWeekly?this.repository.getFirstTouchWeekly({timezone:this.env.OVERVIEW_WEEK_TIMEZONE||'Asia/Shanghai'}).catch(()=>null):null]);
     const {last_inbound_sync,last_successful_sync,...counts}=monitor;
     const poolRows=this.opportunityQuery?await this.opportunityQuery({status:'ALL',limit:5000}):null;
     const active=poolRows?.filter(r=>r.is_active_business_opportunity);
-    return{...summary,...(active?{active_business_opportunities:active.length,
+    return{...summary,...(firstTouch?{first_touch:firstTouch}:{}),...(active?{active_business_opportunities:active.length,
       pending_contacts:active.filter(r=>!(r.contact_readiness_labels||[]).some(x=>x.endsWith('_READY'))).length}:{}),monitoring:{last_inbound_sync,last_successful_sync,
       smtp_configured:Boolean(this.env.SMTP_HOST&&this.env.SMTP_USER&&this.env.SMTP_PASSWORD),
       imap_configured:Boolean(this.env.IMAP_HOST&&this.env.IMAP_USER&&this.env.IMAP_PASSWORD),

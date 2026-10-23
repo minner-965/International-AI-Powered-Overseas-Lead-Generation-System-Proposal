@@ -35,6 +35,13 @@ function timestamp(value,label){
   if(Number.isNaN(date.getTime()))throw fail('CRM_DATE_INVALID',`${label} must be a valid date`);
   return date.toISOString();
 }
+// One count for both the send gate and the approval page quota: cold-outreach messages
+// (first touch + follow-ups) reserved, sent or ambiguous since the start of the database day.
+export async function countColdOutreachToday(queryable){
+  return Number((await queryable.query(`SELECT count(*)::int count FROM leadgen.outbound_messages
+    WHERE provider_purpose='COLD_OUTREACH' AND send_status IN('SENDING','PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS')
+      AND coalesce(sent_at,send_reserved_at,queued_at)>=date_trunc('day',now())`)).rows[0]?.count||0);
+}
 const actorOf=user=>text(user?.identity,'actor',{required:true,max:200});
 const limitOf=value=>Math.min(Math.max(Number.parseInt(value,10)||100,1),500);
 
@@ -104,6 +111,13 @@ export class CrmService{
     return this.repository.listFollowupDrafts({status,limit:limitOf(query.limit)});
   }
 
+  followupDailyLimit(){return Number(this.env.CRM_FOLLOWUP_DAILY_LIMIT||50);}
+  async followupQuota(){
+    const daily_limit=this.followupDailyLimit();
+    const sent_today=await countColdOutreachToday(this.pool);
+    return{sent_today,daily_limit,remaining:Math.max(0,daily_limit-sent_today)};
+  }
+
   async decideFollowupDraft(draftId,body={},user){
     const decision=oneOf(body.decision,['APPROVE','DISCARD'],'decision');
     const draft=await this.repository.decideFollowupDraft(crmUuid(draftId,'draft_id'),{decision,
@@ -150,7 +164,7 @@ export class CrmService{
     const policy=this.automationControl?await this.automationControl.getState():null;
     if(policy?.auto_first_touch_email!==true)return{status:'WAITING',code:'EMAIL_PAUSED',draft_id:id};
     if(!this.outboundProvider?.senderEmail)return{status:'WAITING',code:'SENDER_NOT_CONFIGURED',draft_id:id};
-    const dailyLimit=Number(this.env.CRM_FOLLOWUP_DAILY_LIMIT||50);
+    const dailyLimit=this.followupDailyLimit();
     const prepared=await this.repository.transaction(async client=>{
       const draft=(await client.query('SELECT * FROM leadgen.crm_followup_drafts WHERE id=$1 FOR UPDATE',[id])).rows[0];
       if(!draft)throw fail('CRM_FOLLOWUP_NOT_FOUND','Follow-up draft not found',404);
@@ -164,9 +178,7 @@ export class CrmService{
         return{blocked:'THREAD_NOT_OPEN'};
       }
       if(thread.sender_identity!==this.outboundProvider.senderEmail||thread.reply_to!==this.outboundProvider.replyToEmail)return{waiting:'SENDER_CHANGED'};
-      const sentToday=Number((await client.query(`SELECT count(*)::int count FROM leadgen.outbound_messages
-        WHERE provider_purpose='COLD_OUTREACH' AND send_status IN('SENDING','PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS')
-          AND coalesce(sent_at,send_reserved_at,queued_at)>=date_trunc('day',now())`)).rows[0].count);
+      const sentToday=await countColdOutreachToday(client);
       if(sentToday>=dailyLimit)return{waiting:'DAILY_LIMIT_REACHED'};
       const key=`crm-followup:${id}`;
       const message=(await client.query(`INSERT INTO leadgen.outbound_messages(company_id,followup_draft_id,provider,provider_purpose,idempotency_key,send_execution_key,
