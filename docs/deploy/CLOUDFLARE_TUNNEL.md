@@ -7,8 +7,9 @@
 ## 0. 开放外网前必须做的
 
 1. 已经用 `local-setup.ps1` 创建了管理员账号，并能在 http://localhost:3100 登录。
-2. 根目录 `.env` 中 `AUTH_REQUIRED=true`（安装脚本默认就是这个值）。没有登录保护时不要开放外网。
-3. 管理员密码足够长（12 位以上），不要和其他网站相同。
+2. 根目录 `.env` 中 `AUTH_REQUIRED=true`（默认就是这个值）。没有登录保护时不要开放外网。
+3. 根目录 `.env` 加一行 `TRUST_PROXY=1`，然后 `docker compose up -d --force-recreate demo-dashboard`。这样经隧道访问时登录 Cookie 走 HTTPS 安全模式。
+4. 管理员密码足够长（12 位以上），不要和其他网站相同。
 
 ## 1. 安装 cloudflared
 
@@ -83,4 +84,5 @@ cloudflared service install
 |---|---|
 | 商家打不开 | 电脑是否开机、Docker 是否运行、`cloudflared` 窗口或服务是否在运行 |
 | 打开的是别的系统 | 检查 config.yml 里的端口是不是 3100（sq-system 用 3000） |
-| 登录后马上又退出 | 确认 `.env` 里的 `SESSION_SECRET` 没有在运行中被改动；改了会让所有人重新登录 |
+| 登录后马上又退出 | 确认 `.env` 里有 `TRUST_PROXY=1`，且 `SESSION_SECRET` 没被改动（改了所有人都要重新登录） |
+| 商家的邮箱密码突然不能用 | `.env` 里的 `MERCHANT_SECRET_KEY` 被改过。不要改它；改了之后所有商家要重新填邮箱密码 |

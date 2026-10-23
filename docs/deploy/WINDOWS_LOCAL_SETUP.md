@@ -22,9 +22,11 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 
 以后更新：在 `E:\claude\SIM` 里 `git pull`，再运行一次 `scripts\local-setup.ps1`（数据保留）。
 
-脚本会：检查 Git 和 Docker → 生成 `.env`、`.env.phase2`（随机数据库密码和内部令牌）、`.env.phase7-outreach`、`.env.phase7-api` → 构建并启动数据库、工作台和后台任务 → 等工作台能打开 → 登记或执行数据库迁移 → 列出可批准的供应类目。完成后打开 **http://localhost:3100**（sq-system 继续用 3000，两套系统可同时运行、数据互不影响）。
+脚本会：检查 Git 和 Docker → 生成 `.env`、`.env.phase2`（随机数据库密码、内部令牌、登录密钥 `SESSION_SECRET`、商家邮箱密码加密密钥 `MERCHANT_SECRET_KEY`、`SEARXNG_SECRET`）、`.env.phase7-outreach`、`.env.phase7-api` → 构建并启动数据库、SearXNG 本地搜索、工作台和后台任务 → 等工作台能打开 → 登记或执行数据库迁移 → **第一次运行时请你输入管理员邮箱和密码**（10 位以上，含字母和数字）。完成后打开 **http://localhost:3100**（sq-system 继续用 3000，两套系统可同时运行、数据互不影响）。
 
-可以重复运行：已有的 `.env*` 会保留，数据库不会被清空。更新后再运行时，脚本会执行新增的数据库迁移并重启服务。
+可以重复运行：已有的 `.env*` 会保留（只补上缺少的密钥），数据库不会被清空，已有管理员不会被改。**`SESSION_SECRET` 和 `MERCHANT_SECRET_KEY` 生成后不要改**，改了所有人要重新登录、商家要重新填邮箱密码。
+
+打开网页后用管理员账号登录。忘记密码时：`docker compose exec demo-dashboard node scripts/create-admin.mjs --email 你的邮箱 --password 新密码`（同一邮箱再运行一次就是重置）。更新后再运行时，脚本会执行新增的数据库迁移并重启服务。
 
 端口由根目录 `.env` 的 `DASHBOARD_PORT` 决定（默认 3100）。端口被其他程序占用时，脚本会停下并提示，改成空闲端口后再运行一次即可。`setup-supply-categories.mjs` 也会自动使用这个端口。
 
@@ -33,13 +35,13 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 新库没有已批准的供应类目，系统不知道要找哪类客户。先看候选：
 
 ```powershell
-node scripts\setup-supply-categories.mjs --list
+node scripts\setup-supply-categories.mjs --list --email 管理员邮箱 --password 管理员密码
 ```
 
 当前决定：**女装全品类 + 百货**，即批准全部候选：
 
 ```powershell
-node scripts\setup-supply-categories.mjs --all
+node scripts\setup-supply-categories.mjs --all --email 管理员邮箱 --password 管理员密码
 ```
 
 只做部分类目时用 `--categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS` 这种写法。
@@ -52,7 +54,8 @@ node scripts\setup-supply-categories.mjs --all
 
 | 用途 | 文件 | 变量 |
 |---|---|---|
-| 搜索客户 | `.env.phase2` | `EXA_ENABLED=true`、`EXA_API_KEY`；备用 `TAVILY_API_KEY` |
+| 搜索客户 | — | 默认先用本地 SearXNG（免费，不用填）；搜不到或出错时才用付费接口 |
+| 付费搜索（备用） | `.env.phase2` | `EXA_ENABLED=true`、`EXA_API_KEY`；再备用 `TAVILY_API_KEY` |
 | 核验商务邮箱 | `.env`（根目录这个文件） | `HUNTER_MODE=FREE_FIRST`、`HUNTER_API_KEY`（这两项由 compose 从 `.env` 读取，写在其他文件不生效） |
 | 发信与收回复 | `.env.phase7-outreach` | `SMTP_HOST`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM_EMAIL`、`SMTP_REPLY_TO`（与 `SMTP_USER` 相同）、`SMTP_UNSUBSCRIBE_EMAIL`、`SMTP_MESSAGE_ID_DOMAIN`（你的邮箱域名）、`IMAP_HOST`、`IMAP_USER`、`IMAP_PASSWORD`。要求 SMTP 587 STARTTLS、IMAP 993 TLS |
 | 飞书跟进表 | `.env.phase7-outreach` | 见 `docs/crm/feishu/飞书配置步骤.md` |
@@ -61,7 +64,7 @@ node scripts\setup-supply-categories.mjs --all
 改完后让设置生效：
 
 ```powershell
-docker compose up -d --force-recreate demo-dashboard category-worker outreach-worker data-worker
+docker compose up -d --force-recreate searxng demo-dashboard category-worker outreach-worker data-worker
 ```
 
 ## 4. 上线前验证（按顺序）
@@ -77,7 +80,7 @@ docker compose up -d --force-recreate demo-dashboard category-worker outreach-wo
 docker compose ps                      # 看各服务状态
 docker compose logs --tail 80 outreach-worker
 docker compose stop                    # 停止（数据保留）
-docker compose up -d postgres demo-dashboard category-worker outreach-worker data-worker   # 再启动
+docker compose up -d postgres searxng demo-dashboard category-worker outreach-worker data-worker   # 再启动
 git pull                               # 更新代码后再执行 local-setup.ps1
 ```
 
@@ -87,7 +90,13 @@ git pull                               # 更新代码后再执行 local-setup.ps
 docker compose exec -T postgres pg_dump -U leadgen_app -d lead_generation -Fc > backup_$(Get-Date -Format yyyyMMdd).dump
 ```
 
-## 6. 已验证 / 未验证
+## 6. 商家账号
+
+你是总管理员。左侧"商家管理"里新建商家账号（默认试用 7 天），把临时密码发给对方；对方第一次登录要改密码，然后按引导清单绑定自己的发信邮箱、选类目和市场。让商家从外网登录见 `CLOUDFLARE_TUNNEL.md`。
+
+商家绑定邮箱的要求：SMTP 587（STARTTLS）、IMAP 993，发件地址和回复地址必须是登录邮箱本身（回复从这个邮箱收回来）。阿里/腾讯/网易企业邮箱有的只开 465 端口，测试连接失败时先在邮箱后台确认是否支持 587。
+
+## 7. 已验证 / 未验证
 
 - 云端演练（2026-10-22）：全新数据库执行全部 64 个迁移 → 登记迁移账本 → 启动工作台 → 13 个页面桌面和手机宽度均可打开 → 批准 4 个类目后生成检索计划（2 市场 × 4 类目 = 168 条检索）→ CRM 改阶段、记电话、任务、跟进草稿批准、飞书写入（本地模拟）均正常。详见 `docs/review/2026-10_CLOUD_REHEARSAL.md`。
 - 安装脚本：云端用 PowerShell 7 实测到"生成配置文件"一步；**Docker 构建与启动部分只能在你的电脑上第一次运行时验证**。

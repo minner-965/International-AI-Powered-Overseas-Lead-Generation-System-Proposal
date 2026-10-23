@@ -51,6 +51,19 @@ if (-not (Test-Path '.env')) {
   WriteUtf8NoBom (Join-Path $PWD '.env') $text
   Write-Host 'Created .env with a new random database password and internal token.'
 } else { Write-Host '.env already exists - kept.' }
+# Sign-in, mailbox-password and SearXNG secrets (added in round 4). Filled in for new and
+# existing installs; a value already set is never replaced (that would sign everyone out
+# and make saved mailbox passwords unreadable).
+$text = Get-Content '.env' -Raw
+$changed = $false
+foreach ($name in 'SESSION_SECRET', 'MERCHANT_SECRET_KEY', 'SEARXNG_SECRET') {
+  $match = [regex]::Match($text, "(?m)^$name=(.*)$")
+  if (-not $match.Success -or -not $match.Groups[1].Value.Trim() -or $match.Groups[1].Value -like 'REPLACE_WITH*') {
+    $text = SetValue $text $name (RandomHex 32); $changed = $true
+    Write-Host "Generated $name."
+  }
+}
+if ($changed) { WriteUtf8NoBom (Join-Path $PWD '.env') $text }
 if (-not (Test-Path '.env.phase2')) { Copy-Item '.env' '.env.phase2'; Write-Host 'Created .env.phase2 (application settings).' } else { Write-Host '.env.phase2 already exists - kept.' }
 foreach ($name in '.env.phase7-outreach', '.env.phase7-api') {
   if (-not (Test-Path $name)) {
@@ -73,7 +86,7 @@ Step 'Building and starting the system (first build takes several minutes)'
 # so compose never tries to pull that name from a registry.
 docker compose build demo-dashboard
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose build failed. Copy the messages above and send them to Claude.' }
-docker compose up -d postgres demo-dashboard category-worker outreach-worker data-worker
+docker compose up -d postgres searxng demo-dashboard category-worker outreach-worker data-worker
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose up failed. Copy the messages above and send them to Claude.' }
 
 Step "Waiting for the workspace to answer on $baseUrl"
@@ -91,21 +104,39 @@ elseif ($output -match 'empty migration ledger|created from all migration files'
   $applied = ([regex]::Matches($output, '"migration_key":"([^"]+)","checksum_sha256":"[^"]+","status":"APPLIED"') | ForEach-Object { $_.Groups[1].Value }) -join ', '
   if ($applied) { Write-Host "Applied new migrations: $applied" } else { Write-Host 'Database already up to date.' }
   # Services started before the new migrations; restart them so they see the new schema.
-  if ($applied) { docker compose restart demo-dashboard category-worker outreach-worker data-worker | Out-Null; WaitForWorkspace }
+  if ($applied) { docker compose restart searxng demo-dashboard category-worker outreach-worker data-worker | Out-Null; WaitForWorkspace }
 } else { Write-Host $output; Fail 'Migration baseline failed.' }
 
+Step 'Administrator account'
+$output = RunNative { docker compose exec -T demo-dashboard node scripts/create-admin.mjs --check }
+if ($output -match 'ADMIN_EXISTS') { Write-Host 'Administrator account already exists - kept.' }
+elseif ($output -match 'ADMIN_MISSING') {
+  Write-Host 'Create your administrator sign-in (password: 10+ characters, letters and digits).'
+  for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    $adminEmail = Read-Host 'Admin email'
+    $secure = Read-Host 'Admin password' -AsSecureString
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    # Passed as an environment variable so the password never appears in the command line.
+    $env:CREATE_ADMIN_PASSWORD = $plain
+    $output = RunNative { docker compose exec -T -e CREATE_ADMIN_PASSWORD demo-dashboard node scripts/create-admin.mjs --email $adminEmail --name Simon }
+    Remove-Item Env:CREATE_ADMIN_PASSWORD
+    if ($output -match 'ADMIN_READY') { Write-Host "Administrator $adminEmail created."; break }
+    Write-Host $output -ForegroundColor Yellow
+  }
+  if ($output -notmatch 'ADMIN_READY') { Fail 'Administrator account was not created.' }
+} else { Write-Host $output; Fail 'Could not check the administrator account.' }
+
 Step 'Supply categories'
-node --version *> $null
-if ($LASTEXITCODE -eq 0) { node scripts/setup-supply-categories.mjs --base $baseUrl --list }
-else { docker compose exec -T demo-dashboard node project-scripts/setup-supply-categories.mjs --base http://127.0.0.1:3000 --list }
+Write-Host 'Approve categories with your administrator sign-in, for example:'
+Write-Host '  node scripts/setup-supply-categories.mjs --list --email <admin email> --password <password>'
 
 Write-Host "`nSIM workspace is running: $baseUrl" -ForegroundColor Green
 Write-Host @'
 Next steps (see docs/deploy/WINDOWS_LOCAL_SETUP.md):
-  1. Approve supply categories, for example:
-       node scripts/setup-supply-categories.mjs --categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS
+  1. Sign in at the address above with your administrator account, then approve supply
+     categories: node scripts/setup-supply-categories.mjs --all --email <admin email> --password <password>
   2. Fill search keys in .env.phase2 (EXA_API_KEY / TAVILY_API_KEY), mail in .env.phase7-outreach
      (SMTP/IMAP 587/993, SMTP_MESSAGE_ID_DOMAIN = your domain), Hunter and Feishu if used.
-  3. Apply changes: docker compose up -d --force-recreate demo-dashboard category-worker outreach-worker data-worker
+  3. Apply changes: docker compose up -d --force-recreate searxng demo-dashboard category-worker outreach-worker data-worker
   4. Send the first email to your own test address before switching automation on.
 '@
