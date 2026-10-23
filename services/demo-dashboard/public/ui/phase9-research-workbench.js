@@ -124,7 +124,7 @@ function setInlineState(host, zh, en, { error = false, retry = null } = {}) {
   if (!host) return;
   host.classList.add('p9-inline-state');
   host.classList.toggle('is-error',error);
-  host.innerHTML = `${bi(zh,en)}${retry ? ` <button class="btn btn-outline-secondary" type="button" data-p9-retry>${bi('重新读取','Retry')}</button>` : ''}`;
+  host.innerHTML = `${bi(zh,en)}${retry ? ` <button class="btn btn-outline-secondary" data-tip="重新读取|Load again" type="button" data-p9-retry>${bi('重新读取','Retry')}</button>` : ''}`;
   host.querySelector('[data-p9-retry]')?.addEventListener('click',retry);
 }
 
@@ -161,7 +161,7 @@ function routeMetric(metric) {
 
 function summaryMetric(labelZh, labelEn, value, metric, asOf) {
   const count = finiteNumber(value) ?? '—';
-  return `<button class="p9-metric" type="button" data-summary-metric="${esc(metric)}"><span class="bi"><span lang="zh-CN">${esc(labelZh)}</span><span lang="en">${esc(labelEn)}</span></span><strong>${esc(count)}</strong></button>`;
+  return `<button class="p9-metric" data-tip="按这个指标筛选任务|Filter jobs by this figure" type="button" data-summary-metric="${esc(metric)}"><span class="bi"><span lang="zh-CN">${esc(labelZh)}</span><span lang="en">${esc(labelEn)}</span></span><strong>${esc(count)}</strong></button>`;
 }
 
 function providerState(summary) {
@@ -277,7 +277,7 @@ function renderSummaryError() {
   const host = $('#research-workbench-summary');
   if (host) {
     host.setAttribute('aria-busy','false');
-    host.innerHTML = `<div class="p9-inline-state is-error">${bi('研究指标读取失败。','Research metrics could not be loaded.')} <button class="btn btn-outline-secondary" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
+    host.innerHTML = `<div class="p9-inline-state is-error">${bi('研究指标读取失败。','Research metrics could not be loaded.')} <button class="btn btn-outline-secondary" data-tip="重新读取研究指标|Reload research figures" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
     host.querySelector('[data-summary-retry]')?.addEventListener('click',loadSummary);
   }
   const provider = $('#research-provider-status');
@@ -432,7 +432,7 @@ function renderPriorityTasks(taskItems) {
     const action = ['处理例外','Review exception'];
     const company = first(task,['company_name','resolved_company_name'],'-');
     const profile = profileLabel(first(task,['product_profile','profile'],'—'));
-    return `<article class="p9-priority-item"><span class="p9-priority-rank">${index + 1}</span><div class="p9-item-main"><strong>${esc(company)}</strong><small>${esc(profile)}</small><small>${strategyAttemptLabel(task)}</small></div><div class="p9-item-fact"><small>${bi('待解决事项','Pending issue')}</small>${bi(blockerLabel[0],blockerLabel[1])}</div><div class="p9-item-fact"><small>${bi('资料时效','Evidence age')}</small>${taskAge(task)}</div><button class="btn btn-outline-primary" type="button" data-priority-index="${index}">${bi(action[0],action[1])}</button></article>`;
+    return `<article class="p9-priority-item"><span class="p9-priority-rank">${index + 1}</span><div class="p9-item-main"><strong>${esc(company)}</strong><small>${esc(profile)}</small><small>${strategyAttemptLabel(task)}</small></div><div class="p9-item-fact"><small>${bi('待解决事项','Pending issue')}</small>${bi(blockerLabel[0],blockerLabel[1])}</div><div class="p9-item-fact"><small>${bi('资料时效','Evidence age')}</small>${taskAge(task)}</div><button class="btn btn-outline-primary" data-tip="打开这项需复核的资料|Open this item to review" type="button" data-priority-index="${index}">${bi(action[0],action[1])}</button></article>`;
   }).join('');
   host.querySelectorAll('[data-priority-index]').forEach(button=>button.addEventListener('click',()=>openEvidenceTask(reviewItems[Number(button.dataset.priorityIndex)],button)));
 }
@@ -550,7 +550,7 @@ function renderRecentJobs(jobItems) {
     const type = typePair(first(job,['job_type','type'],'RESEARCH'));
     const workstream=jobWorkstreamPair(job);
     const updated = first(job,['updated_at','created_at']);
-    return `<article class="p9-recent-item"><div class="p9-item-main"><strong>${jobObjectiveMarkup(job)}</strong><small>${esc(jobMarket(job))} / ${esc(jobProfile(job))}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div><div class="p9-item-meta">${statusBadge(first(job,['status'],'QUEUED'))}<small>${bi(type[0],type[1])} / ${dateTimeMarkup(updated)}</small></div><button class="btn btn-outline-primary" type="button" data-recent-index="${index}">${bi('打开详情','Open details')}</button></article>`;
+    return `<article class="p9-recent-item"><div class="p9-item-main"><strong>${jobObjectiveMarkup(job)}</strong><small>${esc(jobMarket(job))} / ${esc(jobProfile(job))}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div><div class="p9-item-meta">${statusBadge(first(job,['status'],'QUEUED'))}<small>${bi(type[0],type[1])} / ${dateTimeMarkup(updated)}</small></div><button class="btn btn-outline-primary" data-tip="打开这个任务的进度|Open this job's progress" type="button" data-recent-index="${index}">${bi('打开详情','Open details')}</button></article>`;
   }).join('');
   host.querySelectorAll('[data-recent-index]').forEach(button=>button.addEventListener('click',()=>routeToJobs({ jobId:identifier(jobItems[Number(button.dataset.recentIndex)]),trigger:button })));
 }
@@ -623,7 +623,7 @@ async function loadOutreachJobs() {
     host.innerHTML = rows.length ? rows.map(row => {
       const label = outreachTaskLabel(row);
       const latest = row.last_reply_at || row.updated_at || row.sent_at || row.submitted_at;
-      return `<article class="v3-job-record"><div><strong>${esc(row.company_name)}</strong><small>${esc(profileLabel(row.product_profile))}</small>${opportunityDimensionsMarkup(row)}</div><div>${bi(label[0],label[1])}<small>${dateTimeMarkup(latest)}</small></div><div><small>${bi('负责人','Owner')}</small><span>${esc(row.owner || '—')}</span></div><button class="btn btn-outline-primary" type="button" data-outreach-task-open>${bi('打开邮件工作台','Open email workspace')}</button></article>`;
+      return `<article class="v3-job-record"><div><strong>${esc(row.company_name)}</strong><small>${esc(profileLabel(row.product_profile))}</small>${opportunityDimensionsMarkup(row)}</div><div>${bi(label[0],label[1])}<small>${dateTimeMarkup(latest)}</small></div><div><small>${bi('负责人','Owner')}</small><span>${esc(row.owner || '—')}</span></div><button class="btn btn-outline-primary" data-tip="打开这个邮件任务|Open this email task" type="button" data-outreach-task-open>${bi('打开邮件工作台','Open email workspace')}</button></article>`;
     }).join('') : `<div class="p9-inline-state">${bi('暂无邮件任务。','No email tasks yet.')}</div>`;
     host.querySelectorAll('[data-outreach-task-open]').forEach(button => button.addEventListener('click', () => activateView('contact-queue')));
   } catch {
@@ -680,7 +680,7 @@ function renderJobs(jobItems,{ append = false } = {}) {
     const activity = first(job,['updated_at','created_at']);
     const dispatch=dispatchLabel(job);
     const queuedAt=first(job,['queued_at']);
-    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${jobObjectiveMarkup(job)}</strong><small>${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small class="p9-job-mobile-time">${dateTimeMarkup(activity)}</small><small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}${queuedAt?`<small>${bi('排队时间','Queued')}: ${dateTimeMarkup(queuedAt)}</small>`:''}</div></td><td data-label="进度 / Progress">${jobProgressMarkup(job,{compact:true})}</td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job,{compact:true})}</div></td><td data-label="待解决事项 / Pending issue"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('暂无待解决事项','No pending issue reported')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
+    return `<tr data-job-id="${esc(id)}"><td data-label="任务 / Job"><div class="p9-job-objective"><strong>${jobObjectiveMarkup(job)}</strong><small>${bi(type[0],type[1])}</small><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span></div></td><td data-label="市场 / Market"><div class="p9-job-cell-stack"><span>${esc(jobMarket(job))}</span><small>${esc(jobProfile(job))}</small></div></td><td data-label="状态 / Status"><div class="p9-job-cell-stack">${statusBadge(status)}<small class="p9-job-mobile-time">${dateTimeMarkup(activity)}</small><small>${bi(stageLabel[0],stageLabel[1])}</small>${dispatch?`<small>${bi(dispatch[0],dispatch[1])}</small>`:''}${queuedAt?`<small>${bi('排队时间','Queued')}: ${dateTimeMarkup(queuedAt)}</small>`:''}</div></td><td data-label="进度 / Progress">${jobProgressMarkup(job,{compact:true})}</td><td data-label="结果 / Results"><div class="p9-job-cell-stack">${jobResultFacts(job,{compact:true})}</div></td><td data-label="待解决事项 / Pending issue"><div class="p9-job-cell-stack">${blockerLabel ? bi(blockerLabel[0],blockerLabel[1]) : bi('暂无待解决事项','No pending issue reported')}<small>${dateTimeMarkup(activity)}</small></div></td><td data-label="操作 / Action"><button class="btn btn-outline-primary" data-tip="打开任务明细|Open job details" type="button" data-open-job="${esc(id)}">${bi('打开详情','Open details')}</button></td></tr>`;
   }).join('');
   if (append) host.insertAdjacentHTML('beforeend',rows); else host.innerHTML = rows;
   host.querySelectorAll('[data-open-job]').forEach(button=>button.addEventListener('click',()=>openJobDetail(button.dataset.openJob,{ trigger:button })));
@@ -801,7 +801,7 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
   host.hidden = false;
   if (empty) empty.hidden = true;
   host.setAttribute('aria-busy','false');
-  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
+  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" data-tip="关闭任务明细|Close job details" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" data-tip="重新读取这个任务|Reload this job" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" data-tip="在新窗口打开资料来源页面|Open the source page in a new window" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
   if (results?.opportunity_pool) {
     const resultSection=document.createElement('section');resultSection.className='card crm-panel';
@@ -848,7 +848,7 @@ async function openJobDetail(jobId,{ replaceState = false, trigger = null } = {}
   } catch {
     if (requestId !== state.detailRequest || !host) return;
     host.setAttribute('aria-busy','false');
-    host.innerHTML = `<div class="p9-inline-state is-error">${bi('任务详情读取失败。','Job detail could not be loaded.')} <button class="btn btn-outline-secondary" type="button" data-detail-retry>${bi('重新读取','Retry')}</button></div>`;
+    host.innerHTML = `<div class="p9-inline-state is-error">${bi('任务详情读取失败。','Job detail could not be loaded.')} <button class="btn btn-outline-secondary" data-tip="重新读取任务明细|Reload job details" type="button" data-detail-retry>${bi('重新读取','Retry')}</button></div>`;
     host.querySelector('[data-detail-retry]')?.addEventListener('click',()=>openJobDetail(id,{ replaceState:true }));
   }
 }

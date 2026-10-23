@@ -73,7 +73,7 @@ function renderContexts(){
     host.innerHTML=`<div class="p8-empty-state"><i class="ti ti-mail-off" aria-hidden="true"></i><p>${bi('尚无受控验证记录，请先由管理员完成受控地址配置。','No controlled verification context is available. Ask an administrator to complete the controlled-address setup.')}</p></div>`;
     return;
   }
-  host.innerHTML=state.contexts.map((context,index)=>`<button class="p11-controlled-context${context.id===state.selectedId?' is-selected':''}" type="button" data-controlled-context-id="${esc(context.id)}" aria-pressed="${context.id===state.selectedId?'true':'false'}"><span><strong>${bi(`验证记录 ${index+1}`,`Verification context ${index+1}`)}</strong><small>${esc(dateLabel(context.created_at))}</small></span>${statusBadge(context.context_status)}</button>`).join('');
+  host.innerHTML=state.contexts.map((context,index)=>`<button class="p11-controlled-context${context.id===state.selectedId?' is-selected':''}" data-tip="选择这条验证记录继续操作|Select this verification record" type="button" data-controlled-context-id="${esc(context.id)}" aria-pressed="${context.id===state.selectedId?'true':'false'}"><span><strong>${bi(`验证记录 ${index+1}`,`Verification context ${index+1}`)}</strong><small>${esc(dateLabel(context.created_at))}</small></span>${statusBadge(context.context_status)}</button>`).join('');
   host.querySelectorAll('[data-controlled-context-id]').forEach(button=>button.addEventListener('click',()=>selectContext(button.dataset.controlledContextId,button)));
 }
 

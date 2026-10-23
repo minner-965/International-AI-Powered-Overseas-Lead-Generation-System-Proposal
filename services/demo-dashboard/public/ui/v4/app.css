@@ -3937,3 +3937,17 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
 .v4-switch input:disabled + span { opacity: .55; }
 .v4-market-table .m-side .v4-form-status { display: block; }
 @media (max-width: 900px) { .v4-stack-page .card { border-radius: 10px; } .v4-scope-grid { gap: 10px; } }
+
+/* ==== section: v4-merchant ==== */
+/* Round 4: button explanations, account banners, feedback, onboarding, mailbox, merchant admin. */
+/* ---------- Tooltip bubble ([data-tip], ui/v4/tooltips.js) ---------- */
+.v4-tip { position: fixed; z-index: 70; max-width: min(280px, calc(100vw - 16px)); padding: 7px 10px; border-radius: var(--radius-sm); background: var(--side); color: var(--dpv-on-primary); font-size: 12.5px; font-weight: 400; line-height: 1.45; text-align: left; white-space: normal; pointer-events: none; box-shadow: var(--shadow-pop); outline: 1px solid var(--side-line); }
+.v4-tip > [lang="en"] { display: block; margin-top: 2px; color: var(--side-en); font-size: 11.5px; }
+.v4-tip::after { content: ""; position: absolute; left: calc(var(--tip-arrow, 50%) - 5px); width: 10px; height: 10px; background: inherit; transform: rotate(45deg); }
+.v4-tip[data-placement="top"]::after { bottom: -4px; }
+.v4-tip[data-placement="bottom"]::after { top: -4px; }
+.v4-tip[data-placement="right"]::after { top: calc(var(--tip-arrow, 50%) - 5px); left: -4px; }
+.tip-q { display: none; position: relative; flex: 0 0 auto; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 2px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--text-3); font-size: 12px; font-weight: 600; line-height: 1; vertical-align: middle; }
+.tip-q::before { content: ""; position: absolute; inset: -12px; }
+@media (max-width: 900px) { .tip-q { display: inline-flex; } }
+[hidden] + .tip-q, .v4-desktop-only + .tip-q { display: none !important; }

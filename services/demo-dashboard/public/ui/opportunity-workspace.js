@@ -39,7 +39,7 @@ export function renderOpportunityPagination(model, onPage) {
   host.hidden = model.total === 0;
   const from = model.total ? (model.page - 1) * model.pageSize + 1 : 0;
   const to = Math.min(model.total, model.page * model.pageSize);
-  host.innerHTML = `<span class="bi"><span lang="zh-CN">${from}–${to} / ${model.total} 条 · 第 ${model.page} / ${model.pages} 页</span><span lang="en">${from}–${to} of ${model.total} · Page ${model.page} of ${model.pages}</span></span><div class="opw-pagination-actions"><button type="button" class="btn btn-outline-secondary" data-opw-page="${model.page - 1}" ${model.page <= 1 ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">上一页</span><span lang="en">Previous</span></span></button><button type="button" class="btn btn-outline-secondary" data-opw-page="${model.page + 1}" ${model.page >= model.pages ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">下一页</span><span lang="en">Next</span></span></button></div>`;
+  host.innerHTML = `<span class="bi"><span lang="zh-CN">${from}–${to} / ${model.total} 条 · 第 ${model.page} / ${model.pages} 页</span><span lang="en">${from}–${to} of ${model.total} · Page ${model.page} of ${model.pages}</span></span><div class="opw-pagination-actions"><button type="button" data-tip="上一页|Previous page" class="btn btn-outline-secondary" data-opw-page="${model.page - 1}" ${model.page <= 1 ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">上一页</span><span lang="en">Previous</span></span></button><button type="button" data-tip="下一页|Next page" class="btn btn-outline-secondary" data-opw-page="${model.page + 1}" ${model.page >= model.pages ? 'disabled' : ''}><span class="bi"><span lang="zh-CN">下一页</span><span lang="en">Next</span></span></button></div>`;
   host.querySelectorAll('[data-opw-page]').forEach(button => button.addEventListener('click', () => {
     const direction = Number(button.dataset.opwPage) > model.page ? 1 : -1;
     onPage(Number(button.dataset.opwPage));
@@ -125,7 +125,7 @@ function renderWorkstreamList(host, records, stream, getBlocker, getBlockerLabel
       <div class="p10-workstream-company"><strong>${escapeHtml(companyName(item))}</strong><span class="bi"><span lang="zh-CN">${escapeHtml(profile[0])}</span><span lang="en">${escapeHtml(profile[1])}</span></span></div>
       <div class="p10-workstream-state"><span class="bi"><span lang="zh-CN">${escapeHtml(stage[0])}</span><span lang="en">${escapeHtml(stage[1])}</span></span><small class="bi"><span lang="zh-CN">${escapeHtml(label[0])}</span><span lang="en">${escapeHtml(label[1])}</span></small></div>
       <time datetime="${escapeHtml(updatedAt(item) || '')}">${escapeHtml(shortDate(updatedAt(item)))}</time>
-      <button type="button" data-p10-task="${index}"><span class="bi"><span lang="zh-CN">${labels.action[0]}</span><span lang="en">${labels.action[1]}</span></span><i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+      <button type="button" data-tip="打开这家企业处理待办事项|Open this company to handle the item" data-p10-task="${index}"><span class="bi"><span lang="zh-CN">${labels.action[0]}</span><span lang="en">${labels.action[1]}</span></span><i class="ti ti-arrow-right" aria-hidden="true"></i></button>
     </article>`;
   }).join('');
   host.querySelectorAll('[data-p10-task]').forEach(button => button.addEventListener('click', () => {
@@ -156,7 +156,7 @@ function renderChart(counts, total) {
     const count = numberValue(counts[status]);
     const share = total ? Math.round((count / total) * 100) : 0;
     const relativeWidth = Math.round((count / maximum) * 100);
-    return `<button class="opw-chart-row is-${meta.tone}" type="button" data-opw-status="${status}" aria-label="${escapeHtml(meta.zh)} ${count}, ${share}%">
+    return `<button class="opw-chart-row is-${meta.tone}" data-tip="只看这个状态的机会|Show opportunities with this status" type="button" data-opw-status="${status}" aria-label="${escapeHtml(meta.zh)} ${count}, ${share}%">
       <span class="opw-chart-label"><span>${escapeHtml(meta.zh)}</span><small>${escapeHtml(meta.en)}</small></span>
       <span class="opw-chart-track" aria-hidden="true"><span style="--opw-bar:${relativeWidth}%"></span></span>
       <strong>${count}</strong><small class="opw-chart-percent">${share}%</small>

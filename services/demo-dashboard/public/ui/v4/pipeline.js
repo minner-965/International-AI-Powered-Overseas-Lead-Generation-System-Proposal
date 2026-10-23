@@ -43,7 +43,7 @@ function renderTabs() {
   const counts = state.counts || {};
   const total = Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0);
   const tabs = [['', '全部', 'All', total], ...STAGES.map(([key, zh, en]) => [key, zh, en, counts[key] ?? 0])];
-  host.innerHTML = tabs.map(([key, zh, en, count]) => `<button type="button" role="tab" data-pipeline-stage="${key}" aria-selected="${state.stage === key}" tabindex="${state.stage === key ? 0 : -1}">${bi(zh, en)}<span class="n">${state.counts ? Number(count).toLocaleString() : '—'}</span></button>`).join('');
+  host.innerHTML = tabs.map(([key, zh, en, count]) => `<button type="button" data-tip="只看「${zh}」阶段的客户|Show prospects at ${en}" role="tab" data-pipeline-stage="${key}" aria-selected="${state.stage === key}" tabindex="${state.stage === key ? 0 : -1}">${bi(zh, en)}<span class="n">${state.counts ? Number(count).toLocaleString() : '—'}</span></button>`).join('');
 }
 
 function renderFilters() {
@@ -71,7 +71,7 @@ function renderList() {
     const due = when(item.next_action_due_at);
     const band = state.bands.get(`${item.company_id}:${item.product_profile}`) || state.bands.get(String(item.company_id));
     const dueText = due ? `${due.zh}${item.overdue ? ' · 已逾期' : ''}` : '未设置';
-    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"><td class="m-main"><button type="button" class="co v4-link-btn" data-pipeline-company="${esc(item.company_id)}" data-pipeline-profile="${esc(item.product_profile || '')}">${esc(item.company_name || '—')}</button><span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
+    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"><td class="m-main"><button type="button" data-tip="打开这家企业的详情和跟进记录|Open company details and activity" class="co v4-link-btn" data-pipeline-company="${esc(item.company_id)}" data-pipeline-profile="${esc(item.product_profile || '')}">${esc(item.company_name || '—')}</button><span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
   }).join('')}</tbody></table>`;
   if (count) count.innerHTML = bi(`显示 ${visible.length} / ${rows.length}`, `Showing ${visible.length} of ${rows.length}`);
   if (more) more.hidden = rows.length <= visible.length;

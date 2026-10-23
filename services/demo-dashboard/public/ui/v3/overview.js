@@ -3,12 +3,13 @@ import { finiteCount, marketSeries, lazyChart } from './charts.js';
 import { initialContactPending } from '../contact-progress.js';
 import { hasOpportunityPool, isActiveBusinessOpportunity } from './opportunity-dimensions.js';
 import { overdueText, crm, STAGES, taskTypePill, taskDot, when, stateBlock, skeletonRows } from '../v4/crm.js';
+import { viewTip, tip } from '../v4/tooltips.js';
 const bi = (zh,en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 const number = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString();
 const empty = (zh,en) => `<p class="v3-overview-empty">${bi(zh,en)}</p>`;
 // V4 card: title with inline English, optional caption and header link.
 const card = (id,zh,en,body,{caption=null,link:headerLink='',cls=''}={}) => `<section class="card v4-card ${cls}" aria-labelledby="${id}-title"><div class="ph"><div><h3 id="${id}-title">${bi(zh,en)}</h3>${caption?`<p>${bi(...caption)}</p>`:''}</div>${headerLink}</div>${body}</section>`;
-const link = (view,zh,en) => `<a class="lnk v3-overview-link" href="#${view}" data-open-view="${view}">${bi(zh,en)}<i class="ti ti-chevron-right" aria-hidden="true"></i></a>`;
+const link = (view,zh,en) => `<a class="lnk v3-overview-link" href="#${view}" data-open-view="${view}"${viewTip(view)}>${bi(zh,en)}<i class="ti ti-chevron-right" aria-hidden="true"></i></a>`;
 const marketLabels={AE:['阿联酋','UAE'],MX:['墨西哥','Mexico'],SA:['沙特阿拉伯','Saudi Arabia'],US:['美国','United States'],BD:['孟加拉国','Bangladesh']};
 const donutColors=['var(--c1)','var(--c2)','var(--c3)','var(--c4)'];
 
@@ -63,7 +64,8 @@ const functions=[
   ['followups','跟进审批','Approvals','mail','b'],['companies','客户名录','Directory','building','b'],['research','研究任务','Research','list-search','g'],
   ['data-import','导入导出','Import/Export','arrows-down-up','a'],['settings','系统设置','Settings','adjustments-horizontal','n']
 ];
-const functionGrid=()=>`<section class="m-card v4-phone-only v4-function-grid" aria-label="常用功能 Functions"><div class="m-grid">${functions.map(([key,zh,en,icon,tone])=>{const view=['log-note','log-call','new-task'].includes(key)?null:key;return `<a href="#${view||(key==='new-task'?'tasks':'opportunities')}" ${view?`data-open-view="${view}"`:`data-quick-action="${key}"`}><span class="m-ico ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i>${key==='followups'?'<b class="m-badge" data-nav-count="followups" hidden></b>':''}</span><span class="lab">${esc(zh)}<small>${esc(en)}</small></span></a>`;}).join('')}</div></section>`;
+const QUICK_TIPS={'log-note':['写一条跟进备注','Write a follow-up note'],'log-call':['记录一次电话沟通','Log a phone call'],'new-task':['新建一项跟进任务','Create a follow-up task']};
+const functionGrid=()=>`<section class="m-card v4-phone-only v4-function-grid" aria-label="常用功能 Functions"><div class="m-grid">${functions.map(([key,zh,en,icon,tone])=>{const view=['log-note','log-call','new-task'].includes(key)?null:key;return `<a href="#${view||(key==='new-task'?'tasks':'opportunities')}" ${view?`data-open-view="${view}"${viewTip(view)}`:`data-quick-action="${key}"${tip(...QUICK_TIPS[key])}`}><span class="m-ico ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i>${key==='followups'?'<b class="m-badge" data-nav-count="followups" hidden></b>':''}</span><span class="lab">${esc(zh)}<small>${esc(en)}</small></span></a>`;}).join('')}</div></section>`;
 
 export function mountOverview() {
   const root = document.getElementById('view-overview');
@@ -71,7 +73,7 @@ export function mountOverview() {
   const reset = document.getElementById('reset');
   const runStatus = document.getElementById('run-status');
   root.dataset.v3Mounted='true';root.classList.add('v3-overview','v4-overview');
-  root.innerHTML=`<header class="head v3-overview-heading"><div><h2 id="overview-title" class="bi"><span lang="zh-CN">总览</span><span lang="en">Overview</span></h2><p id="overview-last-refresh" class="meta"></p></div><div class="btns v3-overview-actions"><button type="button" class="btn" data-open-view="opportunities">${bi('销售机会','Opportunities')}</button><button type="button" class="btn btn-primary" data-open-view="tasks">${bi('处理今日待办',"Today's tasks")}</button><button type="button" id="outreach-operations-refresh" class="btn btn-icon" aria-label="刷新总览 Refresh Overview" title="刷新总览 Refresh Overview"><i class="ti ti-refresh" aria-hidden="true"></i></button></div></header>
+  root.innerHTML=`<header class="head v3-overview-heading"><div><h2 id="overview-title" class="bi"><span lang="zh-CN">总览</span><span lang="en">Overview</span></h2><p id="overview-last-refresh" class="meta"></p></div><div class="btns v3-overview-actions"><button type="button" data-tip="打开销售机会，按阶段跟进客户|Open opportunities by stage" class="btn" data-open-view="opportunities">${bi('销售机会','Opportunities')}</button><button type="button" data-tip="打开今天要处理的跟进任务|Open today's follow-up tasks" class="btn btn-primary" data-open-view="tasks">${bi('处理今日待办',"Today's tasks")}</button><button type="button" data-tip="重新读取总览数据|Reload the overview" id="outreach-operations-refresh" class="btn btn-icon" aria-label="刷新总览 Refresh Overview"><i class="ti ti-refresh" aria-hidden="true"></i></button></div></header>
   <div id="overview-run-slot"></div>
   <section id="metrics" class="grid4 v3-overview-metrics" aria-label="关键指标 Key figures" aria-busy="true">${['有效机会','已发开发信','收到回复','今日待办'].map(()=>'<div class="card kpi"><span class="skel" style="width:60%"></span><span class="skel" style="width:30%;height:24px;margin:12px 0"></span></div>').join('')}</section>
   ${functionGrid()}
@@ -108,7 +110,7 @@ export function markOverviewLoading() {
 
 const crmState={tasks:undefined,drafts:undefined,pipeline:undefined,generation:0};
 function kpi({zh,en,value,unit,sub='',attn=false,view}) {
-  return `<a class="card kpi${attn?' attn':''}" href="#${view}" data-open-view="${view}"><div class="lab">${bi(zh,en)}</div><div class="val">${number(value)}${value===null||value===undefined?'':`<small>${esc(unit)}</small>`}</div><div class="kpi-sub">${sub}</div></a>`;
+  return `<a class="card kpi${attn?' attn':''}" href="#${view}" data-open-view="${view}"${viewTip(view)}><div class="lab">${bi(zh,en)}</div><div class="val">${number(value)}${value===null||value===undefined?'':`<small>${esc(unit)}</small>`}</div><div class="kpi-sub">${sub}</div></a>`;
 }
 let lastMetrics=null;
 function renderKpis() {
@@ -168,7 +170,7 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   const pendingDrafts=operations?.prospect?.pending_drafts;
   const alerts=operations?.monitoring?.alerts || [];
   const alertLabels={IMAP_CHECKPOINT_STALE:['收信更新延迟','Inbox Update Delayed'],IMAP_SYNC_FAILURE:['收信需要检查','Inbox Needs Review'],SEND_AMBIGUOUS:['发送结果待核对','Send Result Needs Review'],OUTBOUND_STUCK:['发送处理超时','Sending Overdue'],CRM_OUTBOX_LAG:['跟进同步延迟','Follow-up Sync Delayed'],INBOUND_CORRELATION_CONFLICT:['回复关联待核对','Reply Matching Needs Review'],INBOUND_CORRELATION_REVIEW:['来信关联待核对','Incoming Mail Needs Matching'],CRM_RECONCILIATION_REQUIRED:['跟进记录待核对','Follow-up Records Need Review'],SUPPRESSION_BLOCKED_ATTEMPT:['已阻止退订地址联系','Suppressed Contact Blocked']};
-  set('overview-attention',`${pendingDrafts!==undefined?`<div class="v3-overview-attention-summary">${bi('待审核草稿','Drafts Awaiting Review')}<strong>${number(pendingDrafts)}</strong></div>`:''}${alerts.length?`<ul class="v3-overview-attention-list">${alerts.map(alert=>`<li>${bi(...(alertLabels[alert.code] || ['运营事项待检查','Operations Review Required']))}<strong>${number(alert.count)}</strong></li>`).join('')}</ul>`:''}${tasks.length?`<ul class="v3-overview-attention-list">${tasks.map(task=>`<li>${task.company_id?`<button class="v3-overview-company" data-overview-id="${esc(task.company_id)}" type="button">${esc(task.company_name || '—')}</button>`:`<strong>${esc(task.company_name || '—')}</strong>`}<span>${bi(task.human_review_required?'待复核资料':'待完善资料',task.human_review_required?'Evidence Review':'Evidence Pending')}</span></li>`).join('')}</ul>`:empty(research?'暂无优先处理资料':'待处理事项暂未读取',research?'No priority evidence items':'Attention items unavailable')}`);
+  set('overview-attention',`${pendingDrafts!==undefined?`<div class="v3-overview-attention-summary">${bi('待审核草稿','Drafts Awaiting Review')}<strong>${number(pendingDrafts)}</strong></div>`:''}${alerts.length?`<ul class="v3-overview-attention-list">${alerts.map(alert=>`<li>${bi(...(alertLabels[alert.code] || ['运营事项待检查','Operations Review Required']))}<strong>${number(alert.count)}</strong></li>`).join('')}</ul>`:''}${tasks.length?`<ul class="v3-overview-attention-list">${tasks.map(task=>`<li>${task.company_id?`<button class="v3-overview-company" data-tip="打开这家企业的详情|Open this company's details" data-overview-id="${esc(task.company_id)}" type="button">${esc(task.company_name || '—')}</button>`:`<strong>${esc(task.company_name || '—')}</strong>`}<span>${bi(task.human_review_required?'待复核资料':'待完善资料',task.human_review_required?'Evidence Review':'Evidence Pending')}</span></li>`).join('')}</ul>`:empty(research?'暂无优先处理资料':'待处理事项暂未读取',research?'No priority evidence items':'Attention items unavailable')}`);
   if(model.pendingParts)document.getElementById('overview-attention')?.insertAdjacentHTML('afterbegin',`<details class="v3-overview-pending-breakdown"><summary>${bi('待处理构成','Pending Action Breakdown')}</summary><dl>${model.pendingParts.map(item=>`<div><dt>${bi(item.zh,item.en)}</dt><dd>${number(item.count)}</dd></div>`).join('')}</dl><p class="v3-overview-caption">${bi('按事项统计，同一企业可能有多个不同事项。','Counts actions; one company may have multiple distinct actions.')}</p></details>`);
   document.getElementById('overview-attention')?.querySelectorAll('[data-overview-id]').forEach(button=>button.addEventListener('click',()=>onCompany(button.dataset.overviewId)));
 }
@@ -200,7 +202,7 @@ function renderTodo(payload) {
   if(payload===null){host.innerHTML=stateBlock('error','待办暂未读取','Tasks unavailable',{retry:true});return;}
   const items=(payload?.items||[]).slice(0,5);
   if(!items.length){host.innerHTML=stateBlock('empty','今日没有待办','Nothing due today');return;}
-  host.innerHTML=`<ul class="rows">${items.map(task=>{const due=when(task.due_at);return `<li class="${task.overdue?'is-overdue':''}"><button class="row" type="button" data-overview-company="${esc(task.company_id)}"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span><span class="main-t"><span class="co">${esc(task.company_name||'—')}</span><span class="meta">${esc(task.title||task.next_action||'')}</span></span><span class="when${task.overdue?' overdue':''}">${due?esc(due.zh):'—'}${task.overdue&&due?`<small>${bi(...overdueText(due))}</small>`:''}</span></button></li>`;}).join('')}</ul>`;
+  host.innerHTML=`<ul class="rows">${items.map(task=>{const due=when(task.due_at);return `<li class="${task.overdue?'is-overdue':''}"><button class="row" data-tip="打开这家企业的详情和跟进记录|Open company details and activity" type="button" data-overview-company="${esc(task.company_id)}"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span><span class="main-t"><span class="co">${esc(task.company_name||'—')}</span><span class="meta">${esc(task.title||task.next_action||'')}</span></span><span class="when${task.overdue?' overdue':''}">${due?esc(due.zh):'—'}${task.overdue&&due?`<small>${bi(...overdueText(due))}</small>`:''}</span></button></li>`;}).join('')}</ul>`;
 }
 function renderApprovals(payload) {
   const host=document.getElementById('overview-approvals');
@@ -208,7 +210,7 @@ function renderApprovals(payload) {
   if(payload===null){host.innerHTML=stateBlock('error','待审批暂未读取','Approvals unavailable',{retry:true});return;}
   const items=(payload?.items||[]).slice(0,4);
   if(!items.length){host.innerHTML=stateBlock('empty','没有待审批的跟进邮件','No follow-up email awaiting approval');return;}
-  host.innerHTML=`<ul class="rows">${items.map(draft=>{const due=when(draft.due_at);return `<li><div class="row"><span class="main-t"><span class="co">${esc(draft.company_name||'—')}</span><span class="meta">${bi(`第 ${draft.sequence_no} 封跟进邮件 · 计划 ${due?due.zh:'—'}`,`Follow-up ${draft.sequence_no} · ${due?due.en:'—'}`)}</span><span class="meta subj">${esc(draft.subject||'')}</span></span><a class="btn btn-outline-primary btn-sm" href="#followups" data-open-view="followups" data-draft-id="${esc(draft.id)}">${bi('去审批','Review')}</a></div></li>`;}).join('')}</ul>`;
+  host.innerHTML=`<ul class="rows">${items.map(draft=>{const due=when(draft.due_at);return `<li><div class="row"><span class="main-t"><span class="co">${esc(draft.company_name||'—')}</span><span class="meta">${bi(`第 ${draft.sequence_no} 封跟进邮件 · 计划 ${due?due.zh:'—'}`,`Follow-up ${draft.sequence_no} · ${due?due.en:'—'}`)}</span><span class="meta subj">${esc(draft.subject||'')}</span></span><a class="btn btn-outline-primary btn-sm" data-tip="去审批这封跟进邮件|Review this follow-up email" href="#followups" data-open-view="followups" data-draft-id="${esc(draft.id)}">${bi('去审批','Review')}</a></div></li>`;}).join('')}</ul>`;
 }
 async function settle(promise){try{return await promise;}catch{return null;}}
 export async function loadOverviewCrm() {

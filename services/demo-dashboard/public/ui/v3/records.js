@@ -32,7 +32,7 @@ export function mountEvidence(page, request) {
   const directory = original?.querySelector('[data-open-view="companies"]');
   const panel = page.ownerDocument.createElement('section');
   panel.className = 'card crm-panel v3-evidence-workspace';
-  panel.innerHTML = `<div class="v3-evidence-toolbar"><label for="v3-evidence-company">${label('选择企业','Select company')}<select id="v3-evidence-company" class="form-select" disabled><option value="">正在读取 / Loading</option></select></label><button type="button" class="btn btn-outline-primary" id="v3-evidence-refresh">${label('刷新资料','Refresh sources')}</button></div><div id="v3-evidence-status" role="status" aria-live="polite"></div><div id="v3-evidence-results" aria-busy="false"></div>`;
+  panel.innerHTML = `<div class="v3-evidence-toolbar"><label for="v3-evidence-company">${label('选择企业','Select company')}<select id="v3-evidence-company" class="form-select" disabled><option value="">正在读取 / Loading</option></select></label><button type="button" data-tip="重新读取评估依据|Reload the evidence" class="btn btn-outline-primary" id="v3-evidence-refresh">${label('刷新资料','Refresh sources')}</button></div><div id="v3-evidence-status" role="status" aria-live="polite"></div><div id="v3-evidence-results" aria-busy="false"></div>`;
   original?.replaceWith(panel);
   if (!original) page.append(panel);
   if (directory) page.querySelector('.crm-section-head')?.append(directory);

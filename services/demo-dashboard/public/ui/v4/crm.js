@@ -84,7 +84,7 @@ export const errorText = error => error?.status === 403 ? ['当前账号没有�
 
 export function stateBlock(kind, zh, en, { retry = false } = {}) {
   const icon = kind === 'error' ? 'alert-circle' : kind === 'loading' ? 'loader' : 'inbox';
-  return `<div class="state" ${kind === 'error' ? 'role="alert"' : kind === 'loading' ? 'aria-busy="true"' : ''}><div class="glyph" aria-hidden="true"><i class="ti ti-${icon}"></i></div><b>${bi(zh, en)}</b>${retry ? `<button class="btn btn-sm" type="button" data-state-retry>${bi('重试', 'Retry')}</button>` : ''}</div>`;
+  return `<div class="state" ${kind === 'error' ? 'role="alert"' : kind === 'loading' ? 'aria-busy="true"' : ''}><div class="glyph" aria-hidden="true"><i class="ti ti-${icon}"></i></div><b>${bi(zh, en)}</b>${retry ? `<button class="btn btn-sm" data-tip="重新读取这部分内容|Load this section again" type="button" data-state-retry>${bi('重试', 'Retry')}</button>` : ''}</div>`;
 }
 export const skeletonRows = (rows = 3) => `<div class="skel-rows" aria-busy="true" aria-label="正在加载 Loading">${Array.from({ length: rows }, () => '<div class="skel-row"><span class="skel"></span><span class="skel"></span><span class="skel"></span></div>').join('')}</div>`;
 

@@ -379,7 +379,7 @@ function verificationCard(item) {
       <div><dt>${bi('名录状态','Directory status')}</dt><dd>${labelHtml(promotion)}</dd></div>
     </dl>
     <div class="verification-card-flags">${item.strategic_account ? `<span class="strategic-flag">${bi('战略客户','Strategic account')}</span>` : ''}<span>${bi(`依据 ${item.evidence_count ?? 0} 条`,`Evidence: ${item.evidence_count ?? 0}`)}</span></div>
-    <button type="button" class="verification-open" data-verification-id="${esc(item.research_candidate_id)}">${bi('查看企业核验详情','View company verification')}</button>
+    <button type="button" data-tip="打开这家企业的核验详情|Open this company's verification detail" class="verification-open" data-verification-id="${esc(item.research_candidate_id)}">${bi('查看企业核验详情','View company verification')}</button>
   </article>`;
 }
 
@@ -397,12 +397,12 @@ function renderVerificationShell(jobId) {
     <div id="verification-summary" class="verification-summary" aria-label="企业核验概览 Company verification overview"></div>
     <details class="verification-filter-disclosure"${compact ? '' : ' open'}><summary>${bi('筛选企业核验结果','Filter company verifications')} <span id="verification-filter-count">0</span></summary>
       <div class="verification-presets" aria-label="常用核验视图 Common verification views">
-        <button type="button" data-preset="all" aria-pressed="true">${bi('全部','All')}</button>
-        <button type="button" data-preset="small_medium" aria-pressed="false">${bi('小型与中型','Small + Medium')}</button>
-        <button type="button" data-preset="high_access" aria-pressed="false">${bi('高合作可达性','High accessibility')}</button>
-        <button type="button" data-preset="strategic" aria-pressed="false">${bi('战略客户','Strategic accounts')}</button>
-        <button type="button" data-preset="verified_distributor" aria-pressed="false">${bi('已核验经销商','Verified distributors')}</button>
-        <button type="button" data-preset="contactable" aria-pressed="false">${bi('可联系','Contactable')}</button>
+        <button type="button" data-tip="显示全部核验结果|Show every verification result" data-preset="all" aria-pressed="true">${bi('全部','All')}</button>
+        <button type="button" data-tip="只看中小型企业|Only small and medium companies" data-preset="small_medium" aria-pressed="false">${bi('小型与中型','Small + Medium')}</button>
+        <button type="button" data-tip="只看容易建立合作的企业|Only companies that are easy to reach" data-preset="high_access" aria-pressed="false">${bi('高合作可达性','High accessibility')}</button>
+        <button type="button" data-tip="只看规模较大的战略客户|Only larger strategic accounts" data-preset="strategic" aria-pressed="false">${bi('战略客户','Strategic accounts')}</button>
+        <button type="button" data-tip="只看已核验的经销商|Only verified distributors" data-preset="verified_distributor" aria-pressed="false">${bi('已核验经销商','Verified distributors')}</button>
+        <button type="button" data-tip="只看已有联系方式的企业|Only companies with a contact" data-preset="contactable" aria-pressed="false">${bi('可联系','Contactable')}</button>
       </div>
       <div class="verification-filter-grid">
         <label class="filter-control">${bi('业务类型','Business type')}<select data-verification-filter="business_type"><option value="">全部 / All</option><option value="importer">进口商 / Importer</option><option value="wholesaler">批发商 / Wholesaler</option><option value="distributor">经销商 / Distributor</option><option value="general_trading">综合贸易 / General trading</option></select></label>
@@ -481,7 +481,7 @@ async function refreshVerifications(jobId) {
   } catch (error) {
     if (buckets) {
       buckets.setAttribute('aria-busy', 'false');
-      buckets.innerHTML = `<div class="verification-error"><p>${bi('企业核验结果读取失败。','Company verification results could not be loaded.')}</p><button type="button" id="verification-retry">${bi('重新读取','Retry')}</button></div><div class="management-buckets">
+      buckets.innerHTML = `<div class="verification-error"><p>${bi('企业核验结果读取失败。','Company verification results could not be loaded.')}</p><button type="button" data-tip="重新读取核验结果|Reload verification results" id="verification-retry">${bi('重新读取','Retry')}</button></div><div class="management-buckets">
         ${verificationBucket('sme-regional','中小企业 / 区域机会','SME / Regional Opportunities',[],'核验结果恢复后将在此显示。','Results will appear here when verification data is available.')}
         ${verificationBucket('strategic-accounts','战略客户','Strategic Accounts',[],'核验结果恢复后将在此显示。','Results will appear here when verification data is available.')}
       </div>`;
@@ -539,7 +539,7 @@ async function openVerificationDetail(candidateId, trigger) {
     renderVerificationDetail(await json(`/api/research/candidates/${encodeURIComponent(candidateId)}/verification`));
   } catch (error) {
     content.setAttribute('aria-busy', 'false');
-    content.innerHTML = `<div class="verification-error"><p>${bi('企业核验详情读取失败。','Company verification details could not be loaded.')}</p><button type="button" id="verification-detail-retry">${bi('重新读取','Retry')}</button></div>`;
+    content.innerHTML = `<div class="verification-error"><p>${bi('企业核验详情读取失败。','Company verification details could not be loaded.')}</p><button type="button" data-tip="重新读取核验详情|Reload verification detail" id="verification-detail-retry">${bi('重新读取','Retry')}</button></div>`;
     $('#verification-detail-retry')?.addEventListener('click', () => openVerificationDetail(candidateId, trigger));
   }
 }
@@ -686,7 +686,7 @@ function companyRow(lead) {
     <td class="company-col-relationship" data-label="关系 / Relationship">${relationship ? pairHtml(relationshipStatusLabel(relationship)) : bi('待确认','To confirm')}</td>
     <td class="company-col-evidence" data-label="最近资料 / Latest evidence">${esc(shortDate(lead.last_verified_at))}<span class="crm-row-secondary">${bi(`来源 ${sourceCountValue(lead)}`,`Sources ${sourceCountValue(lead)}`)}</span></td>
     <td class="company-col-opportunity" data-label="相关机会 / Related opportunity">${opportunity ? opportunityDisplayBadge(lead) : bi('尚无当前机会','No current opportunity')}</td>
-    <td class="company-col-action" data-label="操作 / Action"><button type="button" class="btn btn-outline-primary lead-select" data-lead-id="${esc(id)}" aria-pressed="${selectedRow?'true':'false'}">${bi('查看详情','View details')}</button></td></tr>`;
+    <td class="company-col-action" data-label="操作 / Action"><button type="button" data-tip="打开这家企业的详情|Open this company's details" class="btn btn-outline-primary lead-select" data-lead-id="${esc(id)}" aria-pressed="${selectedRow?'true':'false'}">${bi('查看详情','View details')}</button></td></tr>`;
 }
 
 function bindLeadRows(root = document) {
@@ -707,7 +707,7 @@ function renderCompanyTable() {
   const pageItems = ordered.slice((state.companyPage-1)*pageSize,state.companyPage*pageSize);
   $('#leads').innerHTML = pageItems.length ? pageItems.map(companyRow).join('') : `<tr><td colspan="8" class="crm-loading-cell">${bi('当前筛选没有企业。','No companies match the current filters.')}</td></tr>`;
   const pagination = $('#company-pagination');
-  if (pagination) pagination.innerHTML = `<span>${bi(`第 ${state.companyPage} / ${pageCount} 页，共 ${ordered.length} 家`,`Page ${state.companyPage} of ${pageCount}, ${ordered.length} companies`)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" type="button" data-page="prev" ${state.companyPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" type="button" data-page="next" ${state.companyPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>`;
+  if (pagination) pagination.innerHTML = `<span>${bi(`第 ${state.companyPage} / ${pageCount} 页，共 ${ordered.length} 家`,`Page ${state.companyPage} of ${pageCount}, ${ordered.length} companies`)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" data-tip="上一页|Previous page" type="button" data-page="prev" ${state.companyPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" data-tip="下一页|Next page" type="button" data-page="next" ${state.companyPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>`;
   pagination?.querySelector('[data-page="prev"]')?.addEventListener('click',()=>{state.companyPage-=1;renderCompanyTable()});
   pagination?.querySelector('[data-page="next"]')?.addEventListener('click',()=>{state.companyPage+=1;renderCompanyTable()});
   bindLeadRows();
@@ -833,7 +833,7 @@ function opportunityNextActionCell(item) {
     ?bi('准备人工联系','Prepare manual contact')
     :status==='NOT_SUITABLE'?bi('无需跟进','No follow-up')
       :bi('补齐主要资料','Complete primary evidence');
-  return `<strong>${action}</strong><button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button>`;
+  return `<strong>${action}</strong><button class="btn btn-outline-primary" data-tip="打开这家企业的详情和评估依据|Open company details and assessment" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button>`;
 }
 
 function opportunityBarrierCell(item) {
@@ -939,7 +939,7 @@ function renderOpportunityTable() {
     if (evidenceHost) evidenceHost.hidden = true;
     if (stateHost) {
       stateHost.hidden = false;
-      stateHost.innerHTML = `<div class="opw-empty-state is-error" role="alert"><span class="opw-empty-icon"><i class="ti ti-cloud-off" aria-hidden="true"></i></span><div><h3>${bi('业务机会读取失败','Opportunity data could not be loaded')}</h3><p>${bi('请检查连接后重试。','Check the connection and retry.')}</p></div><button class="btn btn-primary" type="button" data-opportunity-retry>${bi('重新读取','Retry')}</button></div>`;
+      stateHost.innerHTML = `<div class="opw-empty-state is-error" role="alert"><span class="opw-empty-icon"><i class="ti ti-cloud-off" aria-hidden="true"></i></span><div><h3>${bi('业务机会读取失败','Opportunity data could not be loaded')}</h3><p>${bi('请检查连接后重试。','Check the connection and retry.')}</p></div><button class="btn btn-primary" data-tip="重新读取业务机会|Reload opportunities" type="button" data-opportunity-retry>${bi('重新读取','Retry')}</button></div>`;
       stateHost.querySelector('[data-opportunity-retry]')?.addEventListener('click',loadOpportunities);
     }
     return;
@@ -951,7 +951,7 @@ function renderOpportunityTable() {
     if (stateHost) {
       stateHost.hidden = false;
       stateHost.innerHTML = selectedStatus === 'ACTIVE' && !activeOpportunityFilterCount(filters)
-        ? `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-user-search" aria-hidden="true"></i></span><div><h3>${bi('暂无当前业务机会','No active business opportunities')}</h3></div><button class="btn btn-outline-primary" type="button" data-opportunity-evidence-view>${bi('查看待研究公司','View exploratory companies')}</button></div>`
+        ? `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-user-search" aria-hidden="true"></i></span><div><h3>${bi('暂无当前业务机会','No active business opportunities')}</h3></div><button class="btn btn-outline-primary" data-tip="查看需要补充资料的企业|View companies that need more information" type="button" data-opportunity-evidence-view>${bi('查看待研究公司','View exploratory companies')}</button></div>`
         : `<div class="opw-empty-state"><span class="opw-empty-icon"><i class="ti ti-filter-search" aria-hidden="true"></i></span><div><h3>${bi('当前筛选没有业务机会','No opportunities match the current view')}</h3></div></div>`;
       stateHost.querySelector('[data-opportunity-evidence-view]')?.addEventListener('click',()=>{
         const select = $('#opportunity-status');
@@ -977,7 +977,7 @@ function renderOpportunityTable() {
       return `<section class="p9-blocker-group" data-blocker-group="${esc(blocker)}"><header><div><i class="ti ti-file-search" aria-hidden="true"></i><h3>${bi(label[0],label[1])}</h3></div><span class="p9-blocker-count" aria-label="${esc(`${records.length} 条记录 ${records.length} records`)}">${records.length}</span></header>${records.map(({item,reasons})=>{
         const reason = reasons[0] ? phase7ReasonLabel(reasons[0]) : ['待补资料项待确认','Evidence requirement to confirm'];
         const action=phase10EvidenceAction(item,blocker);
-        return `<article class="p8-evidence-row"><div class="p8-evidence-company"><strong>${esc(item.company_name || item.resolved_company_name || '-')}</strong><span>${productProfilesCell(item)}</span></div><div class="p8-evidence-blocker"><span class="p8-evidence-label">${bi('待补项目','Evidence gap')}</span><strong>${pairHtml(reason)}</strong></div><div class="p8-evidence-score"><span class="p8-evidence-label">${bi('商品类目评分','Product Category Score')}</span>${opportunityProductMatchCell(item)}</div><div class="p8-evidence-date"><span class="p8-evidence-label">${bi('最近评估','Last assessed')}</span><time>${esc(shortDate(item.calculated_at || item.updated_at || item.created_at))}</time></div><div class="p9-evidence-actions"><button class="btn btn-primary" type="button" data-evidence-task="${esc(leadIdFor(item))}" data-evidence-blocker="${esc(blocker)}">${bi(action[0],action[1])}</button><button class="btn btn-outline-primary" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button></div></article>`;
+        return `<article class="p8-evidence-row"><div class="p8-evidence-company"><strong>${esc(item.company_name || item.resolved_company_name || '-')}</strong><span>${productProfilesCell(item)}</span></div><div class="p8-evidence-blocker"><span class="p8-evidence-label">${bi('待补项目','Evidence gap')}</span><strong>${pairHtml(reason)}</strong></div><div class="p8-evidence-score"><span class="p8-evidence-label">${bi('商品类目评分','Product Category Score')}</span>${opportunityProductMatchCell(item)}</div><div class="p8-evidence-date"><span class="p8-evidence-label">${bi('最近评估','Last assessed')}</span><time>${esc(shortDate(item.calculated_at || item.updated_at || item.created_at))}</time></div><div class="p9-evidence-actions"><button class="btn btn-primary" data-tip="为这家企业补充所需资料|Add the missing information for this company" type="button" data-evidence-task="${esc(leadIdFor(item))}" data-evidence-blocker="${esc(blocker)}">${bi(action[0],action[1])}</button><button class="btn btn-outline-primary" data-tip="打开这家企业的详情和评估依据|Open company details and assessment" type="button" data-opportunity-id="${esc(leadIdFor(item))}">${bi('查看详情','View details')}</button></div></article>`;
       }).join('')}</section>`;
     }).join('');
     evidenceHost.querySelectorAll('[data-opportunity-id]').forEach(button=>button.addEventListener('click',()=>showLead(button.dataset.opportunityId)));
@@ -996,7 +996,7 @@ function renderOpportunityTable() {
     const activityAt = communication?.last_reply_at || communication?.sent_at || item.calculated_at || item.updated_at;
     const activityLabel = communication?.last_reply_at ? ['最近回复','Latest reply'] : communication?.sent_at ? ['最近发送','Latest sent'] : ['最近评估','Last assessed'];
     return `<tr data-opportunity-key="${esc(opportunityKey)}">
-      <td class="op-col-company" data-label="公司 / Company"><div class="crm-op-cell"><button class="crm-company-link crm-opportunity-company" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看机会','View opportunity')}</span></button></div></td>
+      <td class="op-col-company" data-label="公司 / Company"><div class="crm-op-cell"><button class="crm-company-link crm-opportunity-company" data-tip="打开这家企业的详情|Open this company's details" type="button" data-opportunity-id="${esc(leadIdFor(item))}"><span>${esc(item.company_name || item.resolved_company_name || '-')}</span><span class="lead-select-action">${bi('查看机会','View opportunity')}</span></button></div></td>
       <td class="op-col-market" data-label="市场 / Market"><div class="crm-op-cell"><strong>${esc(marketValue(item))}</strong></div></td>
       <td class="op-col-product-match" data-label="匹配类目 / Matched Category"><div class="crm-op-cell">${opportunityCategorySummary(item)}</div></td>
       <td class="op-col-contact" data-label="官方联系方式 / Official Contact Channels"><div class="crm-op-cell">${opportunityRouteReadinessCell(item)}</div></td>
@@ -1075,7 +1075,7 @@ function renderImportBatches(items, loadError = false) {
   const safeItems = Array.isArray(items) ? items : [];
   if (loadError) {
     status.innerHTML = bi('导入批次读取失败','Import batches could not be loaded');
-    host.innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('暂时无法读取导入批次。','Import batches are temporarily unavailable.')} <button id="import-batches-retry" class="btn btn-sm btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
+    host.innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('暂时无法读取导入批次。','Import batches are temporarily unavailable.')} <button id="import-batches-retry" data-tip="重新读取导入批次|Reload import batches" class="btn btn-sm btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
     $('#import-batches-retry')?.addEventListener('click',loadImportBatches);
     return;
   }
@@ -1195,7 +1195,7 @@ function renderCrmHistoryList(items, loadError = false) {
   const safeItems = Array.isArray(items) ? items : [];
   if (loadError) {
     status.innerHTML = bi('历史客户记录读取失败','Historical CRM records could not be loaded');
-    host.innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('暂时无法读取历史客户记录。','Historical CRM records are temporarily unavailable.')} <button id="crm-history-retry" class="btn btn-sm btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
+    host.innerHTML = `<tr><td colspan="10" class="crm-loading-cell">${bi('暂时无法读取历史客户记录。','Historical CRM records are temporarily unavailable.')} <button id="crm-history-retry" data-tip="重新读取历史客户|Reload historical customers" class="btn btn-sm btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
     pagination.innerHTML = '';
     $('#crm-history-retry')?.addEventListener('click',loadCrmHistory);
     return;
@@ -1207,9 +1207,9 @@ function renderCrmHistoryList(items, loadError = false) {
   host.innerHTML = pageItems.length ? pageItems.map(item=>{
     const id = crmHistoryId(item);
     const latest = crmHistoryDate(item);
-    return `<tr data-crm-history-row="${esc(id)}"><td><strong>${esc(crmHistoryCompany(item))}</strong></td><td>${esc(crmHistoryCountry(item))}</td><td>${crmHistoryStatusBadge(item)}</td><td>${crmHistoryClassificationBadge(item)}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'contact_count','contacts_count','contacts')))}</td><td>${esc(latest ? new Date(latest).toLocaleString() : '-')}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'edm_count','marketing_email_count','outbound_marketing_email_count')))}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'followup_count','follow_up_count','manual_follow_up_count')))}</td><td>${esc(crmHistoryOwner(item))}</td><td><button class="btn btn-sm btn-outline-primary crm-history-open" type="button" data-crm-history-id="${esc(id)}" ${id ? '' : 'disabled'}>${bi('查看','View')}</button></td></tr>`;
+    return `<tr data-crm-history-row="${esc(id)}"><td><strong>${esc(crmHistoryCompany(item))}</strong></td><td>${esc(crmHistoryCountry(item))}</td><td>${crmHistoryStatusBadge(item)}</td><td>${crmHistoryClassificationBadge(item)}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'contact_count','contacts_count','contacts')))}</td><td>${esc(latest ? new Date(latest).toLocaleString() : '-')}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'edm_count','marketing_email_count','outbound_marketing_email_count')))}</td><td class="crm-number-cell">${esc(crmCountDisplay(crmHistoryCount(item,'followup_count','follow_up_count','manual_follow_up_count')))}</td><td>${esc(crmHistoryOwner(item))}</td><td><button class="btn btn-sm btn-outline-primary crm-history-open" data-tip="打开这条历史客户记录|Open this historical customer record" type="button" data-crm-history-id="${esc(id)}" ${id ? '' : 'disabled'}>${bi('查看','View')}</button></td></tr>`;
   }).join('') : `<tr><td colspan="10" class="crm-loading-cell">${bi('尚无历史客户记录。','No historical CRM records are available.')}</td></tr>`;
-  pagination.innerHTML = safeItems.length ? `<span>${bi(`第 ${state.crmHistoryPage} / ${pageCount} 页，共 ${safeItems.length} 家`,`Page ${state.crmHistoryPage} of ${pageCount}, ${safeItems.length} records`)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" type="button" data-crm-page="prev" ${state.crmHistoryPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" type="button" data-crm-page="next" ${state.crmHistoryPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>` : '';
+  pagination.innerHTML = safeItems.length ? `<span>${bi(`第 ${state.crmHistoryPage} / ${pageCount} 页，共 ${safeItems.length} 家`,`Page ${state.crmHistoryPage} of ${pageCount}, ${safeItems.length} records`)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" data-tip="上一页|Previous page" type="button" data-crm-page="prev" ${state.crmHistoryPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" data-tip="下一页|Next page" type="button" data-crm-page="next" ${state.crmHistoryPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>` : '';
   host.querySelectorAll('[data-crm-history-id]').forEach(button=>button.addEventListener('click',()=>showCrmHistory(button.dataset.crmHistoryId,button)));
   pagination.querySelector('[data-crm-page="prev"]')?.addEventListener('click',()=>{ state.crmHistoryPage-=1; renderCrmHistoryList(state.crmHistory); });
   pagination.querySelector('[data-crm-page="next"]')?.addEventListener('click',()=>{ state.crmHistoryPage+=1; renderCrmHistoryList(state.crmHistory); });
@@ -1383,8 +1383,8 @@ function renderIcpProfiles(profiles, loadError = false) {
   if (!host) return;
   host.setAttribute('aria-busy','false');
   host.innerHTML = profiles.length
-    ? `${profiles.map(icpProfileCard).join('')}${loadError ? `<div class="alert alert-warning" role="alert"><p>${bi('部分客户画像暂时未返回。','Some customer profiles could not be loaded.')}</p><button id="icp-retry" class="btn btn-outline-warning" type="button">${bi('重新读取','Retry')}</button></div>` : ''}`
-    : `<section class="card crm-panel"><div class="card-body crm-empty-state"><h3>${bi('尚无使用中的管理画像','No active management profile')}</h3>${loadError ? `<button id="icp-retry" class="btn btn-outline-warning" type="button">${bi('重新读取','Retry')}</button>` : ''}</div></section>`;
+    ? `${profiles.map(icpProfileCard).join('')}${loadError ? `<div class="alert alert-warning" role="alert"><p>${bi('部分客户画像暂时未返回。','Some customer profiles could not be loaded.')}</p><button id="icp-retry" data-tip="重新读取客户画像|Reload the customer profile" class="btn btn-outline-warning" type="button">${bi('重新读取','Retry')}</button></div>` : ''}`
+    : `<section class="card crm-panel"><div class="card-body crm-empty-state"><h3>${bi('尚无使用中的管理画像','No active management profile')}</h3>${loadError ? `<button id="icp-retry" data-tip="重新读取客户画像|Reload the customer profile" class="btn btn-outline-warning" type="button">${bi('重新读取','Retry')}</button>` : ''}</div></section>`;
   $('#icp-retry')?.addEventListener('click',loadIcpProfiles);
 }
 
@@ -1456,7 +1456,7 @@ function dimensionRows(dimensions, fallback = []) {
     ? Object.entries(dimensions).map(([name,value])=>[...dimensionPair(name),value?.points ?? value?.score ?? value,value?.maximum ?? value?.max_points ?? value?.max ?? 0,value?.reason_codes || [],value?.evidence_ids || []])
     : fallback;
   if (!entries.length) return `<div class="crm-empty-inline">${bi('暂无维度明细。','No dimension details are available.')}</div>`;
-  return `<div class="crm-dimension-list">${entries.map(([zh,en,points,max,reasons=[],evidenceIds=[]])=>`<div class="crm-dimension-row"><div><span>${bi(zh,en)}</span>${reasons.length ? `<small>${reasons.map(reason=>pairedValueHtml(reasonCodePair(reason))).join('<br>')}</small>` : ''}${evidenceIds.length ? `<button type="button" class="crm-evidence-jump" data-open-evidence-tab>${bi(`查看 ${evidenceIds.length} 条依据`,`View ${evidenceIds.length} evidence references`)}</button>` : ''}</div><b>${esc(points ?? '-')}${max ? `/${esc(max)}` : ''}</b></div>`).join('')}</div>`;
+  return `<div class="crm-dimension-list">${entries.map(([zh,en,points,max,reasons=[],evidenceIds=[]])=>`<div class="crm-dimension-row"><div><span>${bi(zh,en)}</span>${reasons.length ? `<small>${reasons.map(reason=>pairedValueHtml(reasonCodePair(reason))).join('<br>')}</small>` : ''}${evidenceIds.length ? `<button type="button" data-tip="查看资料来源|View source references" class="crm-evidence-jump" data-open-evidence-tab>${bi(`查看 ${evidenceIds.length} 条依据`,`View ${evidenceIds.length} evidence references`)}</button>` : ''}</div><b>${esc(points ?? '-')}${max ? `/${esc(max)}` : ''}</b></div>`).join('')}</div>`;
 }
 
 function historyTable(items, type) {
@@ -1536,7 +1536,7 @@ const detailToolbar = ({
   backZh='返回客户列表', backEn='Back to customer list',
   titleZh='客户详情', titleEn='Company detail',
   closeLabel='关闭客户详情 Close company detail'
-} = {}) => `<header role="presentation" class="crm-detail-toolbar"><button type="button" class="btn btn-ghost-secondary crm-detail-back" data-detail-close><i class="ti ti-arrow-left" aria-hidden="true"></i>${bi(backZh,backEn)}</button><strong>${bi(titleZh,titleEn)}</strong><button type="button" class="btn btn-icon btn-ghost-secondary detail-close" data-detail-close aria-label="${esc(closeLabel)}"><i class="ti ti-x" aria-hidden="true"></i></button></header>`;
+} = {}) => `<header role="presentation" class="crm-detail-toolbar"><button type="button" data-tip="关闭详情，返回列表|Close details and go back" class="btn btn-ghost-secondary crm-detail-back" data-detail-close><i class="ti ti-arrow-left" aria-hidden="true"></i>${bi(backZh,backEn)}</button><strong>${bi(titleZh,titleEn)}</strong><button type="button" data-tip="关闭详情|Close details" class="btn btn-icon btn-ghost-secondary detail-close" data-detail-close aria-label="${esc(closeLabel)}"><i class="ti ti-x" aria-hidden="true"></i></button></header>`;
 
 function detailMetric(zh,en,value) {
   if (value == null || value === '' || value === '-') return '';
@@ -1602,7 +1602,7 @@ function productMatchStateCard(profile, stateName, companyId = '') {
   const profileName = productMatchProfileHtml(profile);
   const attrs = `class="crm-product-match-card crm-product-profile-card is-${esc(stateName)}" data-product-profile="${esc(profile)}" data-product-match-profile="${esc(profile)}" data-product-match-state="${esc(stateName)}"`;
   if (stateName === 'loading') return `<article ${attrs} role="status" aria-busy="true"><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('正在读取商品类目评分','Loading Product Category Score')}</div></article>`;
-  if (stateName === 'error') return `<article ${attrs} role="alert"><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('商品类目评分资料读取未完成。','Product Category Score data could not be loaded.')}</div><button class="btn btn-outline-secondary crm-product-match-retry" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></article>`;
+  if (stateName === 'error') return `<article ${attrs} role="alert"><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('商品类目评分资料读取未完成。','Product Category Score data could not be loaded.')}</div><button class="btn btn-outline-secondary crm-product-match-retry" data-tip="重新读取商品类目评分|Reload the product category score" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></article>`;
   return `<article ${attrs}><header><h4>${profileName}</h4></header><div class="crm-product-match-state">${bi('该产品画像的商品类目评分待评估。','Product Category Score is not assessed for this profile.')}</div></article>`;
 }
 
@@ -1684,7 +1684,7 @@ function productMatchResultCard(profile, result, { apiError = false, companyId =
   const coverage = numericValue(result?.category_procurement_coverage ?? result?.coverage_percent ?? result?.coverage);
   return `<article class="crm-product-match-card crm-product-profile-card is-${esc(cardState)}" data-product-profile="${esc(profile)}" data-product-match-profile="${esc(profile)}" data-product-match-state="${esc(cardState)}">
     <header><div><h4>${productMatchProfileHtml(profile)}</h4><div class="crm-product-match-type">${enumBadge(categoryProcurementStatusLabel(matchStatus),categoryProcurementStatusTone(matchStatus))}</div></div><div class="crm-product-match-score">${unknown ? enumBadge(productMatchBandLabel('UNKNOWN'),'unknown') : `<b>${esc(Math.round(score))}/100</b>${enumBadge(productMatchBandLabel(band),productMatchBandTone(band))}`}</div></header>
-    ${apiError ? `<div class="alert alert-warning crm-product-match-api-error" role="alert">${bi('部分商品类目评分资料读取未完成。','Some Product Category Score data could not be loaded.')}<button class="btn btn-outline-secondary crm-product-match-retry" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></div>` : ''}
+    ${apiError ? `<div class="alert alert-warning crm-product-match-api-error" role="alert">${bi('部分商品类目评分资料读取未完成。','Some Product Category Score data could not be loaded.')}<button class="btn btn-outline-secondary crm-product-match-retry" data-tip="重新读取商品类目评分|Reload the product category score" type="button" data-product-match-retry data-company-id="${esc(companyId)}">${bi('重新读取','Retry')}</button></div>` : ''}
     ${factRows([
       ['客户采购模式','Buyer Business Model',enumBadge(buyerBusinessModelLabel(buyerModel),buyerBusinessModelTone(buyerModel))],
       ['客户类型','Buyer subtype',pairHtml(buyerSubtypeLabel(buyerSubtype))],
@@ -1964,7 +1964,7 @@ async function showCrmHistory(id, trigger = null) {
   const payload = await optionalJson(`/api/crm-history/${encodeURIComponent(id)}`);
   const crm = crmDetailPayload(payload);
   if (!crm.summary) {
-    detail.innerHTML = `${detailToolbar(toolbarOptions)}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('历史客户详情读取失败','Historical CRM detail could not be loaded')}</h3><button type="button" class="btn btn-outline-secondary crm-history-detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
+    detail.innerHTML = `${detailToolbar(toolbarOptions)}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('历史客户详情读取失败','Historical CRM detail could not be loaded')}</h3><button type="button" data-tip="重新读取|Load again" class="btn btn-outline-secondary crm-history-detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
     wireDetailCloseButtons(detail);
     detail.querySelector('.crm-history-detail-retry')?.addEventListener('click',()=>showCrmHistory(id,trigger));
     openDetail(detail);
@@ -1972,7 +1972,7 @@ async function showCrmHistory(id, trigger = null) {
   }
   detail.innerHTML = `${detailToolbar(toolbarOptions)}<div class="crm-detail-body crm-history-detail-body"><header role="presentation" class="crm-detail-header"><div><p class="crm-context">${bi('历史客户记录','Historical CRM record')}</p><h3>${esc(crmHistoryCompany(crm.summary))}</h3><div class="crm-detail-meta">${crmHistoryStatusBadge(crm.summary)}${crmHistoryClassificationBadge(crm.summary)}<span>${esc(displayValue(crm.summary.source_system) || 'OKKI')}</span></div></div></header>
     <div class="crm-detail-tabs" role="tablist" aria-label="历史客户详情页签 Historical CRM detail tabs">
-      ${[['crm-overview','概览','Overview'],['crm-contacts','联系概况','Contact summary'],['crm-activities','历史活动','Activity history']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
+      ${[['crm-overview','概览','Overview'],['crm-contacts','联系概况','Contact summary'],['crm-activities','历史活动','Activity history']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
     </div>
     <section id="detail-panel-crm-overview" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-crm-overview">${crmHistoryOverview(crm.summary)}</section>
     <section id="detail-panel-crm-contacts" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-crm-contacts" hidden>${crmContactSummary(crm.contacts,crm.summary)}</section>
@@ -2020,7 +2020,7 @@ async function showLead(id) {
     if (item) lead = { company_id:item.company_id, company_name:item.company_name, country_code:item.country_code, city:item.city, website_url:item.website_url, product_profile:item.product_profile };
   }
   if (!lead) {
-    detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('客户详情读取失败','Company detail could not be loaded')}</h3><button type="button" class="btn btn-outline-secondary detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
+    detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body"><div class="crm-empty-state"><i class="ti ti-alert-circle" aria-hidden="true"></i><h3>${bi('客户详情读取失败','Company detail could not be loaded')}</h3><button type="button" data-tip="重新读取企业详情|Reload company details" class="btn btn-outline-secondary detail-retry">${bi('重新读取','Retry')}</button></div></div>`;
     wireDetailCloseButtons(detail);
     detail.querySelector('.detail-retry')?.addEventListener('click',()=>showLead(id));
     openDetail(detail);
@@ -2110,27 +2110,27 @@ async function showLead(id) {
   detail.innerHTML = `${detailToolbar()}<div class="crm-detail-body">
     <header role="presentation" class="crm-detail-header"><div class="crm-detail-identity"><p class="crm-context">${bi('客户主档','Company record')}<span class="crm-detail-context-value">${esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')}</span></p><h3>${esc(lead.company_name)}</h3><div class="crm-detail-meta">${verificationBadge(lead)}${displayOpportunity ? opportunityDisplayBadge(lead) : ''}</div>${lead.website_url ? `<a class="crm-detail-website" href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer"><i class="ti ti-world" aria-hidden="true"></i>${bi('企业网站','Official website')}</a>` : ''}</div>${detailMetrics ? `<div class="crm-detail-score-set" role="group" aria-label="企业评分 Company metrics">${detailMetrics}</div>` : ''}</header>
     <div id="detail-section-nav" class="crm-detail-tabs p8-detail-section-nav" role="tablist" aria-label="客户详情主要区域 Company detail sections">
-      ${[['snapshot','摘要','Snapshot'],['business-fit','业务匹配','Business Fit'],['buyer-contact','采购与联系','Buyer & Contact'],['activity-records','活动与记录','Activity & Records']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-section-tab="${key}" id="detail-section-tab-${key}" aria-controls="detail-section-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
+      ${[['snapshot','摘要','Snapshot'],['business-fit','业务匹配','Business Fit'],['buyer-contact','采购与联系','Buyer & Contact'],['activity-records','活动与记录','Activity & Records']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-section-tab="${key}" id="detail-section-tab-${key}" aria-controls="detail-section-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}
     </div><div class="crm-detail-workspace">
     <section id="detail-section-snapshot" data-detail-section="snapshot" role="tabpanel" aria-labelledby="detail-section-tab-snapshot">
     <section id="detail-panel-overview" class="crm-tab-panel crm-detail-snapshot" role="region" aria-labelledby="detail-section-tab-snapshot">${factRows([
       ['产品画像','Product profile',productProfileLabel(lead)],['市场','Market',esc([lead.country_code,lead.city].filter(Boolean).join(' / ') || '-')],['核验状态','Verification',verificationBadge(lead)],['数据状态','Data status',lifecycleBadge(lead)],['机会状态','Opportunity status',displayOpportunity ? opportunityDisplayBadge(lead) : bi('待确认','To confirm')],['跟进准备状态','Opportunity readiness',currentFeasibility?.opportunity_readiness ? enumBadge(opportunityReadinessLabel(currentFeasibility.opportunity_readiness),readinessTone(currentFeasibility.opportunity_readiness)) : bi('待评估','Not assessed')],['合作机会矩阵','Cooperation matrix',currentFeasibility?.access_opportunity_matrix ? pairHtml(cooperationMatrixLabel(currentFeasibility.access_opportunity_matrix)) : bi('待评估','Not assessed')],['最近核验','Last verified',esc(lead.last_verified_at ? new Date(lead.last_verified_at).toLocaleString() : '-')],['核验来源','Verification sources',esc(sourceCountValue(lead))],['资料时效','Verification freshness',stateBadge(lead.verification_freshness,freshnessLabels)],['企业规模','Company size',`${bi(size[0],size[1])}<br>${sizeEvidenceDisplay}`],['进口/批发','Importer / wholesaler',`${yesNo(importerWholesalerFit)}<br>${importerWholesalerEvidence}`],['连锁供货','Chain supply',`${yesNo(lead.chain_supply_fit)}<br>${esc(lead.chain_store_supply_evidence || '连锁供货属性待确认 / Chain-supply status to confirm')}`]
     ])}</section></section>
     <section id="detail-section-business-fit" data-detail-section="business-fit" role="tabpanel" aria-labelledby="detail-section-tab-business-fit" hidden>
-      <div class="p8-detail-subnav" role="tablist" aria-label="业务匹配内容 Business fit records">${[['product-match','商品类目评分','Product Category Score'],['feasibility','合作可行性','Cooperation Feasibility'],['matching','客户匹配','Matching'],['scoring','评分','Scoring']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
+      <div class="p8-detail-subnav" role="tablist" aria-label="业务匹配内容 Business fit records">${[['product-match','商品类目评分','Product Category Score'],['feasibility','合作可行性','Cooperation Feasibility'],['matching','客户匹配','Matching'],['scoring','评分','Scoring']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
     <section id="detail-panel-product-match" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-product-match" hidden><div id="product-match-panel" aria-busy="true"><div class="crm-product-match-grid">${PRODUCT_MATCH_PROFILES.map(profile=>productMatchStateCard(profile,'loading')).join('')}</div></div></section>
     <section id="detail-panel-feasibility" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-feasibility" hidden>${cooperationFeasibilityView(feasibilityItems,contactRoutes)}</section>
     <section id="detail-panel-matching" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-matching" hidden><div class="crm-match-reference-grid">${matchReferencePanel(managementMatch,'management_baseline')}${matchReferencePanel(mexicoHistoricalMatch,'mx_historical_reference')}</div></section>
     <section id="detail-panel-scoring" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-scoring" hidden>${factRows([['SIM 评分','SIM Score',`<b>${esc(currentScore ?? '-')}/100</b>`],['等级','Tier',esc(currentTier || '-')],['评分资格','Score eligibility',pairHtml(scoreEligibilityLabel(score?.score_eligibility || score?.eligibility))],['资料覆盖率','Evidence coverage',score?.evidence_coverage == null ? '-' : `${esc(score.evidence_coverage)}%`]])}<section class="crm-detail-section"><h4>${bi('评分维度','Score dimensions')}</h4>${dimensionRows(score?.dimension_scores,scores)}</section></section>
     </section>
     <section id="detail-section-buyer-contact" data-detail-section="buyer-contact" role="tabpanel" aria-labelledby="detail-section-tab-buyer-contact" hidden>
-      <div class="p8-detail-subnav" role="tablist" aria-label="采购与联系内容 Buyer and contact records">${[['buying','采购联系人','Buying Contacts'],['contacts','联系方式','Contacts'],['social','社交账号','Social']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
+      <div class="p8-detail-subnav" role="tablist" aria-label="采购与联系内容 Buyer and contact records">${[['buying','采购联系人','Buying Contacts'],['contacts','联系方式','Contacts'],['social','社交账号','Social']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-tab="${key}" id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
     <section id="detail-panel-buying" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-buying" hidden>${decisionMakerView(decisionMakers,contactRoutes)}</section>
     <section id="detail-panel-contacts" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-contacts" hidden>${factRows([['商务邮箱','Business email',esc(email)],['联系电话','Business phone',esc(phone)],['联系方式状态','Contact status',bi(verify[0],verify[1])]])}</section>
     <section id="detail-panel-social" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-social" hidden>${socialProfiles.length ? `<div class="social-links">${socialProfiles.map(url=>`<a href="${esc(safeUrl(url))}" target="_blank" rel="noreferrer">${esc(socialHost(url))}</a>`).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无企业社交账号。','No business social account is available.')}</div>`}</section>
     </section>
     <section id="detail-section-activity-records" data-detail-section="activity-records" role="tabpanel" aria-labelledby="detail-section-tab-activity-records" hidden>
-      <div class="p8-detail-subnav" role="tablist" aria-label="活动与记录内容 Activity and records">${[['outreach-readiness','联系准备','Outreach Readiness'],['outreach-drafts','开发信草稿','Drafts'],['outreach-messages','联系消息','Messages'],['outreach-replies','回复与下一步','Replies'],['data-history','联系数据历史','Data History'],['evidence','资料依据','Evidence'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" role="tab" data-detail-tab="${key}"${key.startsWith('outreach-') || key === 'data-history' ? ' data-phase7-detail-tab' : ''} id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
+      <div class="p8-detail-subnav" role="tablist" aria-label="活动与记录内容 Activity and records">${[['outreach-readiness','联系准备','Outreach Readiness'],['outreach-drafts','开发信草稿','Drafts'],['outreach-messages','联系消息','Messages'],['outreach-replies','回复与下一步','Replies'],['data-history','联系数据历史','Data History'],['evidence','资料依据','Evidence'],['history','历史','History']].map(([key,zh,en],index)=>`<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-tab="${key}"${key.startsWith('outreach-') || key === 'data-history' ? ' data-phase7-detail-tab' : ''} id="detail-tab-${key}" aria-controls="detail-panel-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${bi(zh,en)}</button>`).join('')}</div>
     <section id="detail-panel-outreach-readiness" class="crm-tab-panel crm-phase7-tab-panel" role="tabpanel" aria-labelledby="detail-tab-outreach-readiness" aria-busy="false" hidden></section>
     <section id="detail-panel-outreach-drafts" class="crm-tab-panel crm-phase7-tab-panel" role="tabpanel" aria-labelledby="detail-tab-outreach-drafts" aria-busy="false" hidden></section>
     <section id="detail-panel-outreach-messages" class="crm-tab-panel crm-phase7-tab-panel" role="tabpanel" aria-labelledby="detail-tab-outreach-messages" aria-busy="false" hidden></section>
@@ -2139,14 +2139,14 @@ async function showLead(id) {
     <section id="detail-panel-evidence" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-evidence" hidden><section class="crm-detail-section"><h4>${bi('资料来源','Source references')}</h4>${sources.length ? `<div class="sources">${sources.map(s=>{ const kind = evidenceTypeLabels[String(s.evidence_kind || s.evidence_type || '').toUpperCase()] || ['企业资料','Company source']; return `<a href="${esc(safeUrl(s.url || s.source_url))}" target="_blank" rel="noreferrer">${pairHtml(kind)}${bi('查看来源页面','Open source page')}</a>`; }).join('')}</div>` : `<div class="crm-empty-inline">${bi('暂无来源链接。','No source URL is available.')}</div>`}</section></section>
     <section id="detail-panel-history" class="crm-tab-panel" role="tabpanel" aria-labelledby="detail-tab-history" hidden><section class="crm-detail-section"><h4>${bi('历史客户记录','Historical CRM record')}</h4>${linkedCrmHistoryView(linkedCrmHistory)}</section><section class="crm-detail-section"><h4>${bi('企业状态历史','Company status history')}</h4>${lifecycleHistoryView(lifecycleHistory)}</section><section class="crm-detail-section"><h4>${bi('评分历史','Score history')}</h4>${historyTable(scoreHistory,'score')}</section><section class="crm-detail-section"><h4>${bi('客户匹配历史','Customer Match history')}</h4>${historyTable(matchHistory,'match')}</section></section>
     </section></div>
-  </div>${hasLegacyReview ? `<footer class="crm-detail-actions actions" aria-label="公司主档审核 Company record review"><div class="crm-detail-action-copy"><strong>${bi('公司主档审核','Company record review')}</strong><span class="crm-detail-action-status" role="status" aria-live="polite" aria-atomic="true"></span></div><div class="crm-detail-action-buttons"><button class="btn reject" type="button" data-status="rejected">${bi('排除公司记录','Exclude Company Record')}</button><button class="btn btn-primary approve" type="button" data-status="approved">${bi('确认公司记录','Confirm Company Record')}</button></div></footer>` : ''}`;
+  </div>${hasLegacyReview ? `<footer class="crm-detail-actions actions" aria-label="公司主档审核 Company record review"><div class="crm-detail-action-copy"><strong>${bi('公司主档审核','Company record review')}</strong><span class="crm-detail-action-status" role="status" aria-live="polite" aria-atomic="true"></span></div><div class="crm-detail-action-buttons"><button class="btn reject" data-tip="确认这家企业不合适，不再跟进|Exclude this company record" type="button" data-status="rejected">${bi('排除公司记录','Exclude Company Record')}</button><button class="btn btn-primary approve" data-tip="确认这家企业的资料无误|Confirm this company record" type="button" data-status="approved">${bi('确认公司记录','Confirm Company Record')}</button></div></footer>` : ''}`;
   upgradeCompanyDetail(detail);
   wireDetailTabs(detail);
   wireDetailSections(detail);
   wireDetailCloseButtons(detail);
   const outreachEntry=document.createElement('button');
   outreachEntry.type='button';outreachEntry.className='btn btn-outline-primary';
-  outreachEntry.innerHTML=bi('开发信审核','First-touch review');
+  outreachEntry.innerHTML=bi('开发信审核','First-touch review');outreachEntry.dataset.tip='查看并审核发给这家企业的第一封开发信|Review the first-touch email for this company';
   outreachEntry.addEventListener('click',()=>{
     detail.close();
     document.dispatchEvent(new CustomEvent('crm:openoutreach',{detail:{companyId}}));
@@ -2473,11 +2473,11 @@ setInterval(()=>{if(!document.hidden)scheduleCommunicationRefresh();},30000);
 const initialLoads = await Promise.allSettled([loadMetrics(),loadLeads(),loadIcpProfiles(),loadImportBatches(),loadCrmHistory(),loadLatestEnrichmentJob()]);
 if (initialLoads[0].status === 'rejected') {
   $('#metrics').setAttribute('aria-busy','false');
-  $('#metrics').innerHTML = `<div class="crm-load-error">${bi('名录概览读取失败。','Directory overview could not be loaded.')}<button id="metrics-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></div>`;
+  $('#metrics').innerHTML = `<div class="crm-load-error">${bi('名录概览读取失败。','Directory overview could not be loaded.')}<button id="metrics-retry" data-tip="重新读取指标|Reload figures" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></div>`;
   $('#metrics-retry')?.addEventListener('click',loadMetrics);
 }
 if (initialLoads[1].status === 'rejected') {
-  $('#leads').innerHTML = `<tr><td colspan="11" class="crm-loading-cell">${bi('客户名录读取失败。','Company directory could not be loaded.')}<button id="leads-retry" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
+  $('#leads').innerHTML = `<tr><td colspan="11" class="crm-loading-cell">${bi('客户名录读取失败。','Company directory could not be loaded.')}<button id="leads-retry" data-tip="重新读取客户名录|Reload the directory" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button></td></tr>`;
   $('#opportunity-table').innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('业务机会读取失败。','Opportunities could not be loaded.')}</td></tr>`;
   $('#leads-retry')?.addEventListener('click',loadLeads);
 }

@@ -33,16 +33,16 @@ function cardMarkup(item) {
   return `<section class="card v4-followup-card" aria-labelledby="followup-title" data-opportunity-id="${esc(item.opportunity_id)}" data-version="${esc(item.crm_version ?? '')}">
     <div class="ph"><div><h3 id="followup-title">${bi('跟进', 'Follow-up')}</h3><p>${bi(`当前阶段 ${zh}`, `Current stage: ${en}`)}</p></div></div>
     <form class="pb v4-followup-form" novalidate>
-      <div class="steps" role="group" aria-label="销售阶段 Pipeline stage">${STAGES.map(([key, szh, sen], i) => `<button type="button" data-stage="${key}" aria-pressed="${key === item.pipeline_stage}" class="${i < index && key !== 'LOST' ? 'done' : ''}${key === 'LOST' ? ' lost' : ''}">${esc(szh)}<small>${esc(sen)}</small></button>`).join('')}</div>
+      <div class="steps" role="group" aria-label="销售阶段 Pipeline stage">${STAGES.map(([key, szh, sen], i) => `<button type="button" data-tip="把这家客户移到「${szh}」阶段，点保存后系统会记录时间和操作人|Move this prospect to ${sen}; saving records the time and user" data-stage="${key}" aria-pressed="${key === item.pipeline_stage}" class="${i < index && key !== 'LOST' ? 'done' : ''}${key === 'LOST' ? ' lost' : ''}">${esc(szh)}<small>${esc(sen)}</small></button>`).join('')}</div>
       <div class="field v4-lost-reason" hidden><label for="followup-lost-reason">${bi('流失原因', 'Lost reason')}</label><input id="followup-lost-reason" name="lost_reason" maxlength="500"></div>
       <div class="form-grid" style="margin-top:16px">
         <div class="field"><label for="followup-owner">${bi('负责人', 'Owner')}</label><input id="followup-owner" name="owner" maxlength="200" value="${esc(item.owner_identity || '')}" autocomplete="off"></div>
         <div class="field"><label for="followup-due">${bi('下次跟进', 'Next follow-up')}</label><input id="followup-due" name="next_action_due_at" type="datetime-local" value="${esc(toLocalInput(item.next_action_due_at))}"></div>
         <div class="field wide"><label for="followup-next">${bi('下一步', 'Next action')}</label><input id="followup-next" name="next_action" maxlength="500" value="${esc(item.next_action || '')}"></div>
       </div>
-      <div class="btns v4-followup-save"><span class="v4-form-status" role="status" aria-live="polite"></span><button class="btn btn-primary" type="submit">${bi('保存', 'Save')}</button></div>
+      <div class="btns v4-followup-save"><span class="v4-form-status" role="status" aria-live="polite"></span><button class="btn btn-primary" type="submit" data-tip="保存阶段、负责人和下次跟进时间|Save the stage, owner and next follow-up">${bi('保存', 'Save')}</button></div>
       <h4 class="sub-title">${bi('快速记录', 'Quick log')}</h4>
-      <div class="quick">${ACTIVITY_TYPES.filter(([key]) => key !== 'EMAIL_MANUAL').map(([key, azh, aen, icon]) => `<button class="btn" type="button" data-log-type="${key}"><i class="ti ti-${icon}" aria-hidden="true"></i>${key === 'WHATSAPP' ? esc(azh) : bi(key === 'CALL' ? '记录电话' : azh, aen)}</button>`).join('')}</div>
+      <div class="quick">${ACTIVITY_TYPES.filter(([key]) => key !== 'EMAIL_MANUAL').map(([key, azh, aen, icon]) => `<button class="btn" data-tip="记录一次${azh}跟进，写下内容和结果|Log a ${aen} with its content and result" type="button" data-log-type="${key}"><i class="ti ti-${icon}" aria-hidden="true"></i>${key === 'WHATSAPP' ? esc(azh) : bi(key === 'CALL' ? '记录电话' : azh, aen)}</button>`).join('')}</div>
     </form>
   </section>`;
 }
@@ -54,7 +54,7 @@ function ensureLogDialog() {
   dialog = document.createElement('dialog');
   dialog.id = 'v4-log-dialog'; dialog.className = 'sheet'; dialog.setAttribute('aria-labelledby', 'v4-log-title');
   dialog.innerHTML = `<form method="dialog" class="v4-log-form" novalidate>
-    <div class="sheet-head"><h3 id="v4-log-title">${bi('记录跟进', 'Log activity')}</h3><button class="btn btn-icon" type="button" data-log-close aria-label="关闭 Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div class="sheet-head"><h3 id="v4-log-title">${bi('记录跟进', 'Log activity')}</h3><button class="btn btn-icon" data-tip="关闭，不保存|Close without saving" type="button" data-log-close aria-label="关闭 Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
     <div class="sheet-body">
       <div class="field v4-log-company"><label for="v4-log-opportunity">${bi('企业', 'Company')}</label><select id="v4-log-opportunity" name="opportunity"></select></div>
       <fieldset class="field"><legend class="lbl">${bi('类型', 'Type')}</legend><div class="seg-choice">${ACTIVITY_TYPES.map(([key, zh, en], i) => `<input type="radio" name="activity_type" id="v4-log-type-${key}" value="${key}"${i === 0 ? ' checked' : ''}><label for="v4-log-type-${key}">${esc(zh)}${zh === en ? '' : `<small>${esc(en)}</small>`}</label>`).join('')}</div></fieldset>
@@ -64,7 +64,7 @@ function ensureLogDialog() {
       <div class="field wide"><label for="v4-log-next">${bi('下次跟进（可选）', 'Next follow-up (optional)')}</label><input id="v4-log-next" name="next_follow_up_at" type="datetime-local"></div></div>
       <p class="v4-form-status" role="status" aria-live="polite"></p>
     </div>
-    <div class="sheet-foot"><button class="btn" type="button" data-log-close>${bi('取消', 'Cancel')}</button><button class="btn btn-primary" type="submit">${bi('保存记录', 'Save')}</button></div>
+    <div class="sheet-foot"><button class="btn" data-tip="取消，不保存|Cancel without saving" type="button" data-log-close>${bi('取消', 'Cancel')}</button><button class="btn btn-primary" type="submit" data-tip="保存这条跟进记录，会出现在跟进记录时间线|Save this activity to the timeline">${bi('保存记录', 'Save')}</button></div>
   </form>`;
   document.body.append(dialog);
   const form = dialog.querySelector('form');
@@ -168,7 +168,7 @@ export async function mountFollowupCard(detail, { companyId, productProfile = ''
   wireCard(block, item, companyId, detail);
   const bar = document.createElement('div');
   bar.className = 'm-actbar v4-phone-only';
-  bar.innerHTML = `<button type="button" data-bar-log="CALL"><i class="ti ti-phone" aria-hidden="true"></i>记电话</button><button type="button" data-bar-log="WHATSAPP"><i class="ti ti-brand-whatsapp" aria-hidden="true"></i>WhatsApp</button><button type="button" data-bar-log="NOTE"><i class="ti ti-pencil" aria-hidden="true"></i>写跟进</button><button type="button" class="pri" data-bar-stage><i class="ti ti-flag" aria-hidden="true"></i>改阶段</button>`;
+  bar.innerHTML = `<button type="button" data-tip="记录一次电话沟通|Log a phone call" data-bar-log="CALL"><i class="ti ti-phone" aria-hidden="true"></i>记电话</button><button type="button" data-tip="记录一次 WhatsApp 沟通|Log a WhatsApp chat" data-bar-log="WHATSAPP"><i class="ti ti-brand-whatsapp" aria-hidden="true"></i>WhatsApp</button><button type="button" data-tip="写一条跟进备注|Write a follow-up note" data-bar-log="NOTE"><i class="ti ti-pencil" aria-hidden="true"></i>写跟进</button><button type="button" data-tip="把这家客户移到新的跟进阶段，系统会记录时间和操作人|Move this prospect to a new stage; time and user are recorded" class="pri" data-bar-stage><i class="ti ti-flag" aria-hidden="true"></i>改阶段</button>`;
   bar.querySelectorAll('[data-bar-log]').forEach(button => button.addEventListener('click', () => openLogDialog({ type: button.dataset.barLog, opportunityId: item.opportunity_id, companyId, opener: button })));
   bar.querySelector('[data-bar-stage]').addEventListener('click', () => { const steps = block.querySelector('.steps'); steps?.scrollIntoView({ block: 'center' }); steps?.querySelector('[aria-pressed="true"]')?.focus(); });
   detail.append(bar);

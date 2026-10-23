@@ -13,7 +13,7 @@ let opener;
 function renderSearch(){
   const query=input.value.trim().toLocaleLowerCase();
   const matched=companies.filter(c=>[c.company_name,c.website,c.country_code,c.city].some(v=>String(v??'').toLocaleLowerCase().includes(query)));
-  results.innerHTML=matched.slice(0,20).map(c=>`<button type="button" data-search-company="${esc(c.company_id||c.id)}"><strong>${esc(c.company_name)}</strong><small>${esc([c.country_code,c.city].filter(Boolean).join(' / '))}</small></button>`).join('')||bi('未找到符合条件的公司','No matching companies');
+  results.innerHTML=matched.slice(0,20).map(c=>`<button type="button" data-tip="打开这家企业的详情|Open this company's details" data-search-company="${esc(c.company_id||c.id)}"><strong>${esc(c.company_name)}</strong><small>${esc([c.country_code,c.city].filter(Boolean).join(' / '))}</small></button>`).join('')||bi('未找到符合条件的公司','No matching companies');
   document.querySelector('#workspace-search-count').textContent=`${matched.length} 家 / companies`;
   results.querySelectorAll('[data-search-company]').forEach(button=>button.addEventListener('click',()=>{
     search.close();

@@ -17,10 +17,10 @@ function sourceText(task) {
 function rowMarkup(task) {
   const due = when(task.due_at);
   const dueHtml = due ? `${esc(due.zh)}${task.overdue ? `<small>${bi(...overdueText(due))}</small>` : due.days === 0 ? `<small>${bi('今天', 'Today')}</small>` : ''}` : bi('未设置', 'Not set');
-  const actions = `<div class="acts"><button class="btn btn-primary btn-sm" type="button" data-task-complete="${esc(task.id)}">${bi('完成', 'Complete')}</button><button class="btn btn-sm" type="button" data-task-reschedule="${esc(task.id)}">${bi('改期', 'Reschedule')}</button><button class="btn btn-sm" type="button" data-task-assign="${esc(task.id)}">${bi('指派', 'Assign')}</button></div>`;
+  const actions = `<div class="acts"><button class="btn btn-primary btn-sm" data-tip="把这项任务标记为已完成|Mark this task as done" type="button" data-task-complete="${esc(task.id)}">${bi('完成', 'Complete')}</button><button class="btn btn-sm" data-tip="修改这项任务的截止时间|Change this task's due time" type="button" data-task-reschedule="${esc(task.id)}">${bi('改期', 'Reschedule')}</button><button class="btn btn-sm" data-tip="把这项任务交给其他同事|Assign this task to a colleague" type="button" data-task-assign="${esc(task.id)}">${bi('指派', 'Assign')}</button></div>`;
   return `<div class="task-row${task.overdue ? ' is-overdue' : ''}" role="row" data-task-id="${esc(task.id)}">
     <div class="type" role="cell"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span></div>
-    <div class="who" role="cell"><button type="button" class="co v4-link-btn" data-task-company="${esc(task.company_id)}">${esc(task.company_name || '—')}</button><span class="meta">${esc(task.title || task.next_action || '')}</span></div>
+    <div class="who" role="cell"><button type="button" data-tip="打开这家企业的详情|Open this company's details" class="co v4-link-btn" data-task-company="${esc(task.company_id)}">${esc(task.company_name || '—')}</button><span class="meta">${esc(task.title || task.next_action || '')}</span></div>
     <div class="due${task.overdue ? ' overdue' : ''}" role="cell">${dueHtml}</div>
     <div class="owner" role="cell">${esc(task.owner || '—')}</div>
     <div class="src" role="cell"><span class="v4-phone-only-inline">${esc((TASK_TYPES[task.task_type] || TASK_TYPES.OTHER)[0])} · </span>${sourceText(task)}</div>
@@ -31,7 +31,7 @@ function rowMarkup(task) {
 function render() {
   const host = $('#tasks-list');
   if (!host) return;
-  $('#tasks-range').innerHTML = RANGES.map(([key, zh, en]) => `<button type="button" role="tab" data-task-range="${key}" aria-selected="${state.range === key}" tabindex="${state.range === key ? 0 : -1}">${bi(zh, en)}<span class="n${key === 'overdue' && state.counts.overdue ? ' bad' : ''}">${state.counts[key] ?? '—'}</span></button>`).join('');
+  $('#tasks-range').innerHTML = RANGES.map(([key, zh, en]) => `<button type="button" data-tip="只看${zh}的任务|Show ${en} tasks" role="tab" data-task-range="${key}" aria-selected="${state.range === key}" tabindex="${state.range === key ? 0 : -1}">${bi(zh, en)}<span class="n${key === 'overdue' && state.counts.overdue ? ' bad' : ''}">${state.counts[key] ?? '—'}</span></button>`).join('');
   const summary = $('#tasks-summary');
   if (summary && state.counts.today != null) summary.innerHTML = bi(`今日 ${state.counts.today} 项，逾期 ${state.counts.overdue ?? 0} 项`, `${state.counts.today} due today, ${state.counts.overdue ?? 0} overdue`);
   if (state.error) { host.innerHTML = stateBlock('error', '任务暂未读取', 'Tasks unavailable', { retry: true }); return; }
@@ -56,7 +56,7 @@ function ensureDialog() {
   if (dialog) return dialog;
   dialog = document.createElement('dialog');
   dialog.id = 'v4-task-dialog'; dialog.className = 'sheet'; dialog.setAttribute('aria-labelledby', 'v4-task-title');
-  dialog.innerHTML = `<form class="v4-task-form" novalidate><div class="sheet-head"><h3 id="v4-task-title"></h3><button class="btn btn-icon" type="button" data-task-close aria-label="关闭 Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+  dialog.innerHTML = `<form class="v4-task-form" novalidate><div class="sheet-head"><h3 id="v4-task-title"></h3><button class="btn btn-icon" data-tip="关闭，不保存|Close without saving" type="button" data-task-close aria-label="关闭 Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
     <div class="sheet-body">
       <div class="field" data-task-field="company"><label for="v4-task-company">${bi('企业', 'Company')}</label><select id="v4-task-company" name="company_id"></select></div>
       <div class="field" data-task-field="type"><label for="v4-task-type">${bi('类型', 'Type')}</label><select id="v4-task-type" name="task_type">${Object.entries(TASK_TYPES).map(([key, [zh, en]]) => `<option value="${key}">${esc(zh)} ${esc(en)}</option>`).join('')}</select></div>
@@ -66,7 +66,7 @@ function ensureDialog() {
       <div class="field" data-task-field="note"><label for="v4-task-note">${bi('备注', 'Note')}</label><input id="v4-task-note" name="note" maxlength="1000"></div>
       <p class="v4-form-status" role="status" aria-live="polite"></p>
     </div>
-    <div class="sheet-foot"><button class="btn" type="button" data-task-close>${bi('取消', 'Cancel')}</button><button class="btn btn-primary" type="submit">${bi('保存', 'Save')}</button></div></form>`;
+    <div class="sheet-foot"><button class="btn" data-tip="取消，不保存|Cancel without saving" type="button" data-task-close>${bi('取消', 'Cancel')}</button><button class="btn btn-primary" data-tip="保存这项任务|Save this task" type="submit">${bi('保存', 'Save')}</button></div></form>`;
   document.body.append(dialog);
   dialog.querySelectorAll('[data-task-close]').forEach(button => button.addEventListener('click', () => dialog.close()));
   dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
@@ -119,7 +119,7 @@ function mount() {
   if (!root) return;
   state.mine = storage.get('sim-tasks-mine') === 'true';
   const head = $('#view-tasks .head');
-  head.innerHTML = `<div><h2 id="tasks-title" class="bi"><span lang="zh-CN">我的任务</span><span lang="en">My tasks</span></h2><p id="tasks-summary" class="meta"></p></div><div class="btns"><button class="btn btn-primary" type="button" data-task-new><i class="ti ti-plus" aria-hidden="true"></i>${bi('新建任务', 'New task')}</button></div>`;
+  head.innerHTML = `<div><h2 id="tasks-title" class="bi"><span lang="zh-CN">我的任务</span><span lang="en">My tasks</span></h2><p id="tasks-summary" class="meta"></p></div><div class="btns"><button class="btn btn-primary" data-tip="新建一项跟进任务，例如回电话、发报价|Create a follow-up task, e.g. call back or send a quote" type="button" data-task-new><i class="ti ti-plus" aria-hidden="true"></i>${bi('新建任务', 'New task')}</button></div>`;
   root.innerHTML = `<section class="card v4-tasks"><div class="toolbar"><div id="tasks-range" class="tabs" role="tablist" aria-label="任务范围 Task range"></div><span class="grow"></span><label class="v4-select-label" for="tasks-type"><span class="sr-only">类型 Type</span><select id="tasks-type" class="select"><option value="">全部类型 All types</option>${Object.entries(TASK_TYPES).map(([key, [zh, en]]) => `<option value="${key}">${esc(zh)} ${esc(en)}</option>`).join('')}</select></label><label class="toggle"><input id="tasks-mine" type="checkbox"${state.mine ? ' checked' : ''}><span class="bi"><span lang="zh-CN">只看我负责的</span><span lang="en">Mine only</span></span></label></div><div id="tasks-list" aria-live="polite"></div></section>`;
   render();
   $('#tasks-range').addEventListener('click', event => { const tab = event.target.closest('[data-task-range]'); if (!tab) return; state.range = tab.dataset.taskRange; state.items = null; void loadTasks(); });

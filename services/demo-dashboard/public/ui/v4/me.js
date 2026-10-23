@@ -1,5 +1,6 @@
 // 我的 / Me: every page of the workspace as a labelled menu (phones have no sidebar).
 import { bi, esc } from './crm.js';
+import { viewTip } from './tooltips.js';
 
 const groups = [
   ['获客', 'Prospecting', [['companies', '客户名录', 'Company Directory', 'building', 'b'], ['contact-ready', '待联系企业', 'Contact-ready', 'address-book', 'b'], ['opportunities', '销售机会', 'Opportunities', 'briefcase', 'b'], ['research', '研究任务', 'Research', 'list-search', 'g'], ['jobs', '任务列表', 'Research jobs', 'list-check', 'g']]],
@@ -8,6 +9,6 @@ const groups = [
 ];
 const root = document.querySelector('#me-root');
 if (root) {
-  root.innerHTML = `<section class="m-me"><span class="avatar" aria-hidden="true">SIM</span><div><b>SIM外贸获客系统</b><p>${bi('工作区', 'Workspace')}</p></div></section>${groups.map(([zh, en, items]) => `<h3 class="m-gt">${bi(zh, en)}</h3><ul class="m-list m-group">${items.map(([view, izh, ien, icon, tone]) => `<li><a class="m-menu" href="#${view}" data-open-view="${view}"><span class="m-ico sm ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i></span><span class="t">${esc(izh)}<small>${esc(ien)}</small></span><span class="r"><i class="ti ti-chevron-right" aria-hidden="true"></i></span></a></li>`).join('')}</ul>`).join('')}`;
+  root.innerHTML = `<section class="m-me"><span class="avatar" aria-hidden="true">SIM</span><div><b>SIM外贸获客系统</b><p>${bi('工作区', 'Workspace')}</p></div></section>${groups.map(([zh, en, items]) => `<h3 class="m-gt">${bi(zh, en)}</h3><ul class="m-list m-group">${items.map(([view, izh, ien, icon, tone]) => `<li><a class="m-menu" href="#${view}" data-open-view="${view}"${viewTip(view)}><span class="m-ico sm ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i></span><span class="t">${esc(izh)}<small>${esc(ien)}</small></span><span class="r"><i class="ti ti-chevron-right" aria-hidden="true"></i></span></a></li>`).join('')}</ul>`).join('')}`;
   root.querySelectorAll('[data-open-view]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); location.hash = `#${link.dataset.openView}`; }));
 }

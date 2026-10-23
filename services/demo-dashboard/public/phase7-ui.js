@@ -171,7 +171,7 @@ function operationError(error, retryId = '') {
   const copy = auth ? ['当前账户需要相应权限。','The current account needs the required permission.']
     : unavailable ? ['此项服务尚未就绪，请稍后重试。','This service is not ready yet. Try again later.']
       : ['操作未完成，请检查后重试。','The operation was not completed. Check and try again.'];
-  return `<div class="crm-data-error"><i class="ti ti-alert-circle" aria-hidden="true"></i><div>${bi(copy[0],copy[1])}</div>${retryId ? `<button id="${esc(retryId)}" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button>` : ''}</div>`;
+  return `<div class="crm-data-error"><i class="ti ti-alert-circle" aria-hidden="true"></i><div>${bi(copy[0],copy[1])}</div>${retryId ? `<button id="${esc(retryId)}" data-tip="重新读取|Load again" class="btn btn-outline-secondary" type="button">${bi('重新读取','Retry')}</button>` : ''}</div>`;
 }
 
 const importState = { record:null };
@@ -298,7 +298,7 @@ function renderExportResult(payload) {
   const href = id ? `/api/data-exports/${encodeURIComponent(id)}/download${token ? `?token=${encodeURIComponent(token)}` : ''}` : '';
   const emptyReady = status === 'READY' && Number(rowCount || 0) === 0;
   const downloadAction = status === 'READY' && href && !emptyReady
-    ? `<button id="data-export-download" class="btn btn-primary" type="button"><i class="ti ti-download" aria-hidden="true"></i>${bi('下载文件','Download file')}</button>`
+    ? `<button id="data-export-download" data-tip="下载生成好的文件|Download the generated file" class="btn btn-primary" type="button"><i class="ti ti-download" aria-hidden="true"></i>${bi('下载文件','Download file')}</button>`
     : '';
   const emptyNotice = emptyReady
     ? `<div class="alert alert-warning crm-export-empty" role="status">${bi('当前筛选没有数据。请选择“累计授权主库”或返回业务机会页调整筛选后再导出。','The current filters contain no rows. Choose “Cumulative permitted master” or adjust the Opportunity filters before exporting.')}</div>`
@@ -495,7 +495,7 @@ function policyStatus(value) {
 }
 
 function actionButton(action, zh, en, kind = 'btn-outline-secondary') {
-  return `<button class="btn ${esc(kind)}" type="button" data-phase7-action="${esc(action)}">${bi(zh,en)}</button>`;
+  return `<button class="btn ${esc(kind)}" data-tip="${esc(zh)}：保存后会记录时间和操作人|${esc(en)}; time and user are recorded" type="button" data-phase7-action="${esc(action)}">${bi(zh,en)}</button>`;
 }
 
 function actionLabels(action) {
@@ -544,7 +544,7 @@ function readinessNote(record) {
 }
 
 function readinessEntryLinks() {
-  return `<div class="crm-phase7-inline-actions"><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看状态历史','Open Status History')}</button><button class="btn btn-ghost-primary" type="button" data-phase7-open-tab="data-history">${bi('查看待联系队列','Open Contact Queue')}</button></div>`;
+  return `<div class="crm-phase7-inline-actions"><button class="btn btn-ghost-primary" data-tip="查看联系数据历史|View contact data history" type="button" data-phase7-open-tab="data-history">${bi('查看状态历史','Open Status History')}</button><button class="btn btn-ghost-primary" data-tip="查看联系数据历史|View contact data history" type="button" data-phase7-open-tab="data-history">${bi('查看待联系队列','Open Contact Queue')}</button></div>`;
 }
 
 function renderReadiness(state, decision, queue) {

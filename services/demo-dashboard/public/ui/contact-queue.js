@@ -23,7 +23,7 @@ async function workspaceRequest(url){
 }
 
 function emptyState(){
-  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系公司','No contact-ready companies')}</h3><p>${bi('请查看业务机会及联系方式。','Review business opportunities and contact details.')}</p><button class="btn btn-outline-primary" type="button" data-open-view="opportunities">${bi('查看业务机会','Open Opportunities')}</button></div>`;
+  return `<div class="p8-empty-state"><i class="ti ti-address-book-off" aria-hidden="true"></i><h3>${bi('当前没有待联系公司','No contact-ready companies')}</h3><p>${bi('请查看业务机会及联系方式。','Review business opportunities and contact details.')}</p><button class="btn btn-outline-primary" data-tip="打开销售机会|Open opportunities" type="button" data-open-view="opportunities">${bi('查看业务机会','Open Opportunities')}</button></div>`;
 }
 
 function routeMarkup(route){
@@ -44,7 +44,7 @@ function render(items){
       <details><summary>${bi('联系人资料','Contact details')}</summary><span>${buyers}</span></details>
       <div><small>${bi('官方联系方式','Official contacts')}</small><ul class="p10-contact-route-list">${routes}</ul></div>
       <div><small>${bi('机会状态','Opportunity status')}</small>${phase8StatusMarkup(item.opportunity_status||'RECOMMENDED')}</div>
-      <div><button class="btn btn-outline-primary" type="button" data-company-id="${esc(item.company_id)}">${bi('查看公司','View company')}</button></div>
+      <div><button class="btn btn-outline-primary" data-tip="打开这家企业的详情|Open this company's details" type="button" data-company-id="${esc(item.company_id)}">${bi('查看公司','View company')}</button></div>
     </article>`;
   }).join(''):emptyState();
   host.querySelectorAll('[data-open-view]').forEach(button=>button.addEventListener('click',()=>document.querySelector(`[data-app-nav="${button.dataset.openView}"]`)?.click()));
@@ -66,7 +66,7 @@ export async function loadContactQueue({force=false}={}){
     if(status)status.innerHTML=bi(`当前 ${items.length} 家待联系公司`,`${items.length} contact-ready companies`);
   }catch{
     if(ticket!==generation)return;
-    host.innerHTML=`<div class="p8-empty-state"><i class="ti ti-alert-triangle" aria-hidden="true"></i><h3>${bi('待联系公司读取未完成','Contact-ready companies could not be loaded')}</h3><button id="contact-queue-retry" class="btn btn-outline-primary" type="button">${bi('重试','Try again')}</button></div>`;
+    host.innerHTML=`<div class="p8-empty-state"><i class="ti ti-alert-triangle" aria-hidden="true"></i><h3>${bi('待联系公司读取未完成','Contact-ready companies could not be loaded')}</h3><button id="contact-queue-retry" data-tip="重新读取待联系记录|Reload the contact queue" class="btn btn-outline-primary" type="button">${bi('重试','Try again')}</button></div>`;
     host.querySelector('#contact-queue-retry')?.addEventListener('click',()=>loadContactQueue({force:true}));
     if(status)status.textContent='';
   }finally{if(ticket===generation)host.removeAttribute('aria-busy');}

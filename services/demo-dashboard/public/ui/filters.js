@@ -74,7 +74,7 @@ function syncChips() {
   if (!chips) return;
   chips.innerHTML = active.length ? active.map(control => {
     const label = labelFor(control);
-    return `<button class="crm-filter-chip" type="button" data-remove-filter="${control.name}" aria-label="移除 ${label.zh} 筛选 Remove ${label.en} filter"><span>${label.option}</span><i class="ti ti-x" aria-hidden="true"></i></button>`;
+    return `<button class="crm-filter-chip" data-tip="移除这个筛选条件|Remove this filter" type="button" data-remove-filter="${control.name}" aria-label="移除 ${label.zh} 筛选 Remove ${label.en} filter"><span>${label.option}</span><i class="ti ti-x" aria-hidden="true"></i></button>`;
   }).join('') : '';
   chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
     const control = form.elements.namedItem(button.dataset.removeFilter);

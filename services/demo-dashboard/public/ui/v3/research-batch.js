@@ -33,7 +33,7 @@ function renderSearchPlan(state=searchPlanState){
   const host=$('#research-search-plan');if(!host)return;
   host.setAttribute('aria-busy',String(state==='loading'));
   if(state==='loading'){host.innerHTML=`<p role="status">${api.bi('正在准备查询计划','Preparing search plan')}</p>`;return;}
-  if(state==='error'){host.innerHTML=`<p role="status">${api.bi('查询计划读取未完成','Search plan could not be loaded')}</p><button type="button" class="btn btn-outline-secondary" data-search-plan-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-search-plan-retry]').addEventListener('click',()=>void loadPreview());return;}
+  if(state==='error'){host.innerHTML=`<p role="status">${api.bi('查询计划读取未完成','Search plan could not be loaded')}</p><button type="button" data-tip="重新读取搜索计划|Reload the search plan" class="btn btn-outline-secondary" data-search-plan-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-search-plan-retry]').addEventListener('click',()=>void loadPreview());return;}
   host.innerHTML=searchPlanMarkup(preview?.search_plan);
 }
 function save() {
@@ -75,7 +75,7 @@ async function loadPreview() {
   }catch{
     if(requestId!==sequence)return;preview=null;updateCounts();
     renderSearchPlan('error');
-    $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
+    $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" data-tip="重新计算范围与费用预估|Recalculate the scope and cost estimate" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
 }
@@ -116,7 +116,7 @@ export async function refreshBatchOptions(){
     updateCounts();await loadPreview();
   }catch{
     loaded=false;$('#start-research').disabled=true;
-    $('#research-catalog-summary').innerHTML=`${api.bi('市场与类目读取未完成','Markets and categories could not be loaded')} <button class="btn btn-outline-secondary" id="research-options-retry" type="button">${api.bi('重试','Retry')}</button>`;
+    $('#research-catalog-summary').innerHTML=`${api.bi('市场与类目读取未完成','Markets and categories could not be loaded')} <button class="btn btn-outline-secondary" data-tip="重新读取可选市场和类目|Reload markets and categories" id="research-options-retry" type="button">${api.bi('重试','Retry')}</button>`;
     $('#research-options-retry')?.addEventListener('click',()=>void refreshBatchOptions());
   }finally{host?.setAttribute('aria-busy','false');}
 }
@@ -137,9 +137,9 @@ async function loadBatchList(){
   host.setAttribute('aria-busy','true');
   try{
     const result=await api.request('/api/research/batches');
-    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('研究范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span></div><button type="button" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无研究批次','No research batches');
+    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('研究范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span></div><button type="button" data-tip="打开这个研究批次的进度|Open this batch's progress" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无研究批次','No research batches');
     host.querySelectorAll('[data-open-batch]').forEach(button=>button.addEventListener('click',()=>void openBatch(button.dataset.openBatch)));
-  }catch{host.innerHTML=`${api.bi('批次列表读取未完成','Batch list could not be loaded')} <button type="button" class="btn btn-outline-secondary" data-batches-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batches-retry]').addEventListener('click',()=>void loadBatchList());}
+  }catch{host.innerHTML=`${api.bi('批次列表读取未完成','Batch list could not be loaded')} <button type="button" data-tip="重新读取研究批次|Reload research batches" class="btn btn-outline-secondary" data-batches-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batches-retry]').addEventListener('click',()=>void loadBatchList());}
   finally{host.setAttribute('aria-busy','false');}
 }
 async function openBatch(id,{replace=false}={}){
@@ -152,11 +152,11 @@ async function openBatch(id,{replace=false}={}){
   const host=$('#research-batch-detail');host.hidden=false;host.setAttribute('aria-busy','true');host.innerHTML=api.bi('正在读取研究批次','Loading research batch');
   try{
     const batch=await api.request(`/api/research/batches/${encodeURIComponent(id)}`), snapshot=batch.research_scope_snapshot||batch.scope_snapshot||{};
-    host.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('研究批次','Research Batch')}</h3><button type="button" class="btn btn-outline-secondary" data-batch-back>${api.bi('返回研究','Back to Research')}</button></header><div class="card-body"><div class="p9-catalog-facts"><div><small>${api.bi('建立时间','Created')}</small><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong></div><div><small>${api.bi('研究范围','Scopes')}</small><strong>${api.esc(batch.total_scopes??snapshot.scopes?.length??batch.children?.length??0)}</strong></div></div><p class="crm-helper">${api.bi('创建时的研究范围','Research scope at creation')}</p><div class="v3-batch-children">${(batch.children||[]).map(child=>`<article><div><strong>${api.esc(child.market_code)}</strong><span>${api.esc(snapshot.categories?.find(item=>categoryId(item)===child.category_scope_id)?.label||child.category_code||'')}</span></div><button type="button" class="btn btn-outline-primary" data-batch-child="${api.esc(child.job_id)}">${api.bi('查看任务','View job')}</button></article>`).join('')}</div></div>`;
+    host.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('研究批次','Research Batch')}</h3><button type="button" data-tip="返回研究概览|Back to research overview" class="btn btn-outline-secondary" data-batch-back>${api.bi('返回研究','Back to Research')}</button></header><div class="card-body"><div class="p9-catalog-facts"><div><small>${api.bi('建立时间','Created')}</small><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong></div><div><small>${api.bi('研究范围','Scopes')}</small><strong>${api.esc(batch.total_scopes??snapshot.scopes?.length??batch.children?.length??0)}</strong></div></div><p class="crm-helper">${api.bi('创建时的研究范围','Research scope at creation')}</p><div class="v3-batch-children">${(batch.children||[]).map(child=>`<article><div><strong>${api.esc(child.market_code)}</strong><span>${api.esc(snapshot.categories?.find(item=>categoryId(item)===child.category_scope_id)?.label||child.category_code||'')}</span></div><button type="button" data-tip="打开这个市场与类目的任务明细|Open this market and category job" class="btn btn-outline-primary" data-batch-child="${api.esc(child.job_id)}">${api.bi('查看任务','View job')}</button></article>`).join('')}</div></div>`;
     host.querySelector('[data-batch-back]').addEventListener('click',()=>{const back=new URL(location.href);back.searchParams.delete('batch');back.hash='research';history.pushState(null,'',back);host.hidden=true;api.activateView('research',{updateHash:false});requestAnimationFrame(()=>$('#research-new-job-open')?.focus({preventScroll:true}));});
     const stateLabel={QUEUED:['等待开始','Queued'],RUNNING:['进行中','Running'],COMPLETED:['已完成','Completed'],PARTIAL:['部分完成','Partially completed'],FAILED:['处理未完成','Not completed'],CANCELLED:['已取消','Cancelled']}[batch.status]||['等待更新','Awaiting update'];
     const stateBadge=document.createElement('span');stateBadge.className='data-state-badge state-unknown';stateBadge.innerHTML=api.bi(...stateLabel);host.querySelector('.card-title').after(stateBadge);
-    const refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-outline-secondary';refresh.innerHTML=api.bi('刷新','Refresh');refresh.addEventListener('click',()=>void openBatch(id,{replace:true}));host.querySelector('.card-header').append(refresh);
+    const refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-outline-secondary';refresh.innerHTML=api.bi('刷新','Refresh');refresh.dataset.tip='重新读取这个批次的进度|Reload this batch';refresh.addEventListener('click',()=>void openBatch(id,{replace:true}));host.querySelector('.card-header').append(refresh);
     const frozen=document.createElement('details');frozen.className='v3-research-details';frozen.innerHTML=`<summary>${api.bi('创建范围详情','Scope at creation')}</summary><div class="p9-catalog-facts">${[['市场','Markets',snapshot.markets?.length??0],['类目','Categories',snapshot.categories?.length??0],['客户类型','Buyer types',unique((snapshot.scopes||[]).map(scope=>scope.buyer_types||[])).join(' · ')],['研究语言','Languages',unique((snapshot.scopes||[]).map(scope=>scope.languages||[])).join(' · ')]].map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('')}</div>`;host.querySelector('.v3-batch-children').before(frozen);
     const searchPlan=document.createElement('section');searchPlan.id='batch-search-plan';searchPlan.className='v3-search-plan';searchPlan.innerHTML=searchPlanMarkup(batch.search_plan);frozen.after(searchPlan);
     for(const [from,to] of [['h5','h4'],['h6','h5']])searchPlan.querySelectorAll(from).forEach(heading=>{const replacement=document.createElement(to);replacement.innerHTML=heading.innerHTML;heading.replaceWith(replacement);});
@@ -168,7 +168,7 @@ async function openBatch(id,{replace=false}={}){
     });
     host.querySelectorAll('[data-batch-child]').forEach(button=>button.addEventListener('click',()=>void api.openJobDetail(button.dataset.batchChild,{trigger:button})));
     host.tabIndex=-1;host.focus({preventScroll:true});
-  }catch{host.innerHTML=`${api.bi('研究批次读取未完成','Research batch could not be loaded')} <button type="button" class="btn btn-outline-secondary" data-batch-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batch-retry]').addEventListener('click',()=>void openBatch(id,{replace:true}));}
+  }catch{host.innerHTML=`${api.bi('研究批次读取未完成','Research batch could not be loaded')} <button type="button" data-tip="重新读取这个批次|Reload this batch" class="btn btn-outline-secondary" data-batch-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batch-retry]').addEventListener('click',()=>void openBatch(id,{replace:true}));}
   finally{host.setAttribute('aria-busy','false');}
 }
 export function initializeResearchBatch(dependencies){

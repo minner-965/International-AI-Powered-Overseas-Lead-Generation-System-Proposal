@@ -32,7 +32,7 @@ function draftsMarkup() {
   const effective = Math.max(0, ...(cat.revisions.items || []).filter(item => item.approval_status === 'APPROVED').map(item => Number(item.revision) || 0));
   const drafts = (cat.revisions.items || []).filter(item => item.approval_status === 'DRAFT' && Number(item.revision) > effective);
   if (!drafts.length) return stateBlock('empty', '没有待批准的品类修订', 'No category revision awaiting approval');
-  return `<ul class="rows">${drafts.map(item => `<li><div class="row"><span class="main-t"><span class="co">${bi(`修订 ${item.revision}`, `Revision ${item.revision}`)}</span><span class="meta">${esc(item.source_reference || '')} · ${esc(item.created_by || '—')} · ${esc(shortDate(item.created_at))} · ${bi(`${item.scope_count ?? '—'} 个品类`, `${item.scope_count ?? '—'} categories`)}</span></span><button class="btn btn-primary btn-sm" type="button" data-approve-revision="${esc(item.id)}">${bi('批准', 'Approve')}</button></div><p class="v4-form-status" role="status" aria-live="polite" data-revision-status="${esc(item.id)}"></p></li>`).join('')}</ul>`;
+  return `<ul class="rows">${drafts.map(item => `<li><div class="row"><span class="main-t"><span class="co">${bi(`修订 ${item.revision}`, `Revision ${item.revision}`)}</span><span class="meta">${esc(item.source_reference || '')} · ${esc(item.created_by || '—')} · ${esc(shortDate(item.created_at))} · ${bi(`${item.scope_count ?? '—'} 个品类`, `${item.scope_count ?? '—'} categories`)}</span></span><button class="btn btn-primary btn-sm" data-tip="批准这版类目范围，之后找客户按新类目进行|Approve this category revision; new searches use it" type="button" data-approve-revision="${esc(item.id)}">${bi('批准', 'Approve')}</button></div><p class="v4-form-status" role="status" aria-live="polite" data-revision-status="${esc(item.id)}"></p></li>`).join('')}</ul>`;
 }
 
 function candidatesMarkup() {
@@ -41,7 +41,7 @@ function candidatesMarkup() {
   const approved = new Set((cat.current?.items || []).map(row => `${row.product_profile}:${row.normalized_category}`));
   const items = (cat.candidates.items || []).filter(item => !approved.has(`${item.product_profile}:${item.normalized_category}`));
   if (!items.length) return stateBlock('empty', '没有新的候选品类', 'No new candidate categories');
-  return `<ul class="rows">${items.map(item => `<li><div class="row"><span class="main-t"><span class="co">${esc(humanCode(item.normalized_category))}</span><span class="meta">${bi(...profileLabel(item.product_profile))} · ${bi(...(CANDIDATE_SOURCES[item.candidate_source] || [item.candidate_source || '—', item.candidate_source || '—']))}</span></span><button class="btn btn-sm" type="button" data-propose-candidate="${esc(item.product_profile)}|${esc(item.normalized_category)}">${bi('提议加入', 'Propose')}</button></div></li>`).join('')}</ul>`;
+  return `<ul class="rows">${items.map(item => `<li><div class="row"><span class="main-t"><span class="co">${esc(humanCode(item.normalized_category))}</span><span class="meta">${bi(...profileLabel(item.product_profile))} · ${bi(...(CANDIDATE_SOURCES[item.candidate_source] || [item.candidate_source || '—', item.candidate_source || '—']))}</span></span><button class="btn btn-sm" data-tip="把这个类目加入待批准的类目范围|Add this category to a revision for approval" type="button" data-propose-candidate="${esc(item.product_profile)}|${esc(item.normalized_category)}">${bi('提议加入', 'Propose')}</button></div></li>`).join('')}</ul>`;
 }
 
 function categoriesPage() {
@@ -64,7 +64,7 @@ function categoriesPage() {
           <div class="field"><label for="scope-name-en">${bi('英文名称', 'English name')}</label><input id="scope-name-en" name="name_en" maxlength="200"></div>
           <div class="field wide"><label for="scope-name-es">${bi('西班牙语名称（可选）', 'Spanish name (optional)')}</label><input id="scope-name-es" name="name_es" maxlength="200"></div>
         </div>
-        <div class="btns v4-followup-save"><span class="v4-form-status" role="status" aria-live="polite"></span><button class="btn btn-primary" type="submit">${bi('建立待批准修订', 'Create draft revision')}</button></div>
+        <div class="btns v4-followup-save"><span class="v4-form-status" role="status" aria-live="polite"></span><button class="btn btn-primary" data-tip="把输入的类目加入待批准的类目范围|Add the entered category for approval" type="submit">${bi('建立待批准修订', 'Create draft revision')}</button></div>
       </form></section>
     <section class="card" aria-labelledby="scope-candidates-title"><div class="ph"><div><h3 id="scope-candidates-title">${bi('候选品类', 'Candidate categories')}</h3><p>${bi('来自客户画像与历史成交', 'From customer profiles and past orders')}</p></div></div><div id="scope-candidates"></div></section>
   </div>`;
@@ -128,7 +128,7 @@ function wireCategories(root) {
         const payload = await managementRequest(`/api/category-scopes/taxonomy?q=${encodeURIComponent(q)}&limit=8`);
         if (seq !== searchSeq) return;
         cat.taxonomy = payload?.items || [];
-        host.innerHTML = cat.taxonomy.length ? cat.taxonomy.map((item, index) => `<li><button type="button" class="v4-taxonomy-item" data-taxonomy-pick="${index}"><b>${esc(item.names?.zh || item.names?.en || item.path)}</b> <span class="meta">${esc(item.names?.en || '')} · ${esc(item.path)}</span></button></li>`).join('') + `<li class="meta v4-taxonomy-source">${esc(payload.source || '')} ${esc(payload.version || '')}</li>` : `<li class="meta">${bi('没有匹配的标准品类', 'No matching taxonomy category')}</li>`;
+        host.innerHTML = cat.taxonomy.length ? cat.taxonomy.map((item, index) => `<li><button type="button" data-tip="选用这个标准类目名称|Use this standard category name" class="v4-taxonomy-item" data-taxonomy-pick="${index}"><b>${esc(item.names?.zh || item.names?.en || item.path)}</b> <span class="meta">${esc(item.names?.en || '')} · ${esc(item.path)}</span></button></li>`).join('') + `<li class="meta v4-taxonomy-source">${esc(payload.source || '')} ${esc(payload.version || '')}</li>` : `<li class="meta">${bi('没有匹配的标准品类', 'No matching taxonomy category')}</li>`;
       } catch { if (seq === searchSeq) host.innerHTML = `<li class="meta">${bi('标准品类暂未读取', 'Taxonomy unavailable')}</li>`; }
     }, 250);
   });

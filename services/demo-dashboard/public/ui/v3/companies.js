@@ -52,7 +52,7 @@ export function upgradeCompanyDetail(detail) {
   }
   const fragment = detail.ownerDocument.createDocumentFragment();
   nav.className = 'v3-company-detail-nav';
-  nav.innerHTML = companySections.map(([key,zh,en], i) => `<button type="button" role="tab" data-detail-section-tab="${key}" id="detail-section-tab-${key}" aria-controls="detail-section-${key}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${bi(zh,en)}</button>`).join('');
+  nav.innerHTML = companySections.map(([key,zh,en], i) => `<button type="button" data-tip="查看「${zh}」|Show ${en}" role="tab" data-detail-section-tab="${key}" id="detail-section-tab-${key}" aria-controls="detail-section-${key}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${bi(zh,en)}</button>`).join('');
   for (const [index, [key, zh, en, keys]] of companySections.entries()) {
     const section = detail.ownerDocument.createElement('section');
     section.id = `detail-section-${key}`;
@@ -137,13 +137,13 @@ export function renderContactCompanies(groups) {
     const others = (group.channels || []).filter(channel=>channel.type !== 'EMAIL');
     const names = [...new Set((group.opportunities || []).map(item=>item.buyer_name || item.buyer_department).filter(Boolean))];
     const cells = [
-      `<button type="button" data-contact-company="${esc(group.companyId)}" class="v3-contact-company-name">${esc(group.name)}</button><small>${esc(group.market)}</small>`,
+      `<button type="button" data-tip="打开这家企业的详情|Open this company's details" data-contact-company="${esc(group.companyId)}" class="v3-contact-company-name">${esc(group.name)}</button><small>${esc(group.market)}</small>`,
       group.categories.map(value=>bi(...profilePair(value))).join(''),
       names.length ? names.map(esc).join('<br>') : bi('未登记','Not listed'),
       emails.length ? channelList(emails.slice(0,1))+(emails.length>1?`<details><summary>${bi(`另外 ${emails.length-1} 个邮箱`,`${emails.length-1} more mailboxes`)}</summary>${channelList(emails.slice(1))}</details>`:'') : bi('未登记邮箱','No mailbox listed'),
       others.length ? `<details><summary>${bi(`${others.length} 个商务渠道`,`${others.length} business channels`)}</summary>${channelList(others)}</details>` : bi('未登记','Not listed'),
       opportunityDimensionsMarkup(group.opportunities?.find(hasOpportunityPool)) || (group.error ? stateMarkup('degraded','渠道读取待重试','Retry contact channels') : !group.channels?.length ? stateMarkup('warning','联系渠道待补充','Contact channels required') : bi('联系前审核','Review before contact')),
-      emails.length ? `<button type="button" class="btn btn-primary" data-contact-review="${esc(group.companyId)}">${bi('审核邮件','Review email')}</button>` : `<button type="button" class="btn btn-outline-secondary" data-contact-company="${esc(group.companyId)}">${bi('查看详情','View details')}</button>`
+      emails.length ? `<button type="button" data-tip="审核发给这家企业的开发信|Review the first-touch email for this company" class="btn btn-primary" data-contact-review="${esc(group.companyId)}">${bi('审核邮件','Review email')}</button>` : `<button type="button" data-tip="打开这家企业的详情|Open this company's details" class="btn btn-outline-secondary" data-contact-company="${esc(group.companyId)}">${bi('查看详情','View details')}</button>`
     ];
     return `<tr>${cells.map((cell,index)=>`<td data-label="${esc(headings[index].join(' / '))}">${cell}</td>`).join('')}</tr>`;
   }).join('')}</tbody></table></div>`;
@@ -152,7 +152,7 @@ export function renderContactCompanies(groups) {
 /** Read-only company-level composition. API gates stay in the email review workbench. */
 export function mountContactReady(host, { request, openCompany, openReview } = {}) {
   if (!host || !request) return null;
-  host.innerHTML = `<header class="v3-company-page-header"><div><h2>${bi('待联系公司','Contact-ready')}</h2><p>${bi('合作类目与联系渠道','Cooperation categories and contact channels')}</p></div><button type="button" class="btn btn-outline-secondary" data-contact-refresh>${bi('刷新','Refresh')}</button></header><div data-contact-ready-status></div><div data-contact-ready-content></div>`;
+  host.innerHTML = `<header class="v3-company-page-header"><div><h2>${bi('待联系公司','Contact-ready')}</h2><p>${bi('合作类目与联系渠道','Cooperation categories and contact channels')}</p></div><button type="button" data-tip="重新读取待联系企业|Reload contact-ready companies" class="btn btn-outline-secondary" data-contact-refresh>${bi('刷新','Refresh')}</button></header><div data-contact-ready-status></div><div data-contact-ready-content></div>`;
   const content = host.querySelector('[data-contact-ready-content]');
   const status = host.querySelector('[data-contact-ready-status]');
   let generation = 0;
