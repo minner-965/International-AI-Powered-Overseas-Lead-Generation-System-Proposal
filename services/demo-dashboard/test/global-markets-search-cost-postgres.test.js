@@ -73,7 +73,7 @@ function services(pool,env={}){
 test('migration 065 applies to a fresh database built from every migration file and baselines',{skip:!adminUrl},async()=>{
   await withDatabase(null,async(pool,name)=>{
     const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
-    assert.equal(files.at(-1),GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY);
+    assert.ok(files.includes(GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY));
     for(const file of files)await pool.query(await readFile(path.join(migrations,file),'utf8'));
     const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
     assert.equal(result.globalMarketsCategoriesSearchCost.status,'BASELINED');

@@ -135,6 +135,22 @@ export class SmtpImapProviderAdapter {
     finally{await smtp?.close?.();await imap?.logout?.().catch(()=>{});}
   }
   async health(options){return this.healthCheck(options);}
+  // Separate SMTP and IMAP results for the merchant "test connection" button.
+  async testConnections(){
+    const contract=this.connectionContract();
+    if(!this.configured())return{smtp:{ok:false,code:'PROVIDER_NOT_CONFIGURED',message:'Mailbox settings are incomplete'},imap:{ok:false,code:'PROVIDER_NOT_CONFIGURED',message:'Mailbox settings are incomplete'},network_calls:0};
+    const smtpContract=contract.find(code=>code.startsWith('SMTP_'));const imapContract=contract.find(code=>code.startsWith('IMAP_'));
+    const result={smtp:null,imap:null,network_calls:0};
+    if(smtpContract)result.smtp={ok:false,code:smtpContract,message:'SMTP must use port 587 with STARTTLS and the login address as sender'};
+    else{let smtp=null;try{result.network_calls++;smtp=this.#smtp();await smtp.verify();result.smtp={ok:true,code:'SMTP_READY',message:'SMTP login succeeded'};}
+      catch(error){result.smtp={ok:false,code:error?.code==='EAUTH'?'SMTP_AUTH_FAILED':timeoutCode(error)?'SMTP_TIMEOUT':'SMTP_CONNECTION_FAILED',message:clean(error?.response||error?.message||'SMTP connection failed',300)};}
+      finally{await smtp?.close?.();}}
+    if(imapContract)result.imap={ok:false,code:imapContract,message:'IMAP must use port 993 with TLS'};
+    else{let imap=null;try{result.network_calls++;imap=this.#imap({verifyOnly:true});await imap.connect();result.imap={ok:true,code:'IMAP_READY',message:'IMAP login succeeded'};}
+      catch(error){result.imap={ok:false,code:error?.authenticationFailed?'IMAP_AUTH_FAILED':timeoutCode(error)?'IMAP_TIMEOUT':'IMAP_CONNECTION_FAILED',message:clean(error?.responseText||error?.message||'IMAP connection failed',300)};}
+      finally{await imap?.logout?.().catch(()=>{});}}
+    return result;
+  }
   async send(message={},idempotencyKey){
     const policy=this.validatePurpose(message);if(!policy.allowed)return{status:'BLOCKED',code:policy.code,network_calls:0};
     const key=clean(idempotencyKey,200);if(!key)return{status:'BLOCKED',code:'IDEMPOTENCY_KEY_REQUIRED',network_calls:0};
