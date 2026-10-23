@@ -18,11 +18,11 @@ const spendPool=({cost=0,queries=0,reusable=0}={})=>({query:async sql=>/recorded
 
 test('cost configuration defaults and environment overrides are explicit estimates',()=>{
   const defaults=loadSearchCostConfig({});
-  assert.deepEqual(defaults.unitPrices,{EXA:0.007,TAVILY:0.008});
+  assert.deepEqual(defaults.unitPrices,{SEARXNG:0,EXA:0.007,TAVILY:0.008});
   assert.equal(defaults.maxQueriesPerBatch,300);assert.equal(defaults.maxUsdPerMonth,30);assert.equal(defaults.reuseDays,30);
   const custom=loadSearchCostConfig({SEARCH_COST_USD_PER_QUERY_EXA:'0.01',SEARCH_COST_USD_PER_QUERY_BRAVE:'0.005',
     SEARCH_MAX_QUERIES_PER_BATCH:'50',SEARCH_MAX_USD_PER_MONTH:'5',SEARCH_REUSE_DAYS:'0',SEARCH_COST_USD_PER_QUERY_TAVILY:'bad'});
-  assert.deepEqual(custom.unitPrices,{EXA:0.01,TAVILY:0.008,BRAVE:0.005});
+  assert.deepEqual(custom.unitPrices,{SEARXNG:0,EXA:0.01,TAVILY:0.008,BRAVE:0.005});
   assert.equal(custom.maxQueriesPerBatch,50);assert.equal(custom.maxUsdPerMonth,5);assert.equal(custom.reuseDays,0);
   assert.equal(billingPeriod(new Date('2026-10-31T23:59:59Z')),'2026-10');
 });

@@ -30,7 +30,8 @@ export class SearchUsageAudit{
     }else{
       event=this.local.get(fingerprint);if(!event){event={id:randomUUID(),status:'RESERVED',result_payload:{audit}};this.local.set(fingerprint,event);claimed=true;}
     }
-    if(!claimed&&this.retrySafeFailures&&['RATE_LIMITED','CREDIT_EXHAUSTED','AUTHENTICATION_FAILED','AUTH_ERROR','MISSING_API_KEY'].includes(event?.error_code)&&Number(event.used_units||0)===0){
+    // A free provider (retrySafe, e.g. local SearXNG) can always repeat a failed attempt without billing risk.
+    if(!claimed&&this.retrySafeFailures&&(this.provider.retrySafe===true||['RATE_LIMITED','CREDIT_EXHAUSTED','AUTHENTICATION_FAILED','AUTH_ERROR','MISSING_API_KEY'].includes(event?.error_code))&&Number(event.used_units||0)===0){
       if(this.pool){const retried=await this.pool.query(`UPDATE leadgen.provider_usage_events SET status='RESERVED',error_code=NULL,completed_at=NULL WHERE id=$1 AND status IN('FAILED','TEMPORARY_ERROR') AND used_units=0 RETURNING *`,[event.id]);claimed=retried.rowCount>0;event=retried.rows[0]||event;}
       else if(['FAILED','TEMPORARY_ERROR'].includes(event.status)){claimed=true;event.status='RESERVED';}
     }

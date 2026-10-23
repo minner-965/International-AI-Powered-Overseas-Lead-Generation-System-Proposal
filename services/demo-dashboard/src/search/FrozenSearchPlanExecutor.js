@@ -29,43 +29,57 @@ export class FrozenSearchPlanExecutor {
    if(prior?.response_snapshot){await this.store.persist(frozen,query,prior,prior.response_snapshot);completed++;replayed++;continue;}
    if(prior&&['CLAIMED','REVIEW_REQUIRED','FAILED','TEMPORARY_ERROR'].includes(prior.status))return pause('PAUSED_SEARCH_REVIEW');
    if(signal?.aborted||!await this.isEnabled())return pause('PAUSED_AUTOMATION_OFF');
-   const selected=await this.router.select();
-   if(!selected.provider)return pause(selected.reason);
-   // Cross-run reuse: the same query text/market/language/provider executed recently costs nothing.
-   if(this.reuseDays>0&&this.store.findReusable){
-    const source=await this.store.findReusable(frozen,query,selected,{days:this.reuseDays});
-    if(source){
-     const reusedRow=await this.store.reuse(frozen,query,selected,source);
-     if(reusedRow){completed++;reusedCount++;continue;}
+   // Fallback chain: a provider that fails with `fallback:true` (local SearXNG errors, 429,
+   // CAPTCHA) or returns an empty page with `fallbackOnEmpty` hands the same query to the
+   // next available provider in the configured order. Paid providers never fall back.
+   const tried=[];let settled=false,emptyAnswer=false;
+   for(;;){
+    const selected=await this.router.select(tried.length?{exclude:tried}:undefined);
+    if(!selected.provider){
+     if(emptyAnswer){settled=true;break;}
+     return pause(tried.length?'PAUSED_PROVIDER_UNAVAILABLE':selected.reason);
     }
-   }
-   if(this.costControl){
-    const budget=await this.costControl.canSpend(selected.provider);
-    if(!budget.allowed)return pause('PAUSED_SEARCH_MONTHLY_BUDGET');
-   }
-   const execution=await this.store.claim(frozen,query,selected);
-   if(!execution)return pause('PAUSED_QUERY_IN_PROGRESS');
-   const provider=this.router.provider(selected);
-   const originalSearch=provider.search.bind(provider);
-   // Save the provider outcome before candidate processing or ledger settlement.
-   const recordingProvider={name:provider.name,endpoint:provider.endpoint,search:async request=>{
-    const response=await originalSearch(request);
-    await this.store.recordResponse(execution,response);
-    return response;
-   }};
-   try{
-    const response=await this.auditFactory(recordingProvider).search({researchJobId:jobId,purpose:'NEW_COMPANY_DISCOVERY',budgetPool:'DISCOVERY',
-     request:execution.request_snapshot,persistResults:async results=>({referenceIds:await this.store.persist(frozen,query,execution,{results})}),
-     loadPersistedResults:async()=>this.store.results(execution)});
-    if(response.replay){await this.store.recordResponse(execution,response);await this.store.persist(frozen,query,execution,response);}
-    await this.store.attachUsage(execution,response.usage_event);
-    completed++;if(response.replay)replayed++;
-   }catch(error){
-    await this.store.fail(execution,error);
-    const state=this.accountStates?.[selected.provider]||(selected.provider==='tavily'?this.accountState:null);
+    // Cross-run reuse: the same query text/market/language/provider executed recently costs nothing.
+    if(this.reuseDays>0&&this.store.findReusable){
+     const source=await this.store.findReusable(frozen,query,selected,{days:this.reuseDays});
+     if(source){
+      const reusedRow=await this.store.reuse(frozen,query,selected,source);
+      if(reusedRow){reusedCount++;settled=true;break;}
+     }
+    }
+    if(this.costControl){
+     const budget=await this.costControl.canSpend(selected.provider);
+     if(!budget.allowed)return pause('PAUSED_SEARCH_MONTHLY_BUDGET');
+    }
+    const execution=await this.store.claim(frozen,query,selected,tried.length?'FALLBACK_AFTER_PROVIDER_FAILURE':selected.reason);
+    if(!execution)return pause('PAUSED_QUERY_IN_PROGRESS');
+    const provider=this.router.provider(selected);
+    const originalSearch=provider.search.bind(provider);
+    // Save the provider outcome before candidate processing or ledger settlement.
+    const recordingProvider={name:provider.name,endpoint:provider.endpoint,retrySafe:provider.retrySafe===true,search:async request=>{
+     const response=await originalSearch(request);
+     await this.store.recordResponse(execution,response);
+     return response;
+    }};
+    let response;
+    try{
+     response=await this.auditFactory(recordingProvider).search({researchJobId:jobId,purpose:'NEW_COMPANY_DISCOVERY',budgetPool:'DISCOVERY',
+      request:execution.request_snapshot,persistResults:async results=>({referenceIds:await this.store.persist(frozen,query,execution,{results})}),
+      loadPersistedResults:async()=>this.store.results(execution)});
+     if(response.replay){await this.store.recordResponse(execution,response);await this.store.persist(frozen,query,execution,response);}
+     await this.store.attachUsage(execution,response.usage_event);
+     if(response.replay)replayed++;
+    }catch(error){
+     await this.store.fail(execution,error);
+     const state=this.accountStates?.[selected.provider]||(selected.provider==='tavily'?this.accountState:null);
      try{await state?.observeSearchError?.(error);}catch{}
-    return pause(searchPause(error));
+     if(error?.fallback===true){tried.push(selected.provider);continue;}
+     return pause(searchPause(error));
+    }
+    if(response.fallbackOnEmpty===true&&!response.replay&&!(response.results||[]).length){tried.push(selected.provider);emptyAnswer=true;continue;}
+    settled=true;break;
    }
+   if(settled)completed++;
   }
   return {completed:true,paused:false,status:'COMPLETED',completed_queries:completed,replayed_queries:replayed,reused_queries:reusedCount};
  }

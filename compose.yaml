@@ -18,6 +18,30 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/migrations:/docker-entrypoint-initdb.d:ro
 
+  # Local web search (P1). Official SearXNG image, AGPL-3.0, run unmodified as a separate
+  # service; only the workspace calls it over the internal compose network (no host port).
+  # Troubleshooting from the host: docker compose exec demo-dashboard wget -qO- "http://searxng:8080/search?q=test&format=json"
+  searxng:
+    image: searxng/searxng:2026.10.13-22c64b8d3
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-sim-local-searxng-change-me}
+      TZ: ${TZ}
+    volumes:
+      - ./config/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
   n8n:
     image: n8nio/n8n:2.36.7
     restart: unless-stopped
@@ -119,6 +143,9 @@ services:
       TAVILY_USAGE_POLICY: ${TAVILY_USAGE_POLICY:-PROVIDER_ACCOUNT_ONLY}
       TAVILY_USAGE_ENDPOINT: ${TAVILY_USAGE_ENDPOINT:-https://api.tavily.com/usage}
       TAVILY_USAGE_REFRESH_INTERVAL_MS: ${TAVILY_USAGE_REFRESH_INTERVAL_MS:-600000}
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
+      SEARCH_PROVIDER_ORDER: ${SEARCH_PROVIDER_ORDER:-searxng,exa,tavily}
+      SEARCH_COST_USD_PER_QUERY_SEARXNG: "0"
       AUTO_EVIDENCE_ENABLED: ${AUTO_EVIDENCE_ENABLED:-false}
       RESEARCH_CREATION_MAINTENANCE: ${RESEARCH_CREATION_MAINTENANCE:-false}
       AUTO_EVIDENCE_RECONCILE_MINUTES: ${AUTO_EVIDENCE_RECONCILE_MINUTES:-30}
@@ -172,6 +199,9 @@ services:
       TAVILY_USAGE_POLICY: ${TAVILY_USAGE_POLICY:-PROVIDER_ACCOUNT_ONLY}
       TAVILY_USAGE_ENDPOINT: ${TAVILY_USAGE_ENDPOINT:-https://api.tavily.com/usage}
       TAVILY_USAGE_REFRESH_INTERVAL_MS: ${TAVILY_USAGE_REFRESH_INTERVAL_MS:-600000}
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
+      SEARCH_PROVIDER_ORDER: ${SEARCH_PROVIDER_ORDER:-searxng,exa,tavily}
+      SEARCH_COST_USD_PER_QUERY_SEARXNG: "0"
       AUTO_EVIDENCE_ENABLED: ${AUTO_EVIDENCE_ENABLED:-false}
       AUTO_EVIDENCE_RECONCILE_MINUTES: ${AUTO_EVIDENCE_RECONCILE_MINUTES:-30}
       AUTO_EVIDENCE_BATCH_SIZE: ${AUTO_EVIDENCE_BATCH_SIZE:-10}

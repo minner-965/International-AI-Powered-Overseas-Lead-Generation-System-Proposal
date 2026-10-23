@@ -2,6 +2,7 @@ import {BraveSearchProvider} from './BraveSearchProvider.js';
 import {TavilySearchProvider} from './TavilySearchProvider.js';
 import {DataForSeoSearchProvider} from './DataForSeoSearchProvider.js';
 import {ExaSearchProvider} from './ExaSearchProvider.js';
+import {SearxngSearchProvider} from './SearxngSearchProvider.js';
 
 export const SEARCH_PURPOSES=Object.freeze(['COMPANY_DISCOVERY','COMPANY_VERIFICATION','CATEGORY_EVIDENCE','CONTACT_DISCOVERY','OFFICIAL_CONTACT_VERIFICATION','SHADOW_BENCHMARK']);
 export function resolveSearchRoute(config={},purpose){
@@ -20,6 +21,7 @@ export function createConfiguredSearchProvider(config={},overrides={}){
     case 'tavily':return new TavilySearchProvider({...common,apiKey:config.tavilyApiKey,endpoint:config.tavilyEndpoint,searchDepth:config.tavilySearchDepth});
     case 'dataforseo':return new DataForSeoSearchProvider({...common,login:config.dataForSeoLogin,password:config.dataForSeoPassword});
     case 'exa':return new ExaSearchProvider({...common,apiKey:config.exaApiKey,endpoint:config.exaEndpoint});
+    case 'searxng':return new SearxngSearchProvider({...common,baseUrl:config.searxngBaseUrl,engines:config.searxngEngines});
     default:throw Object.assign(new Error('Unsupported search provider'),{code:'INVALID_SEARCH_PROVIDER'});
   }
 }

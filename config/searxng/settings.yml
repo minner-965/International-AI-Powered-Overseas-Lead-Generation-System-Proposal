@@ -1,0 +1,54 @@
+# SearXNG settings for the SIM workspace's local search service (compose service `searxng`).
+# Official image searxng/searxng, AGPL-3.0, run unmodified as a separate service; the
+# workspace only calls its JSON API (GET /search?format=json) over the internal network.
+# Reference: https://docs.searxng.org/admin/settings/index.html
+use_default_settings:
+  engines:
+    # Keep only general web engines that return company websites.
+    keep_only:
+      - google
+      - bing
+      - duckduckgo
+      - brave
+      - startpage
+      - qwant
+
+general:
+  instance_name: "SIM local search"
+  debug: false
+  enable_metrics: false
+
+server:
+  # secret_key is supplied by the SEARXNG_SECRET environment variable (.env); never commit one.
+  secret_key: "set-by-SEARXNG_SECRET-env"
+  # The bot-detection limiter protects public instances. This instance has a single trusted
+  # client (the workspace backend) on the internal compose network and no published port, so
+  # the limiter would only block our own JSON requests. Request pacing is done by the workspace.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "all"
+  # json must be enabled for the workspace; html stays for manual troubleshooting.
+  formats:
+    - html
+    - json
+  # Engines that hit CAPTCHAs or rate limits are suspended instead of hammered.
+  suspended_times:
+    SearxEngineAccessDenied: 86400
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 10.0
+  pool_connections: 20
+  pool_maxsize: 10
+  enable_http2: true
+
+ui:
+  static_use_hash: true

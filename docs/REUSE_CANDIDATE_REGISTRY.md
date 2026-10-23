@@ -233,3 +233,14 @@ Integration boundary: `GET /api/category-scopes/taxonomy?q=` searches the subset
 ## Search spend control
 
 Reused: `leadgen.provider_usage_events` (append-only rows; reuse is recorded as a new zero-cost `SKIPPED` row), `research_query_executions` stored response snapshots (cross-run reuse), the frozen search plan (query counts). Unit prices (`SEARCH_COST_USD_PER_QUERY_<PROVIDER>`) are configurable estimates; provider-reported `costDollars` is used when present. No billing SDK or external cost service is added.
+
+## Local web search (round 4, P1)
+
+| Candidate | Version / license (verified) | Fit, privacy and cost | Maintenance | Decision |
+|---|---|---|---|---|
+| [SearXNG](https://github.com/searxng/searxng) official Docker image [`searxng/searxng`](https://hub.docker.com/r/searxng/searxng) | tag `2026.10.13-22c64b8d3` (Docker Hub, pushed 2026-10-13); **AGPL-3.0** | Self-hosted metasearch with a JSON API (`/search?format=json`); free, no API key, queries stay on SIM's machine apart from the upstream engines it asks; result quality varies and upstream engines may CAPTCHA/rate-limit | Very active (several image builds per week); [settings docs](https://docs.searxng.org/admin/settings/index.html) read | **Reuse, unmodified, as a separate container.** The workspace only sends HTTP requests to it, so AGPL obligations for modified network services do not reach the workspace code; we ship no SearXNG source. Settings live in `config/searxng/settings.yml` (json format on, engines kept: google, bing, duckduckgo, brave, startpage, qwant; limiter off because the only client is the backend on the internal network; secret from `SEARXNG_SECRET`) |
+| YaCy | GPL-2.0+ | Own crawler/index; needs long crawling before useful B2B coverage; heavy Java runtime | Active | Rejected: no usable index for export buyers out of the box |
+| Whoogle | MIT | Google-only proxy; single engine, frequently blocked | Moderate | Rejected: single upstream, no fallback inside the service |
+| MediaCrawler (sq-system) | NC license | Social-media crawler (Xiaohongshu/Douyin), not web search | — | Not applicable |
+
+Integration boundary: `src/search/SearxngSearchProvider.js` implements the existing `SearchProvider` interface; `CurrentCapacityRouter` reads `SEARCH_PROVIDER_ORDER` (default `searxng,exa,tavily`) and the frozen-plan executor moves a query to the next provider on any SearXNG error, 429, CAPTCHA-blocked engines or an empty page. Usage-ledger rows are written as for paid providers (provider `SEARXNG`, cost 0, `SEARCH_COST_USD_PER_QUERY_SEARXNG=0`), so SearXNG hits are visible in usage counts. Results still pass `resultFilter`/domain policy. Pin a newer image tag only after reading its release notes.

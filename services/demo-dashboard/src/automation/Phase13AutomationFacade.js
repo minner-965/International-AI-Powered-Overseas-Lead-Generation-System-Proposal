@@ -7,8 +7,8 @@ const DEFAULT_POLICY='MC07_DPV_FIRST_TOUCH_V1';
 const DEFAULT_BANDS=Object.freeze(['PRECISION','RELEVANT','GENERAL_RELEVANT']);
 
 export class Phase13AutomationFacade {
-  constructor({pool,controls,providerState,providerOrder=['tavily'],audit=()=>{}}={}){
-    Object.assign(this,{pool,controls,providerState,providerOrder,audit});
+  constructor({pool,controls,providerState,providerOrder=['tavily'],providerOrderFromEnv=false,audit=()=>{}}={}){
+    Object.assign(this,{pool,controls,providerState,providerOrder,providerOrderFromEnv,audit});
   }
 
   async registry(){
@@ -35,7 +35,7 @@ export class Phase13AutomationFacade {
       auto_email_followup_sequence:false,
       phone_whatsapp_automation:false,
       provider_spend_mode:'NO_NEW_PAID_SPEND',
-      provider_order:(search.settings?.provider_order||this.providerOrder).map(value=>String(value).toLowerCase()),
+      provider_order:(await this.currentProviderOrder(search)).map(value=>String(value).toLowerCase()),
       mode:settings.mode||'AUTO_FIRST_TOUCH',
       policy_revision:settings.policy_revision||DEFAULT_POLICY,
       template_set_key:'DPV_FIRST_TOUCH_V1',template_set_status:'APPROVED',sender_display_name:'Simon',
@@ -48,7 +48,12 @@ export class Phase13AutomationFacade {
   }
 
   async isSearchEnabled(){return this.controls.isEnabled(SEARCH_KEY);}
-  async currentProviderOrder(){return (await this.controls.get(SEARCH_KEY)).settings?.provider_order||this.providerOrder;}
+  // With SEARCH_PROVIDER_ORDER configured the environment is authoritative; the stored
+  // control settings only mirrored the earlier hard-coded default.
+  async currentProviderOrder(control=null){
+    if(this.providerOrderFromEnv)return this.providerOrder;
+    return (control||await this.controls.get(SEARCH_KEY)).settings?.provider_order||this.providerOrder;
+  }
 
   async setMaster({enabled,actor='dpv-management',reason='Management automation control',idempotencyKey=randomUUID()}={}){
     const searchSettings={provider_order:this.providerOrder,provider_spend_mode:'NO_NEW_PAID_SPEND'};

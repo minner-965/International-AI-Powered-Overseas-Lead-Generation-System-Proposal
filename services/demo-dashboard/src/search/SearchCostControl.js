@@ -2,7 +2,8 @@
 // Unit prices are configurable estimates (USD per executed search query), not
 // provider invoices. Recorded spend comes from leadgen.provider_usage_events:
 // the provider-reported cost when present, otherwise the configured unit price.
-const DEFAULT_UNIT_PRICES=Object.freeze({EXA:0.007,TAVILY:0.008});
+// SEARXNG is the local instance: free, but still listed so its ledger rows are counted.
+const DEFAULT_UNIT_PRICES=Object.freeze({SEARXNG:0,EXA:0.007,TAVILY:0.008});
 const number=(value,fallback,{min=0}={})=>{
   if(value===undefined||value===null||String(value).trim()==='')return fallback;
   const parsed=Number(value);
@@ -28,7 +29,7 @@ export function loadSearchCostConfig(env=process.env){
 export const billingPeriod=(now=new Date())=>new Date(now).toISOString().slice(0,7);
 
 export class SearchCostControl {
-  constructor({pool=null,config=loadSearchCostConfig(),providerOrder=async()=>['exa','tavily'],now=()=>new Date()}={}){
+  constructor({pool=null,config=loadSearchCostConfig(),providerOrder=async()=>['searxng','exa','tavily'],now=()=>new Date()}={}){
     this.pool=pool;this.config=config;this.providerOrder=providerOrder;this.now=now;
   }
   priced(){return Object.keys(this.config.unitPrices);}
@@ -36,8 +37,12 @@ export class SearchCostControl {
   // The estimate is conservative: the most expensive provider in the current execution order.
   async estimateUnitPrice(){
     const order=(await this.providerOrder()||[]).map(value=>String(value).toUpperCase());
-    const prices=order.map(provider=>this.unitPrice(provider)).filter(price=>price>0);
-    return prices.length?Math.max(...prices):Math.max(0,...Object.values(this.config.unitPrices));
+    // A free first provider (SearXNG) may fall back to a paid one, so the estimate stays at
+    // the most expensive provider in the order; an all-free order estimates zero.
+    // An unpriced provider is estimated at the highest configured price.
+    const highest=Math.max(0,...Object.values(this.config.unitPrices));
+    if(order.length)return Math.max(0,...order.map(provider=>Object.hasOwn(this.config.unitPrices,provider)?this.unitPrice(provider):highest));
+    return highest;
   }
   async monthSpend(queryable=this.pool){
     if(!queryable)return {billing_period:billingPeriod(this.now()),recorded_queries:0,recorded_cost_usd:0};

@@ -93,7 +93,8 @@ export class PgFrozenSearchStore {
  async attachUsage(execution,event){if(event?.id)await this.pool.query('UPDATE leadgen.research_query_executions SET provider_usage_event_id=$2,updated_at=now() WHERE id=$1',[execution.id,event.id]);}
  async fail(execution,error){
   const code=String(error.code||'SEARCH_ERROR');
-  const status=/RATE_LIMIT|CREDIT_EXHAUSTED|PROVIDER_CREDIT_EXHAUSTED/.test(code)?'RATE_LIMITED':/AUTH|API_KEY/.test(code)?'AUTH_ERROR':'REVIEW_REQUIRED';
+  // A free provider's failure (SearXNG, fallback:true) is never billing-ambiguous: retry later.
+  const status=error?.fallback===true||/RATE_LIMIT|CREDIT_EXHAUSTED|PROVIDER_CREDIT_EXHAUSTED/.test(code)?'RATE_LIMITED':/AUTH|API_KEY/.test(code)?'AUTH_ERROR':'REVIEW_REQUIRED';
   await this.pool.query(`UPDATE leadgen.research_query_executions SET status=CASE WHEN response_snapshot IS NOT NULL THEN 'REVIEW_REQUIRED' ELSE $2 END,last_error_code=$3,completed_at=now(),retry_after_at=now()+($4::int*interval '1 second'),updated_at=now() WHERE id=$1 AND status NOT IN('PERSISTED','NOT_FOUND')`,[execution.id,status,code.slice(0,120),Math.max(1,Math.min(86400,Number(error.retryAfterSeconds)||60))]);
  }
 }

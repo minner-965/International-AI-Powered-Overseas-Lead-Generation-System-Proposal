@@ -46,7 +46,8 @@ import {createResearchBatchRouter} from './research/researchBatchRouter.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 import {ExaProviderAccountState} from './search/ExaProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
-import {CurrentCapacityRouter} from './search/CurrentCapacityRouter.js';
+import {CurrentCapacityRouter,parseSearchProviderOrder} from './search/CurrentCapacityRouter.js';
+import {SearxngProviderAccountState,DEFAULT_SEARXNG_BASE_URL} from './search/SearxngSearchProvider.js';
 import {FrozenSearchPlanExecutor} from './search/FrozenSearchPlanExecutor.js';
 import {PgFrozenSearchStore} from './search/PgFrozenSearchStore.js';
 import {SearchCostControl,loadSearchCostConfig} from './search/SearchCostControl.js';
@@ -98,6 +99,10 @@ const searchConfig = Object.freeze({
   exaApiKey: process.env.EXA_API_KEY || '',
   exaEndpoint: process.env.EXA_SEARCH_ENDPOINT || (String(process.env.EXA_BASE_URL || 'https://api.exa.ai').replace(/\/+$/,'') + '/search'),
   exaEnabled: /^(1|true|yes|on)$/i.test(process.env.EXA_ENABLED || ''),
+  // Local SearXNG (compose service `searxng`, internal network only). Free; first in the default order.
+  searxngEnabled: !/^(0|false|no|off)$/i.test(process.env.SEARXNG_ENABLED || 'true'),
+  searxngBaseUrl: String(process.env.SEARXNG_BASE_URL || DEFAULT_SEARXNG_BASE_URL).replace(/\/+$/,''),
+  searxngEngines: String(process.env.SEARXNG_ENGINES || ''),
   braveApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   dataForSeoLogin: process.env.DATAFORSEO_LOGIN || '',
   dataForSeoPassword: process.env.DATAFORSEO_PASSWORD || '',
@@ -140,14 +145,17 @@ const exaProviderAccountState=new ExaProviderAccountState({pool,apiKey:searchCon
 const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
 const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState,exaAccountState:exaProviderAccountState});
 const automationControls=new AutomationControlService({pool});
-const providerStates=async()=>({exa:await exaProviderAccountState.getState(),tavily:await tavilyProviderAccountState.getState()});
-const currentProviderState=async()=>{const states=await providerStates();const control=await automationControls.get(AUTOMATION_CONTROLS.RESEARCH_PROVIDER_EXECUTION);const order=(control.settings?.provider_order||['exa','tavily']).map(v=>String(v).toLowerCase());for(const p of order)if(states[p]?.status==='AVAILABLE')return states[p];return states[order[0]]||{provider_code:'SEARCH',status:'UNAVAILABLE'};};
-const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,providerState:currentProviderState,providerOrder:['exa','tavily'],audit});
+const searxngProviderAccountState=new SearxngProviderAccountState({enabled:searchConfig.searxngEnabled,baseUrl:searchConfig.searxngBaseUrl});
+// SEARCH_PROVIDER_ORDER (default searxng,exa,tavily) is the execution order and the paid-spend allowlist.
+const searchProviderOrder=parseSearchProviderOrder(process.env.SEARCH_PROVIDER_ORDER);
+const providerStates=async()=>({searxng:await searxngProviderAccountState.getState(),exa:await exaProviderAccountState.getState(),tavily:await tavilyProviderAccountState.getState()});
+const currentProviderState=async()=>{const states=await providerStates();const order=await phase13Automation.currentProviderOrder();for(const p of order)if(states[p]?.status==='AVAILABLE')return states[p];return states[order[0]]||{provider_code:'SEARCH',status:'UNAVAILABLE'};};
+const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,providerState:currentProviderState,providerOrder:searchProviderOrder,providerOrderFromEnv:true,audit});
 const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOrder:()=>phase13Automation.currentProviderOrder(),getStates:providerStates});
 const searchCostControl=new SearchCostControl({pool,config:loadSearchCostConfig(process.env),
   providerOrder:()=>phase13Automation.currentProviderOrder()});
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
-  costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
+  costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{searxng:searxngProviderAccountState,exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
 
 const scoringService = new ScoringService({ pool });
 const customerMatchService = new CustomerMatchService({ pool });
