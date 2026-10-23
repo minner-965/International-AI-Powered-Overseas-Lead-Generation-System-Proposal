@@ -22,7 +22,7 @@ test('replaced hero, shell and KPI selector families stay absent from served CSS
 });
 
 test('every retained public JS file is reachable from HTML through module imports', async () => {
-  const html = await readFile(path.join(root, 'index.html'), 'utf8');
+  const html = (await readFile(path.join(root, 'index.html'), 'utf8')) + (await readFile(path.join(root, 'login.html'), 'utf8'));
   const pending = [...html.matchAll(/<script[^>]*src="(\/[^"?]+\.js)(?:\?[^" ]*)?"/g)]
     .map(match => match[1]).filter(url => !url.startsWith('/vendor/')).map(url => path.join(root, url.slice(1)));
   const visited = new Set();

@@ -37,6 +37,7 @@ export function placeTip(anchor, w, h, vw, vh, gap = GAP, prefer = 'top') {
   return { top, left, placement, arrow };
 }
 
+let lastPointer = 0;
 let bubble = null; let current = null; let hoverTimer = 0; let pressTimer = 0; let suppressClick = false;
 
 function ensureBubble() {
@@ -119,11 +120,12 @@ function onPointerOut(event) {
 function onFocusIn(event) {
   const el = tipTarget(event.target);
   if (!el) return;
-  let keyboard = true;
-  try { keyboard = event.target.matches(':focus-visible'); } catch { /* older engines */ }
+  let keyboard = Date.now() - lastPointer > 800;
+  try { keyboard = keyboard && event.target.matches(':focus-visible'); } catch { /* older engines */ }
   if (keyboard) showTip(el);
 }
 function onPointerDown(event) {
+  lastPointer = Date.now();
   const el = tipTarget(event.target);
   if (event.pointerType !== 'touch' || !el) { if (current && !tipTarget(event.target)) hideTip(); return; }
   clearTimeout(pressTimer);

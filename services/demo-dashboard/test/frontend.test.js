@@ -169,11 +169,11 @@ test('research form exposes country selector and optional city and region fields
   assert.match(app, /\$\('#research-region'\)\.value = '';/);
 });
 
-test('CRM shell presents currently visible markets without a fixed city in navigation context', async () => {
+test('CRM shell shows the signed-in account (markets are per merchant) without a fixed city in navigation context', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const shellContext = html.slice(html.indexOf('<aside id="app-sidebar"'), html.indexOf('</aside>'));
-  assert.match(shellContext, /AE \/ MX/);
-  assert.match(shellContext, /UAE and Mexico/);
+  assert.match(shellContext, /id="session-name"/);
+  assert.match(shellContext, /id="logout-button"/);
   assert.equal(/Bangladesh|孟加拉国|AE \/ MX \/ BD/.test(shellContext), false);
   assert.equal(/Dubai|迪拜/.test(shellContext), false);
 });
