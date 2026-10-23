@@ -588,3 +588,4 @@ Update 2026-10-23: the workspace host port defaults to 3100 (`DASHBOARD_PORT`), 
 - 2026-10-23: merchant API contract and Cloudflare Tunnel guide added (docs only).
 - 2026-10-23: SearXNG local search first (paid fallback), de/fr/pt/it/tr category terms, weekly first-touch and follow-up quota, button tooltips, Company Detail relayout. Merchant accounts in progress.
 - 2026-10-23: merchant accounts (migration 066, sign-in, 7-day trial, admin merchant management, merchant mailbox binding, per-merchant data isolation and quotas, feedback) and setup script admin creation + SearXNG.
+- 2026-10-23: merchant UI uses scope choices with Chinese names, skips SIM-only endpoints, shows search quota.
