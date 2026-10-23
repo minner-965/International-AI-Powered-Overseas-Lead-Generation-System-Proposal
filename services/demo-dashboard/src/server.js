@@ -61,6 +61,7 @@ import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFa
 import {MerchantService} from './merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from './merchant/auth.js';
 import {createMerchantRouter} from './merchant/router.js';
+import {createOriginGuard,createSecurityHeaders} from './merchant/originGuard.js';
 import {requestScope,companyScopeSql,filterRowsByCompany,researchJobScopeSql,assertResearchJobVisible} from './merchant/scope.js';
 
 const { Pool } = pg;
@@ -609,6 +610,8 @@ const researchWorkbenchService = new ResearchWorkbenchService({
 
 registerPhase7RawWebhookRoutes(app,{service:phase7Service,queue:phase7QueueProxy});
 
+// Baseline security headers on every response, including the static HTML pages.
+app.use(createSecurityHeaders({env:process.env}));
 app.use((_req, res, next) => {
   // This management workspace shows mutable research, scoring and job state.
   // Prevent a previous response or static bundle from masking a completed run.
@@ -619,6 +622,8 @@ app.use(express.json({ limit: '16mb' }));
 // Merchant accounts: session sign-in, deny-by-default merchant routes and data scope (round 4).
 if(process.env.TRUST_PROXY)app.set('trust proxy',/^\d+$/.test(process.env.TRUST_PROXY)?Number(process.env.TRUST_PROXY):process.env.TRUST_PROXY);
 app.use('/api',createSessionMiddleware({pool,env:process.env}));
+// Cross-site write protection runs after the session cookie is parsed, before the routes.
+app.use(createOriginGuard({env:process.env}));
 app.use(createWorkspaceGate({merchants:merchantService,env:process.env,pool}));
 app.use(createMerchantRouter({merchants:merchantService,env:process.env}));
 app.use('/vendor/tabler', express.static(new URL('../node_modules/@tabler/core/dist', import.meta.url).pathname));
