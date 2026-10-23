@@ -3,6 +3,8 @@ import {hash as argonHash,verify as argonVerify} from '@node-rs/argon2';
 import {SmtpImapProviderAdapter} from '../outreach/smtpImapProvider.js';
 import {createSecretBox} from './secretBox.js';
 import {MAILBOX_PRESETS,presetByKey} from './mailboxPresets.js';
+import {categoryNames,marketNames} from './referenceNames.js';
+import {isMarketVisible} from '../../public/market-visibility.js';
 
 export const MERCHANT_STATUSES=Object.freeze(['TRIAL','ACTIVE','EXPIRED','DISABLED']);
 export const DEFAULT_FEATURES=Object.freeze({research:true,email:true,crm_sync:false});
@@ -406,7 +408,15 @@ export class MerchantService{
 
   async scope(merchantId){
     const row=(await this.pool.query('SELECT * FROM leadgen.merchant_scope WHERE merchant_id=$1',[merchantUuid(merchantId)])).rows[0];
-    return{category_scope_ids:row?.category_scope_ids||[],market_codes:row?.market_codes||[],updated_at:row?.updated_at||null};
+    const [markets,categories]=await Promise.all([
+      this.pool.query(`SELECT market_code,country_name FROM leadgen.research_market_registry WHERE status='ACTIVE' AND search_enabled=true ORDER BY market_code`),
+      this.pool.query(`SELECT id,normalized_category,product_profile FROM leadgen.dpv_product_category_scope_current
+        WHERE scope_status='ACTIVE' AND approval_status='APPROVED' ORDER BY product_profile,normalized_category,id`)]);
+    // Choices: SIM-approved categories and active markets (merchants cannot read the SIM registries).
+    return{category_scope_ids:row?.category_scope_ids||[],market_codes:row?.market_codes||[],updated_at:row?.updated_at||null,
+      available_markets:markets.rows.filter(m=>isMarketVisible(m.market_code)).map(m=>({code:m.market_code,...marketNames(m.market_code,m.country_name)})),
+      available_categories:categories.rows.map(c=>{const names=categoryNames(c.normalized_category);
+        return{id:c.id,code:c.normalized_category,product_profile:c.product_profile,name_en:names.name_en,name_zh:names.name_zh};})};
   }
   async saveScope(merchantId,input={},actor){
     const id=merchantUuid(merchantId);

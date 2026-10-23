@@ -326,7 +326,12 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
 
       // ---- scope, onboarding, feedback ----
       assert.equal((await anna('PUT','/api/merchant/scope',{category_scope_ids:[category],market_codes:['ZZ']})).body.code,'MERCHANT_MARKET_NOT_ACTIVE');
-      assert.deepEqual((await anna('PUT','/api/merchant/scope',{category_scope_ids:[category],market_codes:['AE']})).body.market_codes,['AE']);
+      const savedScope=(await anna('PUT','/api/merchant/scope',{category_scope_ids:[category],market_codes:['AE']})).body;
+      assert.deepEqual(savedScope.market_codes,['AE']);
+      const ae=savedScope.available_markets.find(m=>m.code==='AE');
+      assert.deepEqual(ae,{code:'AE',name_zh:'阿拉伯联合酋长国',name_en:'United Arab Emirates'});
+      const approved=savedScope.available_categories.find(c=>c.id===category);
+      assert.ok(approved.name_en&&approved.name_zh,'approved category has English and Chinese names');
       assert.deepEqual((await anna('GET','/api/merchant/onboarding')).body.steps.map(step=>step.done),[true,true,true,true]);
       assert.deepEqual((await ben('GET','/api/merchant/onboarding')).body.steps.map(step=>step.done),[false,false,false,false]);
       assert.equal((await anna('POST','/api/feedback',{page:'#pipeline',message:'Please add WhatsApp'})).status,201);

@@ -6,6 +6,7 @@
 //   node scripts/setup-supply-categories.mjs --categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS
 //   node scripts/setup-supply-categories.mjs --all
 //   option: --base http://127.0.0.1:3100 (default: DASHBOARD_PORT from .env, else 3100; inside the container use http://127.0.0.1:3000)
+//   sign-in (AUTH_REQUIRED=true): --email <admin> --password <password>, or SIM_ADMIN_EMAIL / SIM_ADMIN_PASSWORD
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -17,11 +18,32 @@ function dashboardPort() {
 }
 const base = (option('--base') || process.env.APP_BASE_URL || `http://127.0.0.1:${dashboardPort()}`).replace(/\/$/, '');
 
-async function request(path, init = {}) {
-  const response = await fetch(`${base}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init.headers || {}) } });
+let cookie = '';
+const email = option('--email') || process.env.SIM_ADMIN_EMAIL || '';
+const password = option('--password') || process.env.SIM_ADMIN_PASSWORD || '';
+const signInHint = 'Sign-in required: pass --email <admin email> --password <password> (or set SIM_ADMIN_EMAIL / SIM_ADMIN_PASSWORD).';
+
+async function request(path, init = {}, { allow401 = false } = {}) {
+  const response = await fetch(`${base}${path}`, { ...init,
+    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...(init.headers || {}) } });
+  const setCookie = response.headers.get('set-cookie');
+  if (setCookie) cookie = setCookie.split(';')[0];
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && allow401) return { status: 401, body };
+  if (response.status === 401) { console.error(signInHint); process.exit(2); }
   if (!response.ok) throw new Error(`${init.method || 'GET'} ${path} -> ${response.status} ${body.code || ''} ${body.error || ''}`.trim());
   return body;
+}
+
+// The workspace requires a signed-in administrator unless AUTH_REQUIRED=false.
+// A server older than the merchant-accounts release has no /api/auth/me and no sign-in.
+const me = await request('/api/auth/me', {}, { allow401: true }).catch(() => ({ auth_required: false }));
+if (me.status === 401 || me.auth_required === true && !me.user?.id) {
+  if (!email || !password) { console.error(signInHint); process.exit(2); }
+  const login = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, { allow401: true });
+  if (login.status === 401) { console.error(`Sign-in failed for ${email}. ${signInHint}`); process.exit(2); }
+  if (login.user?.role !== 'ADMIN') { console.error('This account is not the SIM administrator.'); process.exit(2); }
+  if (login.user?.must_change_password) { console.error('Change the temporary password in the workspace first.'); process.exit(2); }
 }
 
 const candidates = (await request('/api/category-scopes/candidates')).items;

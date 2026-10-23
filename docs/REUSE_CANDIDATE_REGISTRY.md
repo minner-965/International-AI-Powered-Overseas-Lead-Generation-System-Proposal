@@ -261,3 +261,12 @@ Integration boundary: `src/search/SearxngSearchProvider.js` implements the exist
 `npm audit --omit=dev` after the install reports the same 7 pre-existing advisories (brace-expansion, http-cache-semantics, ip-address, nodemailer, proxy-addr, source-map-js, undici) and none from the three new packages.
 
 Integration boundary: `src/merchant/auth.js` (session + `/api` gate with a deny-by-default merchant route list), `src/merchant/scope.js` (central data scope), `src/merchant/MerchantService.js`, `src/merchant/router.js`. Business services keep their existing role checks; `AUTH_REQUIRED=false` restores the previous `DPV_WORKSPACE_ACTOR` development identity.
+
+## Button explanations (tooltips) and display names (round 4)
+
+| Candidate | Version / license | Fit | Decision |
+|---|---|---|---|
+| Dependency-free CSS tooltip: `data-tip` attribute + `aria-describedby` (shown on hover and keyboard focus, long-press / "?" on phones) | project code (`public/ui/v4/tooltips.js` + `app.css`), no package | Every button needs a short explanation; native attributes keep it accessible to screen readers and keyboard users with no runtime dependency or remote asset | **Adopted** (frontend agent). Floating UI (MIT) was the fallback if collision handling had proved insufficient; not needed |
+| Native `title` attribute | browser platform | Not shown on keyboard focus or touch, delayed, not styleable | Not used alone |
+| `Intl.DisplayNames` (ICU, built into Node) | Node core | Chinese/English country names for the merchant market picker (`src/merchant/referenceNames.js`) | **Reuse**; no country-name table added |
+| Shopify taxonomy zh-CN names (vendored, MIT) | `rules/product-taxonomy/shopify` | Chinese category names where SIM has no reviewed label (SIM's reviewed labels — the export wording — take precedence) | **Reuse** |
