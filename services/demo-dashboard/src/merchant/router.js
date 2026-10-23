@@ -1,35 +1,25 @@
 import express from 'express';
 import {authRequired,requireAdmin} from './auth.js';
 import {fail,merchantUuid} from './MerchantService.js';
+import {createLoginAttempts} from './loginAttempts.js';
 
 const asyncRoute=handler=>(req,res,next)=>Promise.resolve(handler(req,res,next)).catch(next);
 const actorOf=req=>req.workspaceUser?.email||req.managementUser?.identity||'dpv-workspace';
 
-// Small in-memory limiter for failed sign-ins (per address and per client IP).
-function loginLimiter({max=8,windowMs=15*60_000,now=Date.now}={}){
-  const failures=new Map();
-  const key=(kind,value)=>`${kind}:${String(value||'').toLowerCase()}`;
-  const recent=k=>(failures.get(k)||[]).filter(at=>now()-at<windowMs);
-  return{
-    blocked(email,ip){return [key('e',email),key('i',ip)].some(k=>recent(k).length>=max);},
-    fail(email,ip){for(const k of [key('e',email),key('i',ip)])failures.set(k,[...recent(k),now()]);if(failures.size>10_000)failures.clear();},
-    reset(email){failures.delete(key('e',email));}
-  };
-}
-
 export function createMerchantRouter({merchants,env=process.env}={}){
   const router=express.Router();
-  const limiter=loginLimiter();
+  // Durable sign-in failure limiter (migration 067): 8 failures / 15 min per address and per IP.
+  const limiter=createLoginAttempts({pool:merchants.pool});
   const required=authRequired(env);
 
   // ---- auth ----
   router.post('/api/auth/login',asyncRoute(async(req,res)=>{
     const email=String(req.body?.email||'').trim().toLowerCase();
-    if(limiter.blocked(email,req.ip))return res.status(429).json({error:'Too many attempts; try again later',code:'AUTH_RATE_LIMITED'});
+    if(await limiter.blocked(email,req.ip))return res.status(429).json({error:'Too many attempts; try again later',code:'AUTH_RATE_LIMITED'});
     let user;
     try{user=await merchants.authenticate({email,password:req.body?.password});}
-    catch(error){if(error.code==='AUTH_INVALID_CREDENTIALS')limiter.fail(email,req.ip);throw error;}
-    limiter.reset(email);
+    catch(error){if(error.code==='AUTH_INVALID_CREDENTIALS')await limiter.fail(email,req.ip);throw error;}
+    await limiter.reset(email);
     await new Promise((resolve,reject)=>req.session.regenerate(error=>error?reject(error):resolve()));
     req.session.userId=user.id;
     await new Promise((resolve,reject)=>req.session.save(error=>error?reject(error):resolve()));

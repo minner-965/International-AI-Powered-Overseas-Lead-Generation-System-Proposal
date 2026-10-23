@@ -46,6 +46,7 @@ export const CLEANUP_OPTIONAL_CATALOG_MIGRATION_KEY = '063_cleanup_optional_coho
 export const CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY = '064_crm_followup_pipeline.sql';
 export const GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY = '065_global_markets_categories_search_cost.sql';
 export const MERCHANT_ACCOUNTS_MIGRATION_KEY = '066_merchant_accounts.sql';
+export const LOGIN_HARDENING_MIGRATION_KEY = '067_login_hardening.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -89,6 +90,7 @@ const cleanupOptionalCatalogPath = path.resolve(projectRoot,'database/migrations
 const crmFollowupPipelinePath = path.resolve(projectRoot,'database/migrations',CRM_FOLLOWUP_PIPELINE_MIGRATION_KEY);
 const globalMarketsCategoriesSearchCostPath = path.resolve(projectRoot,'database/migrations',GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY);
 const merchantAccountsPath = path.resolve(projectRoot,'database/migrations',MERCHANT_ACCOUNTS_MIGRATION_KEY);
+const loginHardeningPath = path.resolve(projectRoot,'database/migrations',LOGIN_HARDENING_MIGRATION_KEY);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -818,7 +820,10 @@ export async function applyPhase7Migrations(options = {}) {
   const merchantAccounts=await applyPhase7Migration({...options,
     migrationPath:options.merchantAccountsMigrationPath||merchantAccountsPath,
     appliedBy:options.appliedBy||'dpv-merchant-accounts-migration-runner'});
-  return {merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const loginHardening=await applyPhase7Migration({...options,
+    migrationPath:options.loginHardeningMigrationPath||loginHardeningPath,
+    appliedBy:options.appliedBy||'dpv-login-hardening-migration-runner'});
+  return {loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -885,6 +890,18 @@ export async function verifyMerchantAccountsMigration(client){
   return{merchant_accounts:'OWNER_SCOPED'};
 }
 
+export async function verifyLoginHardeningMigration(client){
+  const result=await client.query(`SELECT
+    to_regclass('leadgen.login_attempts') login_attempts,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='login_attempts'
+      AND column_name=ANY(ARRAY['identifier','kind','attempts','locked_until','updated_at'])) columns,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conname='login_attempts_pkey'
+      AND conrelid='leadgen.login_attempts'::regclass) primary_key`);
+  const row=result.rows[0]||{};
+  if(!row.login_attempts||Number(row.columns)!==5||!row.primary_key)throw new Error('Login hardening migration verification failed');
+  return{login_hardening:'DURABLE_ATTEMPT_COUNTERS'};
+}
+
 export async function verifyCrmFollowupPipelineMigration(client){
   const columns=await client.query(`SELECT table_name,column_name,is_nullable FROM information_schema.columns
     WHERE table_schema='leadgen' AND (table_name,column_name) IN
@@ -947,7 +964,9 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===MERCHANT_ACCOUNTS_MIGRATION_KEY
+      const verification = migrationKey===LOGIN_HARDENING_MIGRATION_KEY
+        ?await verifyLoginHardeningMigration(client)
+        :migrationKey===MERCHANT_ACCOUNTS_MIGRATION_KEY
         ?await verifyMerchantAccountsMigration(client)
         :migrationKey===GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY
         ?await verifyGlobalMarketsCategoriesSearchCostMigration(client)
@@ -1039,7 +1058,9 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, baseline ? 'fresh-install-baseline' : appliedBy]
     );
-    const verification = migrationKey===MERCHANT_ACCOUNTS_MIGRATION_KEY
+    const verification = migrationKey===LOGIN_HARDENING_MIGRATION_KEY
+        ?await verifyLoginHardeningMigration(client)
+        :migrationKey===MERCHANT_ACCOUNTS_MIGRATION_KEY
         ?await verifyMerchantAccountsMigration(client)
         :migrationKey===GLOBAL_MARKETS_CATEGORIES_SEARCH_COST_MIGRATION_KEY
       ?await verifyGlobalMarketsCategoriesSearchCostMigration(client)
