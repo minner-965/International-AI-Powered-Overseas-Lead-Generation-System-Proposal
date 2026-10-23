@@ -21,6 +21,7 @@ import {SearchPlanService} from '../src/searchPlanning/SearchPlanService.js';
 import {SearchCostControl,loadSearchCostConfig} from '../src/search/SearchCostControl.js';
 import {CategoryScopeService} from '../src/categoryProcurement/CategoryScopeService.js';
 import {renderFirstTouchTemplate} from '../src/outreach/firstTouchTemplates.js';
+import {SmtpImapProviderAdapter} from '../src/outreach/smtpImapProvider.js';
 
 // Merchant accounts against a throwaway PostgreSQL database built from the migration files.
 // Zero external calls: SMTP/IMAP is an in-process double.
@@ -236,8 +237,11 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
       // ---- mailbox: presets, encryption, test connection ----
       const presets=(await anna('GET','/api/merchant/mailbox/presets')).body.items;
       assert.ok(['gmail','microsoft365','zoho','aliyun_qiye','tencent_exmail','netease_qiye','other'].every(key=>presets.some(p=>p.key===key)));
-      assert.ok(presets.every(p=>p.smtp_port===587&&p.imap_port===993));
-      assert.equal((await anna('PUT','/api/merchant/mailbox',{preset_key:'zoho',smtp_host:'smtp.zoho.com',smtp_port:465,imap_host:'imap.zoho.com',imap_port:993,username:'anna@alpha.example',password:'app-pass'})).body.code,'SMTP_STARTTLS_587_REQUIRED');
+      assert.ok(presets.every(p=>(p.smtp_port===587||p.smtp_port===465)&&p.imap_port===993));
+      assert.ok(['aliyun_qiye','tencent_exmail','netease_qiye'].every(key=>presets.find(p=>p.key===key)?.smtp_port===465));
+      assert.ok(['gmail','microsoft365','zoho'].every(key=>presets.find(p=>p.key===key)?.smtp_port===587));
+      // Port 25 (and anything outside 587/465) is refused before any save.
+      assert.equal((await anna('PUT','/api/merchant/mailbox',{preset_key:'zoho',smtp_host:'smtp.zoho.com',smtp_port:25,imap_host:'imap.zoho.com',imap_port:993,username:'anna@alpha.example',password:'app-pass'})).body.code,'SMTP_PORT_UNSUPPORTED');
       assert.equal((await anna('PUT','/api/merchant/mailbox',{preset_key:'zoho',username:'anna@alpha.example',from_email:'ceo@alpha.example',password:'app-pass'})).body.code,'MAILBOX_ADDRESS_MISMATCH');
       const saved=(await anna('PUT','/api/merchant/mailbox',{preset_key:'zoho',username:'anna@alpha.example',password:'app-pass-123',from_name:'Anna Li'})).body;
       assert.equal(saved.configured,true);assert.equal(saved.verified_at,null);assert.equal('password' in saved,false);assert.equal(saved.smtp_host,'smtp.zoho.com');
@@ -367,6 +371,26 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
       assert.equal((await simon('POST','/api/auth/logout')).status,200);
       assert.equal((await simon('GET','/api/admin/merchants')).body.code,'AUTH_REQUIRED');
     }finally{server.close();}
+  });
+});
+
+test('merchant mailbox: a 465 preset saves and resolves to an implicit-TLS provider config',{skip:!adminUrl},async()=>{
+  await withDatabase(async pool=>{await applyFiles(pool,await migrationFiles());},async(pool)=>{
+    const env={MERCHANT_SECRET_KEY:SECRET_KEY,DPV_WORKSPACE_ACTOR:'dev'};
+    // No socket is opened: the provider factory records the config it is handed.
+    const built=[];const merchants=new MerchantService({pool,env,providerFactory:config=>{built.push(config);return{config,testConnections:async()=>({smtp:{ok:true},imap:{ok:true}})};}});
+    const created=await merchants.createMerchant({company_name:'Qiye Co',contact_name:'Li',login_email:'li@qiye.example'},'admin');
+    const merchantId=created.merchant.id;
+    const saved=await merchants.saveMailbox(merchantId,{preset_key:'aliyun_qiye',username:'li@qiye.example',password:'app-pass-465',from_name:'Li'},'admin');
+    assert.equal(saved.smtp_port,465);assert.equal(saved.imap_port,993);assert.equal(saved.smtp_host,'smtp.qiye.aliyun.com');
+    const row=await merchants.mailboxRow(merchantId);
+    const cfg=merchants.providerConfig(row,await merchants.getMerchant(merchantId));
+    assert.equal(cfg.smtpPort,465);assert.equal(cfg.smtpSecure,true);assert.equal(cfg.smtpRequireTls,false);
+    assert.equal(cfg.smtpPassword,'app-pass-465');
+    // The adapter accepts the derived config: no connection-contract SMTP error.
+    const provider=new SmtpImapProviderAdapter(cfg);
+    assert.ok(!provider.connectionContract().some(code=>code.startsWith('SMTP_')));
+    assert.equal(provider.capabilities().transport,'SMTP_TLS');
   });
 });
 

@@ -329,8 +329,8 @@ export class MerchantService{
     const host=value=>{const text=String(value??'').trim().toLowerCase();if(!/^[a-z0-9.-]{3,255}$/.test(text)||!text.includes('.'))throw fail('MAILBOX_HOST_INVALID','A valid server host is required',422);return text;};
     const smtpHost=host(input.smtp_host??preset?.smtp_host);const imapHost=host(input.imap_host??preset?.imap_host);
     const smtpPort=Number(input.smtp_port??preset?.smtp_port??587);const imapPort=Number(input.imap_port??preset?.imap_port??993);
-    // Transport contract kept from SIM's own mailbox: SMTP 587 STARTTLS, IMAP 993 TLS.
-    if(smtpPort!==587)throw fail('SMTP_STARTTLS_587_REQUIRED','SMTP must use port 587 (STARTTLS)',422);
+    // Transport contract: SMTP submission on 587 (STARTTLS) or 465 (implicit TLS); IMAP 993 TLS.
+    if(smtpPort!==587&&smtpPort!==465)throw fail('SMTP_PORT_UNSUPPORTED','SMTP must use port 587 (STARTTLS) or 465 (TLS)',422);
     if(imapPort!==993)throw fail('IMAP_TLS_993_REQUIRED','IMAP must use port 993 (TLS)',422);
     const username=email(input.username);const fromEmail=email(input.from_email??username);const replyTo=email(input.reply_to??username);
     // Sender and reply address must be the bound mailbox: replies are read from that inbox.
@@ -360,7 +360,7 @@ export class MerchantService{
   providerConfig(row,merchant,{controlledRecipient=null}={}){
     const password=this.secretBox.decrypt(row.password_ciphertext,`merchant-mailbox:${row.merchant_id}`);
     return{enabled:true,inboundEnabled:true,controlledTestMode:Boolean(controlledRecipient),controlledRecipientAllowlist:controlledRecipient||'',
-      useCaseApproved:Boolean(row.verified_at),smtpHost:row.smtp_host,smtpPort:row.smtp_port,smtpSecure:false,smtpRequireTls:true,
+      useCaseApproved:Boolean(row.verified_at),smtpHost:row.smtp_host,smtpPort:row.smtp_port,smtpSecure:row.smtp_port===465,smtpRequireTls:row.smtp_port!==465,
       smtpUser:row.username,smtpPassword:password,senderEmail:row.from_email,replyToEmail:row.reply_to,
       imapHost:row.imap_host,imapPort:row.imap_port,imapTls:true,imapUser:row.username,imapPassword:password,
       imapInbox:'INBOX',messageIdDomain:String(row.from_email).split('@')[1],senderDisplayName:row.from_name||merchant?.sender_name||null};

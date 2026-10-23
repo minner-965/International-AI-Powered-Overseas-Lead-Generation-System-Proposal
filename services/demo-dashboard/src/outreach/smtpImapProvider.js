@@ -89,7 +89,11 @@ export class SmtpImapProviderAdapter {
     this.controlledTestMode=bool(config.controlledTestMode??config.smtpControlledTestMode,true);
     this.useCaseApproved=bool(config.useCaseApproved??config.smtpUseCaseApproved,false);
     this.smtpHost=clean(config.smtpHost||'');this.smtpPort=Number(config.smtpPort||587);
-    this.smtpSecure=bool(config.smtpSecure,false);this.smtpRequireTls=bool(config.smtpRequireTls,true);
+    // Encryption follows the port when the caller did not set it: 465 is implicit TLS
+    // (secure, no STARTTLS), 587 is STARTTLS (not secure, requireTLS).
+    const unset=value=>value===undefined||value===null||value==='';
+    this.smtpSecure=unset(config.smtpSecure)?this.smtpPort===465:bool(config.smtpSecure,false);
+    this.smtpRequireTls=unset(config.smtpRequireTls)?this.smtpPort!==465:bool(config.smtpRequireTls,true);
     this.smtpUser=normalizedEmail(config.smtpUser||'');this.smtpPassword=String(config.smtpPassword||'');
     this.senderEmail=normalizedEmail(config.senderEmail||this.smtpUser);this.replyToEmail=normalizedEmail(config.replyToEmail||this.senderEmail);
     this.unsubscribeEmail=normalizedEmail(config.unsubscribeEmail||this.replyToEmail);
@@ -106,13 +110,16 @@ export class SmtpImapProviderAdapter {
   configured(){return Boolean(this.smtpHost&&this.smtpUser&&this.smtpPassword&&this.senderEmail&&this.imapHost&&this.imapUser&&this.imapPassword);}
   connectionContract(){
     const errors=[];
-    if(this.smtpPort!==587||this.smtpSecure||!this.smtpRequireTls)errors.push('SMTP_STARTTLS_587_REQUIRED');
+    // SMTP submission: 587 with STARTTLS (not secure) or 465 with implicit TLS (secure).
+    if(this.smtpPort===587){if(this.smtpSecure||!this.smtpRequireTls)errors.push('SMTP_STARTTLS_587_REQUIRED');}
+    else if(this.smtpPort===465){if(!this.smtpSecure)errors.push('SMTP_TLS_465_REQUIRED');}
+    else errors.push('SMTP_PORT_UNSUPPORTED');
     if(this.imapPort!==993||!this.imapTls)errors.push('IMAP_TLS_993_REQUIRED');
     if(this.senderEmail!==this.smtpUser)errors.push('SMTP_SENDER_MISMATCH');
     if(this.replyToEmail!==this.smtpUser)errors.push('SMTP_REPLY_TO_MISMATCH');
     return errors;
   }
-  capabilities(){return{outbound:true,inbound:true,ambiguous_reconciliation:true,transport:'SMTP_STARTTLS',mailbox:'IMAP_TLS'};}
+  capabilities(){return{outbound:true,inbound:true,ambiguous_reconciliation:true,transport:this.smtpPort===465?'SMTP_TLS':'SMTP_STARTTLS',mailbox:'IMAP_TLS'};}
   validatePurpose(message={}){
     if(!this.enabled)return{allowed:false,code:'SMTP_IMAP_DISABLED'};
     if(!this.configured())return{allowed:false,code:'PROVIDER_NOT_CONFIGURED'};
@@ -122,7 +129,7 @@ export class SmtpImapProviderAdapter {
     if(!this.controlledTestMode&&!this.useCaseApproved)return{allowed:false,code:'SMTP_USE_CASE_NOT_APPROVED'};
     return{allowed:true,code:'PROVIDER_PURPOSE_ALLOWED'};
   }
-  #smtp(){return this.transporterFactory({host:this.smtpHost,port:this.smtpPort,secure:false,requireTLS:true,auth:{user:this.smtpUser,pass:this.smtpPassword},connectionTimeout:this.timeoutMs,greetingTimeout:this.timeoutMs,socketTimeout:this.timeoutMs,tls:{servername:this.smtpHost}});}
+  #smtp(){return this.transporterFactory({host:this.smtpHost,port:this.smtpPort,secure:this.smtpSecure,requireTLS:this.smtpSecure?false:this.smtpRequireTls,auth:{user:this.smtpUser,pass:this.smtpPassword},connectionTimeout:this.timeoutMs,greetingTimeout:this.timeoutMs,socketTimeout:this.timeoutMs,tls:{servername:this.smtpHost}});}
   #imap({verifyOnly=false}={}){return this.imapClientFactory({host:this.imapHost,port:this.imapPort,secure:true,auth:{user:this.imapUser,pass:this.imapPassword},logger:false,verifyOnly,connectionTimeout:this.timeoutMs,greetingTimeout:this.timeoutMs,socketTimeout:this.timeoutMs,tls:{servername:this.imapHost}});}
   async healthCheck({verifyConnection=false}={}){
     const configured=this.configured();const contract=this.connectionContract();
@@ -141,7 +148,7 @@ export class SmtpImapProviderAdapter {
     if(!this.configured())return{smtp:{ok:false,code:'PROVIDER_NOT_CONFIGURED',message:'Mailbox settings are incomplete'},imap:{ok:false,code:'PROVIDER_NOT_CONFIGURED',message:'Mailbox settings are incomplete'},network_calls:0};
     const smtpContract=contract.find(code=>code.startsWith('SMTP_'));const imapContract=contract.find(code=>code.startsWith('IMAP_'));
     const result={smtp:null,imap:null,network_calls:0};
-    if(smtpContract)result.smtp={ok:false,code:smtpContract,message:'SMTP must use port 587 with STARTTLS and the login address as sender'};
+    if(smtpContract)result.smtp={ok:false,code:smtpContract,message:'SMTP must use port 587 (STARTTLS) or 465 (TLS) with the login address as sender'};
     else{let smtp=null;try{result.network_calls++;smtp=this.#smtp();await smtp.verify();result.smtp={ok:true,code:'SMTP_READY',message:'SMTP login succeeded'};}
       catch(error){result.smtp={ok:false,code:error?.code==='EAUTH'?'SMTP_AUTH_FAILED':timeoutCode(error)?'SMTP_TIMEOUT':'SMTP_CONNECTION_FAILED',message:clean(error?.response||error?.message||'SMTP connection failed',300)};}
       finally{await smtp?.close?.();}}

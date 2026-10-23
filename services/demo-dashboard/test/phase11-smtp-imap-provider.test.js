@@ -17,12 +17,30 @@ test('SMTP/IMAP defaults closed before any connection or send',async()=>{
   assert.equal((await provider.health()).network_calls,0);assert.equal(called,0);
 });
 
-test('OquMail contract requires SMTP 587 STARTTLS and IMAP 993 TLS',()=>{
+test('contract accepts SMTP 587 STARTTLS or 465 implicit TLS, and IMAP 993 TLS',()=>{
   assert.equal(new SmtpImapProviderAdapter(config()).connectionContract().length,0);
+  // 465 with implicit TLS (secure=true) passes the contract.
+  assert.equal(new SmtpImapProviderAdapter(config({smtpPort:465,smtpSecure:true,smtpRequireTls:false})).connectionContract().length,0);
+  // 465 derives secure=true from the port when the caller leaves encryption unset.
+  const derived465=new SmtpImapProviderAdapter(config({smtpPort:465,smtpSecure:undefined,smtpRequireTls:undefined}));
+  assert.equal(derived465.smtpSecure,true);assert.equal(derived465.connectionContract().length,0);
   assert.deepEqual(new SmtpImapProviderAdapter(config({smtpSecure:true})).connectionContract(),['SMTP_STARTTLS_587_REQUIRED']);
+  // 465 without implicit TLS is rejected; port 25 is unsupported.
+  assert.deepEqual(new SmtpImapProviderAdapter(config({smtpPort:465,smtpSecure:false,smtpRequireTls:true})).connectionContract(),['SMTP_TLS_465_REQUIRED']);
+  assert.deepEqual(new SmtpImapProviderAdapter(config({smtpPort:25,smtpSecure:false,smtpRequireTls:true})).connectionContract(),['SMTP_PORT_UNSUPPORTED']);
   assert.deepEqual(new SmtpImapProviderAdapter(config({imapTls:false})).connectionContract(),['IMAP_TLS_993_REQUIRED']);
   assert.deepEqual(new SmtpImapProviderAdapter(config({senderEmail:'other@example.test'})).connectionContract(),['SMTP_SENDER_MISMATCH']);
   assert.deepEqual(new SmtpImapProviderAdapter(config({replyToEmail:'other@example.test'})).connectionContract(),['SMTP_REPLY_TO_MISMATCH']);
+  assert.equal(new SmtpImapProviderAdapter(config({smtpPort:465,smtpSecure:true})).capabilities().transport,'SMTP_TLS');
+});
+
+test('465 mailbox opens an implicit-TLS transport (secure, no STARTTLS)',async()=>{
+  const sent=[];const provider=new SmtpImapProviderAdapter(config({smtpPort:465,smtpSecure:true,smtpRequireTls:false,transporterFactory:options=>({
+    verify:async()=>true,close:async()=>{},sendMail:async message=>{sent.push({options,message});return{messageId:message.messageId};}
+  })}));
+  const result=await provider.send({from:'dpvsale@example.test',to:'controlled@example.test',reply_to:'dpvsale@example.test',subject:'TLS test',body_text:'Plain'},'tls-key');
+  assert.equal(result.status,'PROVIDER_ACCEPTED');
+  assert.equal(sent[0].options.secure,true);assert.equal(sent[0].options.port,465);assert.notEqual(sent[0].options.requireTLS,true);
 });
 
 test('missing mailbox credentials fail closed before any network connection',async()=>{
