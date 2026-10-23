@@ -585,3 +585,4 @@ The prior complete status is archived at [pre-CL02 snapshot](history/status/2026
 SIM now also runs on the owner's Windows PC from `scripts/local-setup.ps1` (branch `claude/gifted-hypatia-59rtaf`, migrations through 065 applied, 13 supply categories approved). The JSON block above is still the 2026-09-13 server snapshot; regenerate it with `node scripts/generate-current-project-status.mjs` on the runtime it should describe. Any commit that changes files outside `docs/` must also commit this file, or the CI status check fails.
 
 Update 2026-10-23: the workspace host port defaults to 3100 (`DASHBOARD_PORT`), because sq-system serves 3000 on the same PC; `/api/health` now reports `service: "sim-leadgen"` and the setup script waits for that identity.
+- 2026-10-23: merchant API contract and Cloudflare Tunnel guide added (docs only).
