@@ -23,7 +23,8 @@ export function createManagementAuth(env = process.env) {
   const user = Object.freeze({ identity, role });
 
   function attachWorkspaceUser(req, _res, next) {
-    req.managementUser = user;
+    // A signed-in workspace user (merchant accounts gate) keeps its own identity.
+    if (!req.workspaceUser) req.managementUser = user;
     next();
   }
 
