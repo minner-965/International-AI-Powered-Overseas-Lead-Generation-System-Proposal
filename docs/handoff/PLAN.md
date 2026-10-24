@@ -6,7 +6,7 @@
 
 1. **开放 SMTP 465（隐式 TLS），保留 587（STARTTLS），IMAP 仍 993。** 按端口决定加密：465→`secure:true`；587→`secure:false,requireTLS:true`。改 `src/outreach/smtpImapProvider.js`、`src/merchant/MerchantService.js`（saveMailbox / providerConfig）、`src/merchant/mailboxPresets.js`（阿里/腾讯/网易改 465）。加测试。
 2. **登录加固（防御性，服务端为准）。** migration 067 `login_attempts`（登录失败次数入库，重启/多进程都有效）；对带会话 Cookie 的写请求做 Origin/Referer 校验（可配 `ALLOWED_ORIGINS`）；加安全响应头（nosniff、X-Frame-Options、CSP frame-ancestors、Referrer-Policy、TLS 下 HSTS）；生产不返回堆栈；未知邮箱也走一次 argon2 verify 防时序枚举。文档 `docs/security/HARDENING.md`。
-3. **补测试覆盖**：商家首封端到端（营业时间窗 + 商家每日上限 + 从商家邮箱发出，mock 传输）；商家视角企业详情（给商家分配机会后各接口可见，别的商家不可见）。
+3. **测试覆盖核查**：确认商家首封（从商家邮箱发出、落款、回复归属、每日额度 409）与商家企业详情/时间线隔离已由 `test/merchant-accounts-postgres.test.js` 覆盖；真实 SMTP 投递留给本机真实收发验收。
 4. **交接文档**：本 4 份 `docs/handoff/*.md`。
 
 验收见 `DECISIONS.md`。
