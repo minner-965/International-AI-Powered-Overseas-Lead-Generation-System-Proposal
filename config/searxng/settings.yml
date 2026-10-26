@@ -13,6 +13,12 @@ use_default_settings:
       - startpage
       - qwant
 
+# Bing ships disabled in the SearXNG defaults; without it a default query on this PC came back
+# empty (Google/Qwant access denied, Brave rate-limited, DuckDuckGo CAPTCHA).
+engines:
+  - name: bing
+    disabled: false
+
 general:
   instance_name: "SIM local search"
   debug: false
