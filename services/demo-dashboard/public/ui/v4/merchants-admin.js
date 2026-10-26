@@ -32,6 +32,20 @@ export function filterMerchants(items, { status = '', q = '' } = {}) {
   return (items || []).filter(item => (!status || item.status === status) && (!needle || [item.company_name, item.contact_name, item.login_email].some(value => String(value || '').toLowerCase().includes(needle))));
 }
 
+/** Read-only view of the merchant's own automatic first email setting and its mailbox state.
+ *  The merchant switches it on the Sending mailbox page; SIM only sees it here. */
+export function autoSendState(item) {
+  const mailbox = item?.mailbox || {};
+  if (!mailbox.configured) return { zh: '未绑定发信邮箱', en: 'No sending mailbox', tone: '' };
+  if (!mailbox.verified_at) return { zh: '邮箱未验证', en: 'Mailbox not verified', tone: 'warn' };
+  if (mailbox.sending_hold) return { zh: '发信已暂停（待商家重新测试连接）', en: 'Sending paused (merchant to re-test)', tone: 'warn' };
+  return item?.auto_first_touch_enabled ? { zh: '自动开发信：已开启', en: 'Auto first emails: on', tone: 'ok' } : { zh: '自动开发信：未开启', en: 'Auto first emails: off', tone: '' };
+}
+function autoSendCell(item) {
+  const state = autoSendState(item);
+  return `<div class="meta v4-merchant-autosend" data-merchant-autosend="${esc(item.id)}"${tip('由商家在“绑定发信邮箱”页自行开启或关闭', 'The merchant switches this on the Sending mailbox page')}>${state.tone ? `<span class="pill ${state.tone}">${bi(state.zh, state.en)}</span>` : bi(state.zh, state.en)}</div>`;
+}
+
 const usageText = (used, limit) => `${used ?? '—'} / ${limit ?? '—'}`;
 function periodCell(item) {
   if (item.status === 'TRIAL' || (!item.paid_until && item.trial_ends_at)) return `${bi('试用到', 'Trial ends')} <b>${esc(dateText(item.trial_ends_at))}</b>`;
@@ -63,7 +77,7 @@ function listMarkup() {
   const children = referralIndex(state.items);
   return `<div class="table-wrap"><table class="v4-merchant-table"><caption class="sr-only">商家 Merchants</caption><thead><tr><th scope="col">${bi('商家', 'Merchant')}</th><th scope="col">${bi('状态', 'Status')}</th><th scope="col">${bi('试用 / 付费期', 'Period')}</th><th scope="col">${bi('用量', 'Usage')}</th><th scope="col">${bi('推荐关系', 'Referrals')}</th><th scope="col">${bi('操作', 'Actions')}</th></tr></thead><tbody>${items.map(item => `<tr data-merchant-row="${esc(item.id)}">
     <td class="m-main"><span class="co">${esc(item.company_name)}</span><span class="meta">${esc(item.contact_name || '')}${item.contact_name ? ' · ' : ''}${esc(item.login_email || '')}</span></td>
-    <td class="m-side">${statusPill(item.status)}</td>
+    <td class="m-side">${statusPill(item.status)}${autoSendCell(item)}</td>
     <td>${periodCell(item)}</td>
     <td class="v4-usage-cell"><span>${bi('本月搜索', 'Searches')} <b>${usageText(item.usage?.searches_this_month, item.quotas?.monthly_searches)}</b></span><span>${bi('今日发信', 'Emails today')} <b>${usageText(item.usage?.emails_today, item.quotas?.daily_emails)}</b></span><span>${bi('线索', 'Leads')} <b>${item.usage?.leads ?? '—'}</b> · ${bi('最近登录', 'Last sign-in')} ${esc(item.usage?.last_login_at ? dateText(item.usage.last_login_at) : '—')}</span></td>
     <td class="v4-ref-cell">${referralCell(item, children)}</td>

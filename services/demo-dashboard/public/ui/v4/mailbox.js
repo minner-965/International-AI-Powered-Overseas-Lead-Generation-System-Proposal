@@ -52,13 +52,42 @@ export function testResultText(result) {
   return ['连接未成功', 'Connection failed'];
 }
 
-const state = { presets: null, mailbox: null, error: false, preset: '', dirty: false, test: null, busy: false };
+const state = { presets: null, mailbox: null, error: false, preset: '', dirty: false, test: null, busy: false, autoBusy: false };
+
+/** Test connection, then always read the stored mailbox again (success, failure or error), so the
+ *  status panel shows what the server recorded (verification, failure count, sending pause). */
+export async function testAndRefresh(request = url => json(url), fetchMailbox = () => managementRequest('/api/merchant/mailbox')) {
+  let result = null; let error = null; let mailbox = null;
+  try { result = await request('/api/merchant/mailbox/test-connection'); } catch (caught) { error = caught; }
+  try { mailbox = await fetchMailbox(); } catch { mailbox = null; }
+  return { result, error, mailbox };
+}
+
+/** Automatic first email switch -> what to show. The server decides; this only mirrors it. */
+export function autoSendModel(mailbox, { readOnly = false } = {}) {
+  const auto = mailbox?.auto_first_touch || {};
+  const enabled = auto.enabled === true;
+  const verified = Boolean(mailbox?.verified_at);
+  const held = Boolean(mailbox?.sending_hold);
+  const blocked = readOnly ? 'MERCHANT_READ_ONLY' : auto.blocked_reason || (verified ? null : 'MERCHANT_MAILBOX_NOT_VERIFIED');
+  // Turning it off is always possible (except a read-only account); turning it on needs a verified mailbox.
+  const disabled = readOnly || (!enabled && Boolean(blocked));
+  let note;
+  if (blocked === 'MERCHANT_READ_ONLY') note = ['试用已结束，续期后可以修改', 'The trial has ended; renew to change this'];
+  else if (blocked === 'MERCHANT_FEATURE_DISABLED') note = ['您的账号暂未开通发信，请联系 SIM', 'Email sending is not enabled for your account; contact SIM'];
+  else if (blocked === 'MERCHANT_MAILBOX_NOT_VERIFIED') note = enabled ? ['邮箱验证未通过，自动发送已暂停；重新测试连接成功后恢复', 'Paused until the mailbox passes Test connection again'] : ['邮箱验证通过后才能开启', 'Available after the mailbox is verified'];
+  else if (enabled && held) note = ['已暂停：上一封邮件的发送结果未确认。请点“测试连接”，成功后自动恢复', 'Paused: the last send was not confirmed. Run Test connection to resume'];
+  else if (enabled) note = ['已开启：在目标市场的工作时间，自动给新客户发送第一封开发信', 'On: first emails go out to new prospects during their business hours'];
+  else note = ['已关闭：不会自动发送开发信', 'Off: no first emails are sent automatically'];
+  return { enabled, disabled, blocked, held, note, active: enabled && !blocked && !held };
+}
 
 function presetTiles() {
   return `<div class="v4-presets" role="radiogroup" aria-label="邮箱服务商 Email provider">${state.presets.map(preset => `<label class="v4-preset${state.preset === preset.key ? ' is-on' : ''}"${tip(`使用${preset.label}的服务器设置`, `Use ${preset.label} server settings`)}><input type="radio" name="preset_key" value="${esc(preset.key)}"${state.preset === preset.key ? ' checked' : ''}><b>${esc(preset.label)}</b><small>${esc(preset.smtp_host || '手动填写 Manual')}</small></label>`).join('')}</div>`;
 }
 
 function statusBadge(mailbox) {
+  if (mailbox?.verified_at && mailbox?.sending_hold) return `<span class="pill warn"><i class="ti ti-player-pause" aria-hidden="true"></i>${bi('发信已暂停', 'Sending paused')}</span>`;
   return mailbox?.verified_at ? `<span class="pill ok"><i class="ti ti-circle-check" aria-hidden="true"></i>${bi('已验证', 'Verified')}</span>` : `<span class="pill warn"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${bi('未验证', 'Not verified')}</span>`;
 }
 
@@ -66,6 +95,20 @@ function resultRow(zh, en, result) {
   const [rzh, ren] = testResultText(result);
   const tone = !result ? '' : result.ok ? 'ok' : 'bad';
   return `<li class="${tone}"><span class="k">${bi(zh, en)}</span><span class="v"><i class="ti ti-${!result ? 'circle-dashed' : result.ok ? 'circle-check' : 'circle-x'}" aria-hidden="true"></i>${bi(rzh, ren)}${result && !result.ok && result.message ? `<small>${esc(result.message)}</small>` : ''}</span></li>`;
+}
+
+function failureNote(mailbox) {
+  const failures = Number(mailbox?.consecutive_test_failures || 0);
+  if (!mailbox?.verified_at || failures < 1) return '';
+  const left = Math.max(0, 3 - failures);
+  return `<p class="meta" data-mailbox-failures>${bi(`最近连续 ${failures} 次测试未通过；再有 ${left} 次未通过，邮箱需要重新验证`, `${failures} test(s) failed in a row; after ${left} more the mailbox must be verified again`)}</p>`;
+}
+
+function autoSendMarkup(mailbox) {
+  const model = autoSendModel(mailbox, { readOnly: session.user?.merchant?.read_only === true });
+  const tipText = model.disabled && !model.enabled ? ['邮箱验证通过后，可开启自动发送开发信', 'Verify the mailbox first, then switch this on'] : model.enabled ? ['关闭后不再自动发送开发信，已有的跟进邮件不受影响', 'Switch off to stop automatic first emails; follow-ups are not affected'] : ['开启后，系统在目标市场的工作时间，从这个邮箱给新客户自动发送第一封开发信，每天不超过您的发信额度', 'When on, first emails go out from this mailbox to new prospects during their business hours, within your daily email limit'];
+  return `<ul class="review-list v4-auto-send" data-auto-send><li><span class="k">${bi('自动发送开发信', 'Automatic first emails')}</span><span class="v"><label class="v4-switch"${tip(...tipText)}><input type="checkbox" role="switch" data-auto-first-touch${model.enabled ? ' checked' : ''}${model.disabled || state.autoBusy ? ' disabled' : ''} aria-label="自动发送开发信 Automatic first emails" aria-describedby="mailbox-auto-note"><span aria-hidden="true"></span></label></span></li></ul>
+      <p class="meta" id="mailbox-auto-note" data-auto-note>${bi(...model.note)}</p>`;
 }
 
 function formMarkup() {
@@ -98,7 +141,9 @@ function formMarkup() {
     <section class="card v4-mailbox-status" aria-labelledby="mailbox-status-title"><div class="ph"><div><h3 id="mailbox-status-title">${bi('邮箱状态', 'Mailbox status')}</h3></div>${statusBadge(m)}</div>
       <div class="pb"><ul class="review-list v4-test-results">${resultRow('发信 SMTP', 'Sending', state.test?.smtp ?? m.last_test?.smtp ?? null)}${resultRow('收信 IMAP', 'Receiving', state.test?.imap ?? m.last_test?.imap ?? null)}</ul>
       <p class="meta">${m.verified_at ? bi(`验证于 ${new Date(m.verified_at).toLocaleString('zh-CN')}`, `Verified ${new Date(m.verified_at).toLocaleString('en-GB')}`) : bi('保存后点“测试连接”，两项都成功即完成验证。', 'Save, then test: both checks passing verifies the mailbox.')}</p>
-      <p class="meta">${bi('验证通过后，开发信和跟进邮件才会从这个邮箱发出；客户回复也会回到这里。', 'Once verified, your emails go out from this mailbox and replies come back to it.')}</p></div></section>
+      ${failureNote(m)}
+      <p class="meta">${bi('验证通过后，开发信和跟进邮件才会从这个邮箱发出；客户回复也会回到这里。', 'Once verified, your emails go out from this mailbox and replies come back to it.')}</p>
+      ${autoSendMarkup(m)}</div></section>
   </div>`;
 }
 
@@ -146,6 +191,7 @@ async function save(form, status) {
 
 function wire(root) {
   root.addEventListener('change', event => {
+    if (event.target.matches?.('[data-auto-first-touch]')) { void toggleAutoSend(event.target); return; }
     if (event.target.name === 'preset_key') {
       const form = event.target.form; const preset = state.presets.find(item => item.key === event.target.value);
       state.preset = event.target.value; state.dirty = true;
@@ -154,7 +200,7 @@ function wire(root) {
       render(); root.querySelector(`input[name="preset_key"][value="${CSS.escape(state.preset)}"]`)?.focus();
     }
   });
-  root.addEventListener('input', () => { state.dirty = true; });
+  root.addEventListener('input', event => { if (!event.target.matches?.('[data-auto-first-touch]')) state.dirty = true; });
   root.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.target; const status = form.querySelector('.v4-form-status');
@@ -171,10 +217,12 @@ function wire(root) {
       if (state.dirty || !state.mailbox?.configured) { if (!await save(form, status)) return; }
       if (test) {
         status.innerHTML = bi('正在测试发信和收信', 'Testing sending and receiving');
-        state.test = await json('/api/merchant/mailbox/test-connection');
-        const passed = state.test?.smtp?.ok && state.test?.imap?.ok;
-        if (passed) state.mailbox = { ...state.mailbox, verified_at: state.mailbox?.verified_at || new Date().toISOString() };
+        const { result, error, mailbox } = await testAndRefresh();
+        // The status panel always shows the stored state read back from the server.
+        if (mailbox) { state.mailbox = mailbox; state.test = null; } else state.test = result;
         render();
+        if (error) throw error;
+        const passed = result?.smtp?.ok && result?.imap?.ok;
         toast(...(passed ? ['发信和收信都已连通，邮箱已验证', 'Sending and receiving work; mailbox verified'] : ['测试未通过，请查看右侧结果', 'Test failed; see the results']), { tone: passed ? 'ok' : 'warn' });
         if (passed) document.dispatchEvent(new CustomEvent('crm:onboarding'));
       } else {
@@ -183,9 +231,26 @@ function wire(root) {
         status.innerHTML = result?.ok ? bi(`测试邮件已发到 ${state.mailbox?.from_email || '您的邮箱'}，请查收`, `Test email sent to ${state.mailbox?.from_email || 'your address'}`) : bi('测试邮件未发出，请先“测试连接”查看原因', 'Test email not sent; run Test connection to see why');
       }
     } catch (error) {
-      status.innerHTML = bi(...(error.status === 404 ? ['邮箱测试服务暂未开放，请联系 SIM', 'Mailbox testing is not available yet; contact SIM'] : error.code === 'MERCHANT_MAILBOX_NOT_VERIFIED' ? ['请先通过“测试连接”', 'Pass Test connection first'] : ['测试未完成，请重试', 'Could not test; please retry']));
+      const current = root.querySelector('.v4-form-status') || status;
+      current.innerHTML = bi(...(error.status === 404 ? ['邮箱测试服务暂未开放，请联系 SIM', 'Mailbox testing is not available yet; contact SIM'] : error.code === 'MERCHANT_MAILBOX_NOT_VERIFIED' ? ['请先通过“测试连接”', 'Pass Test connection first'] : ['测试未完成，请重试', 'Could not test; please retry']));
     } finally { state.busy = false; const button = root.querySelector(test ? '[data-mailbox-test]' : '[data-mailbox-send-test]'); if (button) button.disabled = false; }
   });
+}
+
+async function toggleAutoSend(input) {
+  if (state.autoBusy) return;
+  const enabled = input.checked;
+  state.autoBusy = true; input.disabled = true;
+  try {
+    const saved = await json('/api/merchant/auto-first-touch', { enabled }, 'PUT');
+    if (saved && typeof saved === 'object') state.mailbox = saved;
+    toast(...(enabled ? ['已开启自动发送开发信', 'Automatic first emails are on'] : ['已关闭自动发送开发信', 'Automatic first emails are off']));
+  } catch (error) {
+    const reason = error.code === 'MERCHANT_MAILBOX_NOT_VERIFIED' ? ['请先通过“测试连接”验证邮箱', 'Verify the mailbox with Test connection first'] : error.code === 'MERCHANT_READ_ONLY' ? ['试用已结束，续期后可以修改', 'The trial has ended; renew to change this'] : error.code === 'MERCHANT_FEATURE_DISABLED' ? ['您的账号暂未开通发信，请联系 SIM', 'Email sending is not enabled for your account; contact SIM'] : ['设置未保存，请重试', 'Could not save; please retry'];
+    toast(...reason, { tone: 'warn' });
+    const mailbox = await managementRequest('/api/merchant/mailbox').catch(() => null);
+    if (mailbox) state.mailbox = mailbox;
+  } finally { state.autoBusy = false; render(); $('[data-auto-first-touch]')?.focus(); }
 }
 
 export async function loadMailbox() {

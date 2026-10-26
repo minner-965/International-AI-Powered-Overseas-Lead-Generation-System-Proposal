@@ -73,7 +73,8 @@ test('CRM pipeline migration, APIs and approved follow-ups work end to end',{ski
     assert.deepEqual(backfilled,{pipeline_stage:'REPLIED',funnel_status:'REPLIED'});
 
     const queued=[];const sent=[];
-    const automation={state:true,getState:async()=>({auto_first_touch_email:automation.state}),pauseEmail:async()=>{automation.state=false;}};
+    // state=false models SIM's sender paused after a provider-path failure (pauseEmail).
+    const automation={state:true,getState:async()=>({auto_first_touch_email:automation.state,sim_sender_paused:!automation.state}),pauseEmail:async()=>{automation.state=false;}};
     const provider={senderEmail:'sender@dpv.example',replyToEmail:'simon@dpv.example',messageIdDomain:'dpv.example',
       send:async(message,key)=>{sent.push({message,key});return{status:'PROVIDER_ACCEPTED',provider_message_id:`<${key}@dpv.example>`};}};
     const crm=new CrmService({pool,outboundProvider:provider,automationControl:automation,queue:{enqueue:async(...args)=>queued.push(args)},

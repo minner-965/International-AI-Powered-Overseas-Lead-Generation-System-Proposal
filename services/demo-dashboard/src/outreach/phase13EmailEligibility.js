@@ -41,6 +41,10 @@ export function evaluatePhase13EmailEligibility(facts={},policy={},now=new Date(
  add(facts.company_suppressed===true||facts.contact_suppressed===true||facts.opted_out===true,'SUPPRESSED');
  add(facts.hard_bounced===true,'HARD_BOUNCED');
  add(facts.has_prior_first_touch===true||facts.has_prior_company_contact===true||stopped.has(upper(facts.contact_progress_status)),'ALREADY_FIRST_CONTACTED');
+ // Cross-sender protection: SIM leaves merchant-assigned companies alone, and one address gets at
+ // most one first touch per cooldown period from SIM and all merchants together.
+ add(facts.recipient_recently_contacted===true,'RECIPIENT_RECENTLY_CONTACTED');
+ add(facts.company_assigned_to_merchant===true,'COMPANY_ASSIGNED_TO_MERCHANT');
  add(policy.sender_ready!==true,'SENDER_UNAVAILABLE');
  if(!template)add(true,'RECIPIENT_TEMPLATE_RESOLUTION_REQUIRED');
  const window=evaluateBusinessSendWindow(market,now);if(!window.allowed)reasons.push(window.reason);

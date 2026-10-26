@@ -15,7 +15,15 @@ export class AutoFirstTouchService {
   if(!merchantId)return{merchantId:null,provider:this.outboundProvider,sender:null,fromName:FIRST_TOUCH_SENDER_NAME};
   if(!this.merchantSending)throw fail('MERCHANT_MAILBOX_NOT_VERIFIED');
   const context=await this.merchantSending.providerFor(merchantId);
-  return{merchantId,provider:context.provider,sender:context.sender,fromName:context.fromName};
+  return{merchantId,provider:context.provider,sender:context.sender,fromName:context.fromName,merchant:context.merchant||null,mailbox:context.mailbox||null};
+ }
+ // A merchant's automatic first touch needs the merchant's own opt-in and a mailbox that is not
+ // held after a failed send. The reservation function checks the same again in the database.
+ merchantSendingBlock(ctx){
+  if(!ctx.merchantId)return null;
+  if(ctx.merchant&&ctx.merchant.auto_first_touch_enabled!==true)return'MERCHANT_AUTO_FIRST_TOUCH_OFF';
+  if(ctx.mailbox?.sending_hold_at)return'MERCHANT_MAILBOX_HELD';
+  return null;
  }
  async transaction(fn){const c=await this.pool.connect();try{await c.query('BEGIN');const result=await fn(c);await c.query('COMMIT');return result;}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
  async evaluate(companyId,{reservationId=null,client=this.pool,context=null}={}){
@@ -29,6 +37,7 @@ export class AutoFirstTouchService {
  }
  async reserve(companyId,{merchantId=null}={}){
   const ctx=await this.senderContext(merchantId);
+  const block=this.merchantSendingBlock(ctx);if(block)throw fail(block);
   const state=await this.evaluate(companyId,{context:ctx});if(!state.eligibility.eligible)return state;
   const {facts,eligibility}=state;
   const draft=renderFirstTouchTemplate({template_key:eligibility.template_key,variables:facts.template_variables,verified_fields:facts.verified_template_fields,sender:ctx.sender});
@@ -40,6 +49,7 @@ export class AutoFirstTouchService {
    if(ctx.merchantId){
     const allowance=await this.merchantSending.emailAllowance(ctx.merchantId,c);
     if(!allowance.allowed&&allowance.code!=='MERCHANT_EMAIL_QUOTA_EXCEEDED')throw fail(allowance.code);
+    if(allowance.merchant&&allowance.merchant.auto_first_touch_enabled!==true)throw fail('MERCHANT_AUTO_FIRST_TOUCH_OFF');
     r=(await c.query('SELECT * FROM leadgen.reserve_phase13_first_touch($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::text[],$15::uuid,$16::integer)',
      [...args,ctx.merchantId,allowance.merchant.daily_email_quota])).rows[0];
    }else r=(await c.query('SELECT * FROM leadgen.reserve_phase13_first_touch($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::text[])',args)).rows[0];
@@ -59,17 +69,29 @@ export class AutoFirstTouchService {
  async get(id){return(await this.pool.query('SELECT * FROM leadgen.phase13_first_touch_reservations WHERE id=$1',[id])).rows[0]||null;}
  async recoverStalledReservations(){
   const ids=await this.transaction(async c=>{
-   const rows=(await c.query("UPDATE leadgen.phase13_first_touch_reservations SET status='AMBIGUOUS',reason_codes=ARRAY['SMTP_SEND_INTERRUPTED'],completed_at=now() WHERE status='SENDING' AND provider_call_started_at<now()-interval '10 minutes' RETURNING id")).rows;
+   const rows=(await c.query("UPDATE leadgen.phase13_first_touch_reservations SET status='AMBIGUOUS',reason_codes=ARRAY['SMTP_SEND_INTERRUPTED'],completed_at=now() WHERE status='SENDING' AND provider_call_started_at<now()-interval '10 minutes' RETURNING id,merchant_id")).rows;
    for(const row of rows)await c.query("UPDATE leadgen.outbound_messages SET send_status='AMBIGUOUS',transport_status='SEND_AMBIGUOUS',business_contact_status='SEND_AMBIGUOUS',ambiguous_since=coalesce(ambiguous_since,now()),reason_codes=ARRAY['SMTP_SEND_INTERRUPTED'],updated_at=now() WHERE first_touch_reservation_id=$1 AND send_status='SENDING'",[row.id]);
-   return rows.map(row=>row.id);
+   return rows;
   });
-  if(ids.length)await this.automationControl.pauseEmail('SMTP_SEND_INTERRUPTED');
-  return{ambiguous_reservations:ids};
+  // SIM's mailbox stalled: pause SIM's automatic first touch. A merchant's mailbox stalled: hold
+  // only that merchant's mailbox; SIM and every other merchant keep sending.
+  const simStalled=ids.some(row=>!row.merchant_id);
+  const merchantIds=[...new Set(ids.filter(row=>row.merchant_id).map(row=>row.merchant_id))];
+  if(simStalled)await this.automationControl.pauseEmail('SMTP_SEND_INTERRUPTED');
+  const held=[];
+  for(const merchantId of merchantIds){
+   if(!this.merchantSending?.holdMailbox)continue;
+   await this.merchantSending.holdMailbox(merchantId,'SMTP_SEND_INTERRUPTED');held.push(merchantId);
+  }
+  return{ambiguous_reservations:ids.map(row=>row.id),email_paused:simStalled,held_merchants:held};
  }
  async sendReservation(id){
   const existing=await this.get(id);if(!existing)throw fail('FIRST_TOUCH_RESERVATION_NOT_FOUND');
   if(existing.status!=='RESERVED')return{reservation:existing,idempotent_replay:true};
   const ctx=await this.senderContext(existing.merchant_id||null);
+  // Merchant switched automatic first touch off, or its mailbox is held: keep the reservation
+  // queued without sending; it goes out (after a fresh check) once the merchant resumes.
+  const block=this.merchantSendingBlock(ctx);if(block)return{reservation:existing,held:true,reason_codes:[block]};
   const current=await this.evaluate(existing.company_id,{reservationId:id,context:ctx});
   if(!current.eligibility.eligible)return{...current,reservation:existing};
   if(current.eligibility.policy_revision!==existing.policy_revision||current.eligibility.normalized_recipient!==existing.normalized_recipient||current.eligibility.template_key!==existing.template_key||ctx.provider.senderEmail!==existing.sender_identity||ctx.provider.replyToEmail!==existing.reply_to)throw fail('FIRST_TOUCH_FROZEN_IDENTITY_MISMATCH');
@@ -118,6 +140,8 @@ export class AutoFirstTouchService {
   });
   // A merchant mailbox failure blocks that reservation only; SIM's sending keeps running.
   if(status!=='PROVIDER_ACCEPTED'&&!existing.merchant_id)await this.automationControl.pauseEmail(result.code||status);
+  // An ambiguous result from a merchant mailbox holds that mailbox (never SIM's control).
+  if(status==='AMBIGUOUS'&&existing.merchant_id&&this.merchantSending?.holdMailbox)await this.merchantSending.holdMailbox(existing.merchant_id,result.code||'SMTP_SEND_AMBIGUOUS');
   return{reservation:await this.get(id),outbound_message_id:attempt.m.id,transport_status:transport};
  }
 }

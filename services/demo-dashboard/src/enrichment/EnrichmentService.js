@@ -122,14 +122,17 @@ export class EnrichmentService {
   constructor({
     pool, searchConfig = {}, crawlerConfig = {}, hunterConfig = {}, linkedInConfig = {},
     provider = null, checker = null, hunter = null, linkedIn = null, feasibilityEngine = null,
-    searchAudit = null, tavilyUsageConfig = {},
+    searchAudit = null, tavilyUsageConfig = {}, searchClient = null,
     maxCompanies = 100, maxQueriesPerCompany = 5, maxPagesPerCompany = 6,
     providerTemporaryErrorThreshold = 3, audit = () => {}
   } = {}) {
     this.pool = pool;
     this.searchConfig = searchConfig;
-    this.provider = provider || createPurposeSearchProvider(searchConfig, 'CONTACT_DISCOVERY');
-    this.searchAudit = searchAudit || new TavilyUsageAudit({ provider:this.provider,pool,...tavilyUsageConfig });
+    // searchClient (RoutedSearchClient) applies the provider order, spend mode and monthly
+    // budget; the single SEARCH_PROVIDER provider is only the fallback for direct callers.
+    this.searchClient = searchClient;
+    this.provider = provider || (searchClient ? { name:searchClient.name } : createPurposeSearchProvider(searchConfig, 'CONTACT_DISCOVERY'));
+    this.searchAudit = searchAudit || searchClient || new TavilyUsageAudit({ provider:this.provider,pool,...tavilyUsageConfig });
     this.checker = checker || new WebsiteReachabilityChecker({ ...crawlerConfig,blockedDomains:['linkedin.com'] });
     this.hunter = hunter || new HunterProvider({ ...hunterConfig,pool });
     this.linkedIn = linkedIn || new LinkedInDiscoveryAdapter(linkedInConfig);
@@ -219,6 +222,8 @@ export class EnrichmentService {
     if(!tavilyEnabled&&String(this.provider.name||'').toLowerCase()==='tavily') {
       return {queries:0,results:[],failures:0,search_skipped:true};
     }
+    // With the routed client a disabled Tavily is excluded from the provider order instead.
+    const routedOptions = this.searchClient && !tavilyEnabled ? { excludeProviders:['tavily'] } : {};
     const queries = strategy?.query_text?[{query_text:strategy.query_text,query_type:strategy.query_type||'auto_evidence_strategy'}]
       :generateDecisionMakerQueries(company,{ maxQueries:this.maxQueriesPerCompany });
     const results = [];
@@ -227,7 +232,7 @@ export class EnrichmentService {
       const stored = await this.persistQuery(job,company,query);
       await this.pool.query(`UPDATE leadgen.research_search_queries SET status='RUNNING',error_message=NULL WHERE id=$1`,[stored.id]);
       try {
-        const response = await this.searchAudit.search({ researchJobId:job.id,companyId:company.id,
+        const response = await this.searchAudit.search({ ...routedOptions,researchJobId:job.id,companyId:company.id,
           productProfile:company.active_product_profiles?.length===1?company.active_product_profiles[0]:null,
           purpose:'DECISION_MAKER_DISCOVERY',
           request:{ query:stored.query_text,count:5,country:company.country_code,countryName:company.country_name },
@@ -237,6 +242,12 @@ export class EnrichmentService {
         await this.pool.query(`UPDATE leadgen.research_search_queries SET status='COMPLETED',result_count=$2,executed_at=now() WHERE id=$1`,[stored.id,response.result_count??response.results.length]);
         results.push(...response.results.map(item=>({ ...item,query_id:stored.id,query_type:stored.query_type,provider:response.provider || this.provider.name })));
       } catch (error) {
+        // No permitted provider (FREE_ONLY without SearXNG, monthly budget): stop searching for
+        // this company and leave the query pending; the company is picked up again later.
+        if(error?.searchPause===true) {
+          await this.pool.query(`UPDATE leadgen.research_search_queries SET status='PENDING',error_message=$2 WHERE id=$1`,[stored.id,clean(error.code,500)]);
+          return { queries:queries.length,results,failures,search_paused:error.code };
+        }
         if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR'].includes(error?.code)||error?.retryable===true)throw error;
         failures += 1;
         await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',result_count=0,error_message=$2,executed_at=now() WHERE id=$1`,[stored.id,clean(error.message,500)]);
@@ -808,6 +819,14 @@ export class EnrichmentService {
     ]);
     try {
       const search = await this.runSearchQueries(job,company,{tavilyEnabled,strategy});
+      if (search.search_paused) {
+        // Spend policy or budget paused the search step: no page crawl and no Hunter call for
+        // this company; the job stops with the pause code and the company is retried later.
+        await this.pool.query(`UPDATE leadgen.enrichment_job_companies SET attempt_status='PARTIAL',queries_executed=$3,
+          last_error=$4,completed_at=now(),updated_at=now() WHERE research_job_id=$1 AND company_id=$2`,[
+          job.id,company.id,search.queries,search.search_paused]);
+        return { company_id:company.id,status:'PARTIAL',stop_reason:search.search_paused,pages:[],findings:null,hunter:{calls:0},feasibility:null };
+      }
       for (const result of String(this.provider.name||'').toLowerCase()==='tavily'?[]:search.results) {
         const linkedIn = this.linkedIn.discoverReference({ url:result.url,title:result.title,snippet:result.snippet,provider:result.provider,capturedAt:new Date() });
         if (linkedIn) await this.persistReference(job.id,company.id,linkedIn);

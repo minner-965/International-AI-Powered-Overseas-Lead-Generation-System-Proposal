@@ -1,3 +1,6 @@
+// A recipient address that received a first touch from any sender (SIM or any merchant) in
+// this many days is not contacted again by anyone. Same value as migration 069.
+export const RECIPIENT_FIRST_TOUCH_COOLDOWN_DAYS=30;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const human=value=>String(value||'').trim().toLowerCase().replace(/_/g,' ').replace(/\b\w/g,char=>char.toUpperCase());
@@ -11,7 +14,8 @@ const companyTypes=value=>{
  * Reads only persisted, independently verifiable facts used by the MC07 gate.
  * It never creates a recipient, opportunity, category match, or authorization.
  */
-// merchantId: earlier contact is counted per sender (SIM = NULL, or one merchant); suppressions stay global.
+// merchantId: earlier contact is counted per sender (SIM = NULL, or one merchant); suppressions stay global,
+// and so does the recipient cooldown: a first touch from any sender blocks the address for every sender.
 export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservationId=null,client=pool,replyToEmail=null,merchantId=null}={}){
   if(!pool?.query||!client?.query)throw new TypeError('queryable pool and client are required');
   if(!UUID.test(String(companyId||'')))throw Object.assign(new Error('company_id must be a UUID'),{code:'PHASE13_INVALID_COMPANY_ID'});
@@ -103,7 +107,12 @@ export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservati
       AND (message.sent_at IS NOT NULL OR message.transport_status='SMTP_ACCEPTED' OR message.send_status IN('PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS'))) has_prior_company_contact,
     EXISTS(SELECT 1 FROM leadgen.inbound_messages inbound WHERE inbound.correlation_outbound_message_id IN(
       SELECT message.id FROM leadgen.outbound_messages message WHERE message.company_id=candidate.id AND message.merchant_id IS NOT DISTINCT FROM $3::uuid)
-      AND inbound.correlation_status='MATCHED') has_reply
+      AND inbound.correlation_status='MATCHED') has_reply,
+    EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations reservation
+      WHERE lower(btrim(reservation.normalized_recipient))=lower(btrim(candidate.normalized_recipient))
+        AND ($2::uuid IS NULL OR reservation.id<>$2) AND reservation.status IN('RESERVED','SENDING','PROVIDER_ACCEPTED','AMBIGUOUS')
+        AND reservation.reserved_at>=now()-make_interval(days=>${RECIPIENT_FIRST_TOUCH_COOLDOWN_DAYS})) recipient_recently_contacted,
+    ($3::uuid IS NULL AND EXISTS(SELECT 1 FROM leadgen.merchant_companies assignment WHERE assignment.company_id=candidate.id)) company_assigned_to_merchant
   FROM candidate`,[companyId,reservationId,merchantId]);
   if(!result.rowCount)return{company:{id:companyId},recipient:null,market:{},company_types:[],verified_template_fields:[],template_variables:{}};
   const row=result.rows[0];
@@ -137,6 +146,7 @@ export async function loadPhase13EmailEligibilityFacts(pool,companyId,{reservati
     confirmed_existing_customer:row.confirmed_existing_customer===true,company_suppressed:row.company_suppressed===true,
     contact_suppressed:row.contact_suppressed===true,opted_out:row.opted_out===true,hard_bounced:row.hard_bounced===true,
     has_prior_first_touch:row.has_prior_first_touch===true,has_prior_company_contact:row.has_prior_company_contact===true,
+    recipient_recently_contacted:row.recipient_recently_contacted===true,company_assigned_to_merchant:row.company_assigned_to_merchant===true,
     contact_progress_status:progress,template_variables:variables,verified_template_fields:verified,
   };
 }

@@ -3,6 +3,8 @@
 // provider invoices. Recorded spend comes from leadgen.provider_usage_events:
 // the provider-reported cost when present, otherwise the configured unit price.
 // SEARXNG is the local instance: free, but still listed so its ledger rows are counted.
+import {SPEND_MODES,isPaidProvider,normalizeSpendMode} from './ProviderSpendPolicy.js';
+
 const DEFAULT_UNIT_PRICES=Object.freeze({SEARXNG:0,EXA:0.007,TAVILY:0.008});
 const number=(value,fallback,{min=0}={})=>{
   if(value===undefined||value===null||String(value).trim()==='')return fallback;
@@ -29,13 +31,22 @@ export function loadSearchCostConfig(env=process.env){
 export const billingPeriod=(now=new Date())=>new Date(now).toISOString().slice(0,7);
 
 export class SearchCostControl {
-  constructor({pool=null,config=loadSearchCostConfig(),providerOrder=async()=>['searxng','exa','tavily'],now=()=>new Date()}={}){
-    this.pool=pool;this.config=config;this.providerOrder=providerOrder;this.now=now;
+  // spendPolicy (optional) returns {provider_spend_mode}; in FREE_ONLY no paid query may run and
+  // the estimate only counts free providers.
+  constructor({pool=null,config=loadSearchCostConfig(),providerOrder=async()=>['searxng','exa','tavily'],now=()=>new Date(),spendPolicy=null}={}){
+    this.pool=pool;this.config=config;this.providerOrder=providerOrder;this.now=now;this.spendPolicy=spendPolicy;
   }
   priced(){return Object.keys(this.config.unitPrices);}
   unitPrice(provider){return Number(this.config.unitPrices[String(provider||'').toUpperCase()]??0);}
+  isPaid(provider){return isPaidProvider(provider,this.config.unitPrices);}
+  async freeOnly(){
+    if(!this.spendPolicy)return false;
+    return normalizeSpendMode((await this.spendPolicy())?.provider_spend_mode)===SPEND_MODES.FREE_ONLY;
+  }
   // The estimate is conservative: the most expensive provider in the current execution order.
   async estimateUnitPrice(){
+    // FREE_ONLY: only free providers may run, so a queued plan cannot cost anything.
+    if(await this.freeOnly())return 0;
     const order=(await this.providerOrder()||[]).map(value=>String(value).toUpperCase());
     // A free first provider (SearXNG) may fall back to a paid one, so the estimate stays at
     // the most expensive provider in the order; an all-free order estimates zero.
@@ -99,10 +110,14 @@ export class SearchCostControl {
     return estimate;
   }
   // Execution guard: queued work stops before a paid call that would exceed the monthly cap.
+  // In FREE_ONLY a paid provider is never allowed, whatever the remaining budget.
   async canSpend(provider,queryable=this.pool){
     const month=await this.monthSpend(queryable);
     const next=this.unitPrice(provider);
-    return {allowed:month.recorded_cost_usd+next<=this.config.maxUsdPerMonth,...month,next_query_usd:next,
+    if(this.isPaid(provider)&&await this.freeOnly())
+      return {allowed:false,reason:'FREE_ONLY',...month,next_query_usd:next,max_usd_per_month:this.config.maxUsdPerMonth};
+    const allowed=month.recorded_cost_usd+next<=this.config.maxUsdPerMonth;
+    return {allowed,...(allowed?{}:{reason:'MONTHLY_BUDGET'}),...month,next_query_usd:next,
       max_usd_per_month:this.config.maxUsdPerMonth};
   }
 }

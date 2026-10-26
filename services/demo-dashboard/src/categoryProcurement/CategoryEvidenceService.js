@@ -41,9 +41,12 @@ function discoverLinks(html,baseUrl){const $=cheerio.load(String(html||''));cons
 function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if(/\.pdf$|report/.test(pathname))return'OFFICIAL_DOCUMENT';if(/catalog/.test(pathname))return'OFFICIAL_CATALOG';if(/shop|store|tienda|product|categor|collection|brand/.test(pathname))return'OFFICIAL_STOREFRONT';return'OFFICIAL';}
 
 export class CategoryEvidenceService{
-  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2,aliasRefresher=null}={}){
-    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.aliasRefresher=aliasRefresher||new ApprovedCategoryAliasRefresher({pool});this.provider=provider||createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE');
-    this.searchAudit=searchAudit||new TavilyUsageAudit({provider:this.provider,pool,...tavilyUsageConfig});
+  // searchClient (RoutedSearchClient) applies the provider order, spend mode and monthly budget;
+  // the single SEARCH_PROVIDER provider is only the fallback for direct callers.
+  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},searchClient=null,maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2,aliasRefresher=null}={}){
+    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.aliasRefresher=aliasRefresher||new ApprovedCategoryAliasRefresher({pool});
+    this.searchClient=searchClient;this.provider=provider||(searchClient?{name:searchClient.name}:createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE'));
+    this.searchAudit=searchAudit||searchClient||new TavilyUsageAudit({provider:this.provider,pool,...tavilyUsageConfig});
     this.checker=checker||new WebsiteReachabilityChecker({...crawlerConfig,blockedDomains:['linkedin.com']});this.maxQueriesPerProfile=Math.max(1,Math.min(4,Number(maxQueriesPerProfile)||4));
     this.maxQueriesPerCompany=Math.max(1,Math.min(8,Number(maxQueriesPerCompany)||8));this.maxPagesPerCompany=Math.max(1,Math.min(12,Number(maxPagesPerCompany)||12));this.maxDiscoveryDepth=Math.max(0,Math.min(2,Number(maxDiscoveryDepth)||2));
   }
@@ -89,21 +92,27 @@ export class CategoryEvidenceService{
       target_category:await this.targetCategory(productProfile,targetCategoryCode,marketSearchLanguages(company.country_code))});const urls=[];if(company.website_url)urls.push({url:company.website_url,depth:0});let failures=0;
     const backfill=await this.backfillPhase4Evidence(researchJobId,companyId,productProfile);
     const searchEnabled=tavilyEnabled||String(this.provider.name||'').toLowerCase()!=='tavily';
-    for(const query of searchEnabled?queries.slice(0,this.maxQueriesPerCompany):[]){const stored=await this.pool.query(`INSERT INTO leadgen.research_search_queries
+    // With the routed client a disabled Tavily is excluded from the provider order instead.
+    const routedOptions=this.searchClient&&!tavilyEnabled?{excludeProviders:['tavily']}:{};let searchPaused=null;
+    for(const query of searchEnabled?queries.slice(0,this.maxQueriesPerCompany):[]){if(searchPaused)break;const stored=await this.pool.query(`INSERT INTO leadgen.research_search_queries
         (research_job_id,company_id,query_text,query_type,country,country_code,country_name,preferred_language,market_profile,product_category,provider,status)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'PENDING') ON CONFLICT(research_job_id,company_id,query_text) WHERE company_id IS NOT NULL DO UPDATE SET provider=EXCLUDED.provider RETURNING *`,[researchJobId,companyId,query.query_text,query.query_type,company.country_name||company.country_code,company.country_code,company.country_name||company.country_code,market.defaultLanguage,market.profileKey,upper(productProfile),this.provider.name]);
-      try{const response=await this.searchAudit.search({researchJobId,companyId,productProfile,purpose:'CATEGORY_BUYER_EVIDENCE',request:{query:query.query_text,count:5,country:company.country_code,countryName:company.country_name},
+      try{const response=await this.searchAudit.search({...routedOptions,researchJobId,companyId,productProfile,purpose:'CATEGORY_BUYER_EVIDENCE',request:{query:query.query_text,count:5,country:company.country_code,countryName:company.country_name},
         persistResults:async results=>{const referenceIds=[];for(const item of results){const source=await this.persistSource({researchJobId,companyId,url:item.url,sourceType:'SEARCH_RESULT_HINT',authority:'SEARCH_DISCOVERY',capturedAt:new Date(),pageTitle:item.title,contentFetched:false,fetchStatus:'NOT_FETCHED',verificationStatus:'REVIEW'});referenceIds.push(source.id);}return{referenceIds};},
         loadPersistedResults:async({referenceIds})=>{const params=[researchJobId,companyId];let filter="AND source_type='SEARCH_RESULT_HINT'";if(referenceIds.length){params.push(referenceIds);filter='AND id=ANY($3::uuid[])';}const result=await this.pool.query(`SELECT id,source_url,page_title FROM leadgen.prospect_category_sources WHERE research_job_id=$1 AND company_id=$2 ${filter} ORDER BY captured_at,id`,params);return result.rows.map((row,index)=>({title:row.page_title||'',url:row.source_url,snippet:'',provider_score:null,rank:index+1}));}
       });await this.pool.query(`UPDATE leadgen.research_search_queries SET status='COMPLETED',result_count=$2,executed_at=now(),error_message=NULL WHERE id=$1`,[stored.rows[0].id,response.result_count??response.results.length]);
         for(const item of response.results)if(root&&domainService.getRegistrableDomain(item.url)===root)urls.push({url:item.url,depth:0});}
-      catch(error){if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR'].includes(error?.code)||error?.retryable===true)throw error;failures+=1;await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',error_message=$2,executed_at=now() WHERE id=$1`,[stored.rows[0].id,clean(error.message,500)]);}}
+      catch(error){
+        // No permitted provider (FREE_ONLY without SearXNG, monthly budget): stop searching and keep the
+        // query pending; the official website pages below are still read (no provider cost).
+        if(error?.searchPause===true){searchPaused=error.code;await this.pool.query(`UPDATE leadgen.research_search_queries SET status='PENDING',error_message=$2 WHERE id=$1`,[stored.rows[0].id,clean(error.code,500)]);continue;}
+        if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR'].includes(error?.code)||error?.retryable===true)throw error;failures+=1;await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',error_message=$2,executed_at=now() WHERE id=$1`,[stored.rows[0].id,clean(error.message,500)]);}}
     const queue=unique(urls,item=>domainService.normalizeUrl(item.url)||item.url);const seen=new Set();let pages_fetched=0,observations=0,timeouts=0,partials=0;
     while(queue.length&&pages_fetched<this.maxPagesPerCompany){const next=queue.shift();const normalized=domainService.normalizeUrl(next.url)||next.url;if(seen.has(normalized)||!root||domainService.getRegistrableDomain(normalized)!==root||/linkedin\.com$/i.test(root))continue;seen.add(normalized);
       try{if(!await this.checker.robotsAllows(normalized)){partials+=1;continue;}const page=await this.checker.fetchPage(normalized,{robotsAllowed:true});if(!page.reachable||!page.html){page.fetch_status==='TIMEOUT'?timeouts+=1:partials+=1;continue;}const finalUrl=page.final_url||normalized;if(domainService.getRegistrableDomain(finalUrl)!==root){partials+=1;continue;}const authority=authorityFor(finalUrl);const source=await this.persistSource({researchJobId,companyId,url:finalUrl,sourceType:authority,authority,capturedAt:page.captured_at||new Date(),pageTitle:page.page_title,verificationStatus:'VERIFIED'});pages_fetched+=1;
         const extracted=extractCategoryBuyerObservations({html:page.html,source_url:finalUrl,source_authority:authority,captured_at:source.captured_at,company_name:company.company_name,product_profile:upper(productProfile)});for(const item of extracted)observations+=await this.persistObservation(source,item);if(next.depth<this.maxDiscoveryDepth)for(const link of discoverLinks(page.html,finalUrl))queue.push({url:link,depth:next.depth+1});}
       catch(error){error?.code==='TIMEOUT'?timeouts+=1:partials+=1;}}
     const counts=await this.pool.query(`SELECT (SELECT count(*)::int FROM leadgen.prospect_category_sources WHERE research_job_id=$1 AND company_id=$2)sources,(SELECT count(*)::int FROM leadgen.prospect_category_observations WHERE research_job_id=$1 AND company_id=$2)observations`,[researchJobId,companyId]);
-    return {...backfill,queries:searchEnabled?queries.length:0,search_skipped:!searchEnabled,search_failures:failures,pages_fetched,observations_inserted:observations,timeouts,partials,...counts.rows[0]};
+    return {...backfill,queries:searchEnabled?queries.length:0,search_skipped:!searchEnabled,...(searchPaused?{search_paused:searchPaused}:{}),search_failures:failures,pages_fetched,observations_inserted:observations,timeouts,partials,...counts.rows[0]};
   }
 }

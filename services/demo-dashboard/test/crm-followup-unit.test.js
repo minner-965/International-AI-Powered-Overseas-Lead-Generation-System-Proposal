@@ -113,8 +113,9 @@ test('CRM service validates input before touching storage',async()=>{
   assert.deepEqual(await service.scanFollowups(),{status:'DISABLED',created:0});
 });
 
-test('follow-up sending waits while email is paused and the scan never sends',async()=>{
-  const service=new CrmService({repository:{},env:{},automationControl:{getState:async()=>({auto_first_touch_email:false})},outboundProvider:{senderEmail:'s@dpv.example'}});
+test('follow-up sending waits while SIM sender is paused and the scan never sends',async()=>{
+  const pool={query:async()=>({rows:[{merchant_id:null}],rowCount:1})};
+  const service=new CrmService({pool,repository:{},env:{},automationControl:{getState:async()=>({auto_first_touch_email:false,sim_sender_paused:true})},outboundProvider:{senderEmail:'s@dpv.example'}});
   assert.deepEqual(await service.sendApprovedFollowup({draft_id:'44444444-4444-4444-8444-444444444444'}),
     {status:'WAITING',code:'EMAIL_PAUSED',draft_id:'44444444-4444-4444-8444-444444444444'});
   const source=await readFile(new URL('../src/crm/service.js',import.meta.url),'utf8');

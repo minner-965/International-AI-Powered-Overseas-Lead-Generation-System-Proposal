@@ -5,7 +5,9 @@ const canonical=value=>JSON.stringify(value,Object.keys(value||{}).sort());
 
 export const AUTOMATION_CONTROLS=Object.freeze({
   RESEARCH_PROVIDER_EXECUTION:'RESEARCH_PROVIDER_EXECUTION',
-  PHASE13_AUTO_FIRST_TOUCH:'PHASE13_AUTO_FIRST_TOUCH'
+  PHASE13_AUTO_FIRST_TOUCH:'PHASE13_AUTO_FIRST_TOUCH',
+  // Migration 068: contact research (decision-maker search + Hunter) has its own switch, default off.
+  CONTACT_RESEARCH_EXECUTION:'CONTACT_RESEARCH_EXECUTION'
 });
 
 export class AutomationControlService {

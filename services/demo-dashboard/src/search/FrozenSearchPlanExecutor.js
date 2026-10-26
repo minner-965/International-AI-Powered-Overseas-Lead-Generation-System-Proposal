@@ -1,4 +1,5 @@
 import {SearchUsageAudit} from './SearchUsageAudit.js';
+import {FREE_PROVIDER_UNAVAILABLE} from './ProviderSpendPolicy.js';
 
 export function searchPause(error){
  const code=String(error?.code||'SEARCH_ERROR');
@@ -35,12 +36,15 @@ export class FrozenSearchPlanExecutor {
    // Fallback chain: a provider that fails with `fallback:true` (local SearXNG errors, 429,
    // CAPTCHA) or returns an empty page with `fallbackOnEmpty` hands the same query to the
    // next available provider in the configured order. Paid providers never fall back.
+   // The router applies the spend policy: in FREE_ONLY paid providers are never selected and
+   // the job pauses (resumably) with PAUSED_FREE_PROVIDER_UNAVAILABLE; an empty free answer
+   // only moves to a paid provider when paid_fallback_on_empty is enabled.
    const tried=[];let settled=false,emptyAnswer=false;
    for(;;){
-    const selected=await this.router.select(tried.length?{exclude:tried}:undefined);
+    const selected=await this.router.select(tried.length?{exclude:tried,afterEmpty:emptyAnswer}:undefined);
     if(!selected.provider){
      if(emptyAnswer){settled=true;break;}
-     return pause(tried.length?'PAUSED_PROVIDER_UNAVAILABLE':selected.reason);
+     return pause(selected.reason===FREE_PROVIDER_UNAVAILABLE?FREE_PROVIDER_UNAVAILABLE:tried.length?'PAUSED_PROVIDER_UNAVAILABLE':selected.reason);
     }
     // Cross-run reuse: the same query text/market/language/provider executed recently costs nothing.
     if(this.reuseDays>0&&this.store.findReusable){
@@ -52,7 +56,7 @@ export class FrozenSearchPlanExecutor {
     }
     if(this.costControl){
      const budget=await this.costControl.canSpend(selected.provider);
-     if(!budget.allowed)return pause('PAUSED_SEARCH_MONTHLY_BUDGET');
+     if(!budget.allowed)return pause(budget.reason==='FREE_ONLY'?FREE_PROVIDER_UNAVAILABLE:'PAUSED_SEARCH_MONTHLY_BUDGET');
     }
     const execution=await this.store.claim(frozen,query,selected,tried.length?'FALLBACK_AFTER_PROVIDER_FAILURE':selected.reason);
     if(!execution)return pause('PAUSED_QUERY_IN_PROGRESS');

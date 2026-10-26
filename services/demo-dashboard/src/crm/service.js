@@ -35,11 +35,13 @@ function timestamp(value,label){
   if(Number.isNaN(date.getTime()))throw fail('CRM_DATE_INVALID',`${label} must be a valid date`);
   return date.toISOString();
 }
-// One count for both the send gate and the approval page quota: cold-outreach messages
-// (first touch + follow-ups) reserved, sent or ambiguous since the start of the database day.
+// One count for both the send gate and the approval page quota: SIM's own cold-outreach messages
+// (first touch + follow-ups, merchant_id IS NULL) reserved, sent or ambiguous since the start of the
+// database day. Merchant sends count against each merchant's own quota, never against SIM's.
 export async function countColdOutreachToday(queryable){
   return Number((await queryable.query(`SELECT count(*)::int count FROM leadgen.outbound_messages
-    WHERE provider_purpose='COLD_OUTREACH' AND send_status IN('SENDING','PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS')
+    WHERE provider_purpose='COLD_OUTREACH' AND merchant_id IS NULL
+      AND send_status IN('SENDING','PROVIDER_ACCEPTED','DELIVERED','AMBIGUOUS')
       AND coalesce(sent_at,send_reserved_at,queued_at)>=date_trunc('day',now())`)).rows[0]?.count||0);
 }
 const actorOf=user=>text(user?.identity,'actor',{required:true,max:200});
@@ -169,9 +171,14 @@ export class CrmService{
 
   async sendApprovedFollowup({draft_id}){
     const id=crmUuid(draft_id,'draft_id');
-    const policy=this.automationControl?await this.automationControl.getState():null;
-    if(policy?.auto_first_touch_email!==true)return{status:'WAITING',code:'EMAIL_PAUSED',draft_id:id};
+    // A person approved this draft, so the auto first-touch switch does not apply. SIM's own drafts
+    // wait only while SIM's sender is paused after a provider-path failure (pauseEmail); merchant
+    // drafts depend on that merchant's verified mailbox below.
     const owner=(await this.pool.query('SELECT merchant_id FROM leadgen.crm_followup_drafts WHERE id=$1',[id])).rows[0]?.merchant_id||null;
+    if(!owner&&this.automationControl){
+      const policy=await this.automationControl.getState();
+      if(policy?.sim_sender_paused===true)return{status:'WAITING',code:'EMAIL_PAUSED',draft_id:id};
+    }
     let provider=this.outboundProvider;let fromName=FIRST_TOUCH_SENDER_NAME;
     if(owner){
       if(!this.merchantSending)return{status:'WAITING',code:'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};

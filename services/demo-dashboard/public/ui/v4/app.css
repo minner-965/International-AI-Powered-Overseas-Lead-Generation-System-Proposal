@@ -3130,6 +3130,16 @@ button, input, select, summary, a { touch-action: manipulation; }
 @media(max-width:800px){.v3-automation-grid{grid-template-columns:1fr}.v3-automation-features{grid-template-columns:1fr}.v3-automation-head{display:grid}.v3-automation-master{justify-content:flex-start}.v3-automation-metrics{grid-template-columns:1fr}.v3-automation-foot{flex-wrap:wrap}.v3-automation-foot .btn{margin-left:0}}
 @media(max-width:600px){.v3-automation-panel{gap:12px;padding:14px 12px}.v3-automation-head{gap:12px}.v3-automation-master{display:grid;grid-template-columns:1fr}.v3-automation-master .btn{width:100%}.v3-automation-grid{gap:14px;padding-top:12px}.v3-automation-features li{min-height:44px}.v3-automation-facts>div{grid-template-columns:1fr;gap:3px}.v3-automation-facts dd{text-align:left}.v3-automation-metrics>div{min-height:56px}.v3-automation-foot time{width:100%;margin:0}.v3-automation-foot .btn{width:100%}}
 @media(prefers-reduced-motion:reduce){.v3-automation-panel *{scroll-behavior:auto!important;transition:none!important}}
+/* Settings: three independent automation switches and the search spending choice. */
+.v3-automation-subsystems{display:grid;gap:12px;padding-top:16px;border-top:1px solid var(--dpv-border)}
+.v3-automation-subsystems h4{margin:4px 0 0;font-size:13px}
+.review-list.v3-automation-switches{padding:0;max-width:720px}
+.review-list.v3-automation-switches li{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.review-list.v3-automation-switches .k{color:var(--dpv-ink);font-size:13px}
+.review-list.v3-automation-switches .k small.v3-automation-note{margin-top:3px;color:var(--dpv-muted);font-size:12px}
+.v4-presets.v3-automation-spend{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px}
+.v3-automation-spend .v4-preset small{white-space:normal}
+@media(max-width:600px){.v4-presets.v3-automation-spend{grid-template-columns:1fr}}
 
 /* ==== section: v4-base ==== */
 /* V4 workspace (docs/ui/mockup-v4): base, bilingual, primitives. */

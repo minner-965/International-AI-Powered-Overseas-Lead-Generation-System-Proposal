@@ -13,8 +13,14 @@ export function normalizeAutomationControl(payload = {}, statusPayload = {}) {
   const subsystems = statusPayload.subsystems || status.subsystems || {};
   const enabled = bool(first(source, ['enabled','master_enabled','automation_enabled','acquisition_enabled','automated_acquisition'], first(source, ['mode','master_status'], false)));
   const feature = (keys, fallback) => bool(first(features, keys, first(source, keys, fallback)));
+  // Spend mode: anything other than ALLOW_PAID (including the legacy NO_NEW_PAID_SPEND) is free-only.
+  const spendMode = String(first(source, ['provider_spend_mode','spend_mode'], 'FREE_ONLY') || '').toUpperCase() === 'ALLOW_PAID' ? 'ALLOW_PAID' : 'FREE_ONLY';
   return {
     enabled,
+    spendMode,
+    paidFallbackOnEmpty: first(source, ['paid_fallback_on_empty'], false) === true,
+    senderPaused: first(source, ['sim_sender_paused'], false) === true,
+    contactControlMissing: source.subsystems?.contact_research?.control_missing === true,
     revision: first(source, ['revision','policy_revision','version'], '—'),
     updatedAt: first(source, ['updated_at','changed_at'], ''),
     features: {

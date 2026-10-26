@@ -31,7 +31,7 @@ export function createSessionMiddleware({pool,env=process.env,store=null}={}){
 const MERCHANT_ROUTES=[
   ['GET',`^/api/auth/me$`],['POST',`^/api/auth/(login|logout|password)$`],
   ['GET',`^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|scope)$`],
-  ['PATCH',`^/api/merchant/profile$`],['PUT',`^/api/merchant/(mailbox|scope)$`],['POST',`^/api/merchant/mailbox/(test-connection|test-email)$`],
+  ['PATCH',`^/api/merchant/profile$`],['PUT',`^/api/merchant/(mailbox|scope|auto-first-touch)$`],['POST',`^/api/merchant/mailbox/(test-connection|test-email)$`],
   ['POST',`^/api/feedback$`],
   ['GET',`^/api/(opportunities|opportunity-pool/summary|metrics|leads|export/leads|markets|category-scopes/current)$`],
   ['GET',`^/api/opportunities/${UUID}/decision-history$`],
@@ -94,6 +94,8 @@ export function createWorkspaceGate({merchants,env=process.env,pool}){
       const features=featuresOf(merchant);
       if(method==='POST'&&/^\/api\/research\/batches/.test(req.path)&&!features.research)
         return deny(res,403,'MERCHANT_FEATURE_DISABLED','Customer search is not enabled for this account');
+      if(method==='PUT'&&req.path==='/api/merchant/auto-first-touch'&&req.body?.enabled===true&&!features.email)
+        return deny(res,403,'MERCHANT_FEATURE_DISABLED','Email sending is not enabled for this account');
       if(method==='POST'&&/^\/api\/(crm\/followup-drafts\/[^/]+\/decision|merchant\/mailbox\/test-email)$/.test(req.path)&&!features.email)
         return deny(res,403,'MERCHANT_FEATURE_DISABLED','Email sending is not enabled for this account');
       // Company detail routes: the id must be one of the merchant's companies.

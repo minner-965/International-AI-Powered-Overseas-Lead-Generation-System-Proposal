@@ -1016,10 +1016,12 @@ export class Phase7Service {
   }
 
   // Inbound sync of every verified merchant mailbox; replies are attributed to that merchant.
+  // Expired (read-only) merchants are read too, so replies to email already sent are not lost.
   async syncMerchantInboundWork(merchantSending){
     if(!merchantSending)return{status:'DISABLED',mailboxes:0};
     const results=[];
-    for(const merchant of await merchantSending.sendingMerchants()){
+    const merchants=merchantSending.inboundMerchants?await merchantSending.inboundMerchants():await merchantSending.sendingMerchants();
+    for(const merchant of merchants){
       try{
         const context=await merchantSending.providerFor(merchant.id);
         results.push({merchant_id:merchant.id,...await this.syncImapMailbox({provider:context.provider,mailbox:String(context.mailbox.username).trim().toLowerCase(),folder:'INBOX',merchantId:merchant.id})});

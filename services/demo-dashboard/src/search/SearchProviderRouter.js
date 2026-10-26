@@ -31,7 +31,10 @@ export function createPurposeSearchProvider(config,purpose,overrides={}){
   return createConfiguredSearchProvider(route,overrides);
 }
 export class SearchProviderRouter{
-  constructor({config={},tavilyAccountState=null,exaAccountState=null}={}){Object.assign(this,{config,tavilyAccountState,exaAccountState});}
+  // capacityRouter (optional, CurrentCapacityRouter): when present, creation checks follow the
+  // configured provider order and spend policy instead of the single SEARCH_PROVIDER account,
+  // so FREE_ONLY never depends on (or reports) a paid provider's capacity.
+  constructor({config={},tavilyAccountState=null,exaAccountState=null,capacityRouter=null}={}){Object.assign(this,{config,tavilyAccountState,exaAccountState,capacityRouter});}
   route(purpose){return resolveSearchRoute(this.config,purpose);}
   forPurpose(purpose){
     this.route(purpose);
@@ -47,6 +50,14 @@ export class SearchProviderRouter{
   }
   async ensureCanCreate(purpose='COMPANY_DISCOVERY'){
     const route=this.route(purpose);
+    if(this.capacityRouter&&!route.routes){
+      const selected=await this.capacityRouter.select();
+      if(!selected.provider)throw Object.assign(new Error('No permitted search provider is available'),{
+        code:selected.reason==='PAUSED_FREE_PROVIDER_UNAVAILABLE'?'FREE_SEARCH_PROVIDER_UNAVAILABLE':'SEARCH_PROVIDER_UNAVAILABLE',
+        reason:selected.reason,status:503,created:false});
+      return {provider_code:String(selected.provider).toUpperCase(),status:'AVAILABLE',selection_reason:selected.reason,
+        provider_spend_mode:selected.provider_spend_mode||null};
+    }
     const accountState=route.provider==='tavily'?this.tavilyAccountState:route.provider==='exa'?this.exaAccountState:null;
     if(accountState?.ensureCanCreate)return accountState.ensureCanCreate();
     const state=await this.getState(purpose);

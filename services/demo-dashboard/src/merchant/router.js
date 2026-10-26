@@ -63,6 +63,11 @@ export function createMerchantRouter({merchants,env=process.env}={}){
   router.get('/api/merchant/mailbox',asyncRoute(async(req,res)=>res.json(await merchants.mailbox(merchantOf(req)))));
   router.put('/api/merchant/mailbox',asyncRoute(async(req,res)=>res.json(await merchants.saveMailbox(merchantOf(req),req.body||{},actorOf(req)))));
   router.post('/api/merchant/mailbox/test-connection',asyncRoute(async(req,res)=>res.json(await merchants.testConnection(merchantOf(req)))));
+  // Automatic first touch is the merchant's own decision: SIM can see it but not switch it.
+  router.put('/api/merchant/auto-first-touch',asyncRoute(async(req,res)=>{
+    if(req.workspaceUser&&req.workspaceUser.role!=='MERCHANT')throw fail('MERCHANT_SELF_SERVICE_ONLY','Only the merchant can change this setting',403);
+    res.json(await merchants.setAutoFirstTouch(merchantOf(req),req.body?.enabled,actorOf(req)));
+  }));
   router.post('/api/merchant/mailbox/test-email',asyncRoute(async(req,res)=>res.json(await merchants.testEmail(merchantOf(req)))));
   router.get('/api/merchant/scope',asyncRoute(async(req,res)=>res.json(await merchants.scope(merchantOf(req)))));
   router.put('/api/merchant/scope',asyncRoute(async(req,res)=>res.json(await merchants.saveScope(merchantOf(req),req.body||{},actorOf(req)))));

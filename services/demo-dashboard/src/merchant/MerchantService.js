@@ -11,6 +11,10 @@ export const DEFAULT_FEATURES=Object.freeze({research:true,email:true,crm_sync:f
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const DAY=86_400_000;
+// A mailbox stays verified through occasional test failures; this many failed tests in a row
+// (or changed credentials) clear the verification and stop its sending and reply sync.
+export const MAILBOX_TEST_FAILURE_LIMIT=3;
+const SENDING_STATUSES=['TRIAL','ACTIVE'];
 
 export const fail=(code,message,status=400,extra={})=>Object.assign(new Error(message),{code,status,...extra});
 const clean=(value,max=200)=>{const text=String(value??'').replace(/[\u0000-\u001f\u007f]/g,' ').trim();return text?text.slice(0,max):null;};
@@ -65,6 +69,9 @@ export async function countMerchantSearchesThisMonth(queryable,merchantId){
       AND (e.status IN('COMPLETED','NOT_FOUND','RESERVED') OR e.used_units>0)`,[merchantId])).rows[0]?.count||0);
 }
 
+const ADMIN_MAILBOX_COLUMNS=`mb.merchant_id IS NOT NULL mailbox_configured,mb.verified_at mailbox_verified_at,
+  mb.sending_hold_reason mailbox_sending_hold_reason,mb.sending_hold_at mailbox_sending_hold_at`;
+
 export class MerchantService{
   constructor({pool,env=process.env,now=()=>new Date(),providerFactory=config=>new SmtpImapProviderAdapter(config)}={}){
     if(!pool)throw new Error('MerchantService requires a PostgreSQL pool');
@@ -99,7 +106,7 @@ export class MerchantService{
       trial_ends_at:row.trial_ends_at,paid_until:row.paid_until,read_only:status==='EXPIRED'||status==='DISABLED',
       quotas:{monthly_searches:row.monthly_search_quota,daily_emails:row.daily_email_quota},
       usage:usage?{searches_this_month:usage.searches_this_month,emails_today:usage.emails_today}:null,
-      features:featuresOf(row),referral_code:row.referral_code};
+      features:featuresOf(row),referral_code:row.referral_code,auto_first_touch_enabled:row.auto_first_touch_enabled===true};
   }
 
   async userView(user,{withUsage=true}={}){
@@ -152,8 +159,9 @@ export class MerchantService{
 
   // ---- admin ----
   async listMerchants(){
-    const rows=(await this.pool.query(`SELECT m.*,r.company_name referred_by_company,u.email login_email
+    const rows=(await this.pool.query(`SELECT m.*,r.company_name referred_by_company,u.email login_email,${ADMIN_MAILBOX_COLUMNS}
       FROM leadgen.merchants m LEFT JOIN leadgen.merchants r ON r.id=m.referred_by_merchant_id
+      LEFT JOIN leadgen.merchant_mailboxes mb ON mb.merchant_id=m.id
       LEFT JOIN LATERAL(SELECT email FROM leadgen.workspace_users w WHERE w.merchant_id=m.id ORDER BY created_at LIMIT 1) u ON true
       ORDER BY m.created_at DESC`)).rows;
     const items=[];
@@ -166,12 +174,16 @@ export class MerchantService{
     return{id:row.id,company_name:row.company_name,contact_name:row.contact_name,sender_name:row.sender_name,login_email:row.login_email||null,
       status:effectiveMerchantStatus(row,this.now()),stored_status:row.status,trial_ends_at:row.trial_ends_at,paid_until:row.paid_until,
       referral_code:row.referral_code,referred_by:row.referred_by_merchant_id?{id:row.referred_by_merchant_id,company_name:row.referred_by_company||null}:null,
-      quotas:{monthly_searches:row.monthly_search_quota,daily_emails:row.daily_email_quota},usage,features:featuresOf(row),created_at:row.created_at};
+      quotas:{monthly_searches:row.monthly_search_quota,daily_emails:row.daily_email_quota},usage,features:featuresOf(row),created_at:row.created_at,
+      auto_first_touch_enabled:row.auto_first_touch_enabled===true,
+      mailbox:{configured:Boolean(row.mailbox_configured),verified_at:row.mailbox_verified_at||null,
+        sending_hold:row.mailbox_sending_hold_at?{reason:row.mailbox_sending_hold_reason,at:row.mailbox_sending_hold_at}:null}};
   }
 
   async adminMerchant(id){
-    const row=(await this.pool.query(`SELECT m.*,r.company_name referred_by_company,u.email login_email FROM leadgen.merchants m
+    const row=(await this.pool.query(`SELECT m.*,r.company_name referred_by_company,u.email login_email,${ADMIN_MAILBOX_COLUMNS} FROM leadgen.merchants m
       LEFT JOIN leadgen.merchants r ON r.id=m.referred_by_merchant_id
+      LEFT JOIN leadgen.merchant_mailboxes mb ON mb.merchant_id=m.id
       LEFT JOIN LATERAL(SELECT email FROM leadgen.workspace_users w WHERE w.merchant_id=m.id ORDER BY created_at LIMIT 1) u ON true
       WHERE m.id=$1`,[merchantUuid(id)])).rows[0];
     if(!row)throw fail('MERCHANT_NOT_FOUND','Merchant not found',404);
@@ -315,12 +327,53 @@ export class MerchantService{
   async mailboxRow(merchantId,queryable=this.pool){return (await queryable.query('SELECT * FROM leadgen.merchant_mailboxes WHERE merchant_id=$1',[merchantUuid(merchantId)])).rows[0]||null;}
   mailboxView(row){
     if(!row)return{configured:false,from_email:null,from_name:null,reply_to:null,smtp_host:null,smtp_port:587,imap_host:null,imap_port:993,username:null,
-      verified_at:null,last_test:{smtp:null,imap:null,at:null},password_set:false};
+      verified_at:null,last_test:{smtp:null,imap:null,at:null},password_set:false,consecutive_test_failures:0,sending_hold:null};
     return{configured:true,preset_key:row.preset_key,from_email:row.from_email,from_name:row.from_name,reply_to:row.reply_to,smtp_host:row.smtp_host,smtp_port:row.smtp_port,
       imap_host:row.imap_host,imap_port:row.imap_port,username:row.username,verified_at:row.verified_at,
-      last_test:{smtp:row.last_test?.smtp||null,imap:row.last_test?.imap||null,at:row.last_test?.at||null},password_set:Boolean(row.password_ciphertext)};
+      last_test:{smtp:row.last_test?.smtp||null,imap:row.last_test?.imap||null,at:row.last_test?.at||null},password_set:Boolean(row.password_ciphertext),
+      consecutive_test_failures:Number(row.consecutive_test_failures||0),
+      sending_hold:row.sending_hold_at?{reason:row.sending_hold_reason||null,at:row.sending_hold_at}:null};
   }
-  async mailbox(merchantId){return this.mailboxView(await this.mailboxRow(merchantId));}
+  // Automatic first touch from the merchant's mailbox: off until the merchant switches it on,
+  // which needs a verified mailbox, an account that can send and the email feature.
+  autoFirstTouchView(merchant,row){
+    const status=effectiveMerchantStatus(merchant,this.now());
+    const blocked=!SENDING_STATUSES.includes(status)?'MERCHANT_READ_ONLY':!featuresOf(merchant).email?'MERCHANT_FEATURE_DISABLED'
+      :!row?.verified_at?'MERCHANT_MAILBOX_NOT_VERIFIED':null;
+    return{enabled:merchant?.auto_first_touch_enabled===true,can_enable:blocked===null,blocked_reason:blocked,
+      active:merchant?.auto_first_touch_enabled===true&&blocked===null&&!row?.sending_hold_at};
+  }
+  async mailbox(merchantId){
+    const id=merchantUuid(merchantId);
+    const [merchant,row]=await Promise.all([this.requireMerchant(id),this.mailboxRow(id)]);
+    return{...this.mailboxView(row),auto_first_touch:this.autoFirstTouchView(merchant,row)};
+  }
+  async setAutoFirstTouch(merchantId,enabled,actor){
+    const id=merchantUuid(merchantId);
+    if(typeof enabled!=='boolean')throw fail('MERCHANT_AUTO_FIRST_TOUCH_INVALID','enabled must be true or false',422);
+    return this.transaction(async client=>{
+      const merchant=(await client.query('SELECT * FROM leadgen.merchants WHERE id=$1 FOR UPDATE',[id])).rows[0];
+      if(!merchant)throw fail('MERCHANT_NOT_FOUND','Merchant not found',404);
+      const row=await this.mailboxRow(id,client);
+      if(enabled){
+        const view=this.autoFirstTouchView(merchant,row);
+        if(view.blocked_reason==='MERCHANT_READ_ONLY')throw fail('MERCHANT_READ_ONLY','The trial has ended; contact SIM to continue',403);
+        if(view.blocked_reason==='MERCHANT_FEATURE_DISABLED')throw fail('MERCHANT_FEATURE_DISABLED','Email sending is not enabled for this account',403);
+        if(view.blocked_reason)throw fail('MERCHANT_MAILBOX_NOT_VERIFIED','Bind and test the sending mailbox first',409);
+      }
+      await client.query(`UPDATE leadgen.merchants SET auto_first_touch_enabled=$2,auto_first_touch_updated_at=now(),auto_first_touch_updated_by=$3,updated_at=now()
+        WHERE id=$1`,[id,enabled,clean(actor)||'merchant']);
+      return{...this.mailboxView(row),auto_first_touch:this.autoFirstTouchView({...merchant,auto_first_touch_enabled:enabled},row)};
+    });
+  }
+  // Stops automatic first touches from one merchant mailbox (e.g. a send that stalled) without
+  // touching SIM's sending or any other merchant. A later successful connection test lifts it.
+  async holdMailbox(merchantId,reason,queryable=this.pool){
+    const code=String(reason||'MAILBOX_SENDING_HELD').replace(/[^A-Z0-9_]/gi,'_').toUpperCase().slice(0,80);
+    const result=await queryable.query(`UPDATE leadgen.merchant_mailboxes SET sending_hold_reason=$2,sending_hold_at=coalesce(sending_hold_at,now()),updated_at=now()
+      WHERE merchant_id=$1 RETURNING merchant_id`,[merchantUuid(merchantId),code]);
+    return{held:result.rowCount>0,reason:code};
+  }
 
   async saveMailbox(merchantId,input={},actor){
     const id=merchantUuid(merchantId);await this.requireMerchant(id);
@@ -351,7 +404,8 @@ export class MerchantService{
         imap_host=EXCLUDED.imap_host,imap_port=EXCLUDED.imap_port,username=EXCLUDED.username,password_ciphertext=EXCLUDED.password_ciphertext,
         from_email=EXCLUDED.from_email,from_name=EXCLUDED.from_name,reply_to=EXCLUDED.reply_to,updated_by=EXCLUDED.updated_by,updated_at=now(),
         verified_at=CASE WHEN $13 THEN NULL ELSE leadgen.merchant_mailboxes.verified_at END,
-        last_test=CASE WHEN $13 THEN '{}'::jsonb ELSE leadgen.merchant_mailboxes.last_test END`,
+        last_test=CASE WHEN $13 THEN '{}'::jsonb ELSE leadgen.merchant_mailboxes.last_test END,
+        consecutive_test_failures=CASE WHEN $13 THEN 0 ELSE leadgen.merchant_mailboxes.consecutive_test_failures END`,
       [id,preset?.key||null,smtpHost,smtpPort,imapHost,imapPort,username,ciphertext,fromEmail,fromName,replyTo,actor,changed]);
     return this.mailbox(id);
   }
@@ -373,9 +427,19 @@ export class MerchantService{
     const result=await provider.testConnections();
     const at=this.now().toISOString();
     const ok=result.smtp?.ok===true&&result.imap?.ok===true;
-    await this.pool.query(`UPDATE leadgen.merchant_mailboxes SET last_test=$2::jsonb,verified_at=CASE WHEN $3 THEN now() ELSE NULL END,updated_at=now() WHERE merchant_id=$1`,
-      [id,JSON.stringify({smtp:result.smtp,imap:result.imap,at}),ok]);
-    return{smtp:result.smtp,imap:result.imap};
+    // A success verifies the mailbox, resets the failure count and lifts a sending hold. A
+    // failure is recorded; only MAILBOX_TEST_FAILURE_LIMIT failures in a row clear verification.
+    const failures=ok?0:Number(row.consecutive_test_failures||0)+1;
+    const clear=!ok&&failures>=MAILBOX_TEST_FAILURE_LIMIT;
+    const updated=(await this.pool.query(`UPDATE leadgen.merchant_mailboxes SET last_test=$2::jsonb,consecutive_test_failures=$4,
+        verified_at=CASE WHEN $3 THEN now() WHEN $5 THEN NULL ELSE verified_at END,
+        sending_hold_reason=CASE WHEN $3 THEN NULL ELSE sending_hold_reason END,
+        sending_hold_at=CASE WHEN $3 THEN NULL ELSE sending_hold_at END,updated_at=now()
+      WHERE merchant_id=$1 RETURNING verified_at`,
+      [id,JSON.stringify({smtp:result.smtp,imap:result.imap,at}),ok,failures,clear])).rows?.[0];
+    const verifiedAt=updated?updated.verified_at:(ok?at:clear?null:row.verified_at);
+    return{smtp:result.smtp,imap:result.imap,ok,verified:Boolean(verifiedAt),consecutive_failures:failures,
+      failures_until_unverified:ok||!verifiedAt?null:MAILBOX_TEST_FAILURE_LIMIT-failures};
   }
 
   async testEmail(merchantId){
@@ -475,9 +539,20 @@ export class MerchantService{
     return{allowed:sent<merchant.daily_email_quota,code:sent<merchant.daily_email_quota?'ALLOWED':'MERCHANT_EMAIL_QUOTA_EXCEEDED',merchant,
       sent_today:sent,daily_limit:merchant.daily_email_quota,remaining:Math.max(0,merchant.daily_email_quota-sent)};
   }
+  // Merchants whose mailbox sends automatic first touches: the account can send, the email
+  // feature is on, the merchant switched automatic first touch on, and the mailbox is verified
+  // and not held after a failed send.
   async sendingMerchants(){
     return (await this.pool.query(`SELECT m.* FROM leadgen.merchants_current m JOIN leadgen.merchant_mailboxes b ON b.merchant_id=m.id
       WHERE m.effective_status IN('TRIAL','ACTIVE') AND b.verified_at IS NOT NULL AND coalesce((m.features->>'email')::boolean,true)
+        AND m.auto_first_touch_enabled AND b.sending_hold_at IS NULL
+      ORDER BY m.created_at`)).rows;
+  }
+  // Merchants whose mailbox is read for replies. Expired accounts are included (read-only: no
+  // sending) so replies to email already sent keep arriving; disabled accounts are not.
+  async inboundMerchants(){
+    return (await this.pool.query(`SELECT m.* FROM leadgen.merchants_current m JOIN leadgen.merchant_mailboxes b ON b.merchant_id=m.id
+      WHERE m.effective_status IN('TRIAL','ACTIVE','EXPIRED') AND b.verified_at IS NOT NULL
       ORDER BY m.created_at`)).rows;
   }
 }

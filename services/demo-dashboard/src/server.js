@@ -56,8 +56,12 @@ import {createMarketRegistryRouter} from './market/marketRegistryRouter.js';
 import {searchProductTaxonomy} from './categoryProcurement/productTaxonomyCatalog.js';
 import {AutomationControlService,AUTOMATION_CONTROLS} from './automation/AutomationControlService.js';
 import {Phase13AutomationFacade} from './automation/Phase13AutomationFacade.js';
+import {createAutomationRouter} from './automation/router.js';
+import {ContactResearchReconciler} from './automation/ContactResearchReconciler.js';
+import {RoutedSearchClient} from './search/RoutedSearchClient.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
+import {simFirstTouchCandidates,merchantFirstTouchCandidates} from './outreach/firstTouchCandidates.js';
 import {MerchantService} from './merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from './merchant/auth.js';
 import {createMerchantRouter} from './merchant/router.js';
@@ -157,9 +161,23 @@ const searchProviderOrder=parseSearchProviderOrder(process.env.SEARCH_PROVIDER_O
 const providerStates=async()=>({searxng:await searxngProviderAccountState.getState(),exa:await exaProviderAccountState.getState(),tavily:await tavilyProviderAccountState.getState()});
 const currentProviderState=async()=>{const states=await providerStates();const order=await phase13Automation.currentProviderOrder();for(const p of order)if(states[p]?.status==='AVAILABLE')return states[p];return states[order[0]]||{provider_code:'SEARCH',status:'UNAVAILABLE'};};
 const phase13Automation=new Phase13AutomationFacade({pool,controls:automationControls,providerState:currentProviderState,providerOrder:searchProviderOrder,providerOrderFromEnv:true,audit});
-const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOrder:()=>phase13Automation.currentProviderOrder(),getStates:providerStates});
-const searchCostControl=new SearchCostControl({pool,config:loadSearchCostConfig(process.env),
-  providerOrder:()=>phase13Automation.currentProviderOrder()});
+// provider_spend_mode (FREE_ONLY by default, stored on the research search control) is applied by
+// the router, the cost guard and the routed client used by contact research and category evidence.
+const searchCostConfig=loadSearchCostConfig(process.env);
+const currentCapacityRouter=new CurrentCapacityRouter({config:searchConfig,getOrder:()=>phase13Automation.currentProviderOrder(),getStates:providerStates,
+  getSpendPolicy:()=>phase13Automation.spendPolicy(),unitPrices:searchCostConfig.unitPrices});
+const searchCostControl=new SearchCostControl({pool,config:searchCostConfig,
+  providerOrder:()=>phase13Automation.currentProviderOrder(),spendPolicy:()=>phase13Automation.spendPolicy()});
+// Batch creation follows the same order and spend policy instead of the single SEARCH_PROVIDER account.
+const searchCreationRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState,exaAccountState:exaProviderAccountState,capacityRouter:currentCapacityRouter});
+const routedSearchClient=new RoutedSearchClient({router:currentCapacityRouter,costControl:searchCostControl,pool,tavilyUsageConfig,
+  accountStates:{searxng:searxngProviderAccountState,exa:exaProviderAccountState}});
+// Hunter caps (credits): per run 5, per day 50, per billing period 100 unless the environment overrides them.
+const hunterCaps=Object.freeze({
+  runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 5),
+  dailyCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_DAY_UNITS || 50),
+  billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 100)
+});
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
   jobAllowed:jobId=>merchantService.searchAllowedForJob(jobId),
   costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{searxng:searxngProviderAccountState,exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
@@ -175,15 +193,14 @@ const enrichmentService = new EnrichmentService({
   pool,
   searchConfig,
   tavilyUsageConfig,
+  searchClient: routedSearchClient,
   crawlerConfig: searchConfig.contactConfig,
   hunterConfig: {
     apiKey: process.env.HUNTER_API_KEY || '',
     mode: process.env.HUNTER_MODE || '',
     endpoint: process.env.HUNTER_API_ENDPOINT || 'https://api.hunter.io/v2',
     timeoutMs: Number(process.env.HUNTER_REQUEST_TIMEOUT_MS || 12000),
-    runCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
-    dailyCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_DAY_UNITS || 20000),
-    billingPeriodCapUnits: Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000)
+    ...hunterCaps
   },
   linkedInConfig: {
     mode: process.env.LINKEDIN_DISCOVERY_MODE || 'SEARCH_DISCOVERY_ONLY',
@@ -200,7 +217,7 @@ const enrichmentService = new EnrichmentService({
   audit
 });
 const categoryEvidenceService = new CategoryEvidenceService({
-  pool,searchConfig,tavilyUsageConfig,crawlerConfig:searchConfig.contactConfig,
+  pool,searchConfig,tavilyUsageConfig,searchClient:routedSearchClient,crawlerConfig:searchConfig.contactConfig,
   maxQueriesPerProfile:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_PROFILE || 4),
   maxQueriesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_COMPANY || 8),
   maxPagesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_PAGES_PER_COMPANY || 12),
@@ -467,6 +484,7 @@ let researchDirectExecutor;
 let searchPlanService;
 let autoFirstTouchService;
 let crmService;
+let contactResearchReconciler;
 
 const phase5Queue = createPhase5Queue({
   telemetry,
@@ -490,6 +508,9 @@ const phase5Queue = createPhase5Queue({
       return scoreCompanySet(data, job);
     },
     [PHASE5_QUEUES.ENRICH_DECISION_MAKERS]: async data => {
+      // Automation-created contact research waits (stays QUEUED) while its switch is off.
+      const gate = await contactResearchReconciler.jobAllowed(data.research_job_id);
+      if (!gate.allowed) return { research_job_id:data.research_job_id,status:gate.status,reason:gate.reason };
       const enrichment = await enrichmentService.runJob(data.research_job_id);
       const decisions = await phase7Service.repository.refreshOpportunityDecisions({
         ttlDays:Number(process.env.OUTREACH_ELIGIBILITY_TTL_DAYS || 7)
@@ -575,8 +596,10 @@ searchPlanService=new SearchPlanService({pool});
 const researchBatchService=new ResearchBatchService({pool,directDispatch:researchDirectDispatchService,planning:searchPlanService,
   merchantQuota:(merchantId,planned,client)=>merchantService.assertSearchQuota(merchantId,planned,client),
   costControl:searchCostControl,
-  ensureCanCreate:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY'),
-  runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)});
+  ensureCanCreate:()=>searchCreationRouter.ensureCanCreate('COMPANY_DISCOVERY'),
+  runBudgetCapUnits:hunterCaps.runCapUnits});
+contactResearchReconciler=new ContactResearchReconciler({pool,queue:phase5Queue,queueName:PHASE5_QUEUES.ENRICH_DECISION_MAKERS,
+  automation:phase13Automation,selectProvider:()=>currentCapacityRouter.select(),env:process.env,hunterRunCapUnits:hunterCaps.runCapUnits});
 autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
   automationControl:phase13Automation,
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
@@ -603,8 +626,8 @@ const researchWorkbenchService = new ResearchWorkbenchService({
   providerAccountState:tavilyProviderAccountState,
   discoveryAccountState:searchProviderRouter,
   contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
-  runCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS || 20000),
-  billingPeriodCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS || 20000),
+  runCapUnits:hunterCaps.runCapUnits,
+  billingPeriodCapUnits:hunterCaps.billingPeriodCapUnits,
   publicDataOrigins
 });
 
@@ -643,29 +666,13 @@ function requireInternalToken(req, res, next) {
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth}));
-const automationRead=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES')];
-const automationWrite=[managementAuth.authenticate,managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN')];
-app.get('/api/automation/control',...automationRead,async(_req,res,next)=>{
-  try{res.json(await phase13Automation.getState());}catch(error){next(error);}
-});
-app.get('/api/automation/status',...automationRead,async(_req,res,next)=>{
-  try{res.json(await phase13Automation.status());}catch(error){next(error);}
-});
-app.put('/api/automation/control',...automationWrite,async(req,res,next)=>{
-  try{
-    if(typeof req.body?.enabled!=='boolean')return res.status(400).json({code:'AUTOMATION_ENABLED_REQUIRED'});
-    const result=await phase13Automation.setMaster({enabled:req.body.enabled,actor:req.managementUser.identity,
-      reason:req.body.enabled?'Management enabled automated acquisition':'Management paused automated acquisition',
-      idempotencyKey:String(req.get('idempotency-key')||randomUUID())});
-    if(req.body.enabled){await researchDirectDispatchService.reconcile({limit:25});await reconcileContactResearch({limit:5});await reconcileAutoFirstTouch({limit:1});}
-    res.json(result.state);
-  }catch(error){next(error);}
-});
-app.post('/api/automation/reconcile',...automationWrite,async(req,res,next)=>{
-  try{res.status(202).json({search:await researchDirectDispatchService.reconcile({limit:25}),
-    contact_research:await reconcileContactResearch({limit:Math.max(1,Math.min(10,Number(req.body?.contact_limit)||5))}),
-    email:await reconcileAutoFirstTouch({limit:Math.max(1,Math.min(50,Number(req.body?.limit)||1))})});}catch(error){next(error);}
-});
+// Automation controls: GET control/status, PUT control (all on/off), PUT control/:subsystem
+// (search | email | contact_research), POST reconcile. See src/automation/router.js.
+app.use(createAutomationRouter({automation:phase13Automation,managementAuth,reconcile:{
+  search:args=>researchDirectDispatchService.reconcile(args),
+  contactResearch:args=>reconcileContactResearch(args),
+  email:args=>reconcileAutoFirstTouch(args)
+}}));
 app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
 app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
 app.use('/api/markets/registry',createMarketRegistryRouter({service:new MarketRegistryService({pool}),managementAuth,audit}));
@@ -1450,7 +1457,7 @@ app.post('/api/research/jobs', managementAuth.authenticate,
     const created=await researchDirectDispatchService.createAtomic(async client=>{
       return createOrReuseResearchJob(client,{payload:{...requestPayload,market_profile:marketProfile.profileKey},
         idempotencyKey,requestDigest,identity:req.managementUser.identity,role:req.managementUser.role,
-        runBudgetCapUnits:Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000),
+        runBudgetCapUnits:hunterCaps.runCapUnits,
         beforeInsert:()=>searchProviderRouter.ensureCanCreate('COMPANY_DISCOVERY')});
     });
     const job = created.job;
@@ -1546,7 +1553,7 @@ app.post('/api/enrichment/jobs', managementAuth.authenticate,
       DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *, (xmax=0) AS inserted`,[
       productProfiles[0],['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],maxResults,
       marketCodes,productProfiles,companyIds,idempotencyKey,requestDigest,req.managementUser.identity,req.managementUser.role,
-      researchWave||null,Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000),
+      researchWave||null,hunterCaps.runCapUnits,
       researchWave?'REAL_OPPORTUNITY_RESEARCH':'DECISION_MAKER_ENRICHMENT',marketCodes.join(' / ')
     ]);
     const job = result.rows[0];
@@ -2557,16 +2564,9 @@ async function reconcileAutoFirstTouch({limit=1}={}){
   if(!state.auto_first_touch_email)return{status:'PAUSED',reason:'PAUSED_AUTOMATION_OFF',reserved:0};
   const recovered=await autoFirstTouchService.recoverStalledReservations();
   const replayed=await autoFirstTouchService.dispatchPending();
-  const candidates=await pool.query(`SELECT p.company_id FROM leadgen.opportunity_pool_current p
-    JOIN leadgen.companies c ON c.id=p.company_id
-    WHERE p.is_active_business_opportunity=true
-      AND p.opportunity_pool_band=ANY($1::text[])
-      AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id AND r.merchant_id IS NULL)
-    ORDER BY CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
-      p.observed_at DESC,p.company_id LIMIT 50`,[state.allowed_bands]);
+  const candidates=await simFirstTouchCandidates(pool,{allowedBands:state.allowed_bands,limit:50});
   const outcomes=[];let reserved=0;
-  for(const row of candidates.rows){
+  for(const row of candidates){
     try{
       const result=await autoFirstTouchService.reserve(row.company_id);
       outcomes.push({company_id:row.company_id,status:result.reservation?.status||result.queue_status,
@@ -2587,15 +2587,8 @@ async function reconcileAutoFirstTouch({limit=1}={}){
 async function reconcileMerchantFirstTouch(state){
   const results=[];
   for(const merchant of await merchantService.sendingMerchants()){
-    const candidates=await pool.query(`SELECT p.company_id FROM leadgen.merchant_companies mc
-      JOIN leadgen.opportunity_pool_current p ON p.company_id=mc.company_id
-      JOIN leadgen.companies c ON c.id=p.company_id
-      WHERE mc.merchant_id=$2 AND p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[])
-        AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-        AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=p.company_id AND r.merchant_id=$2)
-      ORDER BY CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,p.observed_at DESC,p.company_id LIMIT 20`,
-      [state.allowed_bands,merchant.id]);
-    for(const row of candidates.rows){
+    const candidates=await merchantFirstTouchCandidates(pool,merchant.id,{allowedBands:state.allowed_bands,limit:20});
+    for(const row of candidates){
       try{
         const result=await autoFirstTouchService.reserve(row.company_id,{merchantId:merchant.id});
         results.push({merchant_id:merchant.id,company_id:row.company_id,status:result.reservation?.status||result.queue_status});
@@ -2610,79 +2603,10 @@ async function reconcileMerchantFirstTouch(state){
   return results;
 }
 
+// Contact research runs only while CONTACT_RESEARCH_EXECUTION is on and the spend policy permits a
+// search provider (see src/automation/ContactResearchReconciler.js).
 async function reconcileContactResearch({limit=5}={}){
-  const state=await phase13Automation.getState();
-  if(!state.contact_research_automation)return{status:'PAUSED',reason:'PAUSED_AUTOMATION_OFF',created:0};
-  const orphaned=await pool.query(`UPDATE leadgen.research_jobs j SET status='FAILED',completed_at=now(),
-      error_count=error_count+1,last_error='WORKER_RESTART_RECOVERY'
-    WHERE j.created_by_identity='phase13-automation'
-      AND j.job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
-      AND j.status IN('DISCOVERING','RESOLVING','VERIFYING','PERSISTING')
-      AND NOT EXISTS(SELECT 1 FROM pgboss.job work
-        WHERE work.name=$1 AND work.data->>'research_job_id'=j.id::text
-          AND work.state IN('created','retry','active'))
-    RETURNING j.id,j.error_count`,[PHASE5_QUEUES.ENRICH_DECISION_MAKERS]);
-  for(const job of orphaned.rows)await phase5Queue.enqueue(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,
-    {research_job_id:job.id},{singletonKey:`phase13-contact-research-recovery:${job.id}:${job.error_count}`});
-  const selected=await pool.query(`SELECT p.company_id,c.country_code,
-      coalesce((SELECT item->>'product_profile' FROM jsonb_array_elements(coalesce(p.profile_results,'[]'::jsonb)) item
-        WHERE item->>'band' IN('PRECISION','RELEVANT','GENERAL_RELEVANT')
-        ORDER BY CASE item->>'band' WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END LIMIT 1),'WOMENSWEAR') product_profile,
-      EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
-        WHERE dm.company_id=c.id AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
-          AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED') has_official_email_candidate
-    FROM leadgen.opportunity_pool_current p JOIN leadgen.companies c ON c.id=p.company_id
-    WHERE p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[])
-      AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
-      AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=c.id)
-      AND NOT EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
-        WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dc.verification_status='VALID'
-          AND dc.last_verified_at>=now()-($2::int*interval '1 day'))
-      AND NOT EXISTS(SELECT 1 FROM leadgen.enrichment_job_companies e
-        WHERE e.company_id=c.id AND e.updated_at>=now()-interval '24 hours')
-      AND NOT EXISTS(SELECT 1 FROM leadgen.research_jobs j
-        WHERE c.id=ANY(coalesce(j.requested_company_ids,'{}'::uuid[]))
-          AND j.job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
-          AND j.status IN('QUEUED','DISCOVERING','RESOLVING','VERIFYING','PERSISTING'))
-    ORDER BY has_official_email_candidate DESC,
-      CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
-      p.observed_at DESC,p.company_id LIMIT $3`,[state.allowed_bands,
-      Number(process.env.CONTACT_VERIFICATION_TTL_DAYS||30),Math.max(1,Math.min(10,Number(limit)||5))]);
-  if(!selected.rowCount)return{status:'WAITING_CONTACT_RESEARCH_WORK',created:0,company_count:0,recovered:orphaned.rowCount};
-  try{
-    await searchProviderRouter.ensureCanCreate('CONTACT_DISCOVERY');
-  }catch(error){
-    const code=String(error?.code||'CONTACT_RESEARCH_PROVIDER_UNAVAILABLE').slice(0,160);
-    if(['TAVILY_ACCOUNT_CREDITS_EXHAUSTED','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR',
-      'PROVIDER_RATE_LIMITED','SEARCH_PROVIDER_UNAVAILABLE'].includes(code)){
-      return{status:'PAUSED_PROVIDER_CAPACITY',reason:code,created:0,company_count:selected.rowCount,
-        recovered:orphaned.rowCount};
-    }
-    throw error;
-  }
-  const companyIds=selected.rows.map(row=>row.company_id);
-  const marketCodes=[...new Set(selected.rows.map(row=>String(row.country_code||'').toUpperCase()).filter(Boolean))];
-  const productProfiles=[...new Set(selected.rows.map(row=>String(row.product_profile||'WOMENSWEAR').toUpperCase()))];
-  const requestPayload={market_codes:marketCodes,product_profiles:productProfiles,company_ids:companyIds,max_results:companyIds.length,
-    automation_revision:'MC07_CONTACT_RESEARCH_V1'};
-  const digest=canonicalDigest(requestPayload);
-  const day=new Date().toISOString().slice(0,10);
-  const inserted=await pool.query(`INSERT INTO leadgen.research_jobs
-    (country,country_code,country_name,preferred_language,market_profile,product_category,product_profile,
-     buyer_types,max_results,status,job_type,market_codes,product_profiles,requested_company_ids,
-     idempotency_key,request_digest,created_by_identity,created_by_role,run_budget_cap_units)
-    VALUES('Automated active opportunities','XX','Automated active opportunities','en','MULTI_MARKET',
-      'Buyer / Procurement Enrichment',$1,$2,$3,'QUEUED','DECISION_MAKER_ENRICHMENT',$4,$5,$6,$7,$8,
-      'phase13-automation','SYSTEM',$9)
-    ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL
-    DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,(xmax=0) inserted`,[
-      productProfiles[0]||'WOMENSWEAR',['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],
-      companyIds.length,marketCodes,productProfiles,companyIds,`phase13-contact-research:${day}:${digest}`,digest,
-      Number(process.env.MAX_HUNTER_CREDITS_PER_RUN_UNITS||20000)]);
-  const job=inserted.rows[0];
-  if(job.inserted)await phase5Queue.enqueue(PHASE5_QUEUES.ENRICH_DECISION_MAKERS,{research_job_id:job.id},{singletonKey:`phase13-contact-research:${job.id}`});
-  return{status:job.inserted?'QUEUED':'REUSED',created:job.inserted?1:0,company_count:companyIds.length,
-    research_job_id:job.id,recovered:orphaned.rowCount};
+  return contactResearchReconciler.reconcile({limit});
 }
 
 app.use((error, _req, res, _next) => {
