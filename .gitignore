@@ -9,6 +9,7 @@
 *.p12
 *.pfx
 credentials/
+!services/demo-dashboard/src/credentials/
 secrets/
 
 # Runtime data
