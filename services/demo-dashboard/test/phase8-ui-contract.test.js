@@ -43,7 +43,7 @@ test('Opportunities is the default view and primary navigation is grouped with e
   const navTags = aside.match(/<button[^>]+data-app-nav="[^"]+"[^>]*>/g) || [];
   const groups = ['工作台', '获客', '跟进', '我的账户', '管理', '数据'].map(group => `<span lang="zh-CN">${group}</span><span lang="en">`);
   for (let index = 1; index < groups.length; index += 1) assert.ok(position(aside, groups[index - 1]) < position(aside, groups[index]));
-  assert.equal(navTags.length, 14, 'fourteen primary navigation items in six groups (管理 and 数据 are SIM-only)');
+  assert.equal(navTags.length, 16, 'sixteen primary navigation items in six groups (管理 and 数据 are SIM-only; batch 2 adds 手动添加企业 and 接口密钥)');
   assert.equal(navTags.filter(tag => /\bactive\b/.test(tag)).length, 1);
   assert.equal(navTags.filter(tag => /aria-current="page"/.test(tag)).length, 1);
   assert.match(tagWith(aside, 'data-app-nav', 'opportunities'), /\bactive\b/);

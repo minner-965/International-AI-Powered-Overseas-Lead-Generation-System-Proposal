@@ -42,7 +42,18 @@ const MERCHANT_ROUTES=[
   ['POST',`^/api/crm/replies/${UUID}/review$`],['POST',`^/api/crm/followup-drafts/${UUID}/decision$`],
   ['GET',`^/api/outreach/(inbox|operations-summary)$`],['GET',`^/api/outreach/threads/${UUID}$`],
   ['GET',`^/api/research/batches(/options|/${UUID})?$`],['POST',`^/api/research/batches(/preview)?$`],
-  ['GET',`^/api/research/jobs(/${UUID}(/results)?)?$`]
+  ['GET',`^/api/research/jobs(/${UUID}(/results)?)?$`],
+  ['POST',`^/api/research/(batches|jobs)/${UUID}/cancel$`],
+  // B1/B2: manual companies, manual first-touch drafts and first-touch test sends.
+  ['GET',`^/api/manual-companies(/options|/first-touch-drafts|/${UUID})?$`],['POST','^/api/manual-companies$'],
+  ['POST',`^/api/manual-companies/${UUID}/(contacts|activities|stage|first-touch-drafts)$`],
+  ['POST',`^/api/manual-companies/first-touch-drafts/${UUID}/decision$`],
+  ['GET','^/api/first-touch/test-sends$'],['POST','^/api/first-touch/test-sends(/preview)?$'],
+  // B7/B9: the merchant's own API keys and translation suggestions.
+  ['GET','^/api/merchant/provider-credentials$'],
+  ['PUT','^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)$'],
+  ['POST','^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)/(test|revoke)$'],
+  ['POST','^/api/translate$'],['GET','^/api/translate/languages$']
 ].map(([method,pattern])=>[method,new RegExp(pattern,'i')]);
 export const merchantRouteAllowed=(method,path)=>MERCHANT_ROUTES.some(([m,re])=>(m===method||(m==='GET'&&method==='HEAD'))&&re.test(path));
 
@@ -92,11 +103,12 @@ export function createWorkspaceGate({merchants,env=process.env,pool}){
       if(method!=='GET'&&method!=='HEAD'&&status==='EXPIRED'&&!READ_ONLY_EXEMPT.test(req.path))
         return deny(res,403,'MERCHANT_READ_ONLY','The trial has ended; contact SIM to continue');
       const features=featuresOf(merchant);
-      if(method==='POST'&&/^\/api\/research\/batches/.test(req.path)&&!features.research)
+      // Creating research needs the feature; cancelling an own batch stays possible when it is off.
+      if(method==='POST'&&/^\/api\/research\/batches(\/preview)?$/.test(req.path)&&!features.research)
         return deny(res,403,'MERCHANT_FEATURE_DISABLED','Customer search is not enabled for this account');
       if(method==='PUT'&&req.path==='/api/merchant/auto-first-touch'&&req.body?.enabled===true&&!features.email)
         return deny(res,403,'MERCHANT_FEATURE_DISABLED','Email sending is not enabled for this account');
-      if(method==='POST'&&/^\/api\/(crm\/followup-drafts\/[^/]+\/decision|merchant\/mailbox\/test-email)$/.test(req.path)&&!features.email)
+      if(method==='POST'&&/^\/api\/(crm\/followup-drafts\/[^/]+\/decision|merchant\/mailbox\/test-email|manual-companies\/first-touch-drafts\/[^/]+\/decision|first-touch\/test-sends(\/preview)?)$/.test(req.path)&&!features.email)
         return deny(res,403,'MERCHANT_FEATURE_DISABLED','Email sending is not enabled for this account');
       // Company detail routes: the id must be one of the merchant's companies.
       const company=req.path.match(new RegExp(`^/api/(?:leads|companies)/(${UUID})`,'i'))?.[1];

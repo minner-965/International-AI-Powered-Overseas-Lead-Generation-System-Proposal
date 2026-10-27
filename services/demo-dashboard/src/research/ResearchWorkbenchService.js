@@ -1,4 +1,6 @@
-import {researchJobScopeSql} from '../merchant/scope.js';
+import {researchJobScopeSql,companyScopeSql} from '../merchant/scope.js';
+import {categoryNames} from '../merchant/referenceNames.js';
+import {normalizeTargetCategoryCode} from '../categoryProcurement/targetCategoryContext.js';
 import { projectResearchTask,compareResearchTasks,rankCohortCandidate } from './researchTaskProjection.js';
 import { createHash } from 'node:crypto';
 import {firstContactPendingSql} from '../outreach/contactProgress.js';
@@ -41,6 +43,7 @@ function publicJobStatus(row = {}) {
   if (COMPLETE_JOB_STATES.has(status)) return 'COMPLETED';
   if (status === 'PARTIAL') return 'WAITING_EVIDENCE';
   if (status === 'FAILED') {
+    if (upper(row.stop_reason_code) === 'OPERATOR_CANCELLED') return 'CANCELLED';
     const code=upper(row.stop_reason_code || row.last_error);
     return /(TIMEOUT|TEMPORARY|NETWORK|FETCH|429|5\d\d)/.test(code) ? 'FAILED_RETRYABLE' : 'FAILED_FINAL';
   }
@@ -53,7 +56,22 @@ function jobObjective(type) {
       :'COMPANY_DISCOVERY';
 }
 
-function publicJob(row = {}) {
+// B5: display names of the job's category (SIM reviewed / Shopify taxonomy); null when unknown.
+function jobCategoryLabels(value) {
+  if (!value) return {category_label_zh:null,category_label_en:null};
+  const names=categoryNames(normalizeTargetCategoryCode(value));
+  return names.name_source==='NONE' ? {category_label_zh:null,category_label_en:null}
+    : {category_label_zh:names.name_zh,category_label_en:names.name_en};
+}
+
+// B3: a job can be cancelled while unfinished, by SIM or by the merchant that owns it.
+function cancellable(row,publicStatus,scope) {
+  if (!['QUEUED','RUNNING'].includes(publicStatus)) return false;
+  if (!scope?.restrict) return true;
+  return Boolean(scope.admin) || String(row.merchant_id||'')===String(scope.merchantId||'');
+}
+
+function publicJob(row = {}, scope = null) {
   const publicStatus=publicJobStatus(row);
   const dispatchVisible=['QUEUED','RUNNING'].includes(publicStatus);
   const companiesSelected=Array.isArray(row.requested_company_ids)&&row.requested_company_ids.length
@@ -81,6 +99,8 @@ function publicJob(row = {}) {
     city:row.city || null,
     region:row.region || null,
     product_category:row.product_category || null,
+    ...jobCategoryLabels(row.product_category),
+    can_cancel:cancellable(row,publicStatus,scope),
     buyer_types:Array.isArray(row.buyer_types) ? row.buyer_types : [],
     max_results:Number(row.max_results || 0),
     companies_selected:companiesSelected,
@@ -121,7 +141,8 @@ function publicJob(row = {}) {
     verified_companies:Number(row.verified_companies || row.candidates_verified || 0),
     rejected_companies:Number(row.rejected_companies || row.candidates_rejected_phase4 || 0),
     review_required_companies:Number(row.review_required_companies || row.candidates_in_review || 0),
-    blocker:publicStatus === 'FAILED_RETRYABLE' ? 'TEMPORARY_ERROR'
+    blocker:publicStatus === 'CANCELLED' ? null
+      :publicStatus === 'FAILED_RETRYABLE' ? 'TEMPORARY_ERROR'
       :publicStatus === 'FAILED_FINAL' ? 'JOB_FAILED'
         :publicStatus === 'WAITING_EVIDENCE' ? 'EVIDENCE_REQUIRED'
           :publicStatus === 'QUEUED' && row.dispatch_state && row.dispatch_state!=='DISPATCHED' && row.dispatch_state!=='PENDING'
@@ -352,12 +373,15 @@ export class ResearchWorkbenchService {
     if(type){if(!JOB_TYPES.has(type)){const error=new Error('Invalid job type');error.status=400;throw error;}params.push(type);clauses.push(`j.job_type=$${params.length}`);}
     if(market){params.push(market);clauses.push(`($${params.length}=ANY(j.market_codes) OR j.country_code=$${params.length})`);}
     if(profile){if(!PRODUCT_PROFILES.has(profile)){const error=new Error('Invalid product profile');error.status=400;throw error;}params.push(profile);clauses.push(`($${params.length}=ANY(j.product_profiles) OR j.product_profile=$${params.length})`);}
-    if(search){params.push(`%${search}%`);clauses.push(`(j.id::text ILIKE $${params.length} OR j.country_name ILIKE $${params.length}
-      OR j.product_category ILIKE $${params.length}
+    if(search){params.push(`%${search}%`);const p=params.length;
+      // B6: a merchant only matches company names of its own companies.
+      const own=companyScopeSql(scope,'c',params);
+      clauses.push(`(j.id::text ILIKE $${p} OR j.country_name ILIKE $${p}
+      OR j.product_category ILIKE $${p}
       OR EXISTS(SELECT 1 FROM leadgen.enrichment_job_companies e JOIN leadgen.companies c ON c.id=e.company_id
-        WHERE e.research_job_id=j.id AND c.company_name ILIKE $${params.length})
+        WHERE e.research_job_id=j.id AND c.company_name ILIKE $${p} AND ${own})
       OR EXISTS(SELECT 1 FROM leadgen.research_job_cohort_items ci JOIN leadgen.companies c ON c.id=ci.company_id
-        WHERE ci.research_job_id=j.id AND c.company_name ILIKE $${params.length}))`);}
+        WHERE ci.research_job_id=j.id AND c.company_name ILIKE $${p} AND ${own}))`);}
     if(scope?.restrict)clauses.push(researchJobScopeSql(scope,'j',params));
     const result=await this.pool.query(`SELECT j.*,
       pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
@@ -373,7 +397,7 @@ export class ResearchWorkbenchService {
       LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
       ${clauses.length?`WHERE ${clauses.join(' AND ')}`:''}
       ORDER BY j.created_at DESC,j.id DESC LIMIT 1000`,params);
-    let items=result.rows.map(publicJob);
+    let items=result.rows.map(row=>publicJob(row,scope));
     const status=upper(query.status);const blocker=upper(query.blocker);
     if(status&&status!=='ALL')items=items.filter(item=>item.status===status);
     if(blocker)items=items.filter(item=>item.blocker===blocker);
@@ -382,7 +406,7 @@ export class ResearchWorkbenchService {
     return {as_of:new Date().toISOString(),total,items,next_cursor:offset+items.length<total?encodeCursor(offset+items.length):null};
   }
 
-  async getJob(jobId) {
+  async getJob(jobId,scope=null) {
     const result=await this.pool.query(`SELECT j.*,
       pu.provider_call_count,pu.provider_completed_count,pu.provider_not_found_count,
       pu.provider_temporary_error_count,pu.provider_failed_count,pu.reserved_units,pu.used_units,
@@ -396,7 +420,7 @@ export class ResearchWorkbenchService {
       FROM leadgen.research_jobs j
       LEFT JOIN leadgen.research_job_provider_usage_summary pu ON pu.research_job_id=j.id
       WHERE j.id=$1`,[jobId,this.contactVerificationTtlDays]);
-    return result.rowCount?publicJob(result.rows[0]):null;
+    return result.rowCount?publicJob(result.rows[0],scope):null;
   }
 
   async getOpportunityPoolSummary(){
@@ -406,8 +430,11 @@ export class ResearchWorkbenchService {
     const ids=new Set(visible.rows.map(row=>row.id));
     return summarizePoolRows(rows.filter(row=>ids.has(row.company_id)));
   }
-  async getJobResults(jobId) {
-    const job=await this.getJob(jobId);if(!job)return null;
+  // B6: a research job can be shared by several owners (reuse across merchants); a restricted
+  // scope only receives the companies assigned to that merchant (leadgen.merchant_companies).
+  async getJobResults(jobId,scope=null) {
+    const job=await this.getJob(jobId,scope);if(!job)return null;
+    const params=[jobId];const own=companyScopeSql(scope,'c',params);
     const companies=await this.pool.query(`WITH linked_companies AS (
       SELECT company_id FROM leadgen.enrichment_job_companies WHERE research_job_id=$1
       UNION SELECT id FROM leadgen.companies WHERE research_job_id=$1
@@ -422,9 +449,11 @@ export class ResearchWorkbenchService {
       LEFT JOIN leadgen.enrichment_job_companies e ON e.company_id=c.id AND e.research_job_id=$1
       LEFT JOIN leadgen.research_job_company_provider_usage_summary pu
         ON pu.research_job_id=$1 AND pu.company_id=c.id
-      WHERE ${this.companyMarketVisibleSql('c')} ORDER BY c.country_code,c.company_name,c.id`,[jobId]);
-    const sourceRows=await this.pool.query(`SELECT source_url,captured_at,source_authority FROM leadgen.decision_maker_sources
-      WHERE research_job_id=$1 ORDER BY captured_at DESC,id DESC LIMIT 100`,[jobId]);
+      WHERE ${this.companyMarketVisibleSql('c')} AND ${own} ORDER BY c.country_code,c.company_name,c.id`,params);
+    const sourceParams=[jobId];const sourceOwn=scope?.restrict
+      ?`EXISTS(SELECT 1 FROM leadgen.decision_makers d JOIN leadgen.companies c ON c.id=d.company_id WHERE d.id=s.decision_maker_id AND ${companyScopeSql(scope,'c',sourceParams)})`:'TRUE';
+    const sourceRows=await this.pool.query(`SELECT s.source_url,s.captured_at,s.source_authority FROM leadgen.decision_maker_sources s
+      WHERE s.research_job_id=$1 AND ${sourceOwn} ORDER BY s.captured_at DESC,s.id DESC LIMIT 100`,sourceParams);
     const stageRows=await this.pool.query(`SELECT DISTINCT ON(stage) stage,outcome_code,reason_codes,source_count,retry_number,occurred_at
       FROM leadgen.research_job_stage_events WHERE research_job_id=$1 AND stage<>'SUPPLIER_ACCESS'
       ORDER BY stage,occurred_at DESC,id DESC`,[jobId]);

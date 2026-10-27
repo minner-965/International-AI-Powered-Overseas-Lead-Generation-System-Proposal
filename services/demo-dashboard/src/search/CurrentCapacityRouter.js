@@ -13,10 +13,15 @@ export function parseSearchProviderOrder(value){
 // `exclude` lists providers that already failed (or returned nothing) for the current query.
 // `paidBlocked` ('FREE_ONLY' | 'EMPTY_RESULT' | null) forbids every provider with a unit price
 // above zero (see ProviderSpendPolicy.isPaidProvider); they are skipped as NOT_PERMITTED.
-export function selectCurrentCapacityProvider({order=[],config={},states={},exclude=[],paidBlocked=null,unitPrices={}}={}){
+// `merchantBilled` lists providers a merchant pays for with its own key (B9): SIM's spend policy and
+// SIM's account state do not apply to them, only whether the merchant's key is present.
+export function selectCurrentCapacityProvider({order=[],config={},states={},exclude=[],paidBlocked=null,unitPrices={},merchantBilled=[]}={}){
   const reasons=[];const excluded=new Set(exclude.map(v=>String(v).toLowerCase()));
+  const own=new Set((merchantBilled||[]).map(v=>String(v).toLowerCase()));
   for(const raw of [...new Set(order.map(value=>String(value).toLowerCase()))]){
     if(excluded.has(raw)){reasons.push({provider:raw,reason:'FALLBACK_AFTER_PROVIDER_FAILURE'});continue;}
+    if(own.has(raw)&&configured(raw,config))
+      return {provider:raw,reason:reasons.length?'EXPLICIT_ORDER_NEXT_AVAILABLE':'EXPLICIT_ORDER_FIRST_AVAILABLE',skipped:reasons,paid:false,merchant_billed:true};
     if(paidBlocked&&isPaidProvider(raw,unitPrices)){reasons.push({provider:raw,reason:paidBlocked==='FREE_ONLY'?'NOT_PERMITTED_FREE_ONLY':'NOT_PERMITTED_PAID_FALLBACK'});continue;}
     if(!configured(raw,config)){reasons.push({provider:raw,reason:'NOT_CONFIGURED_OR_NOT_PERMITTED'});continue;}
     const state=states[raw]||{};
@@ -38,11 +43,16 @@ export class CurrentCapacityRouter {
   constructor({config={},getOrder,getStates,providerOverrides={},getSpendPolicy=null,unitPrices={}}={}){Object.assign(this,{config,getOrder,getStates,providerOverrides,getSpendPolicy,unitPrices});}
   async spendPolicy(){return this.getSpendPolicy?await this.getSpendPolicy():null;}
   isPaid(provider){return isPaidProvider(provider,this.unitPrices);}
-  async select({exclude=[],afterEmpty=false}={}){
+  // credentials (optional, per research job): {config:{tavilyApiKey,...}, merchant_billed:['tavily',...]}.
+  async select({exclude=[],afterEmpty=false,credentials=null}={}){
     const policy=await this.spendPolicy();
     const paidBlocked=paidBlockReason(policy,{afterEmpty});
-    const selection=selectCurrentCapacityProvider({order:await this.getOrder(),config:this.config,states:await this.getStates(),exclude,paidBlocked,unitPrices:this.unitPrices});
+    const selection=selectCurrentCapacityProvider({order:await this.getOrder(),config:{...this.config,...(credentials?.config||{})},states:await this.getStates(),
+      exclude,paidBlocked,unitPrices:this.unitPrices,merchantBilled:credentials?.merchant_billed||[]});
     return policy?{...selection,provider_spend_mode:normalizeSpendMode(policy.provider_spend_mode)}:selection;
   }
-  provider(selection){return createConfiguredSearchProvider({...this.config,provider:selection.provider},this.providerOverrides);}
+  provider(selection,credentials=null){
+    const own=selection?.merchant_billed===true?credentials?.config||{}:{};
+    return createConfiguredSearchProvider({...this.config,...own,provider:selection.provider},this.providerOverrides);
+  }
 }

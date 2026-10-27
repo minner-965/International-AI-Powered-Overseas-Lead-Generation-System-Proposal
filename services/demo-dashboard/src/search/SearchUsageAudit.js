@@ -11,13 +11,15 @@ export function searchRequestFingerprint({provider,researchJobId,companyId=null,
 // Unfinished claims are
 // deliberately held for investigation rather than automatically repeated/billed.
 export class SearchUsageAudit{
-  constructor({provider,pool=null,now=()=>new Date(),retrySafeFailures=false}={}){this.provider=provider;this.pool=pool;this.now=now;this.local=new Map();this.retrySafeFailures=retrySafeFailures;}
+  // auditExtra: fixed fields recorded with the usage event, e.g. {billed_to:'MERCHANT',merchant_id} when
+  // a merchant's own provider key paid for the request (excluded from SIM's monthly spend).
+  constructor({provider,pool=null,now=()=>new Date(),retrySafeFailures=false,auditExtra=null}={}){this.provider=provider;this.pool=pool;this.now=now;this.local=new Map();this.retrySafeFailures=retrySafeFailures;this.auditExtra=auditExtra&&typeof auditExtra==='object'?{...auditExtra}:null;}
   async search({researchJobId,companyId=null,productProfile=null,purpose,budgetPool='DISCOVERY',request,persistResults=null,loadPersistedResults=null}){
     if(!researchJobId||!purpose)throw Object.assign(new Error('Research job and purpose are required'),{code:'SEARCH_AUDIT_CONTEXT_REQUIRED'});
     const provider=String(this.provider.name).toUpperCase();
     const fingerprint=searchRequestFingerprint({provider,researchJobId,companyId,purpose,request});
     let event,claimed=false;
-    const audit={purpose,usage_group:budgetPool,attempt_count:0,attempts:[],billing_units_known:false,reference_ids:[]};
+    const audit={purpose,usage_group:budgetPool,attempt_count:0,attempts:[],billing_units_known:false,reference_ids:[],...(this.auditExtra||{})};
     if(this.pool){
       const inserted=await this.pool.query(`INSERT INTO leadgen.provider_usage_events
         (research_job_id,company_id,provider,billing_period,endpoint,request_fingerprint,status,budget_pool,product_profile,result_payload)

@@ -1,7 +1,7 @@
 import { activateView } from '../crm-shell.js';
 import { managementRequest } from '../phase7-ui.js';
 import { researchStageLabel } from '../verification-ui.js';
-import { profileLabel, persistedProgress, outreachTaskRows, outreachTaskLabel } from './v3/research-jobs.js';
+import { profileLabel, persistedProgress, outreachTaskRows, outreachTaskLabel, jobCategoryLabel } from './v3/research-jobs.js';
 import { initializeResearchBatch, batchScopeReview, batchValidateScope, refreshBatchOptions } from './v3/research-batch.js';
 
 const $ = selector => document.querySelector(selector);
@@ -459,6 +459,8 @@ function jobMarket(job) {
 }
 
 function jobProfile(job) {
+  const category = jobCategoryLabel(job);
+  if (category) return category[0] === category[1] ? category[0] : `${category[0]} / ${category[1]}`;
   const profiles = Array.isArray(job?.product_profiles) ? job.product_profiles : [];
   return profileLabel(first(job,['product_profile','profile','product_category'],profiles[0] || '—'));
 }
@@ -801,8 +803,9 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
   host.hidden = false;
   if (empty) empty.hidden = true;
   host.setAttribute('aria-busy','false');
-  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" data-tip="关闭任务明细|Close job details" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" data-tip="重新读取这个任务|Reload this job" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button></div></header><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" data-tip="在新窗口打开资料来源页面|Open the source page in a new window" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
+  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" data-tip="关闭任务明细|Close job details" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" data-tip="重新读取这个任务|Reload this job" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button>${job?.can_cancel === true ? `<button class="btn danger" data-tip="停止这个任务尚未完成的查找，已有结果和记录都会保留|Stop the unfinished search of this job; results and records are kept" type="button" data-cancel-job="${esc(id)}">${bi('取消任务','Cancel job')}</button>` : ''}</div></header><p class="crm-helper" data-cancel-job-status role="status" aria-live="polite"></p><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" data-tip="在新窗口打开资料来源页面|Open the source page in a new window" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
+  host.querySelector('[data-cancel-job]')?.addEventListener('click',event=>void cancelJob(id,event.currentTarget));
   if (results?.opportunity_pool) {
     const resultSection=document.createElement('section');resultSection.className='card crm-panel';
     resultSection.innerHTML=`<header class="card-header crm-panel-header"><h4 class="card-title">${bi('企业研究结果','Company research results')}</h4></header><div class="card-body">${opportunityPoolSummaryMarkup(results.opportunity_pool)}${items(results.items).length?`<details><summary>${bi('查看企业结果','View company results')}</summary>${items(results.items).map(row=>`<article><strong>${esc(row.company_name||row.resolved_company_name||'—')}</strong>${opportunityDimensionsMarkup(row)}</article>`).join('')}</details>`:''}</div>`;
@@ -813,6 +816,26 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
     clearJobDetail();
   });
   if (scroll) host.scrollIntoView({ block:'start', behavior:'auto' });
+}
+
+const CANCEL_REFUSALS = Object.freeze({
+  RESEARCH_JOB_SHARED:['这个任务还在为其他研究批次查找客户，暂时不能取消。','This job is still serving other research batches and cannot be cancelled now.'],
+  RESEARCH_JOB_CANCEL_FORBIDDEN:['只能取消自己建立的任务。','Only jobs you created can be cancelled.'],
+  RESEARCH_JOB_NOT_CANCELLABLE:['任务已结束，无需取消。','This job has already finished.'],
+});
+async function cancelJob(id,button) {
+  if (!globalThis.confirm?.('确定取消这个研究任务吗？已有结果和记录都会保留。\nCancel this research job? Existing results and records are kept.')) return;
+  const status = $('#research-job [data-cancel-job-status]');
+  button.disabled = true; button.setAttribute('aria-busy','true');
+  try {
+    await managementRequest(`/api/research/jobs/${encodeURIComponent(id)}/cancel`,{ method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
+    await openJobDetail(id,{ replaceState:true });
+    if (state.loaded.jobs) void loadJobs();
+  } catch (error) {
+    const message = CANCEL_REFUSALS[error?.code] || ['任务取消未完成，请重试。','The job could not be cancelled. Retry.'];
+    if (status) status.innerHTML = bi(message[0],message[1]);
+    button.disabled = false; button.removeAttribute('aria-busy');
+  }
 }
 
 async function openJobDetail(jobId,{ replaceState = false, trigger = null } = {}) {
@@ -991,6 +1014,8 @@ function initializeDialog() {
 
 function initializeJobs() {
   const filterForm = $('#research-jobs-filters');
+  const statusFilter = $('#research-jobs-status');
+  if (statusFilter && ![...statusFilter.options].some(option=>option.value === 'CANCELLED')) statusFilter.append(new Option('已取消 / Cancelled','CANCELLED'));
   if (filterForm && !filterForm.querySelector('.p9-jobs-advanced')) {
     const advanced = document.createElement('details');
     advanced.className = 'p9-jobs-advanced';

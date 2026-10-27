@@ -227,6 +227,8 @@ test('custom category: draft with multilingual aliases, approval, observation fr
     const approved=await scopes.approveRevision({draft_revision_id:draft.id,revision:draft.revision+1,source_reference:'custom-test',
       source_digest:digest('approve-swimwear'),actor:'simon',actor_role:'MANAGEMENT'});
     assert.equal(approved.scope_count,2);assert.equal(approved.alias_count,5);
+    // effective_from comes from the application clock, which may run slightly ahead of the database clock.
+    await new Promise(resolve=>setTimeout(resolve,250));
     const languages=(await pool.query(`SELECT a.language FROM leadgen.dpv_product_category_scope_aliases a
       JOIN leadgen.dpv_product_category_scope_current c ON c.id=a.scope_id AND c.scope_revision_id=a.scope_revision_id
       WHERE c.normalized_category='SWIMWEAR' ORDER BY 1`)).rows.map(row=>row.language);

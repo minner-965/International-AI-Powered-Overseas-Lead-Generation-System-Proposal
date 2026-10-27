@@ -1,6 +1,8 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {isMarketVisible} from '../../public/market-visibility.js';
 import {normalizeTargetCategoryCode} from '../categoryProcurement/targetCategoryContext.js';
+import {categoryNames} from '../merchant/referenceNames.js';
+import {REUSE_CHARGE_KEY,billingPeriod,reuseChargeDue} from './merchantReuseCharge.js';
 
 export const ACTIVE_RESEARCH_STATES=Object.freeze(['QUEUED','DISCOVERING','CRAWLING','QUALIFYING','SCORING','RESOLVING','VERIFYING','PERSISTING']);
 const clean=value=>String(value??'').trim();
@@ -118,6 +120,30 @@ function configurationDiffers(scope,job) {
     ||Number(scope.max_results)!==Number(job.max_results);
 }
 
+// B4: a merchant may only research inside leadgen.merchant_scope. Explicit choices outside the
+// scope are refused (422); "select all" means all active choices within the merchant's scope.
+const scopeError=(code,details)=>Object.assign(new Error(code),{code,status:422,details});
+export function restrictOptionsToMerchantScope(options,scope){
+  if(!scope)return options;
+  const markets=new Set(scope.market_codes.map(value=>String(value).toUpperCase()));
+  const categories=new Set(scope.category_scope_ids.map(value=>String(value).toLowerCase()));
+  return {...options,markets:options.markets.filter(m=>markets.has(String(m.market_code).toUpperCase())),
+    categories:options.categories.filter(c=>categories.has(String(c.id).toLowerCase())),merchant_scope_applied:true};
+}
+export function assertWithinMerchantScope(input,scope){
+  if(!scope)return;
+  const categories=new Set(scope.category_scope_ids.map(value=>String(value).toLowerCase()));
+  const markets=new Set(scope.market_codes.map(value=>String(value).toUpperCase()));
+  const badCategories=input.category_scope_ids.filter(id=>!categories.has(id));
+  if(badCategories.length)throw scopeError('MERCHANT_SCOPE_CATEGORY',{category_scope_ids:badCategories});
+  if(input.select_all_categories&&!categories.size)throw scopeError('MERCHANT_SCOPE_CATEGORY',{reason:'SCOPE_EMPTY'});
+  const badMarkets=input.market_codes.filter(code=>!markets.has(code));
+  if(badMarkets.length)throw scopeError('MERCHANT_SCOPE_MARKET',{market_codes:badMarkets});
+  if(input.select_all_markets&&!markets.size)throw scopeError('MERCHANT_SCOPE_MARKET',{reason:'SCOPE_EMPTY'});
+}
+const categoryLabels=code=>{const names=categoryNames(normalizeTargetCategoryCode(code));
+  return names.name_source==='NONE'?{label_zh:null,label_en:null}:{label_zh:names.name_zh,label_en:names.name_en};};
+
 export class ResearchBatchService {
   // merchantQuota(merchantId,plannedQueries,client) throws MERCHANT_SEARCH_QUOTA_EXCEEDED (MerchantService.assertSearchQuota).
   constructor({pool,directDispatch=null,ensureCanCreate=async()=>{},runBudgetCapUnits=20000,planning=null,costControl=null,merchantQuota=null}={}) {
@@ -139,7 +165,14 @@ export class ResearchBatchService {
     if(!(estimate.estimated_queries>0))throw Object.assign(new Error('SEARCH_PLAN_EMPTY'),{code:'SEARCH_PLAN_EMPTY',status:422,estimate});
     return estimate;
   }
-  async options(queryable=this.pool) {
+  // The merchant's own scope (null for SIM / unrestricted admin). Empty lists mean nothing chosen yet.
+  async merchantScope(actor,queryable=this.pool) {
+    const merchantId=actor?.merchant_id||null;
+    if(!merchantId)return null;
+    const row=(await queryable.query('SELECT category_scope_ids,market_codes FROM leadgen.merchant_scope WHERE merchant_id=$1',[merchantId])).rows[0];
+    return {category_scope_ids:(row?.category_scope_ids||[]).map(String),market_codes:(row?.market_codes||[]).map(String)};
+  }
+  async options(queryable=this.pool,actor=null) {
     const markets=await queryable.query(`SELECT *,market_code country_code FROM leadgen.research_market_registry
       WHERE status='ACTIVE' AND search_enabled=true ORDER BY market_code`);
     const categories=await queryable.query(`SELECT id,id category_scope_id,scope_revision_id,normalized_category,
@@ -158,10 +191,14 @@ export class ResearchBatchService {
       const byId=new Map(context.rows.map(c=>[c.id,c]));
       for(const category of categories.rows)Object.assign(category,byId.get(category.id)||{approved_aliases:[],parent_category:null});
     }
-    return {markets:markets.rows.filter(m=>isMarketVisible(m.market_code)),categories:categories.rows,buyer_types:[...BUYERS]};
+    for(const category of categories.rows)Object.assign(category,categoryLabels(category.category_code));
+    const all={markets:markets.rows.filter(m=>isMarketVisible(m.market_code)),categories:categories.rows,buyer_types:[...BUYERS]};
+    return actor?.merchant_id?restrictOptionsToMerchantScope(all,await this.merchantScope(actor,queryable)):all;
   }
   async preview(input={},actor={}) {
-    const result=previewResponse(buildScopeSnapshot(normalizeBatchInput(input),await this.options()));
+    const normalized=normalizeBatchInput(input);
+    assertWithinMerchantScope(normalized,await this.merchantScope(actor));
+    const result=previewResponse(buildScopeSnapshot(normalized,await this.options(this.pool,actor)));
     if(!this.planning)return result;
     const {plan,estimate}=await this.searchCost(result.research_scope_snapshot);
     let blocked=null;
@@ -198,7 +235,8 @@ export class ResearchBatchService {
         await client.query('LOCK TABLE leadgen.research_market_registry IN SHARE MODE');
         await client.query('LOCK TABLE leadgen.dpv_product_category_scope_revisions,leadgen.dpv_product_category_scopes IN SHARE MODE');
         if(this.planning)await client.query('LOCK TABLE leadgen.dpv_product_category_scope_aliases IN SHARE MODE');
-        const snapshot=buildScopeSnapshot(normalized,await this.options(client));
+        assertWithinMerchantScope(normalized,await this.merchantScope(actor,client));
+        const snapshot=buildScopeSnapshot(normalized,await this.options(client,actor));
         const scopeDigest=digest(snapshot.scopes);
         // Spend guard before any child job or outbox row exists; the creation lock serializes the monthly check.
         const searchCost=this.planning?this.assertSearchCost((await this.searchCost(snapshot,client)).estimate):null;
@@ -222,7 +260,11 @@ export class ResearchBatchService {
                 VALUES($1,$2) ON CONFLICT(research_job_id) DO NOTHING`,[child.id,child.dispatch_execution_key]);
               createdIds.push(child.id);
             }
-            children.push({scope,child});
+            // B6: reusing another owner's job is charged to this merchant's monthly search quota.
+            const reuseCharge=merchantId&&await reuseChargeDue(client,{merchantId,job:child})?{merchant_id:merchantId,
+              queries:this.planning?Math.max(1,Number(this.planning.plan({version:1,scopes:[scope]}).summary?.planned_query_count)||0):1,
+              billing_period:billingPeriod(),reused_job_owner:child.merchant_id||null}:null;
+            children.push({scope,child,reuseCharge});
           }
           await client.query(`INSERT INTO leadgen.research_batches
             (id,requested_by,requested_role,idempotency_key,request_digest,scope_digest,research_scope_snapshot,total_scopes,created_child_count,reused_child_count,merchant_id)
@@ -231,10 +273,11 @@ export class ResearchBatchService {
           if(searchCost)await client.query(`INSERT INTO leadgen.research_batch_cost_estimates
             (batch_id,estimated_queries,estimated_cost_usd,estimate) VALUES($1,$2,$3,$4::jsonb)`,
             [batchId,searchCost.estimated_queries,searchCost.estimated_cost_usd,JSON.stringify(searchCost)]);
-          for(const {scope,child} of children)await client.query(`INSERT INTO leadgen.research_batch_children
+          for(const {scope,child,reuseCharge} of children)await client.query(`INSERT INTO leadgen.research_batch_children
             (batch_id,scope_key,research_job_id,market_code,category_scope_id,scope_snapshot,reused)
             VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)`,[batchId,canonicalResearchScope(scope),child.id,scope.market_code,scope.category_scope_id,
-            JSON.stringify({requested_scope:scope,effective_job_scope:effectiveJobScope(child),configuration_reused:!child.inserted&&configurationDiffers(scope,child)}),!child.inserted]);
+            JSON.stringify({requested_scope:scope,effective_job_scope:effectiveJobScope(child),configuration_reused:!child.inserted&&configurationDiffers(scope,child),
+              ...(reuseCharge?{[REUSE_CHARGE_KEY]:reuseCharge}:{})}),!child.inserted]);
           await client.query('SELECT leadgen.refresh_research_batch_status($1)',[batchId]);
           if(this.planning)await this.planning.freezeBatch(client,batchId,snapshot,children);
         }

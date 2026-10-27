@@ -61,6 +61,7 @@ export class SearchCostControl {
     const providers=this.priced();
     const prices=providers.map(provider=>this.unitPrice(provider));
     // Reuse events are SKIPPED and cost nothing. Failed attempts without used units are not billed.
+    // Requests paid with a merchant's own provider key (audit.billed_to='MERCHANT') are not SIM spend.
     const result=await queryable.query(`SELECT count(*)::int recorded_queries,
         coalesce(sum(coalesce(
           CASE WHEN jsonb_typeof(e.result_payload->'audit'->'provider_cost_usd')='number'
@@ -69,6 +70,7 @@ export class SearchCostControl {
       FROM leadgen.provider_usage_events e
       JOIN unnest($2::text[],$3::numeric[]) p(provider,price) ON p.provider=e.provider
       WHERE e.billing_period=$1 AND e.status<>'SKIPPED'
+        AND coalesce(e.result_payload->'audit'->>'billed_to','SIM')<>'MERCHANT'
         AND (e.status IN('COMPLETED','NOT_FOUND','RESERVED') OR e.used_units>0)`,[period,providers,prices]);
     const row=result.rows[0]||{};
     return {billing_period:period,recorded_queries:Number(row.recorded_queries||0),recorded_cost_usd:round(row.recorded_cost_usd)};

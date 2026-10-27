@@ -1,3 +1,4 @@
+import {verifyProviderCredentialsMigration} from '../credentials/credentialResolver.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -49,6 +50,9 @@ export const MERCHANT_ACCOUNTS_MIGRATION_KEY = '066_merchant_accounts.sql';
 export const LOGIN_HARDENING_MIGRATION_KEY = '067_login_hardening.sql';
 export const SPLIT_AUTOMATION_CONTROLS_MIGRATION_KEY = '068_split_automation_controls.sql';
 export const MERCHANT_SENDING_SAFETY_MIGRATION_KEY = '069_merchant_sending_safety.sql';
+export const MANUAL_COMPANIES_MIGRATION_KEY = '070_manual_companies_test_sends.sql';
+export const PROVIDER_CREDENTIALS_MIGRATION_KEY = '071_provider_credentials.sql';
+export const FOLLOWUP_SETTINGS_MIGRATION_KEY = '072_followup_settings.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -95,6 +99,15 @@ const merchantAccountsPath = path.resolve(projectRoot,'database/migrations',MERC
 const loginHardeningPath = path.resolve(projectRoot,'database/migrations',LOGIN_HARDENING_MIGRATION_KEY);
 const splitAutomationControlsPath = path.resolve(projectRoot,'database/migrations',SPLIT_AUTOMATION_CONTROLS_MIGRATION_KEY);
 const merchantSendingSafetyPath = path.resolve(projectRoot,'database/migrations',MERCHANT_SENDING_SAFETY_MIGRATION_KEY);
+const manualCompaniesPath = path.resolve(projectRoot,'database/migrations',MANUAL_COMPANIES_MIGRATION_KEY);
+const providerCredentialsPath = path.resolve(projectRoot,'database/migrations',PROVIDER_CREDENTIALS_MIGRATION_KEY);
+const followupSettingsPath = path.resolve(projectRoot,'database/migrations',FOLLOWUP_SETTINGS_MIGRATION_KEY);
+// Verifications of migrations 070+ (looked up before the older chain below).
+const lateVerifier = key => ({
+  [MANUAL_COMPANIES_MIGRATION_KEY]: verifyManualCompaniesMigration,
+  [PROVIDER_CREDENTIALS_MIGRATION_KEY]: verifyProviderCredentialsMigration,
+  [FOLLOWUP_SETTINGS_MIGRATION_KEY]: verifyFollowupSettingsMigration
+})[key] || null;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function migrationBody(sql) {
@@ -833,7 +846,16 @@ export async function applyPhase7Migrations(options = {}) {
   const merchantSendingSafety=await applyPhase7Migration({...options,
     migrationPath:options.merchantSendingSafetyMigrationPath||merchantSendingSafetyPath,
     appliedBy:options.appliedBy||'dpv-merchant-sending-safety-migration-runner'});
-  return {merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const manualCompanies=await applyPhase7Migration({...options,
+    migrationPath:options.manualCompaniesMigrationPath||manualCompaniesPath,
+    appliedBy:options.appliedBy||'dpv-manual-companies-migration-runner'});
+  const providerCredentials=await applyPhase7Migration({...options,
+    migrationPath:options.providerCredentialsMigrationPath||providerCredentialsPath,
+    appliedBy:options.appliedBy||'dpv-provider-credentials-migration-runner'});
+  const followupSettings=await applyPhase7Migration({...options,
+    migrationPath:options.followupSettingsMigrationPath||followupSettingsPath,
+    appliedBy:options.appliedBy||'dpv-followup-settings-migration-runner'});
+  return {followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -898,6 +920,27 @@ export async function verifyMerchantAccountsMigration(client){
   if(Number(row.tables)!==7||Number(row.owner_columns)!==12||!row.crm_owner_key||!row.reservation_owner_key
     ||Number(row.reservation_functions)!==2||!row.outbox_hold)throw new Error('Merchant accounts migration verification failed');
   return{merchant_accounts:'OWNER_SCOPED'};
+}
+
+export async function verifyManualCompaniesMigration(client){
+  const row=(await client.query(`SELECT
+    (SELECT count(*)::int FROM information_schema.tables WHERE table_schema='leadgen' AND table_name=ANY(ARRAY[
+      'manual_company_entries','company_test_flags','manual_company_stage_events','manual_first_touch_drafts','first_touch_test_sends'])) tables,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='phase13_first_touch_manual_company_guard' AND NOT tgisinternal) reservation_guard,
+    coalesce((SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='decision_maker_contacts_evidence_origin_check'
+      AND conrelid='leadgen.decision_maker_contacts'::regclass),'') LIKE '%MANUAL_ENTRY%' manual_origin`)).rows[0]||{};
+  if(Number(row.tables)!==5||!row.reservation_guard||!row.manual_origin)throw new Error('Manual companies migration verification failed');
+  return{manual_companies:'HUMAN_APPROVED_FIRST_TOUCH',test_sends:'APPEND_ONLY'};
+}
+
+export async function verifyFollowupSettingsMigration(client){
+  const row=(await client.query(`SELECT
+    EXISTS(SELECT 1 FROM leadgen.automation_controls WHERE control_key='CRM_FOLLOWUP_DRAFTS') control,
+    EXISTS(SELECT 1 FROM leadgen.automation_control_events WHERE control_key='CRM_FOLLOWUP_DRAFTS') event,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='research_market_registry_events'
+      AND column_name IN('previous_business_send_window','business_send_window')) window_columns`)).rows[0]||{};
+  if(!row.control||!row.event||Number(row.window_columns)!==2)throw new Error('Follow-up settings migration verification failed');
+  return{followup_settings:'WORKSPACE_CONTROLLED',market_send_window_events:true};
 }
 
 export async function verifySplitAutomationControlsMigration(client){
@@ -999,7 +1042,9 @@ export async function applyPhase7Migration({
       if (prior.rows[0].checksum_sha256 !== checksum) {
         throw new Error(`Migration checksum mismatch for ${migrationKey}`);
       }
-      const verification = migrationKey===MERCHANT_SENDING_SAFETY_MIGRATION_KEY
+      const verification = lateVerifier(migrationKey)
+        ?await lateVerifier(migrationKey)(client)
+        :migrationKey===MERCHANT_SENDING_SAFETY_MIGRATION_KEY
         ?await verifyMerchantSendingSafetyMigration(client)
         :migrationKey===SPLIT_AUTOMATION_CONTROLS_MIGRATION_KEY
         ?await verifySplitAutomationControlsMigration(client)
@@ -1097,7 +1142,9 @@ export async function applyPhase7Migration({
        VALUES($1,$2,$3)`,
       [migrationKey, checksum, baseline ? 'fresh-install-baseline' : appliedBy]
     );
-    const verification = migrationKey===MERCHANT_SENDING_SAFETY_MIGRATION_KEY
+    const verification = lateVerifier(migrationKey)
+        ?await lateVerifier(migrationKey)(client)
+        :migrationKey===MERCHANT_SENDING_SAFETY_MIGRATION_KEY
         ?await verifyMerchantSendingSafetyMigration(client)
         :migrationKey===SPLIT_AUTOMATION_CONTROLS_MIGRATION_KEY
         ?await verifySplitAutomationControlsMigration(client)

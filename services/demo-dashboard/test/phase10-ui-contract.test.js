@@ -48,7 +48,8 @@ test('Phase 10 automation monitor uses compatible fields and one contextual live
   assert.match(research,/aria-busy/);
   assert.match(research,/countText = value => value === null \? '-'/);
   assert.match(research,/renderAutomationMonitors\(\{ auto_evidence:\{ status:'UNAVAILABLE' \} \}\)/);
-  assert.doesNotMatch(html,/API Key|raw payload|internal queue|Hunter/i);
+  // The API keys page (B9, requested by Simon) is the one approved use of "API keys" as a page label.
+  assert.doesNotMatch(html,/API Key(?!s)|raw payload|internal queue|Hunter/i);
 });
 
 test('company detail presents category-level opportunity facts without specific product candidates',async()=>{

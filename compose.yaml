@@ -42,6 +42,35 @@ services:
         max-size: "1m"
         max-file: "1"
 
+  # Self-hosted translation (optimization plan B7). LibreTranslate, AGPL-3.0, run UNMODIFIED as a separate
+  # service (same model as SearXNG): SIM only calls its HTTP API. Internal network only (no published port);
+  # the workbench reaches it at http://translate:5000. Only the nine workbench languages are loaded
+  # (zh-Hans = simplified Chinese). Models persist in the translate_models volume.
+  translate:
+    image: libretranslate/libretranslate:v1.9.6
+    restart: unless-stopped
+    environment:
+      LT_LOAD_ONLY: en,zh-Hans,es,pt,ar,fr,de,it,tr
+      LT_UPDATE_MODELS: "false"
+      LT_DISABLE_WEB_UI: "true"
+      LT_CHAR_LIMIT: "5000"
+      LT_REQ_LIMIT: "120"
+      LT_THREADS: "2"
+      TZ: ${TZ}
+    volumes:
+      - translate_models:/home/libretranslate/.local
+    healthcheck:
+      test: ["CMD-SHELL", "./venv/bin/python scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
   n8n:
     image: n8nio/n8n:2.36.7
     restart: unless-stopped
@@ -119,6 +148,10 @@ services:
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
       SESSION_SECRET: ${SESSION_SECRET:-}
       MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
+      # Translation suggestions in the email editors (compose service `translate`).
+      LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://translate:5000}
+      # TEST_RECIPIENT_ALLOWLIST and FIRST_TOUCH_TEST_DAILY_LIMIT (manual first touch / test sends) come from
+      # .env.phase7-outreach (env_file above); they are not repeated here so the env_file value is not overridden.
       SESSION_MAX_AGE_HOURS: ${SESSION_MAX_AGE_HOURS:-72}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-auto}
       TRUST_PROXY: ${TRUST_PROXY:-}
@@ -192,6 +225,7 @@ services:
       PORT: 3000
       HTTP_LISTEN_ENABLED: "false"
       PGBOSS_PROCESS_JOBS: "true"
+      MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
       PGBOSS_QUEUE_ALLOWLIST: "enrich-decision-makers,collect-category-buyer-evidence,classify-buyer-business-model,calculate-category-procurement-match,calculate-product-opportunities,recalculate-cooperation-v3,recalculate-business-opportunities,schedule-auto-evidence,discover-opportunity-evidence,normalize-opportunity-category,refresh-category-scope-match,find-profile-buyer,verify-profile-buyer-email,refresh-business-opportunity-v3,refresh-auto-evidence-exception,execute-research-job"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging
       DATA_EXCHANGE_EXPORT_DIR: /app/runtime/phase7/exports
@@ -315,6 +349,7 @@ services:
       retries: 20
 
 volumes:
+  translate_models:
   n8n_data:
   postgres_data:
   phase7_runtime:

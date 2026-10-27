@@ -270,3 +270,47 @@ Integration boundary: `src/merchant/auth.js` (session + `/api` gate with a deny-
 | Native `title` attribute | browser platform | Not shown on keyboard focus or touch, delayed, not styleable | Not used alone |
 | `Intl.DisplayNames` (ICU, built into Node) | Node core | Chinese/English country names for the merchant market picker (`src/merchant/referenceNames.js`) | **Reuse**; no country-name table added |
 | Shopify taxonomy zh-CN names (vendored, MIT) | `rules/product-taxonomy/shopify` | Chinese category names where SIM has no reviewed label (SIM's reviewed labels — the export wording — take precedence) | **Reuse** |
+
+## Low-cost LLM for internal execution (plan E1, evaluation only — 2026-10-26)
+
+No dependency added; nothing wired. Full evaluation: `docs/plan/2026-10_LLM_EVALUATION.md`; model execution standard: `docs/llm/LOW_COST_MODEL_EXECUTION_STANDARD.md`.
+
+| Candidate | Official source (prices checked 2026-10-26) | Terms / privacy note | Decision |
+|---|---|---|---|
+| Claude Haiku 5.5 (Anthropic API, official SDK `@anthropic-ai/sdk`, MIT) | https://platform.claude.com/docs/en/about-claude/pricing | API data not used for training by default; strict structured outputs; Batch 50% | **Proposed primary** for pilot |
+| Qwen-Flash (Alibaba Cloud Model Studio, Singapore) | https://www.alibabacloud.com/help/en/model-studio/model-pricing | Review data terms before use | Proposed fallback adapter |
+| Gemini 2.5 / 3.1 Flash-Lite | https://ai.google.dev/gemini-api/docs/pricing | Paid tier only (free tier content is used to improve products) | Blind-test comparison only |
+| OpenAI gpt-5-nano / gpt-5.4-nano / gpt-5-mini | https://developers.openai.com/api/docs/pricing | Data terms to be confirmed | Blind-test comparison only |
+| DeepSeek `deepseek-flash` | https://api-docs.deepseek.com/zh-cn/quick_start/pricing | CNY pricing, off-peak half price; review data terms | Not first choice |
+| Self-hosted open-weight model | — | Needs GPU host; quality on PT/AR extraction unproven | Not adopted (cost of a ~$2–11/month API workload does not justify hosting) |
+
+## Translation in the email editors (plan B7, 2026-10-26)
+
+| Candidate | Source / version / license | Fit, privacy and cost | Maintenance | Decision |
+|---|---|---|---|---|
+| [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) official image [`libretranslate/libretranslate`](https://hub.docker.com/r/libretranslate/libretranslate) | tag `v1.9.6` (Docker Hub, 2026-05-26); **AGPL-3.0** | Self-hosted HTTP API (`POST /translate`, `GET /languages`) built on Argos Translate; text never leaves SIM's machine; free. Loaded with `LT_LOAD_ONLY=en,zh-Hans,es,pt,ar,fr,de,it,tr`: ~1.2 GB RAM measured, first start downloads the models into a volume. Verified locally: zh→es, en→pt, en→ar, es→zh in 0.6–2.3 s on CPU; quality is serviceable for drafts, so every translation stays editable before use | Active (v1.9.x releases through 2026) | **Adopted** as compose service `translate` (merged into `compose.yaml`), internal network only, pinned tag |
+| Argos Translate (library used inside LibreTranslate) | MIT | Python library; would need our own HTTP wrapper and model management | Active | Not used directly: LibreTranslate is that wrapper |
+| Bergamot / Firefox Translations | MPL-2.0 | Browser/WASM engine; no maintained self-host HTTP server; per-browser model downloads | Active (Mozilla) | Not adopted |
+| Low-cost LLM via the B9 key (OpenAI-compatible or Anthropic API) | provider terms (see E1 section) | Better fluency for Arabic/Portuguese business tone; paid per token; text goes to the provider | — | **Fallback only**: used when LibreTranslate is not set up or not reachable and a model key exists (merchant's own key first) |
+| DeepL / Google Cloud Translation | commercial | Good quality, but paid and sends email text to a third party | — | Not adopted |
+
+AGPL-3.0 implications: LibreTranslate runs **unmodified** in its own container (same model as SearXNG). SIM talks to it only over HTTP, does not link or ship its code, and the service is not exposed to merchants or the internet (no published port), so SIM's own source is not a derivative work and no source-offer obligation is triggered. If the container is ever modified or exposed publicly, its modified source must be offered to those users.
+
+Integration boundary: `src/translate/translateClient.js` (LibreTranslate → model → `TRANSLATE_UNAVAILABLE`), `src/translate/router.js` (`POST /api/translate`, sign-in required, 20 per minute per user, 5000 characters), `public/ui/v4/translate-widget.js` (editable result, "使用译文 Use translation"; nothing is saved or sent by the widget).
+
+## Provider API keys page (plan B9, 2026-10-26)
+
+| Candidate | License | Fit | Decision |
+|---|---|---|---|
+| Node `crypto` AES-256-GCM via existing `src/merchant/secretBox.js` | Node core | Same key (`MERCHANT_SECRET_KEY`) and format as mailbox passwords; per-row AAD binds ciphertext to owner/provider/field | **Reuse** |
+| HashiCorp Vault / Infisical / Doppler | BUSL-1.1 / MIT (core) / SaaS | Separate secret service for ~20 values; extra container or third-party custody of keys | Not adopted (overkill for one host) |
+| PostgreSQL `pgcrypto` | PostgreSQL licence | Would put the key into SQL statements and logs | Not adopted |
+
+## Manual companies and test first emails (plan B1/B2, 2026-10-26)
+
+| Candidate | License | Fit | Decision |
+|---|---|---|---|
+| `tldts` 7.4.11 (already a dependency; github.com/remusao/tldts) | MIT, actively maintained, public suffix list bundled | Registrable domain of the website and of the mailbox (`mail.example.co.uk` → `example.co.uk`) for the "company-domain mailbox" rule | Adopted (no new dependency) |
+| Existing first-touch templates, SMTP adapter, `outbound_messages` / `outreach_threads` / reply correlation, CRM outbox + Feishu adapter | in-repo | Manual first touch and test sends reuse the approved template renderer and the same provider and CRM paths; only the draft/approval step and the test-send log are new | Adopted |
+| CRM-style "add lead manually" and "send test email to myself" (HubSpot, Pipedrive, lemlist, Instantly, Smartlead) | commercial SaaS | Product pattern reference only; hosted CRMs would split data from the merchant workspace | Not adopted (pattern only) |
+| Generic email validation libraries (`validator` already present, deep-email-validator) | MIT | SMTP probing of addresses would be an external call and is not needed: a person enters the mailbox and server rules check domain / source page / allowlist | Not adopted |

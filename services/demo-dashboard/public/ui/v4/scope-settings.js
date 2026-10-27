@@ -154,6 +154,19 @@ function wireCategories(root) {
 
 /* ---------------- 目标市场 / Target markets ---------------- */
 const mk = { payload: null };
+// Email send window per market (local time of the market): days 1 = Monday ... 7 = Sunday.
+export const WEEKDAYS = Object.freeze([[1, '周一', 'Mon'], [2, '周二', 'Tue'], [3, '周三', 'Wed'], [4, '周四', 'Thu'], [5, '周五', 'Fri'], [6, '周六', 'Sat'], [7, '周日', 'Sun']]);
+/** "周一至周五 09:00–17:00 / Mon–Fri 09:00–17:00" style label for a send window. */
+export function sendWindowText(window) {
+  const days = Array.isArray(window?.days) ? [...new Set(window.days.map(Number))].filter(d => d >= 1 && d <= 7).sort((a, b) => a - b) : [];
+  if (!days.length || !window?.start || !window?.end) return ['未设置', 'Not set'];
+  const name = (d, i) => WEEKDAYS[d - 1][i];
+  const contiguous = days.length > 2 && days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+  const zh = contiguous ? `${name(days[0], 1)}至${name(days.at(-1), 1)}` : days.map(d => name(d, 1)).join('、');
+  const en = contiguous ? `${name(days[0], 2)}–${name(days.at(-1), 2)}` : days.map(d => name(d, 2)).join(', ');
+  return [`${zh} ${window.start}–${window.end}`, `${en} ${window.start}–${window.end}`];
+}
+const WINDOW_ERRORS = { MARKET_SEND_WINDOW_DAYS_INVALID: ['请至少选择一天', 'Choose at least one day'], MARKET_SEND_WINDOW_TIME_INVALID: ['请填写开始和结束时间', 'Enter the start and end time'], MARKET_SEND_WINDOW_ORDER_INVALID: ['结束时间要晚于开始时间', 'The end time must be after the start time'] };
 const marketStatus = { ACTIVE: ['启用', 'Active', 'ok'], INACTIVE: ['未启用', 'Inactive', ''], HIDDEN: ['已隐藏', 'Hidden', ''], AVAILABLE: ['可启用', 'Available', ''], PAUSED: ['已暂停', 'Paused', 'warn'], PLANNED: ['规划中', 'Planned', ''] };
 function marketsMarkup() {
   if (mk.payload?.error) return stateBlock('error', '目标市场暂未读取', 'Markets unavailable', { retry: true });
@@ -161,16 +174,59 @@ function marketsMarkup() {
   const items = mk.payload.items || [];
   if (!items.length) return stateBlock('empty', '暂无可选市场', 'No markets available');
   const enabled = items.filter(item => item.search_enabled).length;
-  return `<p class="meta v4-scope-meta">${bi(`已启用研究 ${enabled} / ${items.length} 个市场`, `${enabled} of ${items.length} markets enabled for research`)}</p><table class="rtable v4-market-table"><caption class="sr-only">目标市场 Target markets</caption><thead><tr><th scope="col">${bi('市场', 'Market')}</th><th scope="col">${bi('状态', 'Status')}</th><th scope="col">${bi('语言', 'Languages')}</th><th scope="col">${bi('时区', 'Time zone')}</th><th scope="col">${bi('研究搜索', 'Research search')}</th></tr></thead><tbody>${items.map(item => {
+  return `<p class="meta v4-scope-meta">${bi(`已启用研究 ${enabled} / ${items.length} 个市场`, `${enabled} of ${items.length} markets enabled for research`)}</p><table class="rtable v4-market-table"><caption class="sr-only">目标市场 Target markets</caption><thead><tr><th scope="col">${bi('市场', 'Market')}</th><th scope="col">${bi('状态', 'Status')}</th><th scope="col">${bi('语言', 'Languages')}</th><th scope="col">${bi('时区', 'Time zone')}</th><th scope="col">${bi('发信时段（当地时间）', 'Send window (local time)')}</th><th scope="col">${bi('研究搜索', 'Research search')}</th></tr></thead><tbody>${items.map(item => {
     const [zh, en, tone] = marketStatus[item.status] || [item.status, item.status, ''];
     const langs = Array.isArray(item.languages) ? item.languages.join(' · ') : (item.languages || '—');
-    return `<tr><td class="m-main"><span class="co">${esc(item.country_name || item.market_code)}</span><span class="meta">${esc(item.market_code)}${item.market_profile ? ` · ${esc(item.market_profile)}` : ''}</span></td><td class="m-hide"><span class="pill ${tone}">${bi(zh, en)}</span></td><td class="m-sub">${esc(langs)}</td><td class="m-hide">${esc(item.timezone || '—')}</td><td class="m-side"><label class="v4-switch"><input type="checkbox" role="switch" data-market-toggle="${esc(item.market_code)}"${item.search_enabled ? ' checked' : ''} aria-label="${esc(item.country_name || item.market_code)} 研究搜索 Research search"><span aria-hidden="true"></span></label><span class="v4-form-status" role="status" aria-live="polite" data-market-status="${esc(item.market_code)}"></span></td></tr>`;
+    return `<tr><td class="m-main"><span class="co">${esc(item.country_name || item.market_code)}</span><span class="meta">${esc(item.market_code)}${item.market_profile ? ` · ${esc(item.market_profile)}` : ''}</span></td><td class="m-hide"><span class="pill ${tone}">${bi(zh, en)}</span></td><td class="m-sub">${esc(langs)}</td><td class="m-hide">${esc(item.timezone || '—')}</td><td class="m-sub v4-send-window"><span data-send-window-text="${esc(item.market_code)}">${bi(...sendWindowText(item.business_send_window))}</span> <button class="btn btn-sm" type="button" data-send-window-edit="${esc(item.market_code)}" data-tip="修改这个市场自动开发信的发送日期和时间（按当地时间）|Change the days and hours first emails go out in this market (local time)">${bi('修改时段', 'Edit window')}</button></td><td class="m-side"><label class="v4-switch"><input type="checkbox" role="switch" data-market-toggle="${esc(item.market_code)}"${item.search_enabled ? ' checked' : ''} aria-label="${esc(item.country_name || item.market_code)} 研究搜索 Research search"><span aria-hidden="true"></span></label><span class="v4-form-status" role="status" aria-live="polite" data-market-status="${esc(item.market_code)}"></span></td></tr>`;
   }).join('')}</tbody></table>`;
 }
 async function loadMarkets() { mk.payload = null; render('#markets-list', marketsMarkup()); mk.payload = await settle(managementRequest('/api/markets/registry')); render('#markets-list', marketsMarkup()); }
 const render = (id, html) => { const node = $(id); if (node) node.innerHTML = html; };
+function sendWindowDialog() {
+  let box = document.getElementById('send-window-dialog');
+  if (box) return box;
+  box = document.createElement('dialog'); box.id = 'send-window-dialog'; box.className = 'sheet v4-send-window-sheet'; box.setAttribute('aria-labelledby', 'send-window-title');
+  document.body.append(box);
+  box.addEventListener('click', event => { if (event.target === box || event.target.closest('[data-send-window-close]')) box.close(); });
+  box.addEventListener('submit', event => { event.preventDefault(); void saveSendWindow(box); });
+  return box;
+}
+export function sendWindowForm(item) {
+  const window = item.business_send_window || { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' };
+  const days = new Set((window.days || []).map(Number));
+  return `<form class="v4-send-window-form" novalidate data-send-window-code="${esc(item.market_code)}"><div class="sheet-head"><h3 id="send-window-title">${bi(`发信时段 · ${item.country_name || item.market_code}`, 'Email send window')}</h3><button class="btn btn-icon" type="button" data-send-window-close aria-label="关闭 Close" data-tip="关闭，不保存|Close without saving"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div class="sheet-body"><p class="meta">${bi(`按 ${item.timezone || '当地'} 时间发送；时段外的开发信会等到下一个时段再发。`, `Times are in ${item.timezone || 'local time'}; first emails outside the window wait for the next one.`)}</p>
+    <fieldset class="field"><legend class="lbl">${bi('发送日期', 'Days')}</legend><div class="v4-day-picks">${WEEKDAYS.map(([d, zh, en]) => `<label class="v4-day-pick"><input type="checkbox" name="days" value="${d}"${days.has(d) ? ' checked' : ''}><span>${esc(zh)} <small lang="en">${esc(en)}</small></span></label>`).join('')}</div></fieldset>
+    <div class="form-grid"><div class="field"><label for="send-window-start">${bi('开始时间', 'Start')}</label><input id="send-window-start" name="start" type="time" step="900" value="${esc(window.start || '09:00')}" required></div><div class="field"><label for="send-window-end">${bi('结束时间', 'End')}</label><input id="send-window-end" name="end" type="time" step="900" value="${esc(window.end || '17:00')}" required></div></div>
+    <p class="v4-form-status" role="status" aria-live="polite"></p></div>
+    <div class="sheet-foot"><button class="btn" type="button" data-send-window-close data-tip="关闭，不保存|Close without saving">${bi('取消', 'Cancel')}</button><button class="btn btn-primary" type="submit" data-tip="保存这个市场的发信时段，修改会记录在变更历史里|Save the send window; the change is kept in the history">${bi('保存时段', 'Save window')}</button></div></form>`;
+}
+async function saveSendWindow(box) {
+  const form = box.querySelector('form'); const status = form.querySelector('.v4-form-status'); const button = form.querySelector('[type="submit"]');
+  const code = form.dataset.sendWindowCode;
+  const body = { business_send_window: { days: [...form.querySelectorAll('[name="days"]:checked')].map(input => Number(input.value)), start: form.start.value, end: form.end.value }, reason: 'Send window changed in system settings' };
+  if (!body.business_send_window.days.length) { status.innerHTML = bi(...WINDOW_ERRORS.MARKET_SEND_WINDOW_DAYS_INVALID); return; }
+  if (!body.business_send_window.start || !body.business_send_window.end) { status.innerHTML = bi(...WINDOW_ERRORS.MARKET_SEND_WINDOW_TIME_INVALID); return; }
+  if (body.business_send_window.start >= body.business_send_window.end) { status.innerHTML = bi(...WINDOW_ERRORS.MARKET_SEND_WINDOW_ORDER_INVALID); return; }
+  button.disabled = true; status.innerHTML = bi('正在保存', 'Saving');
+  try {
+    const result = await json(`/api/markets/registry/${encodeURIComponent(code)}`, body, 'PUT');
+    const item = (mk.payload?.items || []).find(row => row.market_code === code); if (item) Object.assign(item, result);
+    box.close(); render('#markets-list', marketsMarkup());
+    const cell = document.querySelector(`[data-market-status="${CSS.escape(code)}"]`); if (cell) cell.innerHTML = bi('发信时段已保存', 'Send window saved');
+  } catch (error) { status.innerHTML = bi(...(WINDOW_ERRORS[error?.code] || errorText(error))); button.disabled = false; }
+}
 function wireMarkets(root) {
-  root.addEventListener('click', event => { if (event.target.closest('[data-state-retry]')) void loadMarkets(); });
+  root.addEventListener('click', event => {
+    if (event.target.closest('[data-state-retry]')) { void loadMarkets(); return; }
+    const edit = event.target.closest('[data-send-window-edit]');
+    if (!edit) return;
+    const item = (mk.payload?.items || []).find(row => row.market_code === edit.dataset.sendWindowEdit);
+    if (!item) return;
+    const box = sendWindowDialog(); box.innerHTML = sendWindowForm(item);
+    if (!box.open) box.showModal();
+    box.querySelector('input')?.focus();
+  });
   root.addEventListener('change', async event => {
     const toggle = event.target.closest('[data-market-toggle]');
     if (!toggle) return;
@@ -200,4 +256,4 @@ function mount() {
   if (!document.querySelector('#view-categories')?.hidden) void loadCategories();
   if (!document.querySelector('#view-markets')?.hidden) void loadMarkets();
 }
-mount();
+if (typeof document !== 'undefined') mount();

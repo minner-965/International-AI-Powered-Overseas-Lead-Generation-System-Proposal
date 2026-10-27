@@ -5,6 +5,7 @@ import {activityOutboxPayload} from './outboxPayloads.js';
 import {feishuConfigured} from './feishuBitableAdapter.js';
 import {FOLLOWUP_OFFSET_DAYS,MAX_FOLLOWUP_SEQUENCE,renderFollowupTemplate} from './followupTemplates.js';
 import {CrmRepository,FOLLOWUP_THREAD_OPEN_SQL,MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES,TASK_STATUSES,TASK_TYPES,crmUuid} from './repository.js';
+import {followupEnvDefaults} from './followupSettings.js';
 
 export const CRM_FOLLOWUP_SCAN_QUEUE='crm-followup-scan';
 export const CRM_FOLLOWUP_SEND_QUEUE='crm-followup-send';
@@ -50,9 +51,11 @@ const limitOf=value=>Math.min(Math.max(Number.parseInt(value,10)||100,1),500);
 export class CrmService{
   // merchantSending: {providerFor(merchantId), emailAllowance(merchantId,client), senderFor(merchantId)}
   // (MerchantService). A merchant's follow-ups go out from the merchant's own mailbox.
-  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{},merchantSending=null}={}){
+  // followupSettings (FollowupSettingsService, migration 072): follow-up drafting switch and SIM's daily
+  // limit saved on the settings page; without it CRM_FOLLOWUP_DRAFTS_ENABLED / CRM_FOLLOWUP_DAILY_LIMIT apply.
+  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{},merchantSending=null,followupSettings=null}={}){
     this.repository=repository||new CrmRepository({pool});
-    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit,merchantSending});
+    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit,merchantSending,followupSettings});
   }
 
   async listPipeline(query={},scope=null){
@@ -115,14 +118,15 @@ export class CrmService{
     return this.repository.listFollowupDrafts({status,limit:limitOf(query.limit),scope});
   }
 
-  followupDailyLimit(){return Number(this.env.CRM_FOLLOWUP_DAILY_LIMIT||50);}
+  async followupSettingsNow(){return this.followupSettings?this.followupSettings.get():followupEnvDefaults(this.env);}
+  async followupDailyLimit(){return Number((await this.followupSettingsNow()).daily_limit);}
   async followupQuota(scope=null){
     if(scope?.restrict&&this.merchantSending){
       const allowance=await this.merchantSending.emailAllowance(scope.merchantId);
       const sent_today=Number(allowance.sent_today??0);const daily_limit=Number(allowance.daily_limit??allowance.merchant?.daily_email_quota??0);
       return{sent_today,daily_limit,remaining:Math.max(0,daily_limit-sent_today)};
     }
-    const daily_limit=this.followupDailyLimit();
+    const daily_limit=await this.followupDailyLimit();
     const sent_today=await countColdOutreachToday(this.pool);
     return{sent_today,daily_limit,remaining:Math.max(0,daily_limit-sent_today)};
   }
@@ -151,7 +155,7 @@ export class CrmService{
 
   // Creates PENDING_APPROVAL drafts only; nothing is sent from a scan.
   async scanFollowups({now=new Date()}={}){
-    if(!bool(this.env.CRM_FOLLOWUP_DRAFTS_ENABLED,false))return{status:'DISABLED',created:0};
+    if(!(await this.followupSettingsNow()).enabled)return{status:'DISABLED',created:0};
     const maxSequence=Math.min(Number(this.env.CRM_FOLLOWUP_MAX_SEQUENCE||MAX_FOLLOWUP_SEQUENCE),MAX_FOLLOWUP_SEQUENCE);
     const candidates=await this.repository.dueFollowupCandidates({offsets:FOLLOWUP_OFFSET_DAYS,maxSequence,now});
     let created=0;const skipped=[];
@@ -186,7 +190,7 @@ export class CrmService{
       catch(error){return{status:'WAITING',code:error.code||'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};}
     }
     if(!provider?.senderEmail)return{status:'WAITING',code:'SENDER_NOT_CONFIGURED',draft_id:id};
-    const dailyLimit=this.followupDailyLimit();
+    const dailyLimit=await this.followupDailyLimit();
     const prepared=await this.repository.transaction(async client=>{
       const draft=(await client.query('SELECT * FROM leadgen.crm_followup_drafts WHERE id=$1 FOR UPDATE',[id])).rows[0];
       if(!draft)throw fail('CRM_FOLLOWUP_NOT_FOUND','Follow-up draft not found',404);

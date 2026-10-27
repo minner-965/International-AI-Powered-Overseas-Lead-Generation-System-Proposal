@@ -3,7 +3,7 @@ import {requestScope,assertResearchJobVisible} from '../merchant/scope.js';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function createResearchRouter({service,managementAuth}={}) {
+export function createResearchRouter({service,managementAuth,cancellation=null}={}) {
   if(!service||!managementAuth)throw new Error('Research router requires service and management auth');
   const router=express.Router();
   const readRoles=managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES');
@@ -22,16 +22,23 @@ export function createResearchRouter({service,managementAuth}={}) {
   router.get('/jobs/:id/results',async(req,res,next)=>{
     try{
       if(!UUID.test(req.params.id))return res.status(400).json({error:'Invalid research job',code:'RESEARCH_JOB_ID_INVALID'});
-      service.assertReadRole(req.managementUser?.role);if(service.pool)await assertResearchJobVisible(service.pool,requestScope(req),req.params.id);const result=await service.getJobResults(req.params.id);
+      service.assertReadRole(req.managementUser?.role);if(service.pool)await assertResearchJobVisible(service.pool,requestScope(req),req.params.id);const result=await service.getJobResults(req.params.id,requestScope(req));
       if(!result)return res.status(404).json({error:'Research job not found',code:'RESEARCH_JOB_NOT_FOUND'});res.json(result);
     }catch(error){next(error);}
   });
   router.get('/jobs/:id',async(req,res,next)=>{
     try{
       if(!UUID.test(req.params.id))return res.status(400).json({error:'Invalid research job',code:'RESEARCH_JOB_ID_INVALID'});
-      service.assertReadRole(req.managementUser?.role);if(service.pool)await assertResearchJobVisible(service.pool,requestScope(req),req.params.id);const result=await service.getJob(req.params.id);
+      service.assertReadRole(req.managementUser?.role);if(service.pool)await assertResearchJobVisible(service.pool,requestScope(req),req.params.id);const result=await service.getJob(req.params.id,requestScope(req));
       if(!result)return res.status(404).json({error:'Research job not found',code:'RESEARCH_JOB_NOT_FOUND'});res.json(result);
     }catch(error){next(error);}
+  });
+  // B3: cancel one unfinished job (merchant: own jobs only; SIM: any). Records are kept.
+  if(cancellation)router.post('/jobs/:id/cancel',managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN'),async(req,res,next)=>{
+    try{
+      if(!UUID.test(req.params.id))return res.status(400).json({error:'Invalid research job',code:'RESEARCH_JOB_ID_INVALID'});
+      res.json(await cancellation.cancelJob(req.params.id,req.managementUser||{},requestScope(req)));
+    }catch(error){if(error?.status&&error.code)return res.status(error.status).json({error:error.message,code:error.code,...(error.details?{details:error.details}:{})});next(error);}
   });
   return router;
 }

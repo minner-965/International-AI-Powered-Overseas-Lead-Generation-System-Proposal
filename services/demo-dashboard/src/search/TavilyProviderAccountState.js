@@ -15,11 +15,14 @@ export class TavilyProviderAccountState {
   constructor({pool,apiKey='',usageEndpoint='https://api.tavily.com/usage',fetchImpl=fetch,
     refreshIntervalMs=300000,timeoutMs=10000,now=()=>new Date()}={}){
     if(!pool)throw new TypeError('TavilyProviderAccountState requires a PostgreSQL pool');
-    this.pool=pool;this.apiKey=apiKey;this.usageEndpoint=usageEndpoint;this.fetchImpl=fetchImpl;
+    // apiKey may be a function so a key saved on the API keys page applies without a restart (B9).
+    this.pool=pool;this.apiKeySource=apiKey;this.usageEndpoint=usageEndpoint;this.fetchImpl=fetchImpl;
     this.refreshIntervalMs=Math.max(120000,Math.min(300000,Number(refreshIntervalMs)||300000));
     this.timeoutMs=Math.max(1000,Number(timeoutMs)||10000);this.now=now;
-    this.credentialFingerprint=apiKey?createHash('sha256').update(apiKey).digest('hex'):null;
   }
+  get apiKey(){return String((typeof this.apiKeySource==='function'?this.apiKeySource():this.apiKeySource)||'');}
+  set apiKey(value){this.apiKeySource=value;}
+  get credentialFingerprint(){const key=this.apiKey;return key?createHash('sha256').update(key).digest('hex'):null;}
 
   async getState(){
     const result=await this.pool.query(`SELECT provider_code,credential_fingerprint,status,remaining_credits,checked_at,retry_after_at,

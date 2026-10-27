@@ -28,3 +28,10 @@ export function outreachTaskLabel(row) {
     CANCELLED: ['已取消', 'Cancelled'], BLOCKED: ['待处理', 'Action required'],
   })[value] || ['待确认', 'To confirm'];
 }
+
+/** Category display name returned by the server (category_label_zh/en); null when the server has none. */
+export function jobCategoryLabel(job) {
+  const zh = String(job?.category_label_zh ?? '').trim(), en = String(job?.category_label_en ?? '').trim();
+  if (!zh && !en) return null;
+  return [zh || en, en || zh];
+}

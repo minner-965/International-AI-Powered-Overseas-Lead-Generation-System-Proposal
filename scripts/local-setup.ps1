@@ -86,7 +86,7 @@ Step 'Building and starting the system (first build takes several minutes)'
 # so compose never tries to pull that name from a registry.
 docker compose build demo-dashboard
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose build failed. Copy the messages above and send them to Claude.' }
-docker compose up -d postgres searxng demo-dashboard category-worker outreach-worker data-worker
+docker compose up -d postgres searxng translate demo-dashboard category-worker outreach-worker data-worker
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose up failed. Copy the messages above and send them to Claude.' }
 
 Step "Waiting for the workspace to answer on $baseUrl"
@@ -137,6 +137,6 @@ Next steps (see docs/deploy/WINDOWS_LOCAL_SETUP.md):
      categories: node scripts/setup-supply-categories.mjs --all --email <admin email> --password <password>
   2. Fill search keys in .env.phase2 (EXA_API_KEY / TAVILY_API_KEY), mail in .env.phase7-outreach
      (SMTP/IMAP 587/993, SMTP_MESSAGE_ID_DOMAIN = your domain), Hunter and Feishu if used.
-  3. Apply changes: docker compose up -d --force-recreate searxng demo-dashboard category-worker outreach-worker data-worker
+  3. Apply changes: docker compose up -d --force-recreate searxng translate demo-dashboard category-worker outreach-worker data-worker
   4. Send the first email to your own test address before switching automation on.
 '@

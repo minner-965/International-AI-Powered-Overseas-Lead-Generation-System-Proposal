@@ -1,5 +1,6 @@
 // MC05: registry selection and parent navigation; single-scope jobs remain unchanged.
 import {productTaxonomyLabel} from '../../product-match-ui.js';
+import {session,sessionReady} from '../v4/session.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const STORAGE = 'dpv.research-batch.selection.v1';
@@ -8,6 +9,7 @@ const checked = name => $$(`input[name="${name}"]:checked`).map(input=>input.val
 const unique = values => [...new Set(values.flat().filter(Boolean))];
 const categoryId = item => item.category_scope_id || item.id;
 const categoryLabel = item => {
+  if(item.label_zh&&item.label_en)return [item.label_zh,item.label_en];
   const code=item.category_code||item.normalized_category||item.label;
   const extra={HOMEWARE:['家居百货','Homeware'],HOME_AND_LIVING:['家居生活用品','Home and Living'],HOUSEHOLD_GOODS:['家居用品','Household Goods'],NON_FOOD:['非食品百货','Non-food']};
   const labels=extra[code]||productTaxonomyLabel(code);return labels[1]==='To confirm'?[item.label||code,item.label||code]:labels;
@@ -72,12 +74,35 @@ async function loadPreview() {
     if(requestId!==sequence)return;
     preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('研究范围已就绪','Research scope ready')}${quotaText(result)?` · ${api.bi(...quotaText(result))}`:result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
     batchScopeReview();updateCounts();
-  }catch{
+  }catch(error){
     if(requestId!==sequence)return;preview=null;updateCounts();
     renderSearchPlan('error');
+    const refusal=scopeRefusalText(error?.code);
+    if(refusal){$('#research-catalog-summary').innerHTML=api.bi(...refusal);return;}
     $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" data-tip="重新计算范围与费用预估|Recalculate the scope and cost estimate" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
+}
+/** Merchant's own scope (GET /api/merchant/scope) used to preselect a new research; null for SIM. */
+async function merchantScope(){
+  const user=await Promise.race([sessionReady,new Promise(resolve=>setTimeout(()=>resolve(session.user),1500))]);
+  if(!user?.merchant)return null;
+  try{const scope=await api.request('/api/merchant/scope');return {market_codes:scope?.market_codes||[],category_scope_ids:scope?.category_scope_ids||[]};}
+  catch{return {market_codes:[],category_scope_ids:[]};}
+}
+/** Initial choices: the saved choice in this tab, else the merchant's scope, else the first option. */
+export function initialSelection(saved,options,scope){
+  const markets=(options?.markets||[]).map(item=>item.market_code),categories=(options?.categories||[]).map(categoryId);
+  const pick=(chosen,available,fallback)=>Array.isArray(chosen)?chosen:fallback;
+  return {
+    market_codes:pick(saved?.market_codes,markets,scope?markets.filter(code=>scope.market_codes.includes(code)):markets.slice(0,1)),
+    category_scope_ids:pick(saved?.category_scope_ids,categories,scope?categories.filter(id=>scope.category_scope_ids.includes(id)):categories.slice(0,1))
+  };
+}
+/** Plain-language refusal for merchant scope checks (422 MERCHANT_SCOPE_CATEGORY / MERCHANT_SCOPE_MARKET). */
+export function scopeRefusalText(code){
+  return {MERCHANT_SCOPE_CATEGORY:['所选类目不在您的业务范围内，请在“业务范围”页面添加后再试','A selected category is outside your business scope. Add it on the Business Scope page first.'],
+    MERCHANT_SCOPE_MARKET:['所选市场不在您的业务范围内，请在“业务范围”页面添加后再试','A selected market is outside your business scope. Add it on the Business Scope page first.']}[code]||null;
 }
 /** Merchant monthly search quota from the batch preview (merchant_search_quota); null for SIM. */
 export function quotaText(result){
@@ -111,8 +136,15 @@ export async function refreshBatchOptions(){
   try{
     const result=await api.request('/api/research/batches/options');
     options={...result,markets:(result.markets||[]).filter(item=>item.status==='ACTIVE'&&item.search_enabled===true),categories:(result.categories||[]).filter(item=>item.scope_status==='ACTIVE'&&item.approval_status==='APPROVED')};
-    const markets=selection.market_codes||options.markets.slice(0,1).map(item=>item.market_code);
-    const categories=selection.category_scope_ids||options.categories.slice(0,1).map(categoryId);
+    const scope=Array.isArray(selection.market_codes)&&Array.isArray(selection.category_scope_ids)?null:await merchantScope();
+    if(scope){
+      // Merchants only see choices inside their own scope (the server filters as well).
+      options.markets=options.markets.filter(item=>scope.market_codes.includes(item.market_code));
+      options.categories=options.categories.filter(item=>scope.category_scope_ids.includes(categoryId(item)));
+      $('#research-market-all')?.nextElementSibling?.replaceChildren();$('#research-market-all')?.nextElementSibling?.insertAdjacentHTML('beforeend',api.bi('全选我的市场','Select all my markets'));
+      $('#research-category-all')?.nextElementSibling?.replaceChildren();$('#research-category-all')?.nextElementSibling?.insertAdjacentHTML('beforeend',api.bi('全选我的类目','Select all my categories'));
+    }
+    const {market_codes:markets,category_scope_ids:categories}=initialSelection(selection,options,scope);
     const render=(rows,name,selected,key,label)=>rows.map(item=>`<label class="v3-registry-option"><input class="form-check-input" type="checkbox" name="${name}" value="${api.esc(key(item))}" ${selected.includes(key(item))?'checked':''}><span>${api.esc(label(item))}</span></label>`).join('');
     $('#research-market-options').innerHTML=render(options.markets,'market_code',markets,item=>item.market_code,item=>`${item.country_name} (${item.market_code})`);
     $('#research-category-options').innerHTML=options.categories.map(item=>`<label class="v3-registry-option"><input class="form-check-input" type="checkbox" name="product_category" value="${api.esc(categoryId(item))}" ${categories.includes(categoryId(item))?'checked':''}>${api.bi(...categoryLabel(item))}</label>`).join('');
@@ -137,7 +169,7 @@ async function create(event){
     document.dispatchEvent(new CustomEvent('phase9:research-job-created',{detail:{batchId:batch.batch_id||batch.id}}));
     await openBatch(batch.batch_id||batch.id);
     void loadBatchList();
-  }catch{status(api.bi('研究任务建立未完成，请重试','Research batch creation did not complete. Retry.'));}
+  }catch(error){const refusal=scopeRefusalText(error?.code);status(refusal?api.bi(...refusal):api.bi('研究任务建立未完成，请重试','Research batch creation did not complete. Retry.'));}
   finally{creating=false;$('#start-research').removeAttribute('aria-busy');updateCounts();}
 }
 async function loadBatchList(){
@@ -145,7 +177,7 @@ async function loadBatchList(){
   host.setAttribute('aria-busy','true');
   try{
     const result=await api.request('/api/research/batches');
-    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('研究范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span></div><button type="button" data-tip="打开这个研究批次的进度|Open this batch's progress" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无研究批次','No research batches');
+    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('研究范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span>${batch.status==='CANCELLED'?`<small>${api.bi('已取消','Cancelled')}</small>`:''}</div><button type="button" data-tip="打开这个研究批次的进度|Open this batch's progress" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无研究批次','No research batches');
     host.querySelectorAll('[data-open-batch]').forEach(button=>button.addEventListener('click',()=>void openBatch(button.dataset.openBatch)));
   }catch{host.innerHTML=`${api.bi('批次列表读取未完成','Batch list could not be loaded')} <button type="button" data-tip="重新读取研究批次|Reload research batches" class="btn btn-outline-secondary" data-batches-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batches-retry]').addEventListener('click',()=>void loadBatchList());}
   finally{host.setAttribute('aria-busy','false');}
@@ -165,6 +197,11 @@ async function openBatch(id,{replace=false}={}){
     const stateLabel={QUEUED:['等待开始','Queued'],RUNNING:['进行中','Running'],COMPLETED:['已完成','Completed'],PARTIAL:['部分完成','Partially completed'],FAILED:['处理未完成','Not completed'],CANCELLED:['已取消','Cancelled']}[batch.status]||['等待更新','Awaiting update'];
     const stateBadge=document.createElement('span');stateBadge.className='data-state-badge state-unknown';stateBadge.innerHTML=api.bi(...stateLabel);host.querySelector('.card-title').after(stateBadge);
     const refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-outline-secondary';refresh.innerHTML=api.bi('刷新','Refresh');refresh.dataset.tip='重新读取这个批次的进度|Reload this batch';refresh.addEventListener('click',()=>void openBatch(id,{replace:true}));host.querySelector('.card-header').append(refresh);
+    if(['QUEUED','RUNNING'].includes(batch.status)){
+      const cancel=document.createElement('button');cancel.type='button';cancel.className='btn danger';cancel.dataset.cancelBatch=id;
+      cancel.dataset.tip='停止这个批次尚未完成的查找，已有结果、记录和费用账单都会保留|Stop the unfinished searches of this batch; results, records and cost records are kept';
+      cancel.innerHTML=api.bi('取消批次','Cancel batch');cancel.addEventListener('click',()=>void cancelBatch(id,cancel));host.querySelector('.card-header').append(cancel);
+    }
     const frozen=document.createElement('details');frozen.className='v3-research-details';frozen.innerHTML=`<summary>${api.bi('创建范围详情','Scope at creation')}</summary><div class="p9-catalog-facts">${[['市场','Markets',snapshot.markets?.length??0],['类目','Categories',snapshot.categories?.length??0],['客户类型','Buyer types',unique((snapshot.scopes||[]).map(scope=>scope.buyer_types||[])).join(' · ')],['研究语言','Languages',unique((snapshot.scopes||[]).map(scope=>scope.languages||[])).join(' · ')]].map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('')}</div>`;host.querySelector('.v3-batch-children').before(frozen);
     const searchPlan=document.createElement('section');searchPlan.id='batch-search-plan';searchPlan.className='v3-search-plan';searchPlan.innerHTML=searchPlanMarkup(batch.search_plan);frozen.after(searchPlan);
     for(const [from,to] of [['h5','h4'],['h6','h5']])searchPlan.querySelectorAll(from).forEach(heading=>{const replacement=document.createElement(to);replacement.innerHTML=heading.innerHTML;heading.replaceWith(replacement);});
@@ -178,6 +215,12 @@ async function openBatch(id,{replace=false}={}){
     host.tabIndex=-1;host.focus({preventScroll:true});
   }catch{host.innerHTML=`${api.bi('研究批次读取未完成','Research batch could not be loaded')} <button type="button" data-tip="重新读取这个批次|Reload this batch" class="btn btn-outline-secondary" data-batch-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batch-retry]').addEventListener('click',()=>void openBatch(id,{replace:true}));}
   finally{host.setAttribute('aria-busy','false');}
+}
+async function cancelBatch(id,button){
+  if(!globalThis.confirm?.('确定取消这个研究批次吗？已有结果、记录和费用账单都会保留。\nCancel this research batch? Results, records and cost records are kept.'))return;
+  button.disabled=true;button.setAttribute('aria-busy','true');
+  try{await api.request(`/api/research/batches/${encodeURIComponent(id)}/cancel`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});await openBatch(id,{replace:true});void loadBatchList();}
+  catch{button.disabled=false;button.removeAttribute('aria-busy');button.closest('.card-header')?.querySelector('[data-cancel-batch-status]')?.remove();button.insertAdjacentHTML('afterend',`<small class="crm-helper" role="status" data-cancel-batch-status>${api.bi('批次取消未完成，请重试','The batch could not be cancelled. Retry.')}</small>`);}
 }
 export function initializeResearchBatch(dependencies){
   api=dependencies;const form=$('#research-form');form.dataset.researchBatch='true';

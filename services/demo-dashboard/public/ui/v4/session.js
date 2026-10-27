@@ -72,7 +72,16 @@ export const MERCHANT_API = Object.freeze([
   ['POST', `^/api/crm/replies/${UUID}/review$`], ['POST', `^/api/crm/followup-drafts/${UUID}/decision$`],
   ['GET', '^/api/outreach/(inbox|operations-summary)$'], ['GET', `^/api/outreach/threads/${UUID}$`],
   ['GET', `^/api/research/batches(/options|/${UUID})?$`], ['POST', '^/api/research/batches(/preview)?$'],
-  ['GET', `^/api/research/jobs(/${UUID}(/results)?)?$`]
+  ['GET', `^/api/research/jobs(/${UUID}(/results)?)?$`],
+  ['POST', `^/api/research/(batches|jobs)/${UUID}/cancel$`],
+  ['GET', `^/api/manual-companies(/options|/first-touch-drafts|/${UUID})?$`], ['POST', '^/api/manual-companies$'],
+  ['POST', `^/api/manual-companies/${UUID}/(contacts|activities|stage|first-touch-drafts)$`],
+  ['POST', `^/api/manual-companies/first-touch-drafts/${UUID}/decision$`],
+  ['GET', '^/api/first-touch/test-sends$'], ['POST', '^/api/first-touch/test-sends(/preview)?$'],
+  ['GET', '^/api/merchant/provider-credentials$'],
+  ['PUT', '^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)$'],
+  ['POST', '^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)/(test|revoke)$'],
+  ['POST', '^/api/translate$'], ['GET', '^/api/translate/languages$']
 ].map(([method, pattern]) => [method, new RegExp(pattern, 'i')]));
 export function merchantApiAllowed(method, url) {
   let path = String(url || '');

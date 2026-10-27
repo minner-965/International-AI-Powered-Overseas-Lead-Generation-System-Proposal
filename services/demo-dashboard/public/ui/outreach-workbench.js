@@ -2,6 +2,7 @@ import { managementRequest } from '../phase7-ui.js';
 import { opportunityDimensionsMarkup } from './v3/opportunity-dimensions.js';
 import { publishCommunicationChange, subscribeCommunicationChanges } from './communication-sync.js';
 import { contactProgressStatus, contactNextAction } from './contact-progress.js';
+import { attachTranslateWidget } from './v4/translate-widget.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bi=(zh,en)=>`<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
@@ -56,6 +57,9 @@ dialog.id='outreach-review-dialog';dialog.className='p11-outreach-dialog';dialog
 dialog.innerHTML=`<header class="p11-outreach-header"><h3 id="outreach-review-title" tabindex="-1">${bi('开发信审核','Email review')}</h3><button type="button" data-tip="返回待发送列表|Back to the list" id="outreach-review-close" class="btn btn-outline-secondary">${bi('返回','Back')}</button></header><div class="p11-outreach-body"><div id="outreach-review-summary"></div><form id="outreach-review-form"><label for="outreach-subject">${bi('主题','Subject')}</label><input id="outreach-subject" class="form-control" required maxlength="240"><label for="outreach-body">${bi('正文','Message')}</label><textarea id="outreach-body" class="form-control" rows="10" required maxlength="12000"></textarea><button id="outreach-save" data-tip="保存开发信草稿，暂不提交|Save the draft without submitting" class="btn btn-outline-primary" type="submit">${bi('保存草稿','Save draft')}</button></form><div id="outreach-review-feedback" role="status" aria-live="polite"></div><div id="outreach-send-readiness" class="crm-helper"></div></div><footer class="p11-outreach-footer"><button id="outreach-submit" data-tip="把草稿提交审核|Submit the draft for review" class="btn btn-outline-primary" type="button">${bi('提交审核','Submit for review')}</button><button id="outreach-reject" data-tip="退回草稿修改|Return the draft for changes" class="btn btn-outline-secondary" type="button">${bi('退回修改','Return for changes')}</button><button id="outreach-approve" data-tip="批准这一版开发信|Approve this version of the email" class="btn btn-outline-primary" type="button">${bi('批准当前版本','Approve this version')}</button><button id="outreach-send" data-tip="发送这封开发信（使用您绑定的发信邮箱）|Send this email from your bound mailbox" class="btn btn-primary" type="button">${bi('发送此邮件','Send this email')}</button></footer>`;
 document.body.append(dialog);
 const q=id=>document.getElementById(id);
+// Translation suggestion for the email body; a frozen (submitted or approved) body is never changed.
+const outreachTranslateHost=document.createElement('div');outreachTranslateHost.className='v4-translate-host';q('outreach-body')?.after(outreachTranslateHost);
+attachTranslateWidget(outreachTranslateHost,{targets:[{label:['正文','Body'],get:()=>q('outreach-body')?.value||'',set:text=>{const body=q('outreach-body');if(!body||body.readOnly||body.disabled)return;body.value=text;body.dispatchEvent(new Event('input',{bubbles:true}));}}]});
 // Recompose the existing controls; their IDs and business handlers remain unchanged.
 dialog.classList.add('v3-email-review');
 const reviewBody=dialog.querySelector('.p11-outreach-body');

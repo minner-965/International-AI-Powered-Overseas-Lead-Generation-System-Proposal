@@ -206,8 +206,10 @@ export function createPhase5Queue({
           const minutes=Math.max(1,Math.min(59,Number(env.INBOUND_EMAIL_SYNC_INTERVAL_MINUTES||env.GMAIL_INBOUND_SYNC_INTERVAL_MINUTES)||5));
           await boss.schedule(PHASE5_QUEUES.INBOUND_EMAIL_SYNC,`*/${minutes} * * * *`,{}, { tz:'UTC' });
         }
-        // The scan only drafts follow-ups for human approval; it never sends.
-        if (booleanEnv(env.CRM_FOLLOWUP_DRAFTS_ENABLED,false) && typeof boss.schedule === 'function')
+        // The scan only drafts follow-ups for human approval; it never sends. Whether it drafts anything is the
+        // follow-up switch on the settings page (migration 072; CRM_FOLLOWUP_DRAFTS_ENABLED is its initial value),
+        // so the hourly scan is scheduled unless CRM_FOLLOWUP_SCAN_SCHEDULE_ENABLED=false.
+        if (booleanEnv(env.CRM_FOLLOWUP_SCAN_SCHEDULE_ENABLED,true) && typeof boss.schedule === 'function')
           await boss.schedule(PHASE5_QUEUES.CRM_FOLLOWUP_SCAN,'17 * * * *',{}, { tz:'UTC' });
         if (String(env.CRM_PROVIDER || env.CRM_BASE_URL || '').trim() && typeof boss.schedule === 'function')
           await boss.schedule(PHASE5_QUEUES.CRM_OUTBOX_DISPATCH,'*/10 * * * *',{}, { tz:'UTC' });

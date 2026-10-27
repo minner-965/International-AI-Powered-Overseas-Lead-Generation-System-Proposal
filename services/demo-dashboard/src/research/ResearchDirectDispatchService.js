@@ -5,6 +5,15 @@ const NON_RETRYABLE_INPUT_CODES=new Set([
   'TARGET_CATEGORY_REQUIRED','TARGET_CATEGORY_PROFILE_INVALID','TARGET_CATEGORY_PROFILE_CONFLICT'
 ]);
 
+// B3: operator-cancelled jobs (status FAILED + stop_reason_code OPERATOR_CANCELLED) are never
+// dispatched or executed again; their open outbox row is closed when met.
+const OPERATOR_CANCELLED='OPERATOR_CANCELLED';
+const NOT_CANCELLED_JOB=`NOT EXISTS(SELECT 1 FROM leadgen.research_jobs cj WHERE cj.id=$1 AND cj.stop_reason_code='${OPERATOR_CANCELLED}')`;
+const CLOSE_OUTBOX=`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='FAILED',last_error_code='${OPERATOR_CANCELLED}',
+  next_attempt_at=NULL,completed_at=coalesce(completed_at,now()),updated_at=now()
+  WHERE research_job_id=$1 AND dispatch_state NOT IN('COMPLETED','FAILED')`;
+class ResearchJobCancelled extends Error{constructor(){super('Research job cancelled');this.code=OPERATOR_CANCELLED;}}
+
 export function isNonRetryableResearchInputError(error){
   const code=safeCode(error);
   return error?.retryable===false||error?.classification==='NON_RETRYABLE_INPUT_ERROR'
@@ -35,7 +44,7 @@ export class ResearchDirectDispatchService {
 
   async dispatch(researchJobId) {
     if(!await this.isEnabled())return {state:'PAUSED_AUTOMATION_OFF',queue_job_id:null};
-    let result=await this.pool.query(`SELECT o.*,j.status job_status FROM leadgen.research_job_dispatch_outbox o
+    let result=await this.pool.query(`SELECT o.*,j.status job_status,j.stop_reason_code job_stop_reason FROM leadgen.research_job_dispatch_outbox o
       JOIN leadgen.research_jobs j ON j.id=o.research_job_id WHERE o.research_job_id=$1`,[researchJobId]);
     if(!result.rowCount){
       await this.pool.query(`INSERT INTO leadgen.research_job_dispatch_outbox(research_job_id,execution_key)
@@ -47,6 +56,11 @@ export class ResearchDirectDispatchService {
     if(!result.rowCount)return {state:'MISSING'};
     const row=result.rows[0];
     if(row.dispatch_state==='COMPLETED'||['COMPLETED','COMPLETE'].includes(row.job_status))return {state:'COMPLETED',queue_job_id:row.queue_job_id};
+    if(row.job_stop_reason===OPERATOR_CANCELLED){
+      if(row.dispatch_state!=='FAILED')await this.pool.query(CLOSE_OUTBOX,[researchJobId]);
+      return {state:'CANCELLED',queue_job_id:row.queue_job_id||null};
+    }
+    if(row.dispatch_state==='FAILED'||row.job_status==='FAILED')return {state:'FAILED',queue_job_id:row.queue_job_id||null};
     try{
       const queueJobId=await this.queue.enqueue(PHASE5_QUEUES.EXECUTE_RESEARCH_JOB,{
         research_job_id:row.research_job_id,execution_key:row.execution_key
@@ -72,7 +86,9 @@ export class ResearchDirectDispatchService {
   async reconcile({limit=25}={}) {
     const claimed=await this.pool.query(`WITH selected AS (
       SELECT id FROM leadgen.research_job_dispatch_outbox WHERE dispatch_state IN('PENDING','RETRY_PENDING')
-        AND (next_attempt_at IS NULL OR next_attempt_at<=now()) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1
+        AND (next_attempt_at IS NULL OR next_attempt_at<=now())
+        AND NOT EXISTS(SELECT 1 FROM leadgen.research_jobs cj WHERE cj.id=research_job_id AND cj.stop_reason_code='${OPERATOR_CANCELLED}')
+        ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $1
     ) UPDATE leadgen.research_job_dispatch_outbox o SET next_attempt_at=now()+interval '30 seconds',updated_at=now()
       FROM selected s WHERE o.id=s.id RETURNING o.research_job_id`,[Math.max(1,Math.min(100,Number(limit)||25))]);
     const outcomes=[];
@@ -92,33 +108,48 @@ export class ResearchJobDirectExecutor {
     this.pool=pool;this.stages=stages;this.audit=audit;
   }
 
+  // A cancel closes the outbox (FAILED); the next checkpoint then stops the run.
   async checkpoint(jobId,name) {
-    await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET checkpoint=$2,updated_at=now() WHERE research_job_id=$1`,[jobId,name]);
+    const result=await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET checkpoint=$2,updated_at=now()
+      WHERE research_job_id=$1 AND dispatch_state<>'FAILED'`,[jobId,name]);
+    if(result?.rowCount===0)throw new ResearchJobCancelled();
   }
 
   async pause(jobId,status) {
     await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='RETRY_PENDING',
-      last_error_code=$2,next_attempt_at=now()+interval '10 minutes',updated_at=now() WHERE research_job_id=$1`,[jobId,status]);
+      last_error_code=$2,next_attempt_at=now()+interval '10 minutes',updated_at=now() WHERE research_job_id=$1
+      AND dispatch_state NOT IN('COMPLETED','FAILED')`,[jobId,status]);
     await this.pool.query(`UPDATE leadgen.research_jobs SET blocked_reason=$2,dispatch_state='WORKFLOW_INACTIVE',
-      next_dispatch_attempt_at=now()+interval '10 minutes' WHERE id=$1`,[jobId,status]);
+      next_dispatch_attempt_at=now()+interval '10 minutes' WHERE id=$1 AND stop_reason_code IS DISTINCT FROM '${OPERATOR_CANCELLED}'`,[jobId,status]);
     return {research_job_id:jobId,status,paused:true};
   }
 
   async setStatus(jobId,status,{terminal=false}={}) {
-    await this.pool.query(`UPDATE leadgen.research_jobs SET status=$2,
+    const result=await this.pool.query(`UPDATE leadgen.research_jobs SET status=$2,
       started_at=CASE WHEN $2='DISCOVERING' THEN coalesce(started_at,now()) ELSE started_at END,
       completed_at=CASE WHEN $3 THEN coalesce(completed_at,now()) ELSE completed_at END,
-      last_error=CASE WHEN $2='COMPLETED' THEN NULL ELSE last_error END WHERE id=$1`,[jobId,status,terminal]);
+      last_error=CASE WHEN $2='COMPLETED' THEN NULL ELSE last_error END WHERE id=$1
+      AND stop_reason_code IS DISTINCT FROM '${OPERATOR_CANCELLED}'`,[jobId,status,terminal]);
+    if(result?.rowCount===0)throw new ResearchJobCancelled();
+  }
+
+  async cancelled(jobId,checkpoint) {
+    await this.pool.query(CLOSE_OUTBOX,[jobId]);
+    this.audit('RESEARCH_DIRECT_QUEUE_CANCELLED',{job_id:jobId,checkpoint});
+    return {research_job_id:jobId,status:'CANCELLED',checkpoint,error_code:OPERATOR_CANCELLED,retryable:false};
   }
 
   async execute({research_job_id:jobId,execution_key:executionKey}={}) {
     const claimed=await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='PROCESSING',
       attempt_count=attempt_count+1,updated_at=now() WHERE research_job_id=$1 AND execution_key=$2
-      AND dispatch_state NOT IN('COMPLETED','FAILED')
+      AND dispatch_state NOT IN('COMPLETED','FAILED') AND ${NOT_CANCELLED_JOB}
       RETURNING checkpoint,dispatch_state`,[jobId,executionKey]);
     if(!claimed.rowCount){
-      const replay=await this.pool.query(`SELECT dispatch_state,checkpoint,last_error_code
+      const replay=await this.pool.query(`SELECT dispatch_state,checkpoint,last_error_code,
+        (SELECT stop_reason_code FROM leadgen.research_jobs WHERE id=$1) job_stop_reason
         FROM leadgen.research_job_dispatch_outbox WHERE research_job_id=$1 AND execution_key=$2`,[jobId,executionKey]);
+      if(replay.rows[0]?.job_stop_reason===OPERATOR_CANCELLED)
+        return {...await this.cancelled(jobId,replay.rows[0].checkpoint),idempotent_replay:true};
       if(replay.rows[0]&&['COMPLETED','FAILED'].includes(replay.rows[0].dispatch_state))return{
         research_job_id:jobId,status:replay.rows[0].dispatch_state,checkpoint:replay.rows[0].checkpoint,
         error_code:replay.rows[0].last_error_code||null,idempotent_replay:true
@@ -140,11 +171,12 @@ export class ResearchJobDirectExecutor {
       if(!done('SCORING_COMPLETED')){await this.setStatus(jobId,'SCORING');await this.stages.score?.(jobId,executionKey);await this.checkpoint(jobId,'SCORING_COMPLETED');checkpoint='SCORING_COMPLETED';}
       await this.setStatus(jobId,'COMPLETED',{terminal:true});await this.checkpoint(jobId,'COMPLETED');
       await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='COMPLETED',completed_at=now(),
-        last_error_code=NULL,next_attempt_at=NULL,updated_at=now() WHERE research_job_id=$1`,[jobId]);
+        last_error_code=NULL,next_attempt_at=NULL,updated_at=now() WHERE research_job_id=$1 AND dispatch_state<>'FAILED'`,[jobId]);
       await this.stages.completed?.(jobId);
       this.audit('RESEARCH_DIRECT_QUEUE_COMPLETED',{job_id:jobId});
       return {research_job_id:jobId,status:'COMPLETED',checkpoint:'COMPLETED'};
     }catch(error){
+      if(error instanceof ResearchJobCancelled)return this.cancelled(jobId,checkpoint);
       if(isNonRetryableResearchInputError(error)){
         const code=safeCode(error);
         await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='FAILED',
@@ -157,7 +189,8 @@ export class ResearchJobDirectExecutor {
         return{research_job_id:jobId,status:'FAILED',checkpoint,error_code:code,retryable:false};
       }
       await this.pool.query(`UPDATE leadgen.research_job_dispatch_outbox SET dispatch_state='RETRY_PENDING',last_error_code=$2,
-        next_attempt_at=now()+interval '30 seconds',updated_at=now() WHERE research_job_id=$1`,[jobId,safeCode(error)]);
+        next_attempt_at=now()+interval '30 seconds',updated_at=now() WHERE research_job_id=$1
+        AND dispatch_state NOT IN('COMPLETED','FAILED')`,[jobId,safeCode(error)]);
       throw error;
     }
   }

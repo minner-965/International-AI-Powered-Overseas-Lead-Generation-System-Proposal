@@ -1,6 +1,7 @@
 // 跟进邮件审批 / Follow-up approval: drafts created by the follow-up scan, approved or discarded by a person.
 // Approval only queues the draft; sending re-checks thread, opt-out, daily limit and the email switch.
 import { crm, bi, esc, when, stateBlock, skeletonRows, notifyCrmChange, errorText, quotaMarkup } from './crm.js';
+import { attachTranslateWidget, fieldTarget } from './translate-widget.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const STATUS = { PENDING_APPROVAL: ['待批准', 'Pending', 'warn'], APPROVED: ['已批准', 'Approved', 'info'], SENDING: ['发送中', 'Sending', 'info'],
@@ -29,7 +30,8 @@ function previewMarkup(draft) {
     <dl class="to"><dt>${bi('收件人', 'To')}</dt><dd>${esc(draft.recipient || '—')}</dd><dt>${bi('计划发送', 'Scheduled')}</dt><dd>${due ? `${esc(due.zh)} · ${esc(due.en)}` : '—'}</dd><dt>${bi('状态', 'Status')}</dt><dd>${statusPill(draft.draft_status)}${draft.approved_by ? `<span class="meta">${esc(draft.approved_by)}</span>` : ''}</dd></dl>
     <div class="field"><label for="followup-subject">${bi('主题', 'Subject')}</label><input id="followup-subject" name="subject" maxlength="240" value="${esc(draft.subject)}"${editable ? '' : ' readonly'}></div>
     <div class="field"><label for="followup-body">${bi('正文', 'Body')}</label><textarea id="followup-body" name="body_text" maxlength="12000"${editable ? '' : ' readonly'}>${esc(draft.body_text)}</textarea></div>
-    ${editable ? `<div class="field v4-discard-reason" hidden><label for="followup-discard-reason">${bi('放弃原因（可选）', 'Reason (optional)')}</label><input id="followup-discard-reason" name="reason" maxlength="500"></div>
+    ${editable ? `<div class="v4-translate-slot" data-followup-translate></div>
+    <div class="field v4-discard-reason" hidden><label for="followup-discard-reason">${bi('放弃原因（可选）', 'Reason (optional)')}</label><input id="followup-discard-reason" name="reason" maxlength="500"></div>
     <p class="v4-form-status" role="status" aria-live="polite"></p>
     <div class="actions"><button class="btn btn-danger" data-tip="不发送这封邮件（可填写原因）|Don't send this email (reason optional)" type="button" data-draft-discard>${bi('放弃', 'Discard')}</button><span class="grow"></span><button class="btn" data-tip="保存您的修改并批准发送|Save your edits and approve" type="button" data-draft-approve-edits disabled>${bi('修改后批准', 'Approve with edits')}</button><button class="btn btn-primary" data-tip="批准后按计划时间发出，发送前会再检查退订和每日额度|Approve; sent at the scheduled time after opt-out and quota checks" type="button" data-draft-approve>${bi('批准发送', 'Approve')}</button></div>
     <p class="meta v4-approval-note">${bi('批准后按计划时间发出；发送前会再次检查退订、回复和每日额度。', 'Sent at the scheduled time after approval; opt-out, replies and the daily limit are checked again before sending.')}</p>` : ''}
@@ -54,6 +56,7 @@ function wirePreview(draft) {
   if (!form || !draft || draft.draft_status !== 'PENDING_APPROVAL') return;
   const edits = form.querySelector('[data-draft-approve-edits]'); const approve = form.querySelector('[data-draft-approve]');
   const status = form.querySelector('.v4-form-status');
+  attachTranslateWidget(form.querySelector('[data-followup-translate]'), { targets: [fieldTarget(form.body_text, ['正文', 'Body']), fieldTarget(form.subject, ['主题', 'Subject'])] });
   const dirty = () => form.subject.value !== draft.subject || form.body_text.value !== draft.body_text;
   form.addEventListener('input', () => { edits.disabled = !dirty(); approve.disabled = dirty(); });
   const decide = async (body, button) => {

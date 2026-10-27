@@ -4046,6 +4046,14 @@ button.row:hover, a.row:hover { background: var(--surface-2); text-decoration: n
 html[data-role="MERCHANT"] [data-roles="ADMIN"], html[data-feature-research="off"] [data-feature="research"] { display: none !important; }
 html:not([data-role]) .v3-nav [data-roles="ADMIN"] { visibility: hidden; }
 html[data-role="ADMIN"][data-session="signed-in"] [data-merchant-only] { display: none !important; }
+html:not([data-role="MERCHANT"]) [data-merchant-label] { display: none !important; }
+/* Market email send window editor (settings > markets). */
+.v4-send-window .btn-sm { margin-top: 4px; }
+.v4-day-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.v4-day-pick { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.v4-day-pick small { color: var(--muted); font-weight: 400; }
+.v4-day-pick:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.v4-day-pick input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .nav .count.warn { background: var(--warn-soft); color: var(--warn); font-size: 11px; }
 .nav .count.warn .bi > [lang="en"] { display: none; }
 .me .v4-logout { flex: 0 0 auto; width: 36px; min-width: 36px; height: 36px; color: var(--side-text); }
@@ -4202,3 +4210,65 @@ html[data-role="MERCHANT"] :is(#automation-overview, #automation-research, #auto
 @media (min-width: 901px) { html[data-role="MERCHANT"] .v4-overview-ops { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
 .v4-research-quota { align-self: center; min-height: 28px; }
 html[data-role="MERCHANT"] .p10-research-grid { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- Batch 2 B7/B9: API keys page (api-keys.js) and translate widget (translate-widget.js) ---- */
+.v4-key-intro p { margin: 0 0 6px; }
+.v4-key-group { margin: 20px 0 10px; }
+.v4-key-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.v4-key-card .ph { align-items: flex-start; gap: 12px; }
+.v4-key-pills { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex: 0 1 auto; }
+.v4-key-pills .pill { white-space: nowrap; }
+.v4-key-card .ph > div:first-child { flex: 1 1 200px; min-width: 0; }
+.v4-key-card .field input { width: 100%; }
+.v4-key-card .form-grid > .field:only-child { grid-column: 1 / -1; }
+.v4-key-card .field small.meta { display: block; margin-top: 4px; }
+.v4-key-test { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; }
+.v4-key-card .btns { flex-wrap: wrap; }
+.v4-translate { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); background: var(--surface-2); }
+.v4-translate-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.v4-translate-bar .field { margin: 0; min-width: 160px; }
+.v4-translate-bar .field .lbl { display: block; margin-bottom: 4px; }
+.v4-translate .v4-form-status:empty { display: none; }
+.v4-translate-result { margin-top: 10px; }
+.v4-translate-result .field, .v4-translate-bar .field { display: block; }
+.v4-translate-result textarea { width: 100%; min-height: 120px; }
+.v4-translate-result .btns { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 900px) {
+  .v4-key-card .btns .btn, .v4-translate .btn, .v4-translate select { min-height: 44px; }
+  .v4-key-card .btns .btn { flex: 1 1 calc(50% - 6px); }
+  .v4-translate-bar .field { flex: 1 1 100%; }
+  .v4-translate-bar .btn { flex: 1 1 100%; }
+}
+/* ---- end Batch 2 B7/B9 ---- */
+
+/* ---- Batch 2 B1/B2: manual companies (manual-company.js) and test first emails (first-touch-test.js) ---- */
+.v4-manual-table .v4-manual-contacts span { display: block; overflow-wrap: anywhere; }
+.v4-manual-table .v4-manual-draft { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.v4-manual-table .co { font-weight: 600; }
+.v4-manual-table :is(.m-main, .m-sub, .m-side) > :is(.co, .meta) { display: block; }
+.v4-manual-table td { vertical-align: top; }
+.v4-manual-sheet, .v4-test-sheet { width: min(680px, calc(100vw - 24px)); }
+.v4-manual-sheet .sheet-body, .v4-test-sheet .sheet-body { overflow-y: auto; max-height: calc(100vh - 180px); }
+.v4-manual-sheet fieldset.field { border: 1px solid var(--line); border-radius: 8px; padding: 12px 12px 0; }
+.v4-mail-preview { margin: 12px 0 8px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.v4-mail-body { max-height: 320px; overflow: auto; margin: 0 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-family: inherit; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.v4-test-preview { margin-top: 12px; }
+.v4-test-remaining { color: var(--text-2); font-size: 13px; }
+.v4-test-history { list-style: none; margin: 0; padding: 0 16px 8px; }
+.v4-test-card > p { margin: 0; padding: 0 16px 16px; }
+.v4-test-history li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.v4-test-history li .meta { grid-column: 2; }
+.v4-test-subject { overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .v4-manual-table thead { display: none; }
+  .v4-manual-table, .v4-manual-table tbody, .v4-manual-table tr, .v4-manual-table td { display: block; width: 100%; }
+  .v4-manual-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .v4-manual-table td { padding: 4px 0; border: 0; }
+  .v4-manual-table .v4-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .v4-manual-table .v4-row-actions .btn { flex: 1 1 calc(50% - 4px); min-width: 0; white-space: normal; text-align: left; }
+  .v4-manual-card .toolbar { flex-wrap: wrap; }
+  .v4-manual-card .toolbar .search, .v4-manual-card .toolbar .btn { flex: 1 1 100%; }
+  .v4-manual-table .v4-row-actions .btn, .v4-test-sheet .btn, .v4-manual-sheet .btn { min-height: 44px; }
+  .v4-manual-sheet .form-grid, .v4-test-sheet .form-grid { grid-template-columns: 1fr; }
+}
+/* ---- end Batch 2 B1/B2 ---- */

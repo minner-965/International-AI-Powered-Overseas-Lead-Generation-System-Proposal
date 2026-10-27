@@ -14,10 +14,14 @@ export function searchPause(error){
 export class FrozenSearchPlanExecutor {
  // jobAllowed(jobId) is the merchant guard: a job created by a merchant batch pauses when that
  // merchant is read-only, has research disabled or reached its monthly search quota.
- constructor({store,router,isEnabled=async()=>true,accountState=null,accountStates={},pool=null,auditFactory=null,costControl=null,reuseDays=0,jobAllowed=null}={}){
-  Object.assign(this,{store,router,isEnabled,accountState,accountStates,pool,costControl,jobAllowed});
+ // jobCredentials(jobId) (optional, B9): the job owner's own provider keys,
+ // {merchant_id, config:{tavilyApiKey,...}, merchant_billed:['tavily',...]} or null for SIM's keys. A
+ // merchant-billed query skips SIM's monthly budget and is recorded with billed_to MERCHANT; it still
+ // counts toward the merchant's own monthly search quota (jobAllowed above).
+ constructor({store,router,isEnabled=async()=>true,accountState=null,accountStates={},pool=null,auditFactory=null,costControl=null,reuseDays=0,jobAllowed=null,jobCredentials=null}={}){
+  Object.assign(this,{store,router,isEnabled,accountState,accountStates,pool,costControl,jobAllowed,jobCredentials});
   this.reuseDays=Number(costControl?.config?.reuseDays??reuseDays)||0;
-  this.auditFactory=auditFactory||((provider)=>new SearchUsageAudit({provider,pool,retrySafeFailures:true}));
+  this.auditFactory=auditFactory||((provider,{auditExtra=null}={})=>new SearchUsageAudit({provider,pool,retrySafeFailures:true,auditExtra}));
  }
  async executeJob(jobId,{signal}={}){
   const frozen=await this.store.load(jobId);
@@ -25,6 +29,7 @@ export class FrozenSearchPlanExecutor {
   // Zero planned queries is a failed plan, never a completed search.
   if(!frozen.plan.queries.length)throw Object.assign(new Error('SEARCH_PLAN_EMPTY'),{code:'SEARCH_PLAN_EMPTY',retryable:false});
   let completed=0,replayed=0,reusedCount=0;
+  const credentials=this.jobCredentials?await this.jobCredentials(jobId):null;
   const pause=(status)=>({completed:false,paused:true,status,completed_queries:completed,replayed_queries:replayed,reused_queries:reusedCount});
   for(const query of frozen.plan.queries){
    const prior=await this.store.lookup(frozen,query);
@@ -41,7 +46,7 @@ export class FrozenSearchPlanExecutor {
    // only moves to a paid provider when paid_fallback_on_empty is enabled.
    const tried=[];let settled=false,emptyAnswer=false;
    for(;;){
-    const selected=await this.router.select(tried.length?{exclude:tried,afterEmpty:emptyAnswer}:undefined);
+    const selected=await this.router.select(tried.length||credentials?{exclude:tried,afterEmpty:emptyAnswer,...(credentials?{credentials}:{})}:undefined);
     if(!selected.provider){
      if(emptyAnswer){settled=true;break;}
      return pause(selected.reason===FREE_PROVIDER_UNAVAILABLE?FREE_PROVIDER_UNAVAILABLE:tried.length?'PAUSED_PROVIDER_UNAVAILABLE':selected.reason);
@@ -54,13 +59,14 @@ export class FrozenSearchPlanExecutor {
       if(reusedRow){reusedCount++;settled=true;break;}
      }
     }
-    if(this.costControl){
+    const merchantBilled=selected.merchant_billed===true;
+    if(this.costControl&&!merchantBilled){
      const budget=await this.costControl.canSpend(selected.provider);
      if(!budget.allowed)return pause(budget.reason==='FREE_ONLY'?FREE_PROVIDER_UNAVAILABLE:'PAUSED_SEARCH_MONTHLY_BUDGET');
     }
     const execution=await this.store.claim(frozen,query,selected,tried.length?'FALLBACK_AFTER_PROVIDER_FAILURE':selected.reason);
     if(!execution)return pause('PAUSED_QUERY_IN_PROGRESS');
-    const provider=this.router.provider(selected);
+    const provider=merchantBilled?this.router.provider(selected,credentials):this.router.provider(selected);
     const originalSearch=provider.search.bind(provider);
     // Save the provider outcome before candidate processing or ledger settlement.
     const recordingProvider={name:provider.name,endpoint:provider.endpoint,retrySafe:provider.retrySafe===true,search:async request=>{
@@ -70,7 +76,7 @@ export class FrozenSearchPlanExecutor {
     }};
     let response;
     try{
-     response=await this.auditFactory(recordingProvider).search({researchJobId:jobId,purpose:'NEW_COMPANY_DISCOVERY',budgetPool:'DISCOVERY',
+     response=await this.auditFactory(recordingProvider,{auditExtra:merchantBilled?{billed_to:'MERCHANT',merchant_id:credentials?.merchant_id||null}:null}).search({researchJobId:jobId,purpose:'NEW_COMPANY_DISCOVERY',budgetPool:'DISCOVERY',
       request:execution.request_snapshot,persistResults:async results=>({referenceIds:await this.store.persist(frozen,query,execution,{results})}),
       loadPersistedResults:async()=>this.store.results(execution)});
      if(response.replay){await this.store.recordResponse(execution,response);await this.store.persist(frozen,query,execution,response);}
@@ -78,7 +84,8 @@ export class FrozenSearchPlanExecutor {
      if(response.replay)replayed++;
     }catch(error){
      await this.store.fail(execution,error);
-     const state=this.accountStates?.[selected.provider]||(selected.provider==='tavily'?this.accountState:null);
+     // A merchant's own key failing says nothing about SIM's provider account.
+     const state=merchantBilled?null:this.accountStates?.[selected.provider]||(selected.provider==='tavily'?this.accountState:null);
      try{await state?.observeSearchError?.(error);}catch{}
      if(error?.fallback===true){tried.push(selected.provider);continue;}
      return pause(searchPause(error));

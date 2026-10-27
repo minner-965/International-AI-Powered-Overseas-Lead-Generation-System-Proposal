@@ -46,8 +46,36 @@ const currentPipelineSql=(ownerParam,companyClause='TRUE')=>`
   ) cs ON true
   WHERE ${companyClause}`;
 
+// Manually added companies (migration 070) have no assessment snapshot; their stage lives in
+// manual_company_stage_events per owner. They join the pipeline list with source 'MANUAL' and no
+// opportunity_id (stage changes go through /api/manual-companies/:id/stage).
+const manualPipelineSql=(ownerParam,companyClause='TRUE')=>`
+  SELECT NULL::uuid opportunity_id,c.id company_id,s.product_profile,c.company_name,c.country_code,c.city,c.website_url,
+    coalesce(st.stage,'NEW') pipeline_stage,NULL::text funnel_status,coalesce(st.changed_by,e.created_by) owner_identity,
+    NULL::text next_action,act.due_at next_action_due_at,st.lost_reason,st.changed_at stage_changed_at,
+    NULL::bigint crm_version,NULL::uuid crm_snapshot_id,
+    (act.due_at IS NOT NULL AND act.due_at<now() AND coalesce(st.stage,'NEW') NOT IN('WON','LOST')) overdue,
+    'MANUAL'::text source
+  FROM leadgen.manual_company_entries e
+  JOIN leadgen.companies c ON c.id=e.company_id
+  JOIN leadgen.dpv_product_category_scopes s ON s.id=e.category_scope_id
+  LEFT JOIN LATERAL(SELECT x.stage,x.changed_by,x.changed_at,x.lost_reason FROM leadgen.manual_company_stage_events x
+    WHERE x.company_id=c.id AND x.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid ORDER BY x.changed_at DESC,x.id DESC LIMIT 1) st ON true
+  LEFT JOIN LATERAL(SELECT a.due_at FROM leadgen.opportunity_activities a
+    WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid AND a.due_at IS NOT NULL
+    ORDER BY coalesce(a.occurred_at,a.created_at) DESC LIMIT 1) act ON true
+  WHERE c.lifecycle_status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM leadgen.business_opportunity_current bo WHERE bo.company_id=c.id)
+    AND ${companyClause}`;
+
 export class CrmRepository{
-  constructor({pool}){this.pool=pool;}
+  constructor({pool}){this.pool=pool;this.manualCompaniesInstalled=false;}
+
+  async hasManualCompanies(){
+    if(this.manualCompaniesInstalled)return true;
+    const row=(await this.pool.query(`SELECT to_regclass('leadgen.manual_company_entries') entries,to_regclass('leadgen.manual_company_stage_events') stages`)).rows[0];
+    this.manualCompaniesInstalled=Boolean(row?.entries&&row?.stages);
+    return this.manualCompaniesInstalled;
+  }
 
   async transaction(fn){
     const client=await this.pool.connect();
@@ -58,7 +86,9 @@ export class CrmRepository{
   async listPipeline({stage=null,owner=null,q=null,limit=200,scope=null}={}){
     const params=[scope?.merchantId??null];const where=[];
     const companyClause=companyScopeSql(scope,'o',params,'company_id');
-    const base=currentPipelineSql('$1',companyClause);const baseParams=[...params];
+    let base=`SELECT *,'ASSESSMENT'::text source FROM (${currentPipelineSql('$1',companyClause)}) assessed`;
+    if(await this.hasManualCompanies())base+=` UNION ALL ${manualPipelineSql('$1',companyScopeSql(scope,'c',params))}`;
+    const baseParams=[...params];
     if(stage){params.push(stage);where.push(`pipeline_stage=$${params.length}`);}
     if(owner){params.push(owner);where.push(`owner_identity=$${params.length}`);}
     if(q){params.push(`%${q}%`);where.push(`company_name ILIKE $${params.length}`);}

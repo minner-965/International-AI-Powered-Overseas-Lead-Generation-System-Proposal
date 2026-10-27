@@ -71,8 +71,12 @@ export class HunterCreditBudget {
     this.localReserved = 0;
   }
 
-  async reserve({ researchJobId, companyId = null, endpoint, payload, units }) {
+  // merchantBilled: the request uses a merchant's own Hunter key (B9). SIM's run/day/period caps and
+  // SIM's credit ledger do not apply; the usage event is still written (billed_to MERCHANT) so replay,
+  // audit and the merchant's own monthly quota keep working.
+  async reserve({ researchJobId, companyId = null, endpoint, payload, units, merchantBilled = false, merchantId = null }) {
     const logicalFingerprint = fingerprint(researchJobId,endpoint,payload);
+    const billing = merchantBilled ? { billed_to:'MERCHANT',merchant_id:merchantId||null } : {};
     if (!this.pool) {
       const attempts = [...this.localEvents.values()].filter(item=>item.logical_request_fingerprint === logicalFingerprint
         || item.request_fingerprint === logicalFingerprint).sort((a,b)=>Number(a.retry_number||0)-Number(b.retry_number||0));
@@ -89,18 +93,18 @@ export class HunterCreditBudget {
       const dayKey=this.now().toISOString().slice(0,10);
       const dailyTotal=[...this.localEvents.values()].filter(item=>new Date(item.created_at||this.now()).toISOString().slice(0,10)===dayKey)
         .reduce((sum,item)=>sum+Number(item.reserved_units||0)+Number(item.used_units||0),0);
-      if (runTotal + units > this.runCapUnits || this.localReserved + this.localUsed + units > this.billingPeriodCapUnits) {
+      if (!merchantBilled && (runTotal + units > this.runCapUnits || this.localReserved + this.localUsed + units > this.billingPeriodCapUnits)) {
         const error = new Error('Hunter credit budget reached'); error.code='HUNTER_CREDIT_CAP'; throw error;
       }
-      if(dailyTotal+units>this.dailyCapUnits){
+      if(!merchantBilled&&dailyTotal+units>this.dailyCapUnits){
         const error = new Error('Hunter daily credit budget reached'); error.code='HUNTER_DAILY_CREDIT_CAP'; throw error;
       }
       const event = { id:requestFingerprint,research_job_id:researchJobId,company_id:companyId,endpoint,
-        request_fingerprint:requestFingerprint,reserved_units:units,used_units:0,status:'RESERVED',
+        request_fingerprint:requestFingerprint,reserved_units:merchantBilled?0:units,used_units:0,status:'RESERVED',
         credits_before_units:this.billingPeriodCapUnits-this.localUsed-this.localReserved,
-        logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber,
-        result_payload:{logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber},created_at:this.now() };
-      this.localEvents.set(requestFingerprint,event); this.localReserved += units;
+        logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber,merchant_billed:merchantBilled,
+        result_payload:{logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber,...billing},created_at:this.now() };
+      this.localEvents.set(requestFingerprint,event); if(!merchantBilled)this.localReserved += units;
       return { ...event,replay:false };
     }
     const client = await this.pool.connect();
@@ -143,10 +147,21 @@ export class HunterCreditBudget {
           code:'HUNTER_TEMPORARY_RETRIES_EXHAUSTED',usage_event:latest});
       }
       const requestFingerprint = retryNumber ? fingerprint(researchJobId,endpoint,{ logicalFingerprint,retryNumber }) : logicalFingerprint;
+      if (merchantBilled) {
+        const inserted = await client.query(`INSERT INTO leadgen.provider_usage_events
+          (research_job_id,company_id,provider,billing_period,endpoint,request_fingerprint,status,reserved_units,credits_before_units,result_payload)
+          VALUES ($1,$2,'HUNTER',$3,$4,$5,'RESERVED',0,NULL,$6::jsonb) RETURNING *`,[
+          researchJobId,companyId,period,endpoint,requestFingerprint,
+          JSON.stringify({logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber,...billing})]);
+        await client.query('COMMIT');
+        return { ...inserted.rows[0],replay:false,billing_period:period,merchant_billed:true,
+          logical_request_fingerprint:logicalFingerprint,retry_number:retryNumber };
+      }
+      const simOnly = `AND coalesce(result_payload->>'billed_to','SIM')<>'MERCHANT'`;
       const run = await client.query(`SELECT coalesce(sum(reserved_units+used_units),0)::integer AS total
-        FROM leadgen.provider_usage_events WHERE research_job_id=$1 AND provider='HUNTER'`,[researchJobId]);
+        FROM leadgen.provider_usage_events WHERE research_job_id=$1 AND provider='HUNTER' ${simOnly}`,[researchJobId]);
       const daily = await client.query(`SELECT coalesce(sum(reserved_units+used_units),0)::integer AS total
-        FROM leadgen.provider_usage_events WHERE provider='HUNTER'
+        FROM leadgen.provider_usage_events WHERE provider='HUNTER' ${simOnly}
           AND created_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
       const current = released
         ? (await client.query(`SELECT * FROM leadgen.provider_credit_ledger WHERE provider='HUNTER' AND billing_period=$1`,[period])).rows[0]
@@ -178,12 +193,14 @@ export class HunterCreditBudget {
 
   async settle(event, { usedUnits = 0, status = 'COMPLETED', providerRequestId = null, errorCode = null, resultPayload = {} } = {}) {
     if (event.replay) return event;
-    const used = Math.max(0,Math.min(Number(event.reserved_units),Number(usedUnits) || 0));
+    const merchantBilled = event.merchant_billed === true || event.result_payload?.billed_to === 'MERCHANT';
+    // A merchant-billed request reserves nothing from SIM's ledger; the units it used are recorded as-is.
+    const used = merchantBilled ? Math.max(0,Number(usedUnits) || 0) : Math.max(0,Math.min(Number(event.reserved_units),Number(usedUnits) || 0));
+    const billing = merchantBilled ? { billed_to:'MERCHANT',merchant_id:event.result_payload?.merchant_id||null } : {};
     if (!this.pool) {
-      this.localReserved -= Number(event.reserved_units);
-      this.localUsed += used;
+      if (!merchantBilled) { this.localReserved -= Number(event.reserved_units); this.localUsed += used; }
       const settledPayload={logical_request_fingerprint:event.logical_request_fingerprint,
-        retry_number:Number(event.retry_number||0),...safeUsageSummary(resultPayload)};
+        retry_number:Number(event.retry_number||0),...safeUsageSummary(resultPayload),...billing};
       const settled = { ...event,status,used_units:used,reserved_units:0,
         released_units:Number(event.released_units||0)+Math.max(0,Number(event.reserved_units)-used),provider_request_id:providerRequestId,error_code:errorCode,result_payload:settledPayload,
         credits_after_units:Math.max(0,this.billingPeriodCapUnits-this.localUsed) };
@@ -196,12 +213,15 @@ export class HunterCreditBudget {
       const locked = await client.query(`SELECT * FROM leadgen.provider_usage_events WHERE id=$1 FOR UPDATE`,[event.id]);
       if (!locked.rowCount || locked.rows[0].status !== 'RESERVED') { await client.query('COMMIT'); return locked.rows[0] || event; }
       const period = event.billing_period || currentBillingPeriod(this.now());
-      const ledger = await client.query(`UPDATE leadgen.provider_credit_ledger
-        SET reserved_units=greatest(0,reserved_units-$2),used_units=used_units+$3,updated_at=now()
-        WHERE provider='HUNTER' AND billing_period=$1 RETURNING *`,[period,event.reserved_units,used]);
-      const after = ledger.rowCount ? Math.max(0,Math.min(Number(ledger.rows[0].credit_limit_units),this.billingPeriodCapUnits)-Number(ledger.rows[0].used_units)-Number(ledger.rows[0].reserved_units)) : null;
+      let after = null;
+      if (!merchantBilled) {
+        const ledger = await client.query(`UPDATE leadgen.provider_credit_ledger
+          SET reserved_units=greatest(0,reserved_units-$2),used_units=used_units+$3,updated_at=now()
+          WHERE provider='HUNTER' AND billing_period=$1 RETURNING *`,[period,event.reserved_units,used]);
+        after = ledger.rowCount ? Math.max(0,Math.min(Number(ledger.rows[0].credit_limit_units),this.billingPeriodCapUnits)-Number(ledger.rows[0].used_units)-Number(ledger.rows[0].reserved_units)) : null;
+      }
       const settledPayload={logical_request_fingerprint:event.logical_request_fingerprint || locked.rows[0].result_payload?.logical_request_fingerprint,
-        retry_number:Number(event.retry_number ?? locked.rows[0].result_payload?.retry_number ?? 0),...safeUsageSummary(resultPayload)};
+        retry_number:Number(event.retry_number ?? locked.rows[0].result_payload?.retry_number ?? 0),...safeUsageSummary(resultPayload),...billing};
       const result = await client.query(`UPDATE leadgen.provider_usage_events SET status=$2,reserved_units=0,used_units=$3,
         released_units=released_units+greatest(0,reserved_units-$3),credits_after_units=$4,provider_request_id=$5,error_code=$6,
         result_payload=$7::jsonb,completed_at=now() WHERE id=$1 RETURNING *`,[
@@ -220,15 +240,32 @@ export class HunterProvider {
   constructor({
     apiKey = '', mode = '', endpoint = 'https://api.hunter.io/v2', timeoutMs = 12000,
     fetchImpl = fetch, pool = null, runCapUnits = 20000, dailyCapUnits = 20000,
-    billingPeriodCapUnits = 20000, budget = null
+    billingPeriodCapUnits = 20000, budget = null, resolveKey = null
   } = {}) {
-    this.apiKey = String(apiKey || '').trim();
-    this.mode = !this.apiKey ? HUNTER_MODES.DISABLED
-      : String(mode || (this.apiKey === 'test-api-key' ? HUNTER_MODES.TEST : HUNTER_MODES.FREE_FIRST)).toUpperCase();
+    // apiKey may be a function (SIM key saved on the API keys page, read live). resolveKey({researchJobId})
+    // may return {apiKey, merchantBilled:true, merchantId} when the job's merchant stored its own key.
+    this.apiKeySource = apiKey;
+    this.configuredMode = mode;
+    this.resolveKey = resolveKey;
     this.endpoint = String(endpoint || 'https://api.hunter.io/v2').replace(/\/$/,'');
     this.timeoutMs = Math.max(1000,Number(timeoutMs) || 12000);
     this.fetchImpl = fetchImpl;
     this.budget = budget || new HunterCreditBudget({ pool,runCapUnits,dailyCapUnits,billingPeriodCapUnits });
+  }
+
+  get apiKey() { return String((typeof this.apiKeySource === 'function' ? this.apiKeySource() : this.apiKeySource) || '').trim(); }
+  set apiKey(value) { this.apiKeySource = value; }
+  get mode() {
+    const key = this.apiKey;
+    return !key ? HUNTER_MODES.DISABLED
+      : String(this.configuredMode || (key === 'test-api-key' ? HUNTER_MODES.TEST : HUNTER_MODES.FREE_FIRST)).toUpperCase();
+  }
+  set mode(value) { this.configuredMode = value; }
+
+  async credentialFor(researchJobId) {
+    if (typeof this.resolveKey !== 'function' || !researchJobId) return null;
+    const own = await this.resolveKey({ researchJobId });
+    return own?.apiKey ? { apiKey:String(own.apiKey).trim(), merchantBilled:own.merchantBilled === true, merchantId:own.merchantId || null } : null;
   }
 
   get capabilities() {
@@ -239,7 +276,10 @@ export class HunterProvider {
     persistResults=null,loadPersistedResults=null }) {
     if (this.mode === HUNTER_MODES.DISABLED) return { provider:'HUNTER',endpoint,status:'SKIPPED',error_code:'HUNTER_DISABLED',results:[],credits:{ reserved:0,used:0 } };
     const safeParams = Object.fromEntries(Object.entries(params).filter(([,value])=>value !== null && value !== undefined && value !== ''));
-    const reservation = await this.budget.reserve({ researchJobId,companyId,endpoint,payload:safeParams,units:costUnits });
+    const own = await this.credentialFor(researchJobId);
+    const apiKey = own?.apiKey || this.apiKey;
+    const reservation = await this.budget.reserve({ researchJobId,companyId,endpoint,payload:safeParams,units:costUnits,
+      ...(own?.merchantBilled ? { merchantBilled:true,merchantId:own.merchantId } : {}) });
     if (reservation.replay) {
       if (reservation.status === 'TEMPORARY_ERROR') {
         throw Object.assign(new Error('Hunter request requires retry'),{code:'HUNTER_RETRY_REQUIRED',
@@ -267,7 +307,7 @@ export class HunterProvider {
     let response;
     let payload;
     try {
-      response = await this.fetchImpl(url,{ headers:{ accept:'application/json','X-API-KEY':this.apiKey },signal:AbortSignal.timeout(this.timeoutMs) });
+      response = await this.fetchImpl(url,{ headers:{ accept:'application/json','X-API-KEY':apiKey },signal:AbortSignal.timeout(this.timeoutMs) });
       payload = await response.json();
       if (!response.ok) {
         const temporary = response.status === 429 || response.status >= 500;

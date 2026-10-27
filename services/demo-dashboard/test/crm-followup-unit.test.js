@@ -130,7 +130,8 @@ test('CRM routes are mounted with role guards and the scan queue is opt-in',asyn
   assert.match(server,/app\.use\('\/api\/crm',createCrmRouter/);
   assert.match(router,/followup-drafts\/:id\/decision',\.\.\.approve/);
   for(const line of router.split('\n').filter(value=>/router\.(post|patch)\(/.test(value)))assert.match(line,/\.\.\.(salesWrite|approve)/);
-  assert.match(queue,/booleanEnv\(env\.CRM_FOLLOWUP_DRAFTS_ENABLED,false\)/);
+  // The hourly scan is scheduled; whether it drafts is the follow-up setting (migration 072).
+  assert.match(queue,/booleanEnv\(env\.CRM_FOLLOWUP_SCAN_SCHEDULE_ENABLED,true\)/);
 });
 
 test('Feishu rows use the business labels of the import template',()=>{

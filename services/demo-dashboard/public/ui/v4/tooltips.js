@@ -183,6 +183,8 @@ export const VIEW_TIPS = Object.freeze({
   scope: ['选择您要开发的商品类目和目标市场', 'Choose your categories and target markets'],
   mailbox: ['绑定您自己的发信邮箱，开发信以您公司的名义发出', 'Bind your own mailbox so email goes out under your company name'],
   merchants: ['开通和管理商家账号、试用期与额度', 'Open and manage merchant accounts, trials and quotas'],
-  'feedback-inbox': ['查看商家提交的意见反馈', 'Read feedback sent by merchants']
+  'feedback-inbox': ['查看商家提交的意见反馈', 'Read feedback sent by merchants'],
+  'manual-companies': ['录入展会、老客户介绍等渠道认识的企业，写开发信并跟进', 'Add companies from fairs or referrals, write the first email and follow up'],
+  'api-keys': ['设置找客户、邮箱核验、翻译等服务的接口密钥；只显示末四位', 'Set the API keys for search, email checks and translation; only the last four characters are shown']
 });
 export const viewTip = view => { const [zh, en] = VIEW_TIPS[view] || ['打开这个页面', 'Open this page']; return tip(zh, en); };

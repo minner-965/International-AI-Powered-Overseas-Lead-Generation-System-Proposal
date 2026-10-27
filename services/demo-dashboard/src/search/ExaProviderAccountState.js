@@ -1,10 +1,13 @@
 const iso=now=>now().toISOString();
 export class ExaProviderAccountState{
   constructor({pool=null,apiKey,enabled=true,now=()=>new Date(),capacityRetryHours=24}={}){
-    Object.assign(this,{pool,apiKey,enabled:enabled===true,now});
+    // apiKey may be a function so a key saved on the API keys page applies without a restart (B9).
+    Object.assign(this,{pool,apiKeySource:apiKey,enabled:enabled===true,now});
     this.capacityRetryHours=Math.max(1,Math.min(168,Number(capacityRetryHours)||24));
     this.local=null;
   }
+  get apiKey(){return String((typeof this.apiKeySource==='function'?this.apiKeySource():this.apiKeySource)||'');}
+  set apiKey(value){this.apiKeySource=value;}
   async latestEvent(){
     if(!this.pool)return null;
     return (await this.pool.query(`SELECT status,error_code,completed_at FROM leadgen.provider_usage_events WHERE provider='EXA' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1`)).rows[0]||null;

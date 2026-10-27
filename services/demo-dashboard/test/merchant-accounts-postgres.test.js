@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {readdir,readFile} from 'node:fs/promises';
 import express from 'express';
 import pg from 'pg';
-import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,MERCHANT_SENDING_SAFETY_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 import {MerchantService} from '../src/merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from '../src/merchant/auth.js';
 import {createMerchantRouter} from '../src/merchant/router.js';
@@ -56,11 +56,14 @@ async function ledger(pool,files,by){
 
 test('migration 066: fresh install baselines once; an installation at 065 upgrades and keeps SIM rows',{skip:!adminUrl},async()=>{
   await withDatabase(async pool=>applyFiles(pool,await migrationFiles()),async(pool,name)=>{
-    assert.equal((await migrationFiles()).at(-1),MERCHANT_SENDING_SAFETY_MIGRATION_KEY);
+    assert.equal((await migrationFiles()).at(-1),FOLLOWUP_SETTINGS_MIGRATION_KEY);
     const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
     assert.equal(result.merchantAccounts.status,'BASELINED');assert.equal(result.merchantAccounts.merchant_accounts,'OWNER_SCOPED');
     assert.equal(result.loginHardening.status,'BASELINED');assert.equal(result.loginHardening.login_hardening,'DURABLE_ATTEMPT_COUNTERS');
     assert.equal(result.splitAutomationControls.status,'BASELINED');assert.equal(result.merchantSendingSafety.status,'BASELINED');
+    assert.equal(result.manualCompanies.status,'BASELINED');assert.equal(result.manualCompanies.manual_companies,'HUMAN_APPROVED_FIRST_TOUCH');
+    assert.equal(result.providerCredentials.status,'BASELINED');assert.equal(result.providerCredentials.provider_credentials,true);
+    assert.equal(result.followupSettings.status,'BASELINED');assert.equal(result.followupSettings.followup_settings,'WORKSPACE_CONTROLLED');
     assert.equal((await applyPhase7Migrations({pool,expectedDatabase:name})).merchantAccounts.status,'SKIPPED_ALREADY_APPLIED');
   });
   await withDatabase(async pool=>{const files=await migrationFiles(file=>file<'066');await applyFiles(pool,files);await pool.query(`CREATE TABLE IF NOT EXISTS leadgen.schema_migrations(
@@ -130,7 +133,13 @@ async function approveCategory(pool){
   const draft=await scopes.createDraft({revision:1,source_type:'MANAGEMENT_APPROVED',source_reference:'test',source_digest:hex('d'),actor:'simon',
     scopes:[{client_key:'s0',product_profile:picked.product_profile,normalized_category:picked.normalized_category,source_fact_digest:picked.source_fact_digest}]});
   await scopes.approveRevision({draft_revision_id:draft.id,revision:2,source_reference:'test',source_digest:hex('a'),actor:'simon',actor_role:'MANAGEMENT'});
-  return (await pool.query(`SELECT id FROM leadgen.dpv_product_category_scope_current WHERE scope_status='ACTIVE' AND approval_status='APPROVED' LIMIT 1`)).rows[0].id;
+  // effective_from comes from the application clock, which may run slightly ahead of the database clock.
+  for(let attempt=0;attempt<50;attempt++){
+    const rows=(await pool.query(`SELECT id FROM leadgen.dpv_product_category_scope_current WHERE scope_status='ACTIVE' AND approval_status='APPROVED' LIMIT 1`)).rows;
+    if(rows.length)return rows[0].id;
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw new Error('approved category not current');
 }
 
 test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and merchant mailbox sending',{skip:!adminUrl},async()=>{
@@ -305,6 +314,7 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
       await anna('POST',`/api/crm/followup-drafts/${pending.id}/decision`,{decision:'APPROVE'});
       assert.deepEqual(await crm.sendApprovedFollowup({draft_id:pending.id}),{status:'WAITING',code:'MERCHANT_EMAIL_QUOTA_EXCEEDED',draft_id:pending.id});
 
+      await anna('PUT','/api/merchant/scope',{category_scope_ids:[category],market_codes:['AE']});
       // ---- research batches: merchant quota on top of SIM's global budget ----
       assert.equal((await anna('POST','/api/research/batches',{market_codes:['AE'],category_scope_ids:[category],idempotency_key:'alpha-1'})).body.code,'MERCHANT_SEARCH_QUOTA_EXCEEDED');
       const preview=(await anna('POST','/api/research/batches/preview',{market_codes:['AE'],category_scope_ids:[category]})).body;

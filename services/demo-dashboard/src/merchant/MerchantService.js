@@ -5,6 +5,7 @@ import {createSecretBox} from './secretBox.js';
 import {MAILBOX_PRESETS,presetByKey} from './mailboxPresets.js';
 import {categoryNames,marketNames} from './referenceNames.js';
 import {isMarketVisible} from '../../public/market-visibility.js';
+import {countMerchantReuseChargesThisMonth} from '../researchBatch/merchantReuseCharge.js';
 
 export const MERCHANT_STATUSES=Object.freeze(['TRIAL','ACTIVE','EXPIRED','DISABLED']);
 export const DEFAULT_FEATURES=Object.freeze({research:true,email:true,crm_sync:false});
@@ -63,10 +64,12 @@ export async function countMerchantEmailsToday(queryable,merchantId){
 // Executed searches (any provider, SearXNG included; zero-cost reuse excluded) this UTC month
 // for research jobs created by the merchant's batches.
 export async function countMerchantSearchesThisMonth(queryable,merchantId){
-  return Number((await queryable.query(`SELECT count(*)::int count FROM leadgen.provider_usage_events e
+  const own=Number((await queryable.query(`SELECT count(*)::int count FROM leadgen.provider_usage_events e
     JOIN leadgen.research_jobs j ON j.id=e.research_job_id
     WHERE j.merchant_id=$1 AND e.billing_period=to_char(now() AT TIME ZONE 'UTC','YYYY-MM') AND e.status<>'SKIPPED'
       AND (e.status IN('COMPLETED','NOT_FOUND','RESERVED') OR e.used_units>0)`,[merchantId])).rows[0]?.count||0);
+  // B6: research reused from another owner is charged on the merchant's own batch rows.
+  return own+await countMerchantReuseChargesThisMonth(queryable,merchantId);
 }
 
 const ADMIN_MAILBOX_COLUMNS=`mb.merchant_id IS NOT NULL mailbox_configured,mb.verified_at mailbox_verified_at,

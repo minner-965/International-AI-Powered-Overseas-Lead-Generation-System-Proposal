@@ -71,7 +71,11 @@ function renderList() {
     const due = when(item.next_action_due_at);
     const band = state.bands.get(`${item.company_id}:${item.product_profile}`) || state.bands.get(String(item.company_id));
     const dueText = due ? `${due.zh}${item.overdue ? ' · 已逾期' : ''}` : '未设置';
-    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"><td class="m-main"><button type="button" data-tip="打开这家企业的详情和跟进记录|Open company details and activity" class="co v4-link-btn" data-pipeline-company="${esc(item.company_id)}" data-pipeline-profile="${esc(item.product_profile || '')}">${esc(item.company_name || '—')}</button><span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
+    const manual = item.source === 'MANUAL';
+    const open = manual
+      ? `<button type="button" data-tip="打开手动添加企业页面，写开发信、记录跟进或更改阶段|Open Add companies to write the first email, log follow-up or change the stage" class="co v4-link-btn" data-pipeline-manual="${esc(item.company_id)}">${esc(item.company_name || '—')}</button> <span class="pill info">${bi('手动添加', 'Added manually')}</span>`
+      : `<button type="button" data-tip="打开这家企业的详情和跟进记录|Open company details and activity" class="co v4-link-btn" data-pipeline-company="${esc(item.company_id)}" data-pipeline-profile="${esc(item.product_profile || '')}">${esc(item.company_name || '—')}</button>`;
+    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"${manual ? ' data-pipeline-source="MANUAL"' : ''}><td class="m-main">${open}<span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
   }).join('')}</tbody></table>`;
   if (count) count.innerHTML = bi(`显示 ${visible.length} / ${rows.length}`, `Showing ${visible.length} of ${rows.length}`);
   if (more) more.hidden = rows.length <= visible.length;
@@ -133,6 +137,8 @@ function mount() {
   root.addEventListener('click', event => {
     if (event.target.closest('[data-state-retry]')) { void load({ force: true }); return; }
     const row = event.target.closest('tr');
+    const manual = event.target.closest('[data-pipeline-manual]') || row?.querySelector('[data-pipeline-manual]');
+    if (manual) { location.hash = '#manual-companies'; return; }
     const button = event.target.closest('[data-pipeline-company]') || row?.querySelector('[data-pipeline-company]');
     if (button) document.dispatchEvent(new CustomEvent('crm:opencompany', { detail: { companyId: button.dataset.pipelineCompany, productProfile: button.dataset.pipelineProfile } }));
   });

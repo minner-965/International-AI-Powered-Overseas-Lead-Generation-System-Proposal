@@ -35,6 +35,7 @@ import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
 import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/router.js';
 import {CrmService} from './crm/service.js';
 import {createCrmRouter} from './crm/router.js';
+import {FollowupSettingsService,createFollowupSettingsRouter} from './crm/followupSettings.js';
 import { createManagementAuth } from './phase7/managementAuth.js';
 import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
 import { createResearchRouter } from './research/router.js';
@@ -43,6 +44,11 @@ import { ResearchDirectDispatchService,ResearchJobDirectExecutor } from './resea
 import {ResearchBatchService,createOrReuseResearchJob} from './researchBatch/ResearchBatchService.js';
 import {SearchPlanService} from './searchPlanning/SearchPlanService.js';
 import {createResearchBatchRouter} from './research/researchBatchRouter.js';
+import {ResearchCancellationService} from './research/ResearchCancellationService.js';
+import {ManualCompanyService} from './companies/manualCompanyService.js';
+import {ManualFirstTouchService} from './outreach/manualFirstTouch.js';
+import {FirstTouchTestSendService} from './outreach/firstTouchTestSend.js';
+import {createManualCompanyRouter} from './companies/router.js';
 import {TavilyProviderAccountState} from './search/TavilyProviderAccountState.js';
 import {ExaProviderAccountState} from './search/ExaProviderAccountState.js';
 import {SearchProviderRouter} from './search/SearchProviderRouter.js';
@@ -63,7 +69,12 @@ import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
 import {simFirstTouchCandidates,merchantFirstTouchCandidates} from './outreach/firstTouchCandidates.js';
 import {MerchantService} from './merchant/MerchantService.js';
-import {createSessionMiddleware,createWorkspaceGate} from './merchant/auth.js';
+import {createSessionMiddleware,createWorkspaceGate,authRequired} from './merchant/auth.js';
+import {createCredentialResolver} from './credentials/credentialResolver.js';
+import {createCredentialsRouter} from './credentials/router.js';
+import {withLiveSearchKeys,createJobSearchCredentials,createHunterKeyResolver} from './credentials/searchCredentials.js';
+import {createTranslateClient} from './translate/translateClient.js';
+import {createTranslateRouter} from './translate/router.js';
 import {createMerchantRouter} from './merchant/router.js';
 import {createOriginGuard,createSecurityHeaders} from './merchant/originGuard.js';
 import {requestScope,companyScopeSql,filterRowsByCompany,researchJobScopeSql,assertResearchJobVisible} from './merchant/scope.js';
@@ -102,7 +113,21 @@ function canonicalDigest(value) {
   const canonical = Object.fromEntries(Object.entries(value || {}).sort(([left],[right])=>left.localeCompare(right)));
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
-const searchConfig = Object.freeze({
+const pool = new Pool({
+  host: process.env.POSTGRES_HOST || 'postgres',
+  port: Number(process.env.POSTGRES_PORT || 5432),
+  database: process.env.POSTGRES_DB || 'leadgen',
+  user: process.env.POSTGRES_USER || 'leadgen',
+  password: process.env.POSTGRES_PASSWORD,
+  ...(maintenanceMode?{options:'-c default_transaction_read_only=on'}:{}),
+});
+instrumentPgPool(pool, telemetry);
+// B9: provider keys saved on the API keys page (encrypted, append-only history). SIM-level clients read
+// them through a live env overlay (environment variables stay the fallback); merchant jobs resolve the
+// merchant's own keys per request.
+const credentialStore=createCredentialResolver({pool,env:process.env});
+const simLiveEnv=credentialStore.liveEnv();
+const searchConfig = withLiveSearchKeys({
   dualSearchEnabled: /^(1|true|yes)$/i.test(process.env.SEARCH_DUAL_ROUTING_ENABLED || ''),
   provider: String(process.env.SEARCH_PROVIDER || 'tavily').toLowerCase(),
   exaApiKey: process.env.EXA_API_KEY || '',
@@ -135,26 +160,19 @@ const searchConfig = Object.freeze({
     maxResponseBytes: Math.max(10000, Number(process.env.COMPANY_VERIFY_MAX_RESPONSE_BYTES || 2000000)),
     userAgent: String(process.env.CONTACT_USER_AGENT || 'SIMLeadResearch/1.0')
   })
-});
-const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'postgres',
-  port: Number(process.env.POSTGRES_PORT || 5432),
-  database: process.env.POSTGRES_DB || 'leadgen',
-  user: process.env.POSTGRES_USER || 'leadgen',
-  password: process.env.POSTGRES_PASSWORD,
-  ...(maintenanceMode?{options:'-c default_transaction_read_only=on'}:{}),
-});
-instrumentPgPool(pool, telemetry);
+},simLiveEnv);
 const opportunityPoolService=new OpportunityPoolService({pool});
 const merchantService=new MerchantService({pool,env:process.env});
-const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:searchConfig.tavilyApiKey,
+const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:()=>searchConfig.tavilyApiKey,
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
   refreshIntervalMs:Number(process.env.TAVILY_USAGE_REFRESH_INTERVAL_MS||300000),
   timeoutMs:Number(process.env.TAVILY_USAGE_TIMEOUT_MS||10000)});
-const exaProviderAccountState=new ExaProviderAccountState({pool,apiKey:searchConfig.exaApiKey,enabled:searchConfig.exaEnabled,capacityRetryHours:Number(process.env.EXA_CAPACITY_RETRY_HOURS||24)});
+const exaProviderAccountState=new ExaProviderAccountState({pool,apiKey:()=>searchConfig.exaApiKey,enabled:searchConfig.exaEnabled,capacityRetryHours:Number(process.env.EXA_CAPACITY_RETRY_HOURS||24)});
 const tavilyUsageConfig=Object.freeze({providerAccountState:tavilyProviderAccountState});
 const searchProviderRouter=new SearchProviderRouter({config:searchConfig,tavilyAccountState:tavilyProviderAccountState,exaAccountState:exaProviderAccountState});
 const automationControls=new AutomationControlService({pool});
+// D2: follow-up drafting switch and SIM's daily limit, saved on the settings page (migration 072).
+const followupSettings=new FollowupSettingsService({controls:automationControls,env:process.env});
 const searxngProviderAccountState=new SearxngProviderAccountState({enabled:searchConfig.searxngEnabled,baseUrl:searchConfig.searxngBaseUrl});
 // SEARCH_PROVIDER_ORDER (default searxng,exa,tavily) is the execution order and the paid-spend allowlist.
 const searchProviderOrder=parseSearchProviderOrder(process.env.SEARCH_PROVIDER_ORDER);
@@ -180,6 +198,7 @@ const hunterCaps=Object.freeze({
 });
 const frozenSearchExecutor=new FrozenSearchPlanExecutor({pool,store:new PgFrozenSearchStore({pool}),router:currentCapacityRouter,
   jobAllowed:jobId=>merchantService.searchAllowedForJob(jobId),
+  jobCredentials:createJobSearchCredentials({pool,credentials:credentialStore}),
   costControl:searchCostControl,isEnabled:()=>phase13Automation.isSearchEnabled(),accountState:tavilyProviderAccountState,accountStates:{searxng:searxngProviderAccountState,exa:exaProviderAccountState,tavily:tavilyProviderAccountState}});
 
 const scoringService = new ScoringService({ pool });
@@ -196,7 +215,8 @@ const enrichmentService = new EnrichmentService({
   searchClient: routedSearchClient,
   crawlerConfig: searchConfig.contactConfig,
   hunterConfig: {
-    apiKey: process.env.HUNTER_API_KEY || '',
+    apiKey: () => simLiveEnv.HUNTER_API_KEY || '',
+    resolveKey: createHunterKeyResolver({pool,credentials:credentialStore}),
     mode: process.env.HUNTER_MODE || '',
     endpoint: process.env.HUNTER_API_ENDPOINT || 'https://api.hunter.io/v2',
     timeoutMs: Number(process.env.HUNTER_REQUEST_TIMEOUT_MS || 12000),
@@ -445,7 +465,7 @@ const phase7QueueProxy = Object.freeze({
   enqueue: (...args) => phase5Queue.enqueue(...args)
 });
 const phase7Service = new Phase7Service({
-  pool,queue:phase7QueueProxy,hunter:enrichmentService.hunter,env:process.env,audit,
+  pool,queue:phase7QueueProxy,hunter:enrichmentService.hunter,env:simLiveEnv,audit,
   opportunityQuery: query => queryCategoryProcurementOpportunities({
     pool,query,publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
   })
@@ -605,8 +625,13 @@ autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,out
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
   env:process.env,merchantSending:merchantService});
 crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
-  queue:phase7QueueProxy,env:process.env,audit,merchantSending:merchantService});
+  queue:phase7QueueProxy,env:simLiveEnv,audit,merchantSending:merchantService,followupSettings});
 phase7Service.merchantSending=merchantService;
+// B1/B2: manual companies, human-approved first touch for them, and first-touch test sends.
+const manualCompanies=new ManualCompanyService({pool,env:process.env,queue:phase7QueueProxy,audit});
+const manualFirstTouch=new ManualFirstTouchService({pool,outboundProvider:phase7Service.outboundProvider,merchantSending:merchantService,
+  automationControl:phase13Automation,companies:manualCompanies,env:process.env,queue:phase7QueueProxy,audit,followupSettings});
+const firstTouchTestSends=new FirstTouchTestSendService({pool,outboundProvider:phase7Service.outboundProvider,merchantSending:merchantService,env:process.env,audit});
 
 const publicDataOrigins = [
   'live_discovered',
@@ -649,6 +674,9 @@ app.use('/api',createSessionMiddleware({pool,env:process.env}));
 app.use(createOriginGuard({env:process.env}));
 app.use(createWorkspaceGate({merchants:merchantService,env:process.env,pool}));
 app.use(createMerchantRouter({merchants:merchantService,env:process.env}));
+app.use(createCredentialsRouter({credentials:credentialStore,spendPolicy:()=>phase13Automation.spendPolicy()}));
+app.use(createTranslateRouter({client:createTranslateClient({credentials:credentialStore,env:process.env}),authRequired:authRequired(process.env)}));
+app.use(createManualCompanyRouter({companies:manualCompanies,firstTouch:manualFirstTouch,testSends:firstTouchTestSends}));
 app.use('/vendor/tabler', express.static(new URL('../node_modules/@tabler/core/dist', import.meta.url).pathname));
 app.use('/vendor/tabler-icons', express.static(new URL('../node_modules/@tabler/icons-webfont/dist', import.meta.url).pathname));
 app.use(express.static(new URL('../public', import.meta.url).pathname));
@@ -666,6 +694,7 @@ function requireInternalToken(req, res, next) {
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
 app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth}));
+app.use(createFollowupSettingsRouter({settings:followupSettings,managementAuth}));
 // Automation controls: GET control/status, PUT control (all on/off), PUT control/:subsystem
 // (search | email | contact_research), POST reconcile. See src/automation/router.js.
 app.use(createAutomationRouter({automation:phase13Automation,managementAuth,reconcile:{
@@ -673,8 +702,9 @@ app.use(createAutomationRouter({automation:phase13Automation,managementAuth,reco
   contactResearch:args=>reconcileContactResearch(args),
   email:args=>reconcileAutoFirstTouch(args)
 }}));
-app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth}));
-app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance}));
+const researchCancellationService=new ResearchCancellationService({pool,audit});
+app.use('/api/research',createResearchRouter({service:researchWorkbenchService,managementAuth,cancellation:researchCancellationService}));
+app.use('/api/research/batches',createResearchBatchRouter({service:researchBatchService,managementAuth,creationMaintenance:researchCreationMaintenance,cancellation:researchCancellationService}));
 app.use('/api/markets/registry',createMarketRegistryRouter({service:new MarketRegistryService({pool}),managementAuth,audit}));
 app.get('/api/research/jobs/:id/search-plan',managementAuth.authenticate,
   managementAuth.requireRoles('MANAGEMENT','DATA_ADMIN','SALES'),async(req,res,next)=>{
