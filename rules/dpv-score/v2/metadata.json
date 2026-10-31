@@ -1,0 +1,36 @@
+{
+  "rule_version": "dpv-score-v2",
+  "effective_date": "2026-10-29",
+  "description": "Batch 3 C4: optional dimensions without evidence excluded from the denominator (product, market and buyer-type fit always count) (score normalized to 100 over covered weight); tier above C needs coverage >= 60; size: medium 10, small 8, large 6, micro 4, enterprise 3; contact: mailbox verified 5, domain/MX 4; retail chain buyer 12. v1 stays installed and its stored scores are kept.",
+  "weights": {
+    "product_fit": 20,
+    "market_fit": 15,
+    "importer_wholesaler_fit": 15,
+    "chain_supply_evidence": 15,
+    "distribution_scale": 10,
+    "recent_buying_signal": 10,
+    "decision_maker_quality": 10,
+    "contact_validity": 5
+  },
+  "tier_thresholds": {
+    "A": 75,
+    "B": 55,
+    "C": 0
+  },
+  "created_by": "DPV",
+  "test_fixture_version": "batch3-v2",
+  "distribution_scale_points": {
+    "MEDIUM": 10,
+    "SMALL": 8,
+    "LARGE": 6,
+    "MICRO": 4,
+    "ENTERPRISE": 3
+  },
+  "min_coverage_for_tier_above_c": 60,
+  "core_dimensions": [
+    "product_fit",
+    "market_fit",
+    "importer_wholesaler_fit"
+  ],
+  "tier_a_requires_product_points": true
+}

@@ -1,0 +1,60 @@
+{
+  "metadata": {
+    "version": "dpv-score-v2",
+    "description": "DPV eight-dimension evidence-backed score, normalized over covered dimensions (batch 3 C4)"
+  },
+  "nodes": [
+    {
+      "id": "input",
+      "type": "inputNode",
+      "name": "DPV facts snapshot",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "content": {
+        "schema": ""
+      }
+    },
+    {
+      "id": "score",
+      "type": "functionNode",
+      "name": "DPV score v2",
+      "position": {
+        "x": 280,
+        "y": 0
+      },
+      "content": {
+        "source": "export const handler = async (input) => {\r\n  // dpv-score-v2 (batch 3 C4): optional dimensions without evidence are left out of the denominator and\r\n  // the score is normalized to 100 over the scored weight. The three core fit dimensions (product,\r\n  // market, buyer type) always stay in the denominator: a company with no product evidence must not\r\n  // look like a perfect fit. A tier above C also needs >= 60 evidence coverage.\r\n  // Company size: medium highest, very large down-weighted (better fit for small exporters).\r\n  const facts = input.facts || {};\r\n  const core = new Set(['product_fit', 'market_fit', 'importer_wholesaler_fit']);\r\n  const specs = {\r\n    product_fit: { max: 20, values: { VERIFIED: 20, TARGET: 20, SUPPORTED: 12, RELATED: 6 } },\r\n    market_fit: { max: 15, values: { TARGET: 15, VERIFIED: 15, SUPPORTED: 10, ADJACENT: 8 } },\r\n    importer_wholesaler_fit: { max: 15, values: { VERIFIED: 15, SUPPORTED: 10, RETAIL_CHAIN: 12, BUSINESS_TRADING: 5 } },\r\n    chain_supply_evidence: { max: 15, values: { VERIFIED: 15, SUPPORTED: 10, LIMITED: 5 } },\r\n    distribution_scale: { max: 10, values: { MEDIUM: 10, SMALL: 8, LARGE: 6, MICRO: 4, ENTERPRISE: 3, STRONG: 6, LIMITED: 4 } },\r\n    recent_buying_signal: { max: 10, values: { VERIFIED_RECENT: 10, SUPPORTED_RECENT: 5 } },\r\n    decision_maker_quality: { max: 10, values: { VERIFIED: 10, SUPPORTED: 5 } },\r\n    contact_validity: { max: 5, values: { MAILBOX_VERIFIED: 5, DOMAIN_MX_VERIFIED: 4, ACCEPT_ALL_HIGH: 4, PUBLICLY_OBSERVED: 3, FORM_OR_PHONE: 2, WEBSITE_ONLY: 1 } }\r\n  };\r\n  const dimension_scores = {};\r\n  const reason_codes = [];\r\n  const fired_rules = [];\r\n  const evidenceIds = [];\r\n  let raw = 0;\r\n  let coveredWeight = 0;\r\n  let scoredWeight = 0;\r\n  for (const [key, spec] of Object.entries(specs)) {\r\n    const fact = facts[key] || {};\r\n    const ids = Array.isArray(fact.evidence_ids) ? fact.evidence_ids.filter(Boolean) : [];\r\n    const hasEvidence = ids.length > 0 && Number(fact.confidence || 0) > 0;\r\n    let points = null;\r\n    let reason = key.toUpperCase() + '_UNKNOWN';\r\n    if (hasEvidence && key === 'recent_buying_signal' && spec.values[String(fact.value || '').toUpperCase()] && !fact.observed_at) {\r\n      reason = 'RECENT_SIGNAL_DATE_MISSING';\r\n    } else if (hasEvidence) {\r\n      coveredWeight += spec.max;\r\n      scoredWeight += spec.max;\r\n      points = spec.values[String(fact.value || '').toUpperCase()] || 0;\r\n      reason = points > 0 ? key.toUpperCase() + '_' + String(fact.value).toUpperCase() : key.toUpperCase() + '_NO_MATCH';\r\n      evidenceIds.push(...ids);\r\n      raw += points;\r\n    } else if (core.has(key)) {\r\n      scoredWeight += spec.max;\r\n      points = 0;\r\n      reason = key.toUpperCase() + '_EVIDENCE_MISSING';\r\n    } else if (key === 'decision_maker_quality') {\r\n      reason = 'DECISION_MAKER_NOT_YET_ENRICHED';\r\n    } else {\r\n      reason = key.toUpperCase() + '_EVIDENCE_MISSING';\r\n    }\r\n    dimension_scores[key] = { points: points === null ? 0 : points, maximum: spec.max, included: points !== null, reason_codes: [reason], evidence_ids: ids };\r\n    reason_codes.push(reason);\r\n    if (points > 0) fired_rules.push(key + ':' + String(fact.value).toUpperCase());\r\n  }\r\n  const total = scoredWeight > 0 ? Math.max(0, Math.min(100, Math.round(raw * 100 / scoredWeight))) : 0;\r\n  const evidence_coverage = Math.round(coveredWeight * 100) / 100;\r\n  let tier = total >= 75 ? 'A' : total >= 55 ? 'B' : 'C';\r\n  if (tier !== 'C' && evidence_coverage < 60) { tier = 'C'; reason_codes.push('SCORE_COVERAGE_TOO_LOW_FOR_TIER'); }\r\n  if (tier === 'A' && !(dimension_scores.product_fit.points > 0)) { tier = 'B'; reason_codes.push('PRODUCT_EVIDENCE_REQUIRED_FOR_TIER_A'); }\r\n  return {\r\n    final_score: total,\r\n    raw_points: raw,\r\n    scored_weight: scoredWeight,\r\n    tier,\r\n    evidence_coverage,\r\n    dimension_scores,\r\n    reason_codes: [...new Set(reason_codes)],\r\n    fired_rules,\r\n    evidence_ids: [...new Set(evidenceIds)],\r\n    rule_version: 'dpv-score-v2'\r\n  };\r\n};\r\n"
+      }
+    },
+    {
+      "id": "output",
+      "type": "outputNode",
+      "name": "DPV score result",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "content": {
+        "schema": ""
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "input",
+      "targetId": "score",
+      "sourceHandle": null,
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "score",
+      "targetId": "output",
+      "sourceHandle": null,
+      "type": "edge"
+    }
+  ]
+}

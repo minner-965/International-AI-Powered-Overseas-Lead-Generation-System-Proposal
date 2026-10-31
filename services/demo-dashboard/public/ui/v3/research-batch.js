@@ -27,7 +27,7 @@ export function searchPlanViewModel(plan){
 function searchPlanMarkup(plan){
   if(!plan)return `<p class="crm-helper">${api.bi('查询计划待更新','Search plan pending')}</p>`;
   const model=searchPlanViewModel(plan);
-  const facts=[['研究范围','Scopes',model.scopes],['精准查询策略','Precision strategies',model.precisionStrategies],['覆盖查询策略','Coverage strategies',model.coverageStrategies],['计划查询总数','Planned queries',model.planned],['精准计划数','Precision planned',model.precision],['覆盖计划数','Coverage planned',model.coverage],['研究语言','Languages',model.languages.join(' · ')||'—'],['搜索策略版本','Search strategy version',model.version]];
+  const facts=[['搜索范围','Scopes',model.scopes],['精准查询策略','Precision strategies',model.precisionStrategies],['覆盖查询策略','Coverage strategies',model.coverageStrategies],['计划查询总数','Planned queries',model.planned],['精准计划数','Precision planned',model.precision],['覆盖计划数','Coverage planned',model.coverage],['搜索语言','Languages',model.languages.join(' · ')||'—'],['搜索策略版本','Search strategy version',model.version]];
   return `<header class="v3-search-plan-header"><h5>${api.bi('查询计划','Search Plan')}</h5><span class="data-state-badge state-unknown">${api.bi('已规划','Planned')}</span></header><div class="v3-search-plan-facts">${facts.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value??'—')}</strong></div>`).join('')}</div><details class="v3-search-samples"><summary>${api.bi('查看查询示例','View sample queries')}</summary><div class="v3-search-sample-lanes">${model.samples.map(({id,queries},index)=>`<section data-search-lane="${id}"><h6>${api.bi(index?'覆盖查询':'精准查询',index?'Coverage lane':'Precision lane')}</h6>${queries.length?`<ol>${queries.map(query=>`<li><span lang="${api.esc(query.language||'en')}" dir="auto">${api.esc(query.normalized_query||'')}</span></li>`).join('')}</ol>`:`<p>${api.bi('暂无查询示例','No sample queries')}</p>`}</section>`).join('')}</div></details>`;
 }
 function renderSearchPlan(state=searchPlanState){
@@ -54,7 +54,7 @@ function updateCounts() {
     const all=$(`#${id}`), inputs=$$(`input[name="${name}"]`), number=inputs.filter(input=>input.checked).length;
     all.checked=inputs.length>0&&number===inputs.length;all.indeterminate=number>0&&number<inputs.length;
   }
-  $('#research-selection-counts').innerHTML=[['已选市场','Markets selected',markets.length],['已选类目','Categories selected',categories.length],['研究范围','Market × category scopes',`${markets.length} × ${categories.length} = ${total}`]].map(([zh,en,value])=>`<div><span>${api.bi(zh,en)}</span><strong>${api.esc(value)}</strong></div>`).join('');
+  $('#research-selection-counts').innerHTML=[['已选市场','Markets selected',markets.length],['已选类目','Categories selected',categories.length],['搜索范围','Market × category scopes',`${markets.length} × ${categories.length} = ${total}`]].map(([zh,en,value])=>`<div><span>${api.bi(zh,en)}</span><strong>${api.esc(value)}</strong></div>`).join('');
   $('#start-research').disabled=creating||!loaded||!total||!preview;
   for(const id of ['research-city','research-region']){const input=$(`#${id}`);input.disabled=markets.length!==1;if(input.disabled)input.value='';}
   const country=$('#research-country'); if(country)country.value=options?.markets.find(item=>item.market_code===markets[0])?.country_name||'';
@@ -67,19 +67,19 @@ function changed() {
 async function loadPreview() {
   const requestId=++sequence;
   if(!counts().total){preview=null;searchPlanState='ready';$('#research-catalog-summary').innerHTML=api.bi('请选择可用市场与目标类目','Select an available market and target category');batchScopeReview();return;}
-  $('#research-catalog-summary').innerHTML=api.bi('正在核对研究范围','Checking research scope');
+  $('#research-catalog-summary').innerHTML=api.bi('正在核对搜索范围','Checking search scope');
   renderSearchPlan('loading');
   try {
     const result=await api.request('/api/research/batches/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});
     if(requestId!==sequence)return;
-    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('研究范围已就绪','Research scope ready')}${quotaText(result)?` · ${api.bi(...quotaText(result))}`:result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
+    preview=result;searchPlanState='ready';$('#research-catalog-summary').innerHTML=`${api.bi('搜索范围已就绪','Search scope ready')}${quotaText(result)?` · ${api.bi(...quotaText(result))}`:result?.estimated_queries==null?'':` · ${api.bi(`预计查询 ${Number(result.estimated_queries).toLocaleString()} 次 · 预计费用 ${costText(result)}`,`${Number(result.estimated_queries).toLocaleString()} queries · ${costText(result)}`)}`}`;
     batchScopeReview();updateCounts();
   }catch(error){
     if(requestId!==sequence)return;preview=null;updateCounts();
     renderSearchPlan('error');
     const refusal=scopeRefusalText(error?.code);
     if(refusal){$('#research-catalog-summary').innerHTML=api.bi(...refusal);return;}
-    $('#research-catalog-summary').innerHTML=`${api.bi('研究范围核对未完成','Research scope check incomplete')} <button type="button" data-tip="重新计算范围与费用预估|Recalculate the scope and cost estimate" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
+    $('#research-catalog-summary').innerHTML=`${api.bi('搜索范围核对未完成','Search scope check incomplete')} <button type="button" data-tip="重新计算范围与费用预估|Recalculate the scope and cost estimate" class="btn btn-outline-secondary" id="research-preview-retry">${api.bi('重试','Retry')}</button>`;
     $('#research-preview-retry')?.addEventListener('click',()=>void loadPreview());
   }
 }
@@ -117,11 +117,11 @@ export function costText(result){const cost=result?.estimated_cost_usd;return co
 export function batchScopeReview(){
   if(!api)return;
   const {markets,categories,total}=counts(), snapshot=preview?.research_scope_snapshot;
-  const fields=[['已选市场','Markets selected',markets.length],['已选类目','Categories selected',categories.length],['研究范围','Market × category scopes',`${markets.length} × ${categories.length} = ${total}`],
+  const fields=[['已选市场','Markets selected',markets.length],['已选类目','Categories selected',categories.length],['搜索范围','Market × category scopes',`${markets.length} × ${categories.length} = ${total}`],
     ['市场','Markets',(snapshot?.markets||options?.markets?.filter(item=>markets.includes(item.market_code))||[]).map(item=>item.country_name||item.market_code).join(' · ')],
     ['目标类目','Target categories',(snapshot?.categories||options?.categories?.filter(item=>categories.includes(categoryId(item)))||[]).map(item=>categoryLabel(item).join(' / ')).join(' · ')],
     ['客户类型','Buyer types',(preview?.buyer_types||checked('buyer_type')).join(' · ')],
-    ['研究语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5],
+    ['搜索语言','Languages',(preview?.languages||[]).join(' · ')||'—'],['每个范围结果上限','Results per scope',$('#research-limit')?.value||5],
     ['预计查询','Estimated queries',preview?.estimated_queries==null?'—':Number(preview.estimated_queries).toLocaleString()],quotaText(preview)?['本月找客户额度','Monthly search quota',quotaText(preview)[0]]:['预计费用','Estimated cost',costText(preview)]];
   $('#research-scope-review').innerHTML=fields.map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('');
   renderSearchPlan();
@@ -169,7 +169,7 @@ async function create(event){
     document.dispatchEvent(new CustomEvent('phase9:research-job-created',{detail:{batchId:batch.batch_id||batch.id}}));
     await openBatch(batch.batch_id||batch.id);
     void loadBatchList();
-  }catch(error){const refusal=scopeRefusalText(error?.code);status(refusal?api.bi(...refusal):api.bi('研究任务建立未完成，请重试','Research batch creation did not complete. Retry.'));}
+  }catch(error){const refusal=scopeRefusalText(error?.code);status(refusal?api.bi(...refusal):api.bi('客户搜索建立未完成，请重试','Search batch creation did not complete. Retry.'));}
   finally{creating=false;$('#start-research').removeAttribute('aria-busy');updateCounts();}
 }
 async function loadBatchList(){
@@ -177,9 +177,9 @@ async function loadBatchList(){
   host.setAttribute('aria-busy','true');
   try{
     const result=await api.request('/api/research/batches');
-    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('研究范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span>${batch.status==='CANCELLED'?`<small>${api.bi('已取消','Cancelled')}</small>`:''}</div><button type="button" data-tip="打开这个研究批次的进度|Open this batch's progress" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无研究批次','No research batches');
+    host.innerHTML=(result.items||[]).slice(0,10).map(batch=>`<article><div><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong><span>${api.bi('搜索范围','Scopes')}: ${api.esc(batch.total_scopes??batch.research_scope_snapshot?.scopes?.length??0)}</span>${batch.status==='CANCELLED'?`<small>${api.bi('已取消','Cancelled')}</small>`:''}</div><button type="button" data-tip="打开这个搜索批次的进度|Open this batch's progress" class="btn btn-outline-primary" data-open-batch="${api.esc(batch.batch_id||batch.id)}">${api.bi('查看批次','View batch')}</button></article>`).join('')||api.bi('暂无搜索批次','No search batches');
     host.querySelectorAll('[data-open-batch]').forEach(button=>button.addEventListener('click',()=>void openBatch(button.dataset.openBatch)));
-  }catch{host.innerHTML=`${api.bi('批次列表读取未完成','Batch list could not be loaded')} <button type="button" data-tip="重新读取研究批次|Reload research batches" class="btn btn-outline-secondary" data-batches-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batches-retry]').addEventListener('click',()=>void loadBatchList());}
+  }catch{host.innerHTML=`${api.bi('批次列表读取未完成','Batch list could not be loaded')} <button type="button" data-tip="重新读取搜索批次|Reload search batches" class="btn btn-outline-secondary" data-batches-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batches-retry]').addEventListener('click',()=>void loadBatchList());}
   finally{host.setAttribute('aria-busy','false');}
 }
 async function openBatch(id,{replace=false}={}){
@@ -189,10 +189,10 @@ async function openBatch(id,{replace=false}={}){
   if($('#jobs-empty'))$('#jobs-empty').hidden=true;
   const url=new URL(location.href);url.searchParams.set('batch',id);url.searchParams.delete('job');url.searchParams.set('jobs_tab','research');url.hash='jobs';
   history[replace?'replaceState':'pushState'](null,'',url);api.activateView('jobs',{updateHash:false});
-  const host=$('#research-batch-detail');host.hidden=false;host.setAttribute('aria-busy','true');host.innerHTML=api.bi('正在读取研究批次','Loading research batch');
+  const host=$('#research-batch-detail');host.hidden=false;host.setAttribute('aria-busy','true');host.innerHTML=api.bi('正在读取搜索批次','Loading search batch');
   try{
     const batch=await api.request(`/api/research/batches/${encodeURIComponent(id)}`), snapshot=batch.research_scope_snapshot||batch.scope_snapshot||{};
-    host.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('研究批次','Research Batch')}</h3><button type="button" data-tip="返回研究概览|Back to research overview" class="btn btn-outline-secondary" data-batch-back>${api.bi('返回研究','Back to Research')}</button></header><div class="card-body"><div class="p9-catalog-facts"><div><small>${api.bi('建立时间','Created')}</small><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong></div><div><small>${api.bi('研究范围','Scopes')}</small><strong>${api.esc(batch.total_scopes??snapshot.scopes?.length??batch.children?.length??0)}</strong></div></div><p class="crm-helper">${api.bi('创建时的研究范围','Research scope at creation')}</p><div class="v3-batch-children">${(batch.children||[]).map(child=>`<article><div><strong>${api.esc(child.market_code)}</strong><span>${api.esc(snapshot.categories?.find(item=>categoryId(item)===child.category_scope_id)?.label||child.category_code||'')}</span></div><button type="button" data-tip="打开这个市场与类目的任务明细|Open this market and category job" class="btn btn-outline-primary" data-batch-child="${api.esc(child.job_id)}">${api.bi('查看任务','View job')}</button></article>`).join('')}</div></div>`;
+    host.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('搜索批次','Search Batch')}</h3><button type="button" data-tip="返回搜索概览|Back to lead search overview" class="btn btn-outline-secondary" data-batch-back>${api.bi('返回客户搜索','Back to Lead Search')}</button></header><div class="card-body"><div class="p9-catalog-facts"><div><small>${api.bi('建立时间','Created')}</small><strong>${api.esc(batch.created_at?new Date(batch.created_at).toLocaleString():'—')}</strong></div><div><small>${api.bi('搜索范围','Scopes')}</small><strong>${api.esc(batch.total_scopes??snapshot.scopes?.length??batch.children?.length??0)}</strong></div></div><p class="crm-helper">${api.bi('创建时的搜索范围','Search scope at creation')}</p><div class="v3-batch-children">${(batch.children||[]).map(child=>`<article><div><strong>${api.esc(child.market_code)}</strong><span>${api.esc(snapshot.categories?.find(item=>categoryId(item)===child.category_scope_id)?.label||child.category_code||'')}</span></div><button type="button" data-tip="打开这个市场与类目的任务明细|Open this market and category job" class="btn btn-outline-primary" data-batch-child="${api.esc(child.job_id)}">${api.bi('查看任务','View job')}</button></article>`).join('')}</div></div>`;
     host.querySelector('[data-batch-back]').addEventListener('click',()=>{const back=new URL(location.href);back.searchParams.delete('batch');back.hash='research';history.pushState(null,'',back);host.hidden=true;api.activateView('research',{updateHash:false});requestAnimationFrame(()=>$('#research-new-job-open')?.focus({preventScroll:true}));});
     const stateLabel={QUEUED:['等待开始','Queued'],RUNNING:['进行中','Running'],COMPLETED:['已完成','Completed'],PARTIAL:['部分完成','Partially completed'],FAILED:['处理未完成','Not completed'],CANCELLED:['已取消','Cancelled']}[batch.status]||['等待更新','Awaiting update'];
     const stateBadge=document.createElement('span');stateBadge.className='data-state-badge state-unknown';stateBadge.innerHTML=api.bi(...stateLabel);host.querySelector('.card-title').after(stateBadge);
@@ -202,7 +202,7 @@ async function openBatch(id,{replace=false}={}){
       cancel.dataset.tip='停止这个批次尚未完成的查找，已有结果、记录和费用账单都会保留|Stop the unfinished searches of this batch; results, records and cost records are kept';
       cancel.innerHTML=api.bi('取消批次','Cancel batch');cancel.addEventListener('click',()=>void cancelBatch(id,cancel));host.querySelector('.card-header').append(cancel);
     }
-    const frozen=document.createElement('details');frozen.className='v3-research-details';frozen.innerHTML=`<summary>${api.bi('创建范围详情','Scope at creation')}</summary><div class="p9-catalog-facts">${[['市场','Markets',snapshot.markets?.length??0],['类目','Categories',snapshot.categories?.length??0],['客户类型','Buyer types',unique((snapshot.scopes||[]).map(scope=>scope.buyer_types||[])).join(' · ')],['研究语言','Languages',unique((snapshot.scopes||[]).map(scope=>scope.languages||[])).join(' · ')]].map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('')}</div>`;host.querySelector('.v3-batch-children').before(frozen);
+    const frozen=document.createElement('details');frozen.className='v3-research-details';frozen.innerHTML=`<summary>${api.bi('创建范围详情','Scope at creation')}</summary><div class="p9-catalog-facts">${[['市场','Markets',snapshot.markets?.length??0],['类目','Categories',snapshot.categories?.length??0],['客户类型','Buyer types',unique((snapshot.scopes||[]).map(scope=>scope.buyer_types||[])).join(' · ')],['搜索语言','Languages',unique((snapshot.scopes||[]).map(scope=>scope.languages||[])).join(' · ')]].map(([zh,en,value])=>`<div><small>${api.bi(zh,en)}</small><strong>${api.esc(value)}</strong></div>`).join('')}</div>`;host.querySelector('.v3-batch-children').before(frozen);
     const searchPlan=document.createElement('section');searchPlan.id='batch-search-plan';searchPlan.className='v3-search-plan';searchPlan.innerHTML=searchPlanMarkup(batch.search_plan);frozen.after(searchPlan);
     for(const [from,to] of [['h5','h4'],['h6','h5']])searchPlan.querySelectorAll(from).forEach(heading=>{const replacement=document.createElement(to);replacement.innerHTML=heading.innerHTML;heading.replaceWith(replacement);});
     host.querySelectorAll('[data-batch-child]').forEach(button=>{
@@ -213,11 +213,11 @@ async function openBatch(id,{replace=false}={}){
     });
     host.querySelectorAll('[data-batch-child]').forEach(button=>button.addEventListener('click',()=>void api.openJobDetail(button.dataset.batchChild,{trigger:button})));
     host.tabIndex=-1;host.focus({preventScroll:true});
-  }catch{host.innerHTML=`${api.bi('研究批次读取未完成','Research batch could not be loaded')} <button type="button" data-tip="重新读取这个批次|Reload this batch" class="btn btn-outline-secondary" data-batch-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batch-retry]').addEventListener('click',()=>void openBatch(id,{replace:true}));}
+  }catch{host.innerHTML=`${api.bi('搜索批次读取未完成','Search batch could not be loaded')} <button type="button" data-tip="重新读取这个批次|Reload this batch" class="btn btn-outline-secondary" data-batch-retry>${api.bi('重试','Retry')}</button>`;host.querySelector('[data-batch-retry]').addEventListener('click',()=>void openBatch(id,{replace:true}));}
   finally{host.setAttribute('aria-busy','false');}
 }
 async function cancelBatch(id,button){
-  if(!globalThis.confirm?.('确定取消这个研究批次吗？已有结果、记录和费用账单都会保留。\nCancel this research batch? Results, records and cost records are kept.'))return;
+  if(!globalThis.confirm?.('确定取消这个搜索批次吗？已有结果、记录和费用账单都会保留。\nCancel this search batch? Results, records and cost records are kept.'))return;
   button.disabled=true;button.setAttribute('aria-busy','true');
   try{await api.request(`/api/research/batches/${encodeURIComponent(id)}/cancel`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});await openBatch(id,{replace:true});void loadBatchList();}
   catch{button.disabled=false;button.removeAttribute('aria-busy');button.closest('.card-header')?.querySelector('[data-cancel-batch-status]')?.remove();button.insertAdjacentHTML('afterend',`<small class="crm-helper" role="status" data-cancel-batch-status>${api.bi('批次取消未完成，请重试','The batch could not be cancelled. Retry.')}</small>`);}
@@ -239,7 +239,7 @@ export function initializeResearchBatch(dependencies){
   form.addEventListener('change',event=>{if(event.target.name==='market_code')for(const field of ['research-city','research-region'])$(`#${field}`).value='';if(!['research-market-all','research-category-all'].includes(event.target.id))changed();});
   form.addEventListener('submit',create);
   const parent=document.createElement('section');parent.id='research-batch-detail';parent.className='card crm-panel';parent.hidden=true;$('#research-job').before(parent);
-  const list=document.createElement('section');list.className='card crm-panel';list.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('研究批次','Research batches')}</h3></header><div id="research-batch-list" class="card-body v3-batch-children"></div>`;$('#research-workbench-alerts').after(list);void loadBatchList();
+  const list=document.createElement('section');list.className='card crm-panel';list.innerHTML=`<header class="card-header crm-panel-header"><h3 class="card-title">${api.bi('搜索批次','Search batches')}</h3></header><div id="research-batch-list" class="card-body v3-batch-children"></div>`;$('#research-workbench-alerts').after(list);void loadBatchList();
   window.addEventListener('popstate',()=>{const id=new URLSearchParams(location.search).get('batch');if(id&&location.hash==='#jobs')void openBatch(id,{replace:true});else{parent.hidden=true;api.activateView(location.hash.slice(1),{updateHash:false});}});
   const id=new URLSearchParams(location.search).get('batch');if(id)void openBatch(id,{replace:true});
   void refreshBatchOptions();

@@ -1,7 +1,7 @@
 // Proposed MC08 (plan C2 + classifier-level C1/C8) opportunity-pool classification.
-// Copy-and-modify of ./classifier.js (v1_MC04). NOT WIRED into OpportunityPoolService or any route:
-// it exists so the old/new comparison (scripts/compare-opportunity-pool.mjs) can be reviewed before
-// Simon approves tightening. Pure: no providers, persistence, schema or send gates.
+// Copy-and-modify of ./classifier.js (v1_MC04). LIVE since Simon's decision of 2026-10-27: OpportunityPoolService
+// classifies every new evaluation with it; v1 stays importable for history and for
+// scripts/compare-opportunity-pool.mjs. Pure: no providers, persistence, schema or send gates.
 //
 // Changes against v1_MC04:
 //  1. GENERAL_RELEVANT now needs category evidence for that profile: at least one approved category

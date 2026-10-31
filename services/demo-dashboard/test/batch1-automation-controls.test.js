@@ -242,7 +242,7 @@ test('settings UI shows three independent switches and the spend-mode choice',()
   assert.equal(model.spendMode,'FREE_ONLY');assert.equal(model.senderPaused,true);
   assert.equal(normalizeAutomationControl({provider_spend_mode:'ALLOW_PAID',paid_fallback_on_empty:true}).paidFallbackOnEmpty,true);
   const source=readFileSync(new URL('../public/ui/v3/automation-control.js',import.meta.url),'utf8');
-  for(const label of ['研究搜索','Research search','自动首封','Auto first-touch','联系人研究','Contact research','只用免费搜索','Free search only','允许付费兜底','Allow paid fallback'])
+  for(const label of ['客户搜索','Lead search','自动首封','Auto first-touch','联系人研究','Contact research','只用免费搜索','Free search only','允许付费兜底','Allow paid fallback'])
     assert.ok(source.includes(label),label);
   assert.match(source,/\/api\/automation\/control\/\$\{encodeURIComponent\(subsystem\)\}/);
   for(const hook of ['data-automation-subsystem','data-automation-spend','data-automation-empty-fallback','data-automation-toggle','data-automation-refresh'])assert.ok(source.includes(hook),hook);

@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {AUTOMATION_CONTROLS} from './AutomationControlService.js';
 import {parseSpendModeInput,spendPolicyFromSettings} from '../search/ProviderSpendPolicy.js';
+import {contactVerificationTtlDays} from '../verification/contactVerificationPolicy.js';
 
 const SEARCH_KEY=AUTOMATION_CONTROLS.RESEARCH_PROVIDER_EXECUTION;
 const EMAIL_KEY=AUTOMATION_CONTROLS.PHASE13_AUTO_FIRST_TOUCH;
@@ -65,7 +66,7 @@ export class Phase13AutomationFacade {
       policy_revision:settings.policy_revision||DEFAULT_POLICY,
       template_set_key:'DPV_FIRST_TOUCH_V1',template_set_status:'APPROVED',sender_display_name:'Simon',
       allowed_bands:settings.allowed_bands||DEFAULT_BANDS,
-      verification_ttl_days:Number(settings.verification_ttl_days||30),
+      verification_ttl_days:Number(settings.verification_ttl_days)||contactVerificationTtlDays(),
       ...registry,
       subsystems:{
         search:{enabled:searchOn,control_key:SEARCH_KEY,revision:Number(search.revision),updated_at:search.updated_at||null},
@@ -98,7 +99,7 @@ export class Phase13AutomationFacade {
   }
   emailSettings(){
     return {mode:'AUTO_FIRST_TOUCH',policy_revision:DEFAULT_POLICY,template_set_key:'DPV_FIRST_TOUCH_V1',
-      allowed_bands:DEFAULT_BANDS,verification_ttl_days:30,auto_followup:false};
+      allowed_bands:DEFAULT_BANDS,verification_ttl_days:contactVerificationTtlDays(),auto_followup:false};
   }
   contactSettings(){return {automation_revision:CONTACT_REVISION};}
 

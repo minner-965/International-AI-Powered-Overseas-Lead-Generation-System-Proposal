@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { evaluateContactVerification } from '../outreach/eligibility.js';
+import { contactVerificationTtlDays } from '../verification/contactVerificationPolicy.js';
 
 const upper = value => String(value || '').toUpperCase();
 const active = row => !row.lifted_at && (!row.lifecycle_status || upper(row.lifecycle_status) === 'ACTIVE');
 const buyerRoles = new Set(['BUYER', 'SENIOR_BUYER', 'HEAD_OF_BUYING', 'PURCHASING', 'PROCUREMENT', 'CATEGORY_MANAGEMENT', 'MERCHANDISING', 'SOURCING']);
 
 /** Offline descriptive mapping only. A readiness label never grants send permission. */
-export function classifyContactReadiness(company, snapshot) {
+export function classifyContactReadiness(company, snapshot, { ttlDays = contactVerificationTtlDays() } = {}) {
   const tables = snapshot.tables || snapshot;
   const companyId = company.company_id || company.id;
   const rows = name => (tables[name] || []).filter(row => row.company_id === companyId);
@@ -41,7 +42,7 @@ export function classifyContactReadiness(company, snapshot) {
     let readiness = null;
     let verification = null;
     if (type.includes('EMAIL')) {
-      verification = evaluateContactVerification({ verification_status: status, last_verified_at: route.last_verified_at }, { now, ttlDays: 30 });
+      verification = evaluateContactVerification({ verification_status: status, verification_score: route.verification_score, last_verified_at: route.last_verified_at || route.verified_at }, { now, ttlDays });
       if (usable && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && verification.eligible_for_send) readiness = 'EMAIL_READY';
     } else if (usable && ['PUBLICLY_OBSERVED', 'FORMAT_VALID', 'BUSINESS_WHATSAPP_OBSERVED', 'VALID'].includes(status)) {
       if (['PHONE', 'BUSINESS_PHONE'].includes(type) && /^\+?[\d\s().-]{7,}$/.test(value)) readiness = 'PHONE_READY';
@@ -72,7 +73,7 @@ export function classifyContactReadiness(company, snapshot) {
       stored_drafts: rows('outreach_drafts').map(r => ({ id: r.id, draft_status: r.draft_status, version: r.version })),
       stored_approvals: rows('outreach_approvals').map(r => ({ id: r.id, draft_id: r.draft_id, decision: r.decision })),
       outstanding_checks: ['CURRENT_RUNTIME_ELIGIBILITY', 'APPROVAL_VERSION_AND_EXPIRY', 'RECIPIENT_DOMAIN_AND_PURPOSE', 'RATE_CAPS', 'OPERATOR_SEND_AUTHORIZATION'],
-      policy: 'MC03_READ_ONLY_NO_SEND_AUTHORIZATION', verification_ttl_days: 30,
+      policy: 'MC03_READ_ONLY_NO_SEND_AUTHORIZATION', verification_ttl_days: ttlDays,
     },
   };
 }

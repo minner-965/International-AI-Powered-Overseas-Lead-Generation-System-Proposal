@@ -78,6 +78,13 @@ import {createTranslateRouter} from './translate/router.js';
 import {createMerchantRouter} from './merchant/router.js';
 import {createOriginGuard,createSecurityHeaders} from './merchant/originGuard.js';
 import {requestScope,companyScopeSql,filterRowsByCompany,researchJobScopeSql,assertResearchJobVisible} from './merchant/scope.js';
+import {createModelAssist} from './llm/assistService.js';
+import {createModelAssistRouter} from './llm/router.js';
+import {createModelAssistHooks} from './llm/hooks.js';
+import {createLeadUsabilityRouter} from './opportunityPool/leadUsabilityRouter.js';
+import {INSTALLED_SCORE_RULE_VERSIONS} from './scoring/zenRulesAdapter.js';
+import {contactVerificationTtlDays} from './verification/contactVerificationPolicy.js';
+import {createContactReverifier} from './verification/contactReverification.js';
 
 const { Pool } = pg;
 const app = express();
@@ -127,6 +134,9 @@ instrumentPgPool(pool, telemetry);
 // merchant's own keys per request.
 const credentialStore=createCredentialResolver({pool,env:process.env});
 const simLiveEnv=credentialStore.liveEnv();
+// Batch 3: optional model assist (off by default; switch on the API keys page). Hooks are no-ops while off.
+const modelAssist=createModelAssist({pool,credentials:credentialStore});
+const modelAssistHooks=createModelAssistHooks({assist:modelAssist});
 const searchConfig = withLiveSearchKeys({
   dualSearchEnabled: /^(1|true|yes)$/i.test(process.env.SEARCH_DUAL_ROUTING_ENABLED || ''),
   provider: String(process.env.SEARCH_PROVIDER || 'tavily').toLowerCase(),
@@ -161,7 +171,7 @@ const searchConfig = withLiveSearchKeys({
     userAgent: String(process.env.CONTACT_USER_AGENT || 'SIMLeadResearch/1.0')
   })
 },simLiveEnv);
-const opportunityPoolService=new OpportunityPoolService({pool});
+const opportunityPoolService=new OpportunityPoolService({pool,modelAssistHooks});
 const merchantService=new MerchantService({pool,env:process.env});
 const tavilyProviderAccountState=new TavilyProviderAccountState({pool,apiKey:()=>searchConfig.tavilyApiKey,
   usageEndpoint:process.env.TAVILY_USAGE_ENDPOINT||'https://api.tavily.com/usage',
@@ -241,7 +251,8 @@ const categoryEvidenceService = new CategoryEvidenceService({
   maxQueriesPerProfile:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_PROFILE || 4),
   maxQueriesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_QUERIES_PER_COMPANY || 8),
   maxPagesPerCompany:Number(process.env.CATEGORY_PROCUREMENT_MAX_PAGES_PER_COMPANY || 12),
-  maxDiscoveryDepth:Number(process.env.CATEGORY_PROCUREMENT_MAX_DISCOVERY_DEPTH || 2)
+  maxDiscoveryDepth:Number(process.env.CATEGORY_PROCUREMENT_MAX_DISCOVERY_DEPTH || 2),
+  modelAssistHooks
 });
 const categoryProcurementService = new CategoryProcurementService({pool,opportunityPoolService});
 const categoryScopeService = new CategoryScopeService({pool});
@@ -465,7 +476,7 @@ const phase7QueueProxy = Object.freeze({
   enqueue: (...args) => phase5Queue.enqueue(...args)
 });
 const phase7Service = new Phase7Service({
-  pool,queue:phase7QueueProxy,hunter:enrichmentService.hunter,env:simLiveEnv,audit,
+  pool,queue:phase7QueueProxy,hunter:enrichmentService.hunter,env:simLiveEnv,audit,modelAssistHooks,
   opportunityQuery: query => queryCategoryProcurementOpportunities({
     pool,query,publicDataOriginSql,companyMarketVisibleSql,excludesConfirmedExistingCustomerSql
   })
@@ -477,7 +488,7 @@ const autoEvidenceExecutors=createAutoEvidenceExecutors({
   tavilyEnabled:/^(1|true|yes|on)$/i.test(process.env.AUTO_EVIDENCE_TAVILY_ENABLED||'true'),
   hunterEnabled:/^(1|true|yes|on)$/i.test(process.env.AUTO_EVIDENCE_HUNTER_ENABLED||'true'),
   sourceTtlDays:Number(process.env.AUTO_EVIDENCE_SOURCE_TTL_DAYS||90),
-  contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS||30)
+  contactVerificationTtlDays:contactVerificationTtlDays(process.env)
 });
 const autoEvidenceService = new AutoEvidenceOrchestrator({
   pool,
@@ -522,7 +533,7 @@ const phase5Queue = createPhase5Queue({
         actor: data.actor || 'phase5-queue'
       }),
     [PHASE5_QUEUES.REPLAY_RULE_VERSION]: async (data, job) => {
-      if (data.rule_version && data.rule_version !== 'dpv-score-v1') {
+      if (data.rule_version && !INSTALLED_SCORE_RULE_VERSIONS.includes(data.rule_version)) {
         throw Object.assign(new Error('Requested rule version is not installed'), { code: 'RULE_VERSION_NOT_INSTALLED' });
       }
       return scoreCompanySet(data, job);
@@ -588,7 +599,7 @@ researchDirectExecutor=new ResearchJobDirectExecutor({pool,audit,stages:{
   discover:jobId=>frozenSearchExecutor.executeJob(jobId),
   checkContacts:jobId=>checkResearchCandidateContacts(pool,jobId,searchConfig.contactConfig),
   verify:async jobId=>{
-    const verified=await verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true});
+    const verified=await verifyResearchCandidates(pool,jobId,{...searchConfig.companyVerifyConfig,searchConfig,tavilyUsageConfig,promote:true,allowSocialSearch:true},{modelAssistHooks});
     const companyIds=[...new Set((verified.results||[]).map(row=>row.company_id).filter(Boolean))];
     if(companyIds.length)await opportunityPoolService.refresh({companyIds,researchJobId:jobId,reason:'COMPANY_VERIFICATION_COMMITTED'});
     return verified;
@@ -623,7 +634,9 @@ contactResearchReconciler=new ContactResearchReconciler({pool,queue:phase5Queue,
 autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
   automationControl:phase13Automation,
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
-  env:process.env,merchantSending:merchantService});
+  env:process.env,merchantSending:merchantService,
+  // C7: an expired mailbox verification gets one fresh Hunter check right before a reservation.
+  reverify:createContactReverifier({pool,hunter:enrichmentService.hunter})});
 crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
   queue:phase7QueueProxy,env:simLiveEnv,audit,merchantSending:merchantService,followupSettings});
 phase7Service.merchantSending=merchantService;
@@ -650,7 +663,7 @@ const researchWorkbenchService = new ResearchWorkbenchService({
   autoEvidence:autoEvidenceService,
   providerAccountState:tavilyProviderAccountState,
   discoveryAccountState:searchProviderRouter,
-  contactVerificationTtlDays:Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || process.env.OUTREACH_VERIFICATION_TTL_DAYS || 30),
+  contactVerificationTtlDays:contactVerificationTtlDays(process.env),
   runCapUnits:hunterCaps.runCapUnits,
   billingPeriodCapUnits:hunterCaps.billingPeriodCapUnits,
   publicDataOrigins
@@ -677,6 +690,9 @@ app.use(createMerchantRouter({merchants:merchantService,env:process.env}));
 app.use(createCredentialsRouter({credentials:credentialStore,spendPolicy:()=>phase13Automation.spendPolicy()}));
 app.use(createTranslateRouter({client:createTranslateClient({credentials:credentialStore,env:process.env}),authRequired:authRequired(process.env)}));
 app.use(createManualCompanyRouter({companies:manualCompanies,firstTouch:manualFirstTouch,testSends:firstTouchTestSends}));
+// Batch 3: unusable leads (admin only; not in MERCHANT_ROUTES) and model assist settings / review queue.
+app.use(createLeadUsabilityRouter({service:opportunityPoolService.leadUsability}));
+app.use(createModelAssistRouter({assist:modelAssist}));
 app.use('/vendor/tabler', express.static(new URL('../node_modules/@tabler/core/dist', import.meta.url).pathname));
 app.use('/vendor/tabler-icons', express.static(new URL('../node_modules/@tabler/icons-webfont/dist', import.meta.url).pathname));
 app.use(express.static(new URL('../public', import.meta.url).pathname));
@@ -1916,7 +1932,7 @@ app.post('/api/internal/research/jobs/:id/verify-companies', requireInternalToke
         searchConfig,
         promote: req.body?.promote !== false,
         allowSocialSearch: req.body?.allow_social_search === true
-      });
+      }, { modelAssistHooks });
       span.setAttribute('result_count', verified.checked || verified.verified || 0);
       span.setAttribute('credits', verified.socialSearchCreditsUsed || 0);
       return verified;

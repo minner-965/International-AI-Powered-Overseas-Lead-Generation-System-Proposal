@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Read-only old/new opportunity-pool comparison (plan C2). Loads the same snapshot OpportunityPoolService uses,
-// runs the live v1_MC04 classifier and the proposed (unwired) v2_MC08 classifier for every company, and writes
+// runs the historical v1_MC04 classifier and the live v2_MC08 classifier for every company, and writes
 // docs/plan/2026-10_POOL_COMPARISON.md. It opens a READ ONLY transaction and never writes to the database.
 //   node scripts/compare-opportunity-pool.mjs [--database-url <url>] [--out <file>]
 // Default database: postgresql://postgres@127.0.0.1:55432/live_copy (restored copy of live data).
@@ -87,12 +87,12 @@ export function renderMarkdown(result,{databaseLabel='live_copy',storedCounts=nu
   const lines=[];
   lines.push('# 机会池新旧规则对比（C2 收紧"泛相关"）','');
   lines.push(`生成时间：${result.observed_at}　数据：本机还原的线上数据副本（${databaseLabel}，只读）　企业数：${result.total}`,'');
-  lines.push('> 这份对比只是"如果启用新规则会怎样"，**系统现在仍按旧规则运行**，没有改动任何企业的档位。你看完决定是否启用。','');
+  lines.push('> Simon 已于 2026-10-27 决定启用新规则。这份对比按同一份数据现场重算新旧两版规则；本脚本只读，不改动任何企业的档位。追加新版决策用 `node scripts/reevaluate-opportunity-pool.mjs`（默认只预览，加 `--apply` 才写入，只追加、不改历史）。','');
   lines.push('## 一、新规则改了什么','');
   lines.push('1. **"泛相关"必须有类目证据**：企业页面上至少有一条已批准类目（或它的上级类目）的商品证据，或者官网明确写了综合百货/家居日用经营。只有"批发""门店""仓储""综合贸易"这类泛泛经营信号的，降为"待研究"（不删除，补到类目证据后会自动回来）。');
   lines.push('2. **导航泛词不再算证据**：网页导航里常见的"locations / ubicaciones""shop online""inventario"单独出现时不再算经营证据，必须带数量（如"25 stores"）或明确上下文（如"our locations""nuestro inventario"）。');
   lines.push('3. **连锁零售、百货算有效买家**：有自营门店网络证据 + 已批准类目证据，就算有效买家类型（"供货给零售店"这种说的是客户，不算）。企业本身仍须先通过企业核验；因核验未通过而进不了池的零售连锁单独列在第五节，供决定 C1（核验加"零售连锁"类型）时参考。','');
-  lines.push(`规则版本：旧 \`v1_MC04\` → 新 \`${OPPORTUNITY_POOL_V2_VERSION}\`（未启用）。`,'');
+  lines.push(`规则版本：旧 \`v1_MC04\` → 新 \`${OPPORTUNITY_POOL_V2_VERSION}\`（2026-10-27 已启用）。`,'');
   lines.push('## 二、各档位数量','');
   lines.push('| 档位 | 旧规则 | 新规则 | 变化 |','|---|---:|---:|---:|');
   for(const band of BANDS){const delta=result.counts.new[band]-result.counts.old[band];lines.push(`| ${BAND_ZH[band]}（${band}） | ${result.counts.old[band]} | ${result.counts.new[band]} | ${delta>0?'+':''}${delta} |`);}

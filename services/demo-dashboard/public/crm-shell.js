@@ -2,7 +2,7 @@ import {bindDialogTabBoundary} from './ui/v3/components.js';
 import {viewAllowed} from './ui/v4/session.js';
 bindDialogTabBoundary(document);
 // View titles: [zh, en, kicker zh, kicker en]. Several views share one navigation item (data-nav-group).
-const views={overview:['总览','Overview','工作台','Workspace'],opportunities:['销售机会','Opportunities','获客','Prospecting'],'contact-queue':['开发信审核','First-touch review','跟进','Follow-up'],research:['研究任务','Research','获客','Prospecting'],jobs:['任务列表','Research jobs','获客','Prospecting'],companies:['客户名录','Company Directory','获客','Prospecting'],'customer-match':['客户画像','Customer profile','系统设置','Settings'],evidence:['评估依据','Evidence','客户名录','Company Directory'],'data-import':['数据导入','Data Import','数据','Data'],'data-export':['数据导出','Data Export','数据','Data'],settings:['系统设置','Settings','数据','Data']};
+const views={overview:['总览','Overview','工作台','Workspace'],opportunities:['销售机会','Opportunities','获客','Prospecting'],'contact-queue':['开发信审核','First-touch review','跟进','Follow-up'],research:['客户搜索','Lead search','获客','Prospecting'],jobs:['任务列表','Lead searches','获客','Prospecting'],companies:['客户名录','Company Directory','获客','Prospecting'],'customer-match':['客户画像','Customer profile','系统设置','Settings'],evidence:['评估依据','Evidence','客户名录','Company Directory'],'data-import':['数据导入','Data Import','数据','Data'],'data-export':['数据导出','Data Export','数据','Data'],settings:['系统设置','Settings','数据','Data']};
 views['contact-ready']=['待联系企业','Contact-ready','客户名录','Company Directory'];
 views.replies=['回复与跟进','Replies','跟进','Follow-up'];
 views.tasks=['我的任务','My tasks','跟进','Follow-up'];

@@ -228,7 +228,7 @@ test('B2: test send writes only first_touch_test_sends, ignores the send window,
   await withDatabase(async pool=>{
     const s=await setup(pool);
     await pool.query(`UPDATE leadgen.research_market_registry SET business_send_window='{"days":[1],"start":"00:00","end":"00:01"}'::jsonb WHERE market_code='AE'`);
-    const created=(await s.companies.create(company(s.category,{website:'gulf-fashion.example',contact:{email:'buying@gulf-fashion.example',contact_kind:'DEPARTMENT'}}),'simon',ADMIN)).company;
+    const created=(await s.companies.create(company(s.category,{website:'gulf-fashion.example',contact:{email:'wholesale.team@gulf-fashion.example',contact_kind:'DEPARTMENT'}}),'simon',ADMIN)).company;
     const preview=await s.testSends.preview({company_id:created.id},ADMIN);
     assert.equal(preview.template_key,'B_IMPORTER_WHOLESALER_DISTRIBUTOR');assert.match(preview.subject,/^\[TEST\] Competitive Dresses range for Gulf Fashion Trading LLC$/);
     assert.equal(preview.variables_source,'COMPANY');assert.deepEqual(preview.allowed_recipients.sort(),['owner-test@qq.example','second@test.example','simon@sim.example']);

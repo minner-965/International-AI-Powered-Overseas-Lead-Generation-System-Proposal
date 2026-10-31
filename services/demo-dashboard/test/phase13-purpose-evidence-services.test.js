@@ -67,7 +67,10 @@ test('company verification routes explicitly while preserving historical social 
  assert.match(source,/purpose:'COMPANY_SOCIAL_EVIDENCE'/);
  assert.match(source,/source_type NOT IN\('TAVILY_BASIC_SEARCH','TAVILY_ADVANCED_SEARCH'\)/);
  assert.match(source,/provider\.searchDepth === 'advanced' \? 'TAVILY_ADVANCED_SEARCH' : 'TAVILY_BASIC_SEARCH'/);
- assert.match(source,/checker\.robotsAllows\(url\)/);assert.match(source,/official\.confidence >= 0\.7 && materialBusiness/);
+ assert.match(source,/checker\.robotsAllows\(url\)/);assert.match(source,/decideCandidateVerification\(\{\s*evidence, contacts, officialConfidence: official\.confidence/);
+ // Batch 3 C1: the verification decision moved into the pure rule module.
+ const rules=readFileSync(new URL('../src/verification/verificationRules.js',import.meta.url),'utf8');
+ assert.match(rules,/Number\(officialConfidence\) >= 0\.7/);assert.match(rules,/identity && location && officialOk && materialBusiness/);
 });
 
 test('all three legacy audit fingerprints replay without charging; advanced depth is independently keyed',async()=>{

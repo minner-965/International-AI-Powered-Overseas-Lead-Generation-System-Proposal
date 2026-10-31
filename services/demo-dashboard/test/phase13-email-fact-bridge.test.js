@@ -6,7 +6,7 @@ import {loadPhase13EmailEligibilityFacts,createPhase13EmailEligibilityFactLoader
 
 const companyId='8b19d2b9-e7a7-4bd0-a57b-0f8a5f7da9db';
 const reservationId='11111111-1111-4111-8111-111111111111';
-const row={id:companyId,company_name:'Rizqé',company_type:'Importer VERIFIED / Wholesaler VERIFIED',country_code:'AE',
+const row={id:companyId,company_name:'Rizqé',website_url:'https://rizqe.co',official_root_domain:'rizqe.co',contact_evidence_origin:'OFFICIAL_SITE_OBSERVED',contact_source_url:'https://rizqe.co/contact',company_type:'Importer VERIFIED / Wholesaler VERIFIED',country_code:'AE',
   verification_status:'VERIFIED',lifecycle_status:'ACTIVE',opportunity_pool_band:'PRECISION',is_active_business_opportunity:true,
   market_code:'AE',country_name:'United Arab Emirates',market_status:'ACTIVE',search_enabled:true,timezone:'Asia/Dubai',business_send_window:{days:[1,2,3,4,5],start:'09:00',end:'17:00'},
   recipient_id:'fc5ff893-9faa-47ff-90ad-fe2b87529fd1',normalized_recipient:'info@rizqe.co',recipient_verification_status:'VALID',verified_at:new Date(),recipient_lifecycle_status:'ACTIVE',recipient_type:'OFFICIAL_COMPANY_EMAIL',recipient_source_class:'VERIFIED_DECISION_MAKER_CONTACT',recipient_domain_verified:true,

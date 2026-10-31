@@ -61,7 +61,7 @@ export function overviewModel({metrics,opportunities,operations,research,getStat
 // Phone workbench grid: every function stays reachable with a text label (no "more" menu).
 const functions=[
   ['log-note','写跟进','Log note','pencil','b'],['log-call','记电话','Log call','phone','g'],['new-task','新建任务','New task','calendar-plus','a'],
-  ['followups','跟进审批','Approvals','mail','b'],['companies','客户名录','Directory','building','b'],['research','研究任务','Research','list-search','g'],
+  ['followups','跟进审批','Approvals','mail','b'],['companies','客户名录','Directory','building','b'],['research','客户搜索','Lead search','list-search','g'],
   ['data-import','导入导出','Import/Export','arrows-down-up','a'],['settings','系统设置','Settings','adjustments-horizontal','n']
 ];
 const QUICK_TIPS={'log-note':['写一条跟进备注','Write a follow-up note'],'log-call':['记录一次电话沟通','Log a phone call'],'new-task':['新建一项跟进任务','Create a follow-up task']};
@@ -87,7 +87,7 @@ export function mountOverview() {
   </div>
   <div class="grid3 v4-overview-ops">
     ${card('outreach-operations','客户开发进展','Prospect development',`<div class="pb" id="outreach-operations" data-v3-overview="true" aria-live="polite"></div>`)}
-    ${card('overview-tasks','研究任务','Research jobs',`<div class="pb" id="overview-tasks"></div>`,{link:link('jobs','查看任务','View jobs')})}
+    ${card('overview-tasks','客户搜索','Lead searches',`<div class="pb" id="overview-tasks"></div>`,{link:link('jobs','查看任务','View jobs')})}
     ${card('overview-attention','待处理事项','Attention required',`<div class="pb" id="overview-attention"></div>`,{link:link('contact-queue','开发信审核','First-touch review')})}
   </div>
   <details class="v3-overview-more v4-directory-actions"><summary>${bi('名录管理','Directory actions')}</summary><div id="overview-directory-actions"></div>${link('data-export','导出报表','Export reports')}</details>`;
@@ -170,10 +170,10 @@ export function renderOverview({metrics,opportunities,operations,research,jobs,g
   const stageLabels={QUEUED:['等待处理','Queued'],RUNNING:['处理中','In Progress'],DISCOVERING:['查找企业','Company Search'],CRAWLING:['查阅资料','Evidence Review'],QUALIFYING:['企业核验','Company Verification'],SCORING:['客户评估','Prospect Assessment'],COMPLETED:['已完成','Completed'],WAITING_EVIDENCE:['待完善资料','Evidence Pending'],FAILED_RETRYABLE:['待重试','Retry Required'],FAILED_FINAL:['待检查','Review Required']};
   const recentJobs=jobs?.items || [];
   const date=value=>value && Number.isFinite(new Date(value).getTime())?esc(new Date(value).toLocaleString()):'—';
-  const jobsHtml=jobs?recentJobs.length?`<ul class="v3-overview-job-list">${recentJobs.map(job=>`<li><div class="v3-overview-job-heading"><strong>${esc((job.market_codes || []).join(' / ') || '—')}</strong>${bi(...(stageLabels[job.progress_stage] || stageLabels[job.status] || ['状态待确认','Status Pending']))}</div><p>${jobCategory(job)}</p><dl><div><dt>${bi('建立时间','Created')}</dt><dd>${date(job.created_at)}</dd></div><div><dt>${bi('最近活动','Last Activity')}</dt><dd>${date(job.last_provider_event_at || job.updated_at)}</dd></div><div><dt>${bi('已核验企业','Verified Companies')}</dt><dd>${number(job.verified_companies)}</dd></div></dl></li>`).join('')}</ul>`:empty('暂无研究任务','No research jobs'):empty('任务明细暂未读取，请刷新。','Job details unavailable. Refresh to retry.');
-  set('overview-tasks',`${research?`<dl class="v3-overview-task-counts"><div><dt>${bi('进行中的研究任务','Active Research Jobs')}</dt><dd>${number(research.active_jobs)}</dd></div></dl>`:''}${jobsHtml}`);
+  const jobsHtml=jobs?recentJobs.length?`<ul class="v3-overview-job-list">${recentJobs.map(job=>`<li><div class="v3-overview-job-heading"><strong>${esc((job.market_codes || []).join(' / ') || '—')}</strong>${bi(...(stageLabels[job.progress_stage] || stageLabels[job.status] || ['状态待确认','Status Pending']))}</div><p>${jobCategory(job)}</p><dl><div><dt>${bi('建立时间','Created')}</dt><dd>${date(job.created_at)}</dd></div><div><dt>${bi('最近活动','Last Activity')}</dt><dd>${date(job.last_provider_event_at || job.updated_at)}</dd></div><div><dt>${bi('已核验企业','Verified Companies')}</dt><dd>${number(job.verified_companies)}</dd></div></dl></li>`).join('')}</ul>`:empty('暂无客户搜索','No lead searches'):empty('任务明细暂未读取，请刷新。','Job details unavailable. Refresh to retry.');
+  set('overview-tasks',`${research?`<dl class="v3-overview-task-counts"><div><dt>${bi('进行中的客户搜索','Active Lead Searches')}</dt><dd>${number(research.active_jobs)}</dd></div></dl>`:''}${jobsHtml}`);
   const jobList=document.querySelector('#overview-tasks .v3-overview-job-list');
-  if(jobList){jobList.tabIndex=0;jobList.setAttribute('aria-label','最近研究任务 Recent research jobs');}
+  if(jobList){jobList.tabIndex=0;jobList.setAttribute('aria-label','最近客户搜索 Recent lead searches');}
   const tasks=(research?.priority_tasks || []).slice(0,3);
   const pendingDrafts=operations?.prospect?.pending_drafts;
   const alerts=operations?.monitoring?.alerts || [];

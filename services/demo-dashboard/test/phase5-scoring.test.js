@@ -21,7 +21,7 @@ function snapshot(overrides = {}, verification_status = 'VERIFIED_BUSINESS') {
 }
 
 async function score(input) {
-  const engine = new DpvScoringEngine();
+  const engine = new DpvScoringEngine({ scoreRuleVersion: 'dpv-score-v1' }); // v1 expectations; v2 is covered by batch3-accuracy-scoring.test.js
   try { return await engine.evaluate(input); } finally { engine.dispose(); }
 }
 

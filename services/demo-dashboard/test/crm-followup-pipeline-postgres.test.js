@@ -66,8 +66,9 @@ test('CRM pipeline migration, APIs and approved follow-ups work end to end',{ski
     assert.equal(applied.status,'APPLIED');assert.equal(applied.pipeline_stage,'REQUIRED');
     const replay=await applyPhase7Migration({pool,migrationPath,expectedDatabase:database,appliedBy:'crm-pipeline-test'});
     assert.equal(replay.status,'SKIPPED_ALREADY_APPLIED');
-    // Later migrations the current CRM code relies on (065 search cost, 066 merchant ownership columns).
-    for(const later of ['065_global_markets_categories_search_cost.sql','066_merchant_accounts.sql'])
+    // Later migrations the current CRM code relies on (065 search cost, 066 merchant ownership columns,
+    // 076 reply correlation aliases read when an inbound reply is matched to its thread).
+    for(const later of ['065_global_markets_categories_search_cost.sql','066_merchant_accounts.sql','076_reply_correlation_aliases.sql'])
       assert.equal((await applyPhase7Migration({pool,migrationPath:path.join(path.dirname(migrationPath),later),expectedDatabase:database,appliedBy:'crm-pipeline-test'})).status,'APPLIED');
     const backfilled=(await pool.query('SELECT pipeline_stage,funnel_status FROM leadgen.opportunity_crm_states WHERE company_id=$1',[ids.companyA])).rows[0];
     assert.deepEqual(backfilled,{pipeline_stage:'REPLIED',funnel_status:'REPLIED'});

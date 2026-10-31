@@ -42,6 +42,24 @@ export function activityOutboxPayload({activity_type,occurred_at,summary,owner,r
   return payload;
 }
 
+/** CREATE_LEAD payload. website_url is the site's origin (scheme + host): CRM_OPERATION_FIELDS.CREATE_LEAD
+ *  accepts only an http(s) origin there, so a page path can never carry anything path-like into the CRM. */
+export function leadOutboxPayload({company_name,country_code,website_url,owner,references}){
+  const payload={company_name:String(company_name||'').slice(0,500),country_code:String(country_code||'').toUpperCase().slice(0,8)};
+  const origin=websiteOrigin(website_url);
+  if(origin)payload.website_url=origin;
+  if(owner)payload.owner=String(owner).slice(0,500);
+  const reference=crmSourceReference(references);
+  if(reference)payload.source_reference=reference;
+  return payload;
+}
+
+export function websiteOrigin(value){
+  try{const url=new URL(String(value||'').trim());
+    return['http:','https:'].includes(url.protocol)&&url.hostname&&!url.username&&!url.password?`${url.protocol}//${url.host}`.toLowerCase():null;}
+  catch{return null;}
+}
+
 export function opportunityOutboxPayload({stage,status,owner,external_crm_id}){
   const payload={stage:String(stage||'').toUpperCase()};
   if(status)payload.status=String(status).toUpperCase();

@@ -6,10 +6,8 @@ import { searchCountryCode } from '../market/searchCountryCode.js';
 import { extractRootDomain, normalizeUrl } from '../search/resultNormalizer.js';
 import { marketLocationText, marketProfileForJob, marketSearchLanguage } from '../market/marketProfiles.js';
 import {
-  assessBusinessTypes, assessCompanySize, assessPartnershipAccessibility, assessSmeRelevance,
-  classifySocialUrl, extractBusinessSocialLinks, extractVerificationEvidence, matchExistingCompany,
-  normalizeCompanyName, resolveOfficialWebsite, strategicAccountAssessment
-  , socialResultMatchesCompany
+  classifySocialUrl, decideCandidateVerification, extractBusinessSocialLinks, extractVerificationEvidence, matchExistingCompany,
+  normalizeCompanyName, resolveOfficialWebsite, socialResultMatchesCompany
 } from './verificationRules.js';
 
 const HIGH_VALUE_LINK = /about|company|who[-\s]?we[-\s]?are|products?|brands?|wholesale|distribut|partners?|locations?|stores?|contact|enquir|inquir/i;
@@ -203,7 +201,9 @@ function companyTypeSummary(types) {
     types.importer.status !== 'UNKNOWN' ? `Importer ${types.importer.status}` : null,
     types.wholesaler.status !== 'UNKNOWN' ? `Wholesaler ${types.wholesaler.status}` : null,
     types.distributor.status !== 'UNKNOWN' ? `Distributor ${types.distributor.status}` : null,
-    types.generalTrading.status !== 'UNKNOWN' ? `General Trading ${types.generalTrading.status}` : null
+    types.generalTrading.status !== 'UNKNOWN' ? `General Trading ${types.generalTrading.status}` : null,
+    // "Retailer" / "Department Store" are the words the first-touch fact loader reads (template C).
+    types.retailChain?.status === 'VERIFIED' ? `${types.retailChain.department_store ? 'Department Store' : 'Chain Retailer'} VERIFIED` : null
   ].filter(Boolean).join(' / ') || 'Business activity confirmed';
 }
 
@@ -301,11 +301,51 @@ async function promoteCandidate(client, candidate, job, marketProfile, assessmen
   return { companyId, promotionStatus, duplicateMethod: existing?.method || null };
 }
 
-async function verifyOne(pool, candidate, job, config, checker) {
+// Model assist T2 (llm/hooks.js checkBuyerType) after the official pages were read. ASSIST-mode items only
+// (confidence >= 0.80); stored as extra evidence rows marked MODEL_ASSIST_* (not an official source type,
+// so the opportunity pool does not tier on them) with confidence capped below the rules' direct 0.9.
+const MODEL_BUYER_EVIDENCE_TYPES = Object.freeze({
+  IMPORTER: 'IMPORTER', WHOLESALER: 'WHOLESALER', DISTRIBUTOR: 'DISTRIBUTOR', GENERAL_TRADING: 'GENERAL_TRADING',
+  RETAIL_CHAIN: 'RETAIL_CHAIN', DEPARTMENT_STORE: 'DEPARTMENT_STORE', SUPERMARKET_HYPERMARKET: 'RETAIL_CHAIN',
+  ONLINE_RETAILER: 'RETAILER', SINGLE_STORE_RETAILER: 'RETAILER'
+});
+const VERIFICATION_RANK = { REJECTED: 0, REVIEW: 1, VERIFIED_BUSINESS: 2 };
+async function modelBuyerTypeEvidence(hooks, candidate, job, marketProfile, crawl, ruleEvidence) {
+  if (!hooks?.checkBuyerType || !crawl.pages.length) return [];
+  try {
+    const result = await hooks.checkBuyerType({
+      merchantId: job.merchant_id || null, companyId: null,
+      company: { display_name: candidate.title, official_domain: extractRootDomain(crawl.officialWebsiteUrl || candidate.final_url || '') || null, market: marketProfile.countryCode },
+      pages: crawl.pages.slice(0, 3).map(page => ({ url: page.url, html: page.html }))
+    });
+    if (!result?.ran || !result.usable?.length) return [];
+    const known = new Set(ruleEvidence.map(item => `${item.evidence_type}|${item.source_url}|${item.evidence_text}`));
+    const rows = [];
+    for (const item of result.usable) {
+      const type = item.kind === 'BUYER_TYPE' ? MODEL_BUYER_EVIDENCE_TYPES[item.buyer_type]
+        : item.kind === 'STORE_NETWORK' && item.own_store_network ? 'LOCATIONS' : null;
+      const text = String(item.quote || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+      const confidence = Number(item.confidence);
+      if (!type || !text || !Number.isFinite(confidence)) continue;
+      const row = {
+        evidence_type: type, evidence_value: item.kind === 'STORE_NETWORK' ? String(item.store_count ?? 'OWN_STORE_NETWORK') : item.buyer_type,
+        evidence_text: text, source_type: 'MODEL_ASSIST_OFFICIAL_PAGE', source_url: item.source_url || crawl.pages[0].url,
+        source_page_title: null, confidence: Math.min(0.85, confidence), verification_method: `MODEL_ASSIST_T2:${item.evidence_id}`,
+        captured_at: new Date().toISOString()
+      };
+      const key = `${row.evidence_type}|${row.source_url}|${row.evidence_text}`;
+      if (!known.has(key)) { known.add(key); rows.push(row); }
+    }
+    return rows;
+  } catch { return []; }
+}
+
+async function verifyOne(pool, candidate, job, config, checker, hooks = null) {
   const marketProfile = marketProfileForJob(job);
   const contacts = await loadCandidateContacts(pool, candidate.id);
   const crawl = await crawlCandidate(candidate, job, marketProfile, config, checker);
   const pageEvidence = crawl.pages.flatMap(page => page.evidence);
+  const modelEvidence = hooks ? await modelBuyerTypeEvidence(hooks, candidate, job, marketProfile, crawl, pageEvidence) : [];
   const contactEvidence = contacts.map(contact => ({
     evidence_type: 'PUBLIC_CONTACT', evidence_value: contact.contact_value,
     evidence_text: `${contact.contact_type}: ${contact.contact_value}`,
@@ -328,6 +368,7 @@ async function verifyOne(pool, candidate, job, config, checker) {
     await client.query('DELETE FROM leadgen.company_verification_evidence WHERE research_candidate_id=$1', [candidate.id]);
     await client.query("DELETE FROM leadgen.company_social_accounts WHERE research_candidate_id=$1 AND source_type NOT IN('TAVILY_BASIC_SEARCH','TAVILY_ADVANCED_SEARCH')", [candidate.id]);
     const evidence = await insertEvidence(client, verificationId, candidate, [...pageEvidence, ...contactEvidence]);
+    const modelRows = modelEvidence.length ? await insertEvidence(client, verificationId, candidate, modelEvidence) : [];
     const pageBundles = crawl.pages.map(page => ({ evidence: evidence.filter(item => item.source_url === page.url) }));
     const officialCandidate = {
       ...candidate,
@@ -336,32 +377,21 @@ async function verifyOne(pool, candidate, job, config, checker) {
     };
     const official = resolveOfficialWebsite(officialCandidate, pageBundles, marketProfile);
     const resolvedName = crawl.pages.map(page => page.resolvedName).find(name => name && !/^(?:home|about|contact)/i.test(name)) || candidate.title;
-    const businessTypes = assessBusinessTypes(evidence);
-    const size = assessCompanySize(evidence);
-    const regionalEvidence = evidence.some(item => ['LOCATION','REGIONAL_COVERAGE'].includes(item.evidence_type));
-    const consumerOnly = evidence.some(item => item.evidence_type === 'RETAIL_CHANNEL')
-      && !Object.values(businessTypes).some(item => ['VERIFIED','SUPPORTED'].includes(item.status));
-    const accessibility = assessPartnershipAccessibility({
-      companySize: size.company_size, businessTypes, contacts, regionalEvidence, consumerOnly
+    // One pure decision (C1): retail chains with own store network + category evidence are material buyers.
+    const candidateType = REJECTED_TYPES.has(candidate.candidate_type) ? candidate.candidate_type : null;
+    let decision = decideCandidateVerification({
+      evidence, contacts, officialConfidence: official.confidence, candidateType
     });
-    const sme = assessSmeRelevance({
-      companySize: size.company_size, businessTypes, directContacts: contacts.length, regionalEvidence
-    });
-    const strategic = strategicAccountAssessment(size.company_size, evidence);
-    const identityEvidence = evidence.filter(item => item.evidence_type === 'COMPANY_IDENTITY');
-    const locationEvidence = evidence.filter(item => item.evidence_type === 'LOCATION');
+    if (modelRows.length) {
+      // Model evidence may add buyer-type detail or lower the outcome, never raise it on its own.
+      const assisted = decideCandidateVerification({
+        evidence: [...evidence, ...modelRows], contacts, officialConfidence: official.confidence, candidateType
+      });
+      if ((VERIFICATION_RANK[assisted.verificationStatus] ?? 1) <= (VERIFICATION_RANK[decision.verificationStatus] ?? 1)) decision = assisted;
+    }
+    const { businessTypes, size, accessibility, sme, strategic, verificationStatus, rejectionReasons } = decision;
+    const rejected = verificationStatus === 'REJECTED';
     const businessEvidenceIds = Object.values(businessTypes).flatMap(item => item.evidenceIds);
-    const materialBusiness = Object.values(businessTypes).some(item => ['VERIFIED','SUPPORTED'].includes(item.status));
-    const rejected = REJECTED_TYPES.has(candidate.candidate_type);
-    const mandatory = identityEvidence.length > 0 && locationEvidence.length > 0
-      && official.confidence >= 0.7 && materialBusiness;
-    const verificationStatus = rejected ? 'REJECTED' : mandatory ? 'VERIFIED_BUSINESS' : 'REVIEW';
-    const rejectionReasons = rejected ? ['NON_BUSINESS_RESULT_TYPE']
-      : consumerOnly ? ['CONSUMER_ONLY_RETAIL']
-        : !identityEvidence.length ? ['BUSINESS_IDENTITY_NOT_RESOLVED']
-          : !locationEvidence.length ? ['TARGET_MARKET_EVIDENCE_MISSING']
-            : !materialBusiness ? ['TARGET_BUSINESS_ACTIVITY_NOT_SUPPORTED']
-              : official.confidence < 0.7 ? ['OFFICIAL_WEBSITE_NOT_RESOLVED'] : [];
     const socialAccounts = crawl.socialAccounts.filter(item => item.account_type === 'BUSINESS');
     await persistSocialAccounts(client, candidate, null, socialAccounts);
     const socialCount = await client.query('SELECT count(*)::int AS count FROM leadgen.company_social_accounts WHERE research_candidate_id=$1', [candidate.id]);
@@ -400,7 +430,7 @@ async function verifyOne(pool, candidate, job, config, checker) {
         partnership_accessibility_confidence=$25,accessibility_reason_codes=$26,
         accessibility_evidence_ids=$27,business_type_evidence_ids=$28,strategic_account=$29,
         strategic_reason_codes=$30,social_enrichment_status=$31,promotion_status=$32,
-        rejection_reason_codes=$33,updated_at=now(),verified_at=now()
+        rejection_reason_codes=$33,retail_chain_status=$34,updated_at=now(),verified_at=now()
       WHERE id=$1`, [verificationId, promotion.companyId, verificationStatus, resolvedName,
       assessment.normalized_company_name, official.website, official.root_domain, official.confidence,
       assessment.country_code, assessment.country_name, assessment.market_profile, job.city, job.region,
@@ -410,7 +440,8 @@ async function verifyOne(pool, candidate, job, config, checker) {
       accessibility.confidence, accessibility.reasonCodes,
       evidence.filter(item => ['PUBLIC_CONTACT','REGIONAL_COVERAGE','LOCATION','WHOLESALER','DISTRIBUTOR','IMPORTER','GENERAL_TRADING'].includes(item.evidence_type)).map(item => item.id),
       businessEvidenceIds, strategic.strategic_account, strategic.reasonCodes,
-      socialAccounts.length ? 'COMPLETED' : 'NO_PUBLIC_ACCOUNT', promotion.promotionStatus, rejectionReasons]);
+      socialAccounts.length ? 'COMPLETED' : 'NO_PUBLIC_ACCOUNT', promotion.promotionStatus, rejectionReasons,
+      businessTypes.retailChain.status]);
     await client.query('COMMIT');
     return {
       candidate_id: candidate.id, verification_status: verificationStatus,
@@ -499,7 +530,7 @@ export async function verifyResearchCandidates(pool, jobId, config = {}, overrid
   });
   const results = [];
   for (const candidate of candidates) {
-    try { results.push(await verifyOne(pool, candidate, job, effective, checker)); }
+    try { results.push(await verifyOne(pool, candidate, job, effective, checker, overrides.modelAssistHooks || null)); }
     catch (error) {
       await pool.query(`
         INSERT INTO leadgen.research_candidate_verifications

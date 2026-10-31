@@ -3,6 +3,9 @@ import { extractRootDomain, normalizeUrl } from '../search/resultNormalizer.js';
 import { GENERIC_MARKET_PROFILE } from '../market/marketProfiles.js';
 import { getProductCategoryProfile } from '../market/productProfiles.js';
 import { normalizeWhatsApp } from '../contact/phoneUtils.js';
+import { assessRetailChain, retailChainEvidence } from './retailChain.js';
+
+export { assessRetailChain, retailChainSignal } from './retailChain.js';
 
 const PLATFORM_HOSTS = Object.freeze({
   'linkedin.com': 'LINKEDIN', 'instagram.com': 'INSTAGRAM', 'facebook.com': 'FACEBOOK',
@@ -17,9 +20,10 @@ function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Whole-word match that also works for accented (es/pt) and Arabic terms, where \b does not.
 function termsRegex(terms, fallback) {
   const values = [...new Set((terms || []).map(value => String(value).trim()).filter(Boolean))];
-  return values.length ? new RegExp(`\\b(?:${values.map(escapeRegex).join('|')})\\b`, 'i') : fallback;
+  return values.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${values.map(escapeRegex).join('|')})(?![\\p{L}\\p{N}])`, 'iu') : fallback;
 }
 
 export function normalizeCompanyName(value = '', marketProfile = GENERIC_MARKET_PROFILE) {
@@ -265,10 +269,12 @@ export function extractVerificationEvidence(page, { candidateTitle = '', country
     ['DISTRIBUTOR', termsRegex(['we distribute','distributor of','authorized distributor','exclusive distributor','distribution company','distribution arm',...(marketProfile.distributorTerms || [])], /$^/), 0.95, 'EXPLICIT_BUSINESS_ACTIVITY'],
     ['GENERAL_TRADING', termsRegex(marketProfile.tradingTerms || [], /$^/), 0.9, 'MARKET_PROFILE_TRADING_ACTIVITY'],
     ['REGIONAL_COVERAGE', /\b(?:regional\s+(?:operations?|coverage|network)|national\s+(?:operations?|coverage|network)|markets?\s+across|operations?\s+across|throughout\s+the\s+country)\b/i, 0.78, 'PUBLIC_SCALE_SIGNAL'],
-    ['LOCATIONS', /\b(?:stores?|branches?|locations?|offices?|showrooms?)\s+(?:across|in|throughout)|\bmultiple\s+(?:stores?|branches?|locations?|offices?)\b/i, 0.72, 'PUBLIC_SCALE_SIGNAL'],
+    // C8: "stores in <country>" / bare "locations" no longer count; own wording or a quantity is required.
+    ['LOCATIONS', /\b(?:our|we have|we operate)\s+(?:\d{1,4}\+?\s+)?(?:stores?|branches|locations|offices|showrooms)\b|\b\d{1,4}\+?\s+(?:stores|branches|locations|offices|showrooms)\s+(?:across|in|throughout)\b|\bmultiple\s+(?:stores|branches|locations|offices)\b|\b(?:nuestras|nossas)\s+(?:tiendas|sucursales|lojas|filiais)\b/i, 0.72, 'PUBLIC_SCALE_SIGNAL'],
     ['WAREHOUSE', /\b(?:warehouse|warehousing|distribution\s+cent(?:er|re)|logistics\s+facilit)\b/i, 0.78, 'PUBLIC_SCALE_SIGNAL'],
     ['BRANDS', /\b(?:portfolio\s+of\s+(?:international\s+)?brands|represent(?:s|ing)\s+brands|brand\s+portfolio|exclusive\s+brands)\b/i, 0.75, 'PUBLIC_SCALE_SIGNAL'],
-    ['RETAIL_CHANNEL', /\b(?:department\s+stores?|retail\s+network|salons?|pharmacies|supermarkets?|e-?commerce)\b/i, 0.7, 'PUBLIC_ACTIVITY_SIGNAL'],
+    // Beauty-era "salons" / "pharmacies" removed (C1).
+    ['RETAIL_CHANNEL', /\b(?:department\s+stores?|retail\s+network|supermarkets?|hypermarkets?|e-?commerce)\b/i, 0.7, 'PUBLIC_ACTIVITY_SIGNAL'],
     ['RECENT_ACTIVITY', /\b(?:202[4-9]|latest|recent|new\s+(?:store|launch|brand|partnership))\b/i, 0.62, 'PUBLIC_RECENCY_SIGNAL']
   ];
   for (const [type, pattern, confidence, method] of patterns) {
@@ -283,10 +289,18 @@ export function extractVerificationEvidence(page, { candidateTitle = '', country
   const employeePattern = /\b(?:over|more than|approximately|about)?\s*(\d{1,5})(?:\s*[-–]\s*(\d{1,5}))?\s+employees?\b/i;
   for (const value of sentenceEvidence(text, employeePattern, 2)) pushEvidence(items, 'EMPLOYEE_SIZE', value, page, 0.95, 'EXPLICIT_EMPLOYEE_RANGE', value.match(employeePattern)?.[0] || value);
   for (const value of structuredEmployeeRanges(structuredItems)) pushEvidence(items, 'EMPLOYEE_SIZE', value, page, 0.95, 'JSON_LD_NUMBER_OF_EMPLOYEES', value);
-  const scalePattern = /\b(?:over|more than|approximately|about)?\s*(\d{1,4})\+?\s+(?:stores?|branches?|locations?|offices?|brands?|countries)\b/i;
+  const scalePattern = /\b(?:over|more than|approximately|about)?\s*(\d{1,4})\+?\s+(?:stores?|branches?|locations?|offices?|brands?|countries|supermarkets|tiendas|sucursales|lojas|filiais)\b/i;
   for (const value of sentenceEvidence(text, scalePattern, 3)) pushEvidence(items, 'COMPANY_SCALE', value, page, 0.82, 'EXPLICIT_PUBLIC_SCALE_COUNT', value.match(scalePattern)?.[0] || value);
 
-  const categoryPatterns = termsRegex(getProductCategoryProfile(category).evidenceTerms, /$^/);
+  // C1: own store network of a retail chain / department store.
+  for (const row of retailChainEvidence(text, structuredDescriptions(structuredItems))) {
+    pushEvidence(items, row.evidence_type, row.text, page, row.confidence, row.structured ? `JSON_LD_${row.method}` : row.method,
+      row.count ? `${row.count} stores` : null);
+  }
+
+  // C8: category terms include the Shopify taxonomy names in the market's languages.
+  const languages = [marketProfile.defaultLanguage, ...(marketProfile.secondaryLanguages || [])].filter(Boolean);
+  const categoryPatterns = termsRegex(getProductCategoryProfile(category, { languages }).evidenceTerms, /$^/);
   for (const value of sentenceEvidence(text, categoryPatterns, 3)) pushEvidence(items, 'PRODUCT_CATEGORY', value, page, 0.82, 'PUBLIC_PRODUCT_TEXT', category);
   for (const value of structuredDescriptions(structuredItems)) {
     const matches = categoryPatterns.test(value);
@@ -307,7 +321,7 @@ export function resolveOfficialWebsite(candidate, pages = [], _marketProfile = G
   if (!directoryTypes.has(candidate.candidate_type) && candidateDomain) {
     const identityFound = pages.some(page => page.evidence?.some(item => item.evidence_type === 'COMPANY_IDENTITY'));
     const marketFound = pages.some(page => page.evidence?.some(item => item.evidence_type === 'LOCATION'));
-    const activityFound = pages.some(page => page.evidence?.some(item => ['IMPORTER','WHOLESALER','DISTRIBUTOR','GENERAL_TRADING'].includes(item.evidence_type)));
+    const activityFound = pages.some(page => page.evidence?.some(item => ['IMPORTER','WHOLESALER','DISTRIBUTOR','GENERAL_TRADING','RETAIL_CHAIN','DEPARTMENT_STORE'].includes(item.evidence_type)));
     const confidence = identityFound && marketFound ? 0.9 : identityFound && activityFound ? 0.78 : 0.55;
     return {
       website: normalizeUrl(candidate.final_url || candidate.url), root_domain: candidateDomain,
@@ -331,9 +345,46 @@ function statusFromEvidence(evidence, type, supportedPatterns = []) {
 export function assessBusinessTypes(evidence) {
   return {
     importer: statusFromEvidence(evidence, 'IMPORTER', [/exclusive\s+(?:regional\s+)?distribution/i, /international\s+brands/i]),
-    wholesaler: statusFromEvidence(evidence, 'WHOLESALER', [/supply\s+(?:to|for)\s+(?:retailers?|salons?|stores?)/i]),
+    wholesaler: statusFromEvidence(evidence, 'WHOLESALER', [/supply\s+(?:to|for)\s+(?:retailers?|stores?)/i]),
     distributor: statusFromEvidence(evidence, 'DISTRIBUTOR', [/exclusive\s+(?:regional\s+)?distribution/i, /distribution\s+of\s+(?:international\s+)?brands/i, /distribution\s+arm/i]),
-    generalTrading: statusFromEvidence(evidence, 'GENERAL_TRADING', [])
+    generalTrading: statusFromEvidence(evidence, 'GENERAL_TRADING', []),
+    retailChain: assessRetailChain(evidence)
+  };
+}
+
+const TARGET_STATUSES = new Set(['VERIFIED', 'SUPPORTED']);
+export function hasTargetBusinessType(businessTypes = {}) {
+  return Object.values(businessTypes).some(item => TARGET_STATUSES.has(item?.status));
+}
+
+/**
+ * Pure verification decision over evidence, shared by the live verifier and read-only replays.
+ * consumerOnly ("retail channel only") no longer blocks a B2B retail chain whose own store
+ * network and approved category are both evidenced (C1).
+ */
+export function decideCandidateVerification({ evidence = [], contacts = [], officialConfidence = 0, candidateType = null } = {}) {
+  const businessTypes = assessBusinessTypes(evidence);
+  const size = assessCompanySize(evidence);
+  const regionalEvidence = evidence.some(item => ['LOCATION', 'REGIONAL_COVERAGE'].includes(item.evidence_type));
+  const materialBusiness = hasTargetBusinessType(businessTypes);
+  const consumerOnly = evidence.some(item => item.evidence_type === 'RETAIL_CHANNEL') && !materialBusiness;
+  const identity = evidence.some(item => item.evidence_type === 'COMPANY_IDENTITY');
+  const location = evidence.some(item => item.evidence_type === 'LOCATION');
+  const rejected = ['ARTICLE', 'MARKETPLACE'].includes(String(candidateType || '').toUpperCase());
+  const officialOk = Number(officialConfidence) >= 0.7;
+  const verificationStatus = rejected ? 'REJECTED' : identity && location && officialOk && materialBusiness ? 'VERIFIED_BUSINESS' : 'REVIEW';
+  const chainReasons = businessTypes.retailChain.reasonCodes.filter(code => code !== 'RETAIL_CHAIN_STORE_NETWORK_AND_CATEGORY');
+  const rejectionReasons = rejected ? ['NON_BUSINESS_RESULT_TYPE']
+    : consumerOnly ? ['CONSUMER_ONLY_RETAIL', ...chainReasons]
+      : !identity ? ['BUSINESS_IDENTITY_NOT_RESOLVED']
+        : !location ? ['TARGET_MARKET_EVIDENCE_MISSING']
+          : !materialBusiness ? ['TARGET_BUSINESS_ACTIVITY_NOT_SUPPORTED', ...chainReasons]
+            : !officialOk ? ['OFFICIAL_WEBSITE_NOT_RESOLVED'] : [];
+  return {
+    businessTypes, size, regionalEvidence, consumerOnly, materialBusiness, verificationStatus, rejectionReasons,
+    accessibility: assessPartnershipAccessibility({ companySize: size.company_size, businessTypes, contacts, regionalEvidence, consumerOnly }),
+    sme: assessSmeRelevance({ companySize: size.company_size, businessTypes, directContacts: contacts.length, regionalEvidence }),
+    strategic: strategicAccountAssessment(size.company_size, evidence)
   };
 }
 
@@ -371,7 +422,7 @@ export function assessCompanySize(evidence) {
 }
 
 export function assessSmeRelevance({ companySize, businessTypes, directContacts, regionalEvidence }) {
-  const target = Object.values(businessTypes).some(item => ['VERIFIED','SUPPORTED'].includes(item.status));
+  const target = hasTargetBusinessType(businessTypes);
   const reasons = [];
   if (['MICRO','SMALL','MEDIUM'].includes(companySize)) reasons.push('SME_SCALE');
   if (regionalEvidence) reasons.push('REGIONAL_OPERATION');
@@ -384,7 +435,7 @@ export function assessSmeRelevance({ companySize, businessTypes, directContacts,
 }
 
 export function assessPartnershipAccessibility({ companySize, businessTypes, contacts = [], regionalEvidence = false, consumerOnly = false }) {
-  const target = Object.values(businessTypes).some(item => ['VERIFIED','SUPPORTED'].includes(item.status));
+  const target = hasTargetBusinessType(businessTypes);
   const verifiedTarget = Object.values(businessTypes).some(item => item.status === 'VERIFIED');
   const direct = contacts.filter(item => DIRECT_CONTACT_TYPES.has(item.contact_type)).length;
   const reasons = [];

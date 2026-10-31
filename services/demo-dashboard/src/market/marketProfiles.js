@@ -66,6 +66,7 @@ const PROFILES = Object.freeze({
     countryCode: 'AE',
     countryName: 'United Arab Emirates',
     providerCountryName: 'united arab emirates',
+    secondaryLanguages: ['ar'],
     searchMarketNames: ['UAE', 'United Arab Emirates'],
     businessSuffixes: ['LLC', 'L.L.C.', 'FZE', 'FZCO', 'PJSC', 'Ltd', 'Limited'],
     tradingTerms: ['general trading', 'trading company', 'commercial trading'],
@@ -168,7 +169,7 @@ const PROFILES = Object.freeze({
         exclusion: ['agente de compras', 'corredor', 'fabricante OEM']
       })
     }),
-    locationTerms: ['Mexico', 'México', 'Mexico City', 'Ciudad de México', 'CDMX', 'Guadalajara', 'Monterrey'],
+    locationTerms: ['Mexico', 'México', 'Mexico City', 'Ciudad de México', 'CDMX', 'Guadalajara', 'Monterrey', 'Puebla', 'Querétaro', 'Tijuana', 'León'],
     businessEvidenceTerms: Object.freeze({
       importer: [...GENERIC.businessEvidenceTerms.importer, 'importador', 'importadora', 'importación'],
       wholesaler: [...GENERIC.businessEvidenceTerms.wholesaler, 'mayorista', 'mayoreo'],
@@ -176,6 +177,140 @@ const PROFILES = Object.freeze({
       trading: [...GENERIC.businessEvidenceTerms.trading, 'comercializadora', 'empresa comercial'],
       company: [...GENERIC.businessEvidenceTerms.company, 'empresa', 'compañía', 'productos']
     })
+  }),
+  // C8: Brazil, Australia, Canada and Singapore.
+  BR: Object.freeze({
+    ...GENERIC,
+    profileKey: 'BR',
+    countryCode: 'BR',
+    countryName: 'Brazil',
+    providerCountryName: 'brazil',
+    defaultLanguage: 'pt',
+    secondaryLanguages: ['en'],
+    searchMarketNames: ['Brazil', 'Brasil'],
+    businessSuffixes: ['Ltda', 'Ltda.', 'S.A.', 'S/A', 'EIRELI', 'ME', 'EPP', 'Ltd', 'Limited'],
+    importerTerms: ['importadora', 'importador', 'importação', 'importer'],
+    wholesalerTerms: ['atacadista', 'atacado', 'distribuidor atacadista', 'wholesaler'],
+    distributorTerms: ['distribuidora', 'distribuidor', 'distributor'],
+    tradingTerms: ['trading', 'comercial importadora', 'comércio exterior', 'trading company'],
+    retailTerms: ['rede de lojas', 'varejista', 'rede varejista', 'retail chain'],
+    departmentStoreTerms: ['loja de departamentos', 'lojas de departamento', 'department store'],
+    supermarketTerms: ['rede de supermercados', 'supermercado', 'supermarket chain'],
+    smeTerms: ['regional', 'distribuidor local', 'atacadista independente'],
+    strategicTerms: ['grupo varejista', 'rede nacional de distribuição', 'grupo de distribuição'],
+    phoneCountryCode: '+55',
+    nationalPhonePrefix: '',
+    nationalPhoneLengths: [10, 11],
+    allowNationalWithoutPrefix: true,
+    preferredSocialPlatforms: ['INSTAGRAM', 'LINKEDIN', 'FACEBOOK', 'WHATSAPP'],
+    officialDirectorySources: ['Brazil business directory'],
+    directoryDomains: [...GENERIC.directoryDomains, 'econodata.com.br', 'cnpj.biz'],
+    newsDomains: [...GENERIC.newsDomains, 'valor.globo.com', 'exame.com'],
+    marketplaceDomains: [...GENERIC.marketplaceDomains, 'mercadolivre.com.br', 'shopee.com.br', 'magazineluiza.com.br'],
+    pageRoleTerms: [...GENERIC.pageRoleTerms, 'sobre nós', 'quem somos', 'empresa', 'produtos', 'marcas', 'atacado', 'distribuição', 'contato', 'lojas'],
+    decisionMakerTerms: [...GENERIC.decisionMakerTerms, 'comprador', 'compras', 'gerente de compras', 'diretor de compras', 'suprimentos'],
+    procurementDepartmentTerms: [...GENERIC.procurementDepartmentTerms, 'departamento de compras', 'setor de compras', 'equipe de compras'],
+    supplierAccessTerms: [...GENERIC.supplierAccessTerms, 'cadastro de fornecedores', 'seja um fornecedor', 'portal de fornecedores'],
+    supplierBarrierTerms: [...GENERIC.supplierBarrierTerms, 'fornecedores homologados', 'somente por convite'],
+    productDiscoveryTerms: Object.freeze({
+      WOMENSWEAR: ['moda feminina', 'vestidos', 'blusas', 'saias', 'roupas femininas'],
+      GENERAL_MERCHANDISE: ['utilidades domésticas', 'casa', 'artigos para o lar', 'pet', 'marcas']
+    }),
+    categoryBuyerDiscoveryTerms: Object.freeze({
+      WOMENSWEAR: Object.freeze({
+        category: ['moda feminina', 'vestidos', 'marcas femininas'],
+        directBuyer: ['lojas', 'rede de lojas', 'departamento de compras'],
+        distribution: ['atacado', 'distribuidora', 'importadora', 'centro de distribuição', 'rede de revendedores'],
+        exclusion: ['agente de compras', 'corretor', 'fabricante OEM']
+      }),
+      GENERAL_MERCHANDISE: Object.freeze({
+        category: ['utilidades domésticas', 'artigos para o lar', 'pet', 'marcas'],
+        directBuyer: ['lojas', 'rede de lojas', 'departamento de compras'],
+        distribution: ['atacado', 'distribuidora', 'importadora', 'centro de distribuição', 'rede de revendedores'],
+        exclusion: ['agente de compras', 'corretor', 'fabricante OEM']
+      })
+    }),
+    locationTerms: ['Brazil', 'Brasil', 'São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Porto Alegre', 'Recife', 'Fortaleza', 'Salvador', 'Brasília'],
+    businessEvidenceTerms: Object.freeze({
+      importer: [...GENERIC.businessEvidenceTerms.importer, 'importadora', 'importador', 'importação'],
+      wholesaler: [...GENERIC.businessEvidenceTerms.wholesaler, 'atacadista', 'atacado'],
+      distributor: [...GENERIC.businessEvidenceTerms.distributor, 'distribuidora', 'distribuidor', 'distribuição'],
+      trading: [...GENERIC.businessEvidenceTerms.trading, 'trading', 'comércio exterior'],
+      company: [...GENERIC.businessEvidenceTerms.company, 'empresa', 'companhia', 'produtos']
+    })
+  }),
+  AU: Object.freeze({
+    ...GENERIC,
+    profileKey: 'AU',
+    countryCode: 'AU',
+    countryName: 'Australia',
+    providerCountryName: 'australia',
+    searchMarketNames: ['Australia'],
+    businessSuffixes: ['Pty Ltd', 'Pty. Ltd.', 'Pty Limited', 'Ltd', 'Limited'],
+    tradingTerms: ['trading company', 'import and wholesale', 'supplier'],
+    smeTerms: ['regional', 'independent', 'family owned', 'wholesale supplier'],
+    strategicTerms: ['national distribution network', 'retail group', 'distribution group'],
+    phoneCountryCode: '+61',
+    nationalPhonePrefix: '0',
+    nationalPhoneLengths: [10],
+    preferredSocialPlatforms: ['LINKEDIN', 'INSTAGRAM', 'FACEBOOK'],
+    officialDirectorySources: ['ABN Lookup', 'Australian business directory'],
+    directoryDomains: [...GENERIC.directoryDomains, 'yellowpages.com.au', 'abr.business.gov.au'],
+    newsDomains: [...GENERIC.newsDomains, 'afr.com', 'insideretail.com.au'],
+    marketplaceDomains: [...GENERIC.marketplaceDomains, 'ebay.com.au', 'catch.com.au'],
+    pageRoleTerms: [...GENERIC.pageRoleTerms, 'who we are', 'stockists', 'trade'],
+    locationTerms: ['Australia', 'Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'NSW', 'Victoria', 'Queensland']
+  }),
+  CA: Object.freeze({
+    ...GENERIC,
+    profileKey: 'CA',
+    countryCode: 'CA',
+    countryName: 'Canada',
+    providerCountryName: 'canada',
+    secondaryLanguages: ['fr'],
+    searchMarketNames: ['Canada'],
+    businessSuffixes: ['Inc', 'Inc.', 'Ltd', 'Ltd.', 'Ltée', 'Corp', 'Corporation', 'Limited', 'ULC'],
+    importerTerms: ['importer', 'import company', 'importateur'],
+    wholesalerTerms: ['wholesaler', 'wholesale supplier', 'grossiste'],
+    distributorTerms: ['distributor', 'distribution company', 'distributeur'],
+    tradingTerms: ['trading company', 'supplier', 'société de commerce'],
+    departmentStoreTerms: ['department store', 'grand magasin'],
+    smeTerms: ['regional', 'independent', 'family owned', 'wholesale supplier'],
+    strategicTerms: ['national distribution network', 'retail group', 'distribution group'],
+    phoneCountryCode: '+1',
+    nationalPhonePrefix: '',
+    nationalPhoneLengths: [10],
+    allowNationalWithoutPrefix: true,
+    preferredSocialPlatforms: ['LINKEDIN', 'INSTAGRAM', 'FACEBOOK'],
+    officialDirectorySources: ['Canadian business directory'],
+    directoryDomains: [...GENERIC.directoryDomains, 'yellowpages.ca', 'canadianbusinessdirectory.ca'],
+    newsDomains: [...GENERIC.newsDomains, 'theglobeandmail.com', 'retail-insider.com'],
+    marketplaceDomains: [...GENERIC.marketplaceDomains, 'ebay.ca'],
+    pageRoleTerms: [...GENERIC.pageRoleTerms, 'who we are', 'stockists', 'à propos', 'nous joindre'],
+    locationTerms: ['Canada', 'Toronto', 'Montreal', 'Montréal', 'Vancouver', 'Calgary', 'Ottawa', 'Ontario', 'Quebec', 'Québec', 'British Columbia']
+  }),
+  SG: Object.freeze({
+    ...GENERIC,
+    profileKey: 'SG',
+    countryCode: 'SG',
+    countryName: 'Singapore',
+    providerCountryName: 'singapore',
+    searchMarketNames: ['Singapore'],
+    businessSuffixes: ['Pte Ltd', 'Pte. Ltd.', 'Private Limited', 'Ltd', 'Limited', 'LLP'],
+    tradingTerms: ['trading company', 'trading pte ltd', 'general trading', 'supplier'],
+    smeTerms: ['regional', 'independent', 'wholesale supplier', 'local distributor'],
+    strategicTerms: ['regional distribution group', 'Southeast Asia distribution network', 'retail group'],
+    phoneCountryCode: '+65',
+    nationalPhonePrefix: '',
+    nationalPhoneLengths: [8],
+    allowNationalWithoutPrefix: true,
+    preferredSocialPlatforms: ['LINKEDIN', 'FACEBOOK', 'INSTAGRAM', 'WHATSAPP'],
+    officialDirectorySources: ['ACRA BizFile', 'Singapore business directory'],
+    directoryDomains: [...GENERIC.directoryDomains, 'sgpbusiness.com', 'yellowpages.com.sg'],
+    newsDomains: [...GENERIC.newsDomains, 'straitstimes.com', 'businesstimes.com.sg'],
+    marketplaceDomains: [...GENERIC.marketplaceDomains, 'lazada.sg', 'shopee.sg', 'qoo10.sg'],
+    pageRoleTerms: [...GENERIC.pageRoleTerms, 'who we are', 'enquiry'],
+    locationTerms: ['Singapore', 'SG', 'Southeast Asia', 'ASEAN']
   })
 });
 
@@ -207,7 +342,7 @@ export function marketProfileForJob(job = {}) {
 }
 
 export function listConfiguredMarkets() {
-  return [PROFILES.AE, PROFILES.MX, PROFILES.BD].map(profile => ({
+  return [PROFILES.AE, PROFILES.MX, PROFILES.BD, PROFILES.BR, PROFILES.AU, PROFILES.CA, PROFILES.SG].map(profile => ({
     country_code: profile.countryCode,
     country_name: profile.countryName,
     default_language: profile.defaultLanguage,

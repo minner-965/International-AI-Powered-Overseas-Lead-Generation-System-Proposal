@@ -182,7 +182,7 @@ test('mailbox verification mapping and TTL preserve MX/domain-only distinction',
     assert.equal(result.decision, decision);
     assert.equal(result.eligible_for_send, eligible);
   }
-  const expired = evaluateContactVerification({ verification_status: 'VALID', last_verified_at: '2026-06-01T00:00:00Z' }, { now: NOW });
+  const expired = evaluateContactVerification({ verification_status: 'VALID', last_verified_at: '2026-04-01T00:00:00Z' }, { now: NOW }); // older than the 90-day default
   assert.equal(expired.eligible_for_send, false);
   assert.ok(expired.reason_codes.includes('CONTACT_VERIFICATION_EXPIRED'));
 });

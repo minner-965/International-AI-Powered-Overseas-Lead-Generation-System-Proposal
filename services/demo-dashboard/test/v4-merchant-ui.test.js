@@ -92,7 +92,7 @@ test('first-login checklist follows the API steps and points the next step at a 
   const model = onboardingModel({ steps: [{ key: 'mailbox', done: true }, { key: 'categories', done: false }, { key: 'markets', done: false }, { key: 'first_search', done: false }] });
   assert.equal(model.count, 1); assert.equal(model.next, 'categories');
   const html = onboardingMarkup(model);
-  for (const label of ['绑定发信邮箱', '选择类目', '选择市场', '开始找客户']) assert.ok(html.includes(label), label);
+  for (const label of ['绑定发信邮箱', '选择类目', '选择市场', '开始客户搜索']) assert.ok(html.includes(label), label);
   assert.match(html, /class="btn btn-primary v4-onboarding-go" data-onboarding-step="categories"/);
   assert.match(html, /aria-valuenow="1"/);
   assert.equal(onboardingMarkup(onboardingModel({ steps: ['mailbox', 'categories', 'markets', 'first_search'].map(key => ({ key, done: true })) })), '');

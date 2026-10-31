@@ -11,7 +11,7 @@ test('approved A/B/C deterministic precedence and generic identity separation',(
  assert.equal(selectFirstTouchTemplate({recipient:{...recipient,named_person_verified:false,recipient_type:'OFFICIAL_DEPARTMENT_EMAIL'},company_types:['IMPORTER']}),'B_IMPORTER_WHOLESALER_DISTRIBUTOR');
  assert.equal(selectFirstTouchTemplate({recipient:{...recipient,normalized_recipient:'info@example.test',recipient_type:'OFFICIAL_COMPANY_EMAIL'},company_types:['IMPORTER']}),'C_OFFICIAL_GENERIC_MAILBOX');
  assert.equal(selectFirstTouchTemplate({recipient:{...recipient,normalized_recipient:'info@example.test'},company_types:['IMPORTER']}),null);
- assert.equal(selectFirstTouchTemplate({recipient:{...recipient,official_source_verified:false}}),null);
+ assert.equal(selectFirstTouchTemplate({recipient:{...recipient,official_source_verified:false,domain_verified:false}}),null); // C3: own-domain OR published on the company site
  assert.equal(selectFirstTouchTemplate({recipient:{...recipient,verification_status:'ACCEPT_ALL'}}),null);
 });
 test('exact approved immutable template renders Simon and verified variables only',()=>{

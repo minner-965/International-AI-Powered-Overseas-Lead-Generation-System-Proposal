@@ -2,21 +2,36 @@ import crypto from 'node:crypto';
 import * as cheerio from 'cheerio';
 import { extractProductObservations } from '../productMatch/productObservationExtractor.js';
 
-export const CATEGORY_OBSERVATION_EXTRACTION_VERSION='company-category-observation-v2';
+export const CATEGORY_OBSERVATION_EXTRACTION_VERSION='company-category-observation-v3';
 const clean=(value,max=2000)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
 const sha=value=>crypto.createHash('sha256').update(String(value)).digest('hex');
 const upper=value=>String(value||'').trim().toUpperCase();
 const official=new Set(['OFFICIAL','OFFICIAL_DOCUMENT','OFFICIAL_CATALOG','OFFICIAL_STOREFRONT']);
 
+// C8: each signal has strong wording, and broad navigation words ("locations", "shop online",
+// "inventario") that count only when the same evidence window carries a quantity or own-operation
+// context — the same rule as opportunityPool/classifierV2.js. Portuguese and Arabic wording added.
+const QUANTITY=/\b(?:(?:more than|over|across|m[aá]s de|mais de)\s+)?\d{1,5}\s*\+?\s*(?:stores?|shops?|locations?|branches|outlets?|showrooms?|boutiques?|tiendas|sucursales|ubicaciones|lojas|filiais|supermarkets?|hypermarkets?)\b/i;
 const signals=[
-  ['RETAIL_CHANNEL','OWN_RETAIL',/\b(?:our stores?|shop online|retail stores?|chain of stores?|tiendas|cadena minorista|nuestras tiendas)\b/i],
-  ['STORE_NETWORK','OWN_RETAIL',/\b(?:store locator|locations|branches|more than \d+ stores?|sucursales|ubicaciones)\b/i],
-  ['IMPORT_ACTIVITY','IMPORT',/\b(?:we import|importer of|importamos|importador(?:a)? de|international sourcing)\b/i],
-  ['WHOLESALE_ACTIVITY','WHOLESALE',/\b(?:wholesale catalog|wholesale ordering|venta al mayoreo|mayorista|wholesale customers?)\b/i],
-  ['DISTRIBUTION_NETWORK','DISTRIBUTION',/\b(?:dealer network|distribution network|supply retailers|red de distribuidores|distribuimos a tiendas)\b/i],
-  ['WAREHOUSE_INVENTORY','WAREHOUSE',/\b(?:our warehouse|warehousing|inventory operation|centro de distribución|nuestro almac[eé]n|inventario)\b/i],
-  ['THIRD_PARTY_BRAND_PORTFOLIO','DISTRIBUTION',/\b(?:brand portfolio|distributed brands|marcas que distribuimos|multi-brand portfolio)\b/i]
+  {type:'RETAIL_CHANNEL',role:'OWN_RETAIL',strong:/(?:\b(?:our stores?|retail stores?|chain of stores?|tiendas|cadena minorista|nuestras tiendas|nossas lojas|rede de lojas)\b|متاجرنا)/iu,
+    weak:/\bshop online\b/i,context:/\b(?:in[- ]store|our (?:stores?|boutiques?|showrooms?)|visit (?:us|our store))\b/i},
+  {type:'STORE_NETWORK',role:'OWN_RETAIL',strong:/(?:\b(?:store locator|branches|more than \d+ stores?|sucursales|filiais|nossas lojas)\b|فروعنا)/iu,
+    weak:/\b(?:locations|ubicaciones)\b/i,context:/\b(?:our|all|visit our|find (?:a|our)|nuestras|todas (?:las|nuestras))\s+(?:store\s+)?(?:locations|ubicaciones)\b|\blocations\s+(?:across|in|throughout|nationwide)\b/i},
+  {type:'IMPORT_ACTIVITY',role:'IMPORT',strong:/(?:\b(?:we import|importer of|importamos|importador(?:a)? de|international sourcing|importação|importadora de)\b|نستورد|مستورد)/iu},
+  {type:'WHOLESALE_ACTIVITY',role:'WHOLESALE',strong:/(?:\b(?:wholesale catalog|wholesale ordering|venta al mayoreo|mayorista|wholesale customers?|atacadista|vendas no atacado|venda por atacado)\b|بالجملة|تجارة الجملة)/iu},
+  {type:'DISTRIBUTION_NETWORK',role:'DISTRIBUTION',strong:/(?:\b(?:dealer network|distribution network|supply retailers|red de distribuidores|distribuimos a tiendas|rede de distribuição|distribuímos para)\b|شبكة توزيع)/iu},
+  {type:'WAREHOUSE_INVENTORY',role:'WAREHOUSE',strong:/(?:\b(?:our warehouse|warehousing|inventory operation|centro de distribución|nuestro almac[eé]n|centro de distribuição|nosso estoque)\b|مستودعاتنا)/iu,
+    weak:/\binventario\b/i,context:/\b(?:nuestro|gran|amplio)\s+inventario\b|\binventario\s+(?:propio|permanente|de m[aá]s de)\b|\b\d[\d.,]*\s*(?:m2|m²|metros cuadrados)\b/i},
+  {type:'THIRD_PARTY_BRAND_PORTFOLIO',role:'DISTRIBUTION',strong:/\b(?:brand portfolio|distributed brands|marcas que distribuimos|multi-brand portfolio|marcas que distribu[ií]mos|portf[oó]lio de marcas)\b/iu}
 ];
+/** First qualifying match of one signal: a strong term, or a weak term with quantity/context in its window. */
+export function matchOperatingSignal(signal,text){
+  const strong=signal.strong.exec(text);if(strong)return strong;
+  if(!signal.weak)return null;
+  const pattern=new RegExp(signal.weak.source,'gi');let match;
+  while((match=pattern.exec(text))){const window=evidenceWindow(text,match);if(QUANTITY.test(window)||signal.context?.test(window))return match;}
+  return null;
+}
 
 function evidenceWindow(text,match){const start=Math.max(0,match.index-180);return clean(text.slice(start,start+600));}
 
@@ -31,7 +46,7 @@ export function extractCategoryBuyerObservations(input={}){
     published_at:input.published_at||null,extraction_version:CATEGORY_OBSERVATION_EXTRACTION_VERSION,data_classification:'PUBLIC_WEB'};
     row.evidence_hash=sha([sourceUrl,row.observation_type,row.raw_product_name,row.raw_category,row.evidence_text].join('|'));if(!seen.has(row.evidence_hash)){seen.add(row.evidence_hash);result.push(row);}}
   const $=cheerio.load(html);$('script,style,noscript,svg').remove();const text=clean($('body').text(),100000);
-  for(const[type,role,pattern]of signals){const match=pattern.exec(text);if(!match)continue;const evidence=evidenceWindow(text,match);const row={observation_type:type,raw_category:null,raw_product_name:null,
+  for(const signal of signals){const{type,role}=signal;const match=matchOperatingSignal(signal,text);if(!match)continue;const evidence=evidenceWindow(text,match);const row={observation_type:type,raw_category:null,raw_product_name:null,
     raw_brand_or_department:null,normalized_profile:upper(input.product_profile)||'UNKNOWN',normalized_category:null,
     normalized_subcategory:null,business_activity_role:role,evidence_text:evidence,source_authority:authority,
     verification_status:official.has(authority)?'VERIFIED':'REVIEW',captured_at:capturedAt,published_at:input.published_at||null,

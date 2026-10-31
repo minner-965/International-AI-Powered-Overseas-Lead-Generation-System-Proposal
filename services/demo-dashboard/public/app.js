@@ -74,6 +74,8 @@ import { mountAutomationControl } from './ui/v3/automation-control.js';
 import { mountFollowupCard } from './ui/v4/followup-card.js';
 import { basicInfoCard, evaluationCard, companyLayout, wireCompanyLayout } from './ui/v4/company-layout.js';
 import { pipelineItemFor } from './ui/v4/crm.js';
+import { visibleLeads, unusableBadgeMarkup, hiddenNoteMarkup, bindRestoreButtons } from './ui/v4/unusable-leads.js';
+import { session as workspaceSession } from './ui/v4/session.js';
 
 mountOverview();
 mountRecordViews();
@@ -680,7 +682,7 @@ function companyRow(lead) {
   const relationship = lead.relationship_status || lead.historical_crm_status;
   const opportunity = phase7OpportunityStatus(lead);
   return `<tr data-id="${esc(id)}" data-company-id="${esc(companyIdFor(lead))}" class="${selectedRow?'active':''}" aria-selected="${selectedRow?'true':'false'}">
-    <td class="company-col-company" data-label="公司 / Company"><strong class="company">${esc(lead.company_name || lead.resolved_company_name || '-')}</strong>${lead.website_url ? `<div class="sub"><a href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer">${bi('企业网站','Company website')}</a></div>` : ''}<div class="v3-company-category">${productProfileLabel(lead)}</div><div class="v3-company-channel-summary">${lead.business_email || lead.business_phone ? esc([lead.business_email,lead.business_phone].filter(Boolean).join(' · ')) : bi('联系渠道见详情','Channels in details')}</div></td>
+    <td class="company-col-company" data-label="公司 / Company"><strong class="company">${esc(lead.company_name || lead.resolved_company_name || '-')}</strong>${lead.website_url ? `<div class="sub"><a href="${esc(safeUrl(lead.website_url))}" target="_blank" rel="noreferrer">${bi('企业网站','Company website')}</a></div>` : ''}<div class="v3-company-category">${productProfileLabel(lead)}</div>${unusableBadgeMarkup(lead,{ admin:workspaceSession.user?.role!=='MERCHANT' })}<div class="v3-company-channel-summary">${lead.business_email || lead.business_phone ? esc([lead.business_email,lead.business_phone].filter(Boolean).join(' · ')) : bi('联系渠道见详情','Channels in details')}</div></td>
     <td class="company-col-market" data-label="市场 / Market">${esc(marketValue(lead))}</td>
     <td class="company-col-type" data-label="业务类型 / Business type">${bi(companyTypeZh(businessTypeValue(lead)),companyTypeEn(businessTypeValue(lead)))}</td>
     <td class="company-col-verification" data-label="核验 / Verification">${verificationBadge(lead)}</td>
@@ -701,17 +703,20 @@ function renderCompanyTable() {
   $('#view-companies')?.classList.add('v3-company-directory');
   mountCompanyFilters($('#view-companies'));
   const sort = $('#company-sort')?.value || 'score_desc';
-  const ordered = sortedLeads(state.leads,sort);
+  // 无用线索 are hidden unless "显示无用线索 / Show unusable leads" is on (server marks them; display only).
+  const shown = visibleLeads(state.leads,$('#show-unusable-leads')?.checked === true);
+  const ordered = sortedLeads(shown.rows,sort);
   const pageSize = document.documentElement.dataset.density === 'compact' ? 20 : state.companyPageSize;
   const pageCount = Math.max(1,Math.ceil(ordered.length/pageSize));
   state.companyPage = Math.min(Math.max(1,state.companyPage),pageCount);
   const pageItems = ordered.slice((state.companyPage-1)*pageSize,state.companyPage*pageSize);
   $('#leads').innerHTML = pageItems.length ? pageItems.map(companyRow).join('') : `<tr><td colspan="8" class="crm-loading-cell">${bi('当前筛选没有企业。','No companies match the current filters.')}</td></tr>`;
   const pagination = $('#company-pagination');
-  if (pagination) pagination.innerHTML = `<span>${bi(`第 ${state.companyPage} / ${pageCount} 页，共 ${ordered.length} 家`,`Page ${state.companyPage} of ${pageCount}, ${ordered.length} companies`)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" data-tip="上一页|Previous page" type="button" data-page="prev" ${state.companyPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" data-tip="下一页|Next page" type="button" data-page="next" ${state.companyPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>`;
+  if (pagination) pagination.innerHTML = `<span>${bi(`第 ${state.companyPage} / ${pageCount} 页，共 ${ordered.length} 家`,`Page ${state.companyPage} of ${pageCount}, ${ordered.length} companies`)}${hiddenNoteMarkup(shown.hidden)}</span><div class="crm-pagination-actions"><button class="btn btn-outline-secondary" data-tip="上一页|Previous page" type="button" data-page="prev" ${state.companyPage<=1?'disabled':''}>${bi('上一页','Previous')}</button><button class="btn btn-outline-secondary" data-tip="下一页|Next page" type="button" data-page="next" ${state.companyPage>=pageCount?'disabled':''}>${bi('下一页','Next')}</button></div>`;
   pagination?.querySelector('[data-page="prev"]')?.addEventListener('click',()=>{state.companyPage-=1;renderCompanyTable()});
   pagination?.querySelector('[data-page="next"]')?.addEventListener('click',()=>{state.companyPage+=1;renderCompanyTable()});
   bindLeadRows();
+  bindRestoreButtons($('#leads'),()=>loadLeads());
 }
 
 function collectOpportunityFilters() {
@@ -880,7 +885,7 @@ function phase9BlockerAction(code) {
     TEMPORARY_ERROR:['复核并重试任务','Review and retry task'],
     HISTORY:['打开客户记录复核','Open company record review'],
     IDENTITY:['打开企业身份复核','Open company identity review']
-  })[code] || ['打开研究任务','Open research job'];
+  })[code] || ['打开客户搜索','Open lead search'];
 }
 
 function phase10EvidenceWorkstream(item,blocker='') {
@@ -2343,6 +2348,7 @@ $('#size').addEventListener('change', () => { state.companyPage=1; loadLeads(); 
 $('#verification-filter')?.addEventListener('change', () => { state.companyPage=1; loadLeads(); });
 $('#lifecycle-filter')?.addEventListener('change', () => { state.companyPage=1; loadLeads(); });
 $('#company-sort')?.addEventListener('change',()=>{state.companyPage=1;renderCompanyTable()});
+$('#show-unusable-leads')?.addEventListener('change',()=>{state.companyPage=1;renderCompanyTable()});
 $('#opportunity-filters')?.addEventListener('change',()=>loadOpportunities());
 document.addEventListener('p8:opportunity-search',()=>renderOpportunityTable());
 $('#opportunity-clear-filters')?.addEventListener('click',()=>{
@@ -2395,7 +2401,7 @@ $('#research-form').addEventListener('submit', async event => {
     const createdJobs=results.flatMap((result,index)=>result.status==='fulfilled'
       ? [{...requests[index],...result.value,job_id:result.value.job_id || result.value.id}]
       : []);
-    if(!createdJobs.length)throw results.find(result=>result.status==='rejected')?.reason || new Error('Research jobs were not created');
+    if(!createdJobs.length)throw results.find(result=>result.status==='rejected')?.reason || new Error('Lead searches were not created');
     const selectedJob=createdJobs[0];
     const createdJobId=selectedJob.job_id;
     const jobUrl = new URL(location.href);
@@ -2416,7 +2422,7 @@ $('#research-form').addEventListener('submit', async event => {
   } finally {
     button.disabled = false;
     button.setAttribute('aria-busy', 'false');
-    button.innerHTML = bi('开始研究','Start Research');
+    button.innerHTML = bi('开始搜索','Start Search');
   }
 });
 $('#verification-detail-close').addEventListener('click', () => $('#verification-detail').close());

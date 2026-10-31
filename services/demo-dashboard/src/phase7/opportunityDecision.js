@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {APPROVED_CATEGORY_MATCH_VERSIONS} from '../categoryProcurement/categoryProcurementMatch.js';
 
 export const SYSTEM_RECOMMENDATION_STATUSES = Object.freeze([
   'RECOMMENDED',
@@ -95,7 +96,7 @@ export function deriveOpportunityDecision(input = {}) {
   const matchStatus = upper(category.match_status);
   const categoryRuleVersion=String(category.calculation_version||'');
   const categoryScopeBasis=upper(category.match_basis);
-  const categoryScopeApproved=['category-procurement-match-v2','category-company-match-v3'].includes(categoryRuleVersion)
+  const categoryScopeApproved=APPROVED_CATEGORY_MATCH_VERSIONS.includes(categoryRuleVersion)
     &&Boolean(category.scope_revision_id)
     &&['EXACT_CATEGORY','SIMILAR_CATEGORY','PROFILE_SCOPE'].includes(categoryScopeBasis);
   const explicitCategoryStatus=upper(category.category_confirmation_status);

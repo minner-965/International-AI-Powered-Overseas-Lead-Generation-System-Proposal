@@ -81,6 +81,44 @@ function decodeMailboxPart(value,part){
   return text.slice(0,20000);
 }
 
+const SENT_FOLDER_NAMES=/^(?:.*[./])?(?:sent|sent items|sent messages|sent mail|已发送|已发送邮件|已发邮件)$/i;
+const canonicalBody=value=>String(value||'').replace(/\r\n?/g,'\n').replace(/\s+/g,' ').trim();
+const canonicalSubject=value=>String(value||'').replace(/\s+/g,' ').trim();
+const bareAddress=value=>{const text=String(value||'').trim().toLowerCase();return(text.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1]||text);};
+
+/** Match one sent message against Sent-folder copies. A copy that still carries SIM's message key
+ *  header is decisive; otherwise recipient + subject + send-time window + body hash must all agree
+ *  (a body that only gained a provider footer counts as a prefix match). Ambiguity never matches. */
+export function matchSentCopy(candidate={},messages=[],{beforeMs=15*60000,afterMs=30*60000}={}){
+  const at=Date.parse(candidate.sent_at);const recipient=bareAddress(candidate.to);const sender=candidate.from?bareAddress(candidate.from):'';
+  const subject=canonicalSubject(candidate.subject);const body=canonicalBody(candidate.body_text);
+  const bodySha=body?createHash('sha256').update(body).digest('hex'):null;
+  const own=String(candidate.rfc_message_id||'').trim().toLowerCase();
+  const usable=(messages||[]).filter(message=>/^<[^<>\s]+>$/.test(String(message.message_id||'').trim()));
+  const keyed=candidate.message_key?usable.filter(message=>message.message_key&&message.message_key===candidate.message_key):[];
+  const pick=(found,method)=>{
+    const message=found[0];const id=String(message.message_id).trim();
+    return{status:id.toLowerCase()===own?'SAME_ID':'MATCHED',message_id:id,match_method:method,uid:message.uid??null,uidvalidity:message.uidvalidity??null,body_sha256:bodySha};
+  };
+  if(keyed.length===1)return pick(keyed,'MESSAGE_KEY_HEADER');
+  if(keyed.length>1)return{status:'MULTIPLE_MATCHES',matches:keyed.length};
+  const envelope=usable.filter(message=>{
+    const timestamp=Date.parse(message.date);
+    const to=(message.to_addresses||[]).map(bareAddress);
+    return to.length===1&&to[0]===recipient&&canonicalSubject(message.subject)===subject
+      &&(!sender||!message.from_address||bareAddress(message.from_address)===sender)
+      &&Number.isFinite(timestamp)&&timestamp>=at-beforeMs&&timestamp<=at+afterMs;
+  });
+  if(!body)return{status:'NO_MATCH',matches:0};
+  const exact=envelope.filter(message=>canonicalBody(message.body_text)===body);
+  if(exact.length===1)return pick(exact,'ENVELOPE_SUBJECT_TIME_BODY');
+  if(exact.length>1)return{status:'MULTIPLE_MATCHES',matches:exact.length};
+  const prefix=envelope.filter(message=>canonicalBody(message.body_text).startsWith(body));
+  if(prefix.length===1)return pick(prefix,'ENVELOPE_SUBJECT_TIME_BODY_PREFIX');
+  if(prefix.length>1)return{status:'MULTIPLE_MATCHES',matches:prefix.length};
+  return{status:'NO_MATCH',matches:0};
+}
+
 export class SmtpImapProviderAdapter {
   constructor(config={}){
     this.name='SMTP';
@@ -175,6 +213,10 @@ export class SmtpImapProviderAdapter {
   async readMailboxChanges({folder=this.imapInbox,checkpoint=null,rescanWindow=100}={}){
     if(!this.inboundEnabled)return{status:'DISABLED',code:'IMAP_INBOUND_SYNC_DISABLED',messages:[],network_calls:0};
     if(!this.configured()||this.connectionContract().length)return{status:'DISABLED',code:'PROVIDER_NOT_CONFIGURED',messages:[],network_calls:0};
+    return this.#readFolder({folder,checkpoint,rescanWindow});
+  }
+
+  async #readFolder({folder,checkpoint=null,rescanWindow=100}){
     const client=this.#imap();let lock;
     try{
       await client.connect();lock=await client.getMailboxLock(folder,{readOnly:true});
@@ -200,6 +242,35 @@ export class SmtpImapProviderAdapter {
       return{status:'COMPLETED',messages,folder_path:folder,uidvalidity,last_processed_uid:messages.reduce((m,x)=>Math.max(m,x.uid),changed?Math.max(0,startUid-1):Number(checkpoint?.last_processed_uid||0)),highest_modseq:mailbox.highestModseq?String(mailbox.highestModseq):null,uidvalidity_changed:changed,network_calls:1};
     }catch(error){return{status:'FAILED',code:timeoutCode(error)?'IMAP_SYNC_TIMEOUT':'IMAP_SYNC_FAILED',messages:[],network_calls:1};}
     finally{lock?.release?.();await client.logout?.().catch(()=>{});}
+  }
+
+  // The Sent folder: the mailbox's \Sent special-use folder, else a common Sent name, else the configured name.
+  async resolveSentFolder(){
+    if(this.resolvedSentFolder)return{folder:this.resolvedSentFolder,network_calls:0};
+    const client=this.#imap();
+    try{
+      await client.connect();const folders=typeof client.list==='function'?await client.list():[];
+      const special=folders.find(item=>String(item.specialUse||'').toLowerCase()==='\sent');
+      const named=folders.find(item=>SENT_FOLDER_NAMES.test(String(item.path||item.name||'')));
+      this.resolvedSentFolder=clean(special?.path||named?.path||this.imapSentMailbox,200);
+      return{folder:this.resolvedSentFolder,network_calls:1};
+    }catch{return{folder:this.imapSentMailbox,network_calls:1,fallback:true};}
+    finally{await client.logout?.().catch(()=>{});}
+  }
+
+  /** Finds, for each message SIM sent, the copy stored in the Sent folder and the Message-ID the
+   *  server actually gave it (some servers rewrite the Message-ID and drop X-DPV-Message-Key).
+   *  Read-only: never sends. candidates: [{key,to,from,subject,body_text,sent_at,rfc_message_id,message_key}]. */
+  async lookupSentMessageIds(candidates=[],{rescanWindow=200}={}){
+    if(!this.configured()||this.connectionContract().length)return{status:'DISABLED',code:'PROVIDER_NOT_CONFIGURED',results:[],network_calls:0};
+    const list=(candidates||[]).filter(item=>item&&item.key&&item.to&&item.subject&&Number.isFinite(Date.parse(item.sent_at)));
+    if(!list.length)return{status:'COMPLETED',results:[],network_calls:0};
+    const resolved=await this.resolveSentFolder();
+    const mailbox=await this.#readFolder({folder:resolved.folder,rescanWindow});
+    const calls=resolved.network_calls+(mailbox.network_calls||0);
+    if(mailbox.status!=='COMPLETED')return{status:'FAILED',code:'SENT_LOOKUP_FAILED',folder_path:resolved.folder,results:[],network_calls:calls};
+    return{status:'COMPLETED',folder_path:resolved.folder,network_calls:calls,
+      results:list.map(candidate=>({key:candidate.key,folder_path:resolved.folder,...matchSentCopy(candidate,mailbox.messages)}))};
   }
 
   async reconcileControlledSent({body_text,subject,from,to,sent_at}={}){

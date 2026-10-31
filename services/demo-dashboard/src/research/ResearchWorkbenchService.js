@@ -5,6 +5,7 @@ import { projectResearchTask,compareResearchTasks,rankCohortCandidate } from './
 import { createHash } from 'node:crypto';
 import {firstContactPendingSql} from '../outreach/contactProgress.js';
 import {summarizePoolRows} from '../opportunityPool/OpportunityPoolService.js';
+import {usableLeadSql} from '../opportunityPool/leadUsability.js';
 
 const ACTIVE_JOB_STATES = Object.freeze(['QUEUED','DISCOVERING','CRAWLING','QUALIFYING','SCORING','RESOLVING','VERIFYING','PERSISTING']);
 const COMPLETE_JOB_STATES = new Set(['COMPLETE','COMPLETED']);
@@ -517,6 +518,7 @@ export class ResearchWorkbenchService {
         WHERE s.company_id=c.id AND obs.normalized_profile=o.product_profile) src ON true
       WHERE c.country_code IN(SELECT market_code FROM leadgen.research_market_registry WHERE status='ACTIVE') AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
         AND c.data_origin=ANY($2::text[]) AND c.explicit_exclusion_reason IS NULL
+        AND ${usableLeadSql('c')}
         AND (c.official_root_domain IS NOT NULL OR c.website_url IS NOT NULL)
         AND o.business_fit_status='EVIDENCE_REQUIRED' AND o.relationship_status='NEW_PROSPECT'
         AND NOT EXISTS(SELECT 1 FROM leadgen.company_suppressions sx WHERE sx.company_id=c.id AND sx.lifted_at IS NULL)

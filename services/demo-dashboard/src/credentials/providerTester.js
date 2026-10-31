@@ -5,7 +5,7 @@ const DEFAULT_TIMEOUT_MS=10_000;
 const trimSlash=value=>String(value||'').replace(/\/+$/,'');
 const LLM_BASES=Object.freeze({openai:'https://api.openai.com/v1',deepseek:'https://api.deepseek.com',anthropic:'https://api.anthropic.com/v1',
   qwen:'https://dashscope.aliyuncs.com/compatible-mode/v1',dashscope:'https://dashscope.aliyuncs.com/compatible-mode/v1',moonshot:'https://api.moonshot.cn/v1',
-  openrouter:'https://openrouter.ai/api/v1',groq:'https://api.groq.com/openai/v1',mistral:'https://api.mistral.ai/v1'});
+  openrouter:'https://openrouter.ai/api/v1',ollama:'http://ollama:11434/v1',groq:'https://api.groq.com/openai/v1',mistral:'https://api.mistral.ai/v1'});
 export const llmBaseUrl=values=>trimSlash(values.base_url||LLM_BASES[String(values.provider||'').toLowerCase()]||'');
 
 function statusCode(status){
@@ -30,6 +30,7 @@ export function testRequest(provider,values,env={}){
     case 'llm':{
       const base=llmBaseUrl(values);
       if(!base)return null;
+      if(String(values.provider||'').toLowerCase()==='ollama')return{url:`${base}/models`,init:{headers:{accept:'application/json'}}};
       if(String(values.provider||'').toLowerCase()==='anthropic')
         return{url:`${base}/models`,init:{headers:{'x-api-key':values.api_key,'anthropic-version':'2023-06-01'}}};
       return{url:`${base}/models`,init:{headers:{accept:'application/json',authorization:`Bearer ${values.api_key}`}}};
@@ -40,7 +41,9 @@ export function testRequest(provider,values,env={}){
 
 export function createProviderTester({fetchImpl=globalThis.fetch,timeoutMs=DEFAULT_TIMEOUT_MS,env=process.env}={}){
   return async function testProvider(provider,resolved){
-    if(!resolved?.configured)return{ok:false,code:'NOT_CONFIGURED'};
+    // A local Ollama model needs no key: provider + model (+ optional address) are enough.
+    const localModel=provider==='llm'&&!resolved?.merchant_only&&String(resolved?.values?.provider||'').toLowerCase()==='ollama';
+    if(!resolved?.configured&&!localModel)return{ok:false,code:'NOT_CONFIGURED'};
     const request=testRequest(provider,resolved.values,env);
     if(!request)return{ok:false,code:'TEST_NOT_AVAILABLE'};
     let response;

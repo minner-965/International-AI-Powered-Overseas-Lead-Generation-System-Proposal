@@ -48,6 +48,9 @@ function persistenceResults(value){
   return Array.isArray(value?.results)?value.results:[];
 }
 
+// C7 accept-all rule (Hunter guidance), re-exported for the enrichment and send paths.
+export { acceptAllDecision as hunterAcceptAllDecision, ACCEPT_ALL_AUTO_SEND_MIN_SCORE, ACCEPT_ALL_REVIEW_MIN_SCORE } from '../verification/contactVerificationPolicy.js';
+
 export function mapHunterVerification(status) {
   const value = String(status || '').toLowerCase();
   if (value === 'valid') return 'VALID';
@@ -343,7 +346,9 @@ export class HunterProvider {
       normalize:data=>({ found:Array.isArray(data.emails)&&data.emails.length>0,results:(data.emails||[]).map(item=>({
         person_name:clean(`${item.first_name || ''} ${item.last_name || ''}`,200) || null,raw_title:clean(item.position,300),
         email:clean(item.value,320).toLowerCase(),verification_status:mapHunterVerification(item.verification?.status),
-        verification_score:Number.isFinite(Number(item.confidence))?Number(item.confidence):null,sources:item.sources || []
+        // C7: Domain Search "confidence" is a pattern-finding confidence, not the Email Verifier score
+        // that the accept-all rule (>= 85 sendable) needs; it is kept separately.
+        verification_score:null,finder_confidence:Number.isFinite(Number(item.confidence))?Number(item.confidence):null,sources:item.sources || []
       })) }),usedUnits:normalized=>normalized.found?HUNTER_CREDIT_UNITS.DOMAIN_SEARCH:0,persistResults,loadPersistedResults });
   }
 
@@ -352,7 +357,7 @@ export class HunterProvider {
     if (!safe.domain || ((!safe.first_name || !safe.last_name) && !safe.linkedin_handle)) return { provider:'HUNTER',endpoint:'email-finder',status:'SKIPPED',error_code:'VERIFIED_PERSON_REQUIRED',results:[] };
     return this.call({ researchJobId,companyId,endpoint:'email-finder',params:safe,costUnits:HUNTER_CREDIT_UNITS.EMAIL_FINDER,
       normalize:data=>({ found:Boolean(data.email),results:data.email?[{ email:clean(data.email,320).toLowerCase(),person_name:clean(`${data.first_name || ''} ${data.last_name || ''}`,200) || null,
-        raw_title:clean(data.position,300),verification_status:mapHunterVerification(data.verification?.status),verification_score:Number.isFinite(Number(data.score))?Number(data.score):null,sources:data.sources || [] }]:[] }),
+        raw_title:clean(data.position,300),verification_status:mapHunterVerification(data.verification?.status),verification_score:null,finder_confidence:Number.isFinite(Number(data.score))?Number(data.score):null,sources:data.sources || [] }]:[] }),
       usedUnits:normalized=>normalized.found?HUNTER_CREDIT_UNITS.EMAIL_FINDER:0,persistResults,loadPersistedResults });
   }
 

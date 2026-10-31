@@ -44,7 +44,7 @@ export function createCredentialsRouter({credentials,tester=createProviderTester
     credentials.scopeCheck(req.params.provider,merchantId);
     const resolved=await credentials.resolveProvider({merchantId,provider:req.params.provider});
     // A merchant tests only its own key, never the key SIM provides.
-    const usable=merchantId?{...resolved,configured:resolved.merchant_billed}:resolved;
+    const usable=merchantId?{...resolved,configured:resolved.merchant_billed,merchant_only:true}:resolved;
     const result=await tester(req.params.provider,usable);
     const source=merchantId?(resolved.merchant_billed?'MERCHANT':'NONE'):resolved.source;
     await credentials.recordTest({merchantId,provider:req.params.provider,source,ok:result.ok,code:result.code,actor:actorOf(req)});

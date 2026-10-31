@@ -78,7 +78,7 @@ const TYPE_LABELS = Object.freeze({
   CATEGORY_PROCUREMENT_ENRICHMENT:['公司类目资料','Company Category Evidence'],
   REAL_OPPORTUNITY_RESEARCH:['业务机会核验','Opportunity verification'],
   AUTO_EVIDENCE:['资料核验','Evidence review'],
-  RESEARCH:['市场研究','Market research'],
+  RESEARCH:['客户搜索','Lead search'],
 });
 
 const BLOCKER_LABELS = Object.freeze({
@@ -105,7 +105,7 @@ const BLOCKER_ACTIONS = Object.freeze({
 });
 
 const statusPair = value => STATUS_LABELS[text(value).toUpperCase()] || ['待确认','To confirm'];
-const typePair = value => TYPE_LABELS[text(value).toUpperCase()] || ['研究任务','Research job'];
+const typePair = value => TYPE_LABELS[text(value).toUpperCase()] || ['客户搜索','Lead search'];
 const blockerPair = value => BLOCKER_LABELS[text(value).toUpperCase()] || ['待确认','To confirm'];
 const actionPair = value => BLOCKER_ACTIONS[text(value).toUpperCase()] || ['打开任务详情','Open job detail'];
 const toneForStatus = value => {
@@ -253,7 +253,7 @@ function renderSummary(summary) {
   const asOf = first(summary,['as_of','updated_at','captured_at']);
   host.setAttribute('aria-busy','false');
   host.innerHTML = [
-    summaryMetric('活跃研究任务','Active research jobs',summary.active_jobs,'active_jobs',asOf),
+    summaryMetric('进行中的客户搜索','Active lead searches',summary.active_jobs,'active_jobs',asOf),
     summaryMetric('核验任务','Verification tasks',summary.evidence_tasks,'evidence_tasks',asOf),
     summaryMetric('已核验采购人员','Verified profile buyers',summary.verified_profile_buyers,'verified_profile_buyers',asOf),
     summaryMetric('有效联系方式','Contact-ready channels',first(summary,['contact_ready_opportunities','hunter_valid_routes'],0),'contact_ready_opportunities',asOf),
@@ -277,7 +277,7 @@ function renderSummaryError() {
   const host = $('#research-workbench-summary');
   if (host) {
     host.setAttribute('aria-busy','false');
-    host.innerHTML = `<div class="p9-inline-state is-error">${bi('研究指标读取失败。','Research metrics could not be loaded.')} <button class="btn btn-outline-secondary" data-tip="重新读取研究指标|Reload research figures" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
+    host.innerHTML = `<div class="p9-inline-state is-error">${bi('搜索指标读取失败。','Search metrics could not be loaded.')} <button class="btn btn-outline-secondary" data-tip="重新读取搜索指标|Reload search figures" type="button" data-summary-retry>${bi('重新读取','Retry')}</button></div>`;
     host.querySelector('[data-summary-retry]')?.addEventListener('click',loadSummary);
   }
   const provider = $('#research-provider-status');
@@ -472,9 +472,9 @@ function jobObjective(job) {
     BUYER_AND_CONTACT_EVIDENCE:'采购人员与联系方式 / Buyer and Contact Evidence',
     CATEGORY_PROCUREMENT_EVIDENCE:'公司类目资料 / Company Category Evidence',
     COMPANY_CATEGORY_EVIDENCE:'公司类目资料 / Company Category Evidence',
-    RESEARCH:'研究任务 / Research Job',
+    RESEARCH:'客户搜索 / Lead Search',
     AUTO_EVIDENCE:'资料核验 / Evidence Review',
-  })[value.toUpperCase()] || (/^[A-Z0-9_:-]+$/.test(value) ? '研究任务 / Research Job' : value);
+  })[value.toUpperCase()] || (/^[A-Z0-9_:-]+$/.test(value) ? '客户搜索 / Lead Search' : value);
 }
 
 function jobObjectiveMarkup(job) {
@@ -514,7 +514,7 @@ function jobProgressMarkup(job,{ compact=false }={}) {
   if (percent === null) return `<div class="p9-progress-block"><span>${bi(stage[0],stage[1])}</span><small>${bi('进度待更新','Progress pending')}</small></div>`;
   return `<div class="p9-progress-block${compact?' is-compact':''}">
     <div class="p9-progress-copy"><strong>${bi(`当前阶段：${stage[0]}`,`Current stage: ${stage[1]}`)}</strong><b>${esc(percent)}%</b></div>
-    <progress value="${esc(percent)}" max="100" aria-label="${esc(`研究任务进度 Research job progress: ${percent}%`)}">${esc(percent)}%</progress>
+    <progress value="${esc(percent)}" max="100" aria-label="${esc(`客户搜索进度 Lead search progress: ${percent}%`)}">${esc(percent)}%</progress>
   </div>`;
 }
 
@@ -545,7 +545,7 @@ function renderRecentJobs(jobItems) {
   host.classList.remove('p9-inline-state','is-error');
   host.setAttribute('aria-busy','false');
   if (!jobItems.length) {
-    setInlineState(host,'当前没有研究任务。','No research jobs are available.');
+    setInlineState(host,'当前没有客户搜索。','No lead searches are available.');
     return;
   }
   host.innerHTML = jobItems.slice(0,6).map((job,index)=>{
@@ -667,7 +667,7 @@ function renderJobs(jobItems,{ append = false } = {}) {
   const host = $('#research-jobs-list');
   if (!host) return;
   if (!jobItems.length && !append) {
-    host.innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('当前筛选没有研究任务。','No research jobs match the current filters.')}</td></tr>`;
+    host.innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('当前筛选没有客户搜索。','No lead searches match the current filters.')}</td></tr>`;
     return;
   }
   const rows = jobItems.map(job=>{
@@ -724,8 +724,8 @@ async function loadJobs({ append = false } = {}) {
   const listPanel = host?.closest('.p9-jobs-list-panel');
   const requestId = ++state.jobsRequest;
   if (listPanel) listPanel.hidden = false;
-  if (!append && host) host.innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('正在读取研究任务','Loading research jobs')}</td></tr>`;
-  setInlineState(statusHost,'正在读取研究任务。','Loading research jobs.');
+  if (!append && host) host.innerHTML = `<tr><td colspan="7" class="crm-loading-cell">${bi('正在读取客户搜索','Loading lead searches')}</td></tr>`;
+  setInlineState(statusHost,'正在读取客户搜索。','Loading lead searches.');
   next && (next.disabled = true);
   try {
     const payload = await managementRequest(`/api/research/jobs?${jobsQuery(append ? state.nextCursor : '')}`);
@@ -743,7 +743,7 @@ async function loadJobs({ append = false } = {}) {
     if (requestId !== state.jobsRequest) return;
     if (!append && host) host.replaceChildren();
     if (!append && listPanel) listPanel.hidden = true;
-    setInlineState(statusHost,'研究任务读取失败。','Research jobs could not be loaded.',{ error:true, retry:()=>loadJobs() });
+    setInlineState(statusHost,'客户搜索读取失败。','Lead searches could not be loaded.',{ error:true, retry:()=>loadJobs() });
     if (next) next.hidden = true;
   }
 }
@@ -793,7 +793,7 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
     ['已释放额度','Released units',first(job,['released_units'],'—')],
     ['最近事件','Last event',dateTime(first(job,['last_provider_event_at']))]
   ];
-  const usageMarkup=`<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('查询用量','Research usage')}</h4></header><div class="card-body"><div class="p9-catalog-facts" aria-label="查询用量 Research usage">${usageFacts.map(([zh,en,value])=>`<div><small>${bi(zh,en)}</small><strong>${esc(value)}</strong></div>`).join('')}</div></div></section>`;
+  const usageMarkup=`<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('查询用量','Search usage')}</h4></header><div class="card-body"><div class="p9-catalog-facts" aria-label="查询用量 Search usage">${usageFacts.map(([zh,en,value])=>`<div><small>${bi(zh,en)}</small><strong>${esc(value)}</strong></div>`).join('')}</div></div></section>`;
   const stages=hasPhase10Pipeline ? phase10Stages : [
     ['企业身份','Identity',['IDENTITY']],['采购模式','Buyer Model',['BUYER_MODEL']],
     ['公司经营类目','Company Category',['CATEGORY_PROCUREMENT','PRODUCT']],
@@ -803,12 +803,20 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
   host.hidden = false;
   if (empty) empty.hidden = true;
   host.setAttribute('aria-busy','false');
-  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" data-tip="关闭任务明细|Close job details" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" data-tip="重新读取这个任务|Reload this job" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button>${job?.can_cancel === true ? `<button class="btn danger" data-tip="停止这个任务尚未完成的查找，已有结果和记录都会保留|Stop the unfinished search of this job; results and records are kept" type="button" data-cancel-job="${esc(id)}">${bi('取消任务','Cancel job')}</button>` : ''}</div></header><p class="crm-helper" data-cancel-job-status role="status" aria-live="polite"></p><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="研究任务流水线 Research job pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" data-tip="在新窗口打开资料来源页面|Open the source page in a new window" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
+  host.innerHTML = `<header class="p9-detail-header"><div><h3>${jobObjectiveMarkup(job)}</h3><p class="crm-helper">${esc(id || '-')} / ${esc(jobMarket(job))} / ${esc(jobProfile(job))}</p><span class="p10-job-workstream">${bi(workstream[0],workstream[1])}</span>${dispatch?`<p class="crm-helper">${bi('调度诊断','Dispatch')}: ${bi(dispatch[0],dispatch[1])}</p>`:''}</div><div class="p9-command-actions"><button type="button" data-tip="关闭任务明细|Close job details" class="btn btn-outline-secondary" data-close-job>${bi('返回任务列表','Back to jobs')}</button>${statusBadge(first(job,['status'],'UNKNOWN'))}<button class="btn btn-outline-secondary" data-tip="重新读取这个任务|Reload this job" type="button" data-refresh-job="${esc(id)}"><i class="ti ti-refresh" aria-hidden="true"></i>${bi('刷新','Refresh')}</button>${job?.can_cancel === true ? `<button class="btn danger" data-tip="停止这个任务尚未完成的查找，已有结果和记录都会保留|Stop the unfinished search of this job; results and records are kept" type="button" data-cancel-job="${esc(id)}">${bi('取消任务','Cancel job')}</button>` : ''}</div></header><p class="crm-helper" data-cancel-job-status role="status" aria-live="polite"></p><section class="card crm-panel p9-detail-progress" role="status" aria-live="polite" aria-atomic="true"><div class="card-body">${jobProgressMarkup(job)}</div></section><section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('任务结果','Results')}</h4></header><div class="card-body p9-catalog-facts">${jobResultFacts(job)}</div></section><details class="v3-research-details"><summary>${bi('用量与记录','Usage & records')}</summary>${usageMarkup}</details><div class="p9-pipeline p10-pipeline" aria-label="客户搜索流水线 Lead search pipeline">${stages.map(([zh,en,keys])=>renderPipelineStage(zh,en,pipelineStage(stageMap,keys))).join('')}</div>${evidence.length ? `<section class="card crm-panel"><header class="card-header crm-panel-header"><h4 class="card-title">${bi('资料链接','Evidence links')}</h4></header><div class="card-body p9-evidence-links">${evidence.map(record=>{const url=safeUrl(first(record,['source_url','url','evidence_url']));return url ? `<a class="btn btn-outline-secondary" data-tip="在新窗口打开资料来源页面|Open the source page in a new window" href="${esc(url)}" target="_blank" rel="noreferrer">${bi('打开来源','Open source')}</a>` : ''}).join('')}</div></section>` : ''}`;
   host.querySelector('[data-refresh-job]')?.addEventListener('click',event=>{ event.currentTarget.disabled=true; void openJobDetail(id,{ replaceState:true }); });
   host.querySelector('[data-cancel-job]')?.addEventListener('click',event=>void cancelJob(id,event.currentTarget));
   if (results?.opportunity_pool) {
     const resultSection=document.createElement('section');resultSection.className='card crm-panel';
-    resultSection.innerHTML=`<header class="card-header crm-panel-header"><h4 class="card-title">${bi('企业研究结果','Company research results')}</h4></header><div class="card-body">${opportunityPoolSummaryMarkup(results.opportunity_pool)}${items(results.items).length?`<details><summary>${bi('查看企业结果','View company results')}</summary>${items(results.items).map(row=>`<article><strong>${esc(row.company_name||row.resolved_company_name||'—')}</strong>${opportunityDimensionsMarkup(row)}</article>`).join('')}</details>`:''}</div>`;
+    // 无用线索 are hidden unless "显示无用线索 / Show unusable leads" is on (marked on the server; display only).
+    const renderResults=(show=false)=>{
+      const shown=visibleLeads(items(results.items),show);
+      const anyUnusable=items(results.items).some(isUnusableLead);
+      resultSection.innerHTML=`<header class="card-header crm-panel-header"><h4 class="card-title">${bi('企业搜索结果','Company search results')}</h4>${anyUnusable?unusableToggleMarkup('show-unusable-leads-research',show):''}</header><div class="card-body">${opportunityPoolSummaryMarkup(results.opportunity_pool)}${hiddenNoteMarkup(shown.hidden)}${shown.rows.length?`<details${show?' open':''}><summary>${bi('查看企业结果','View company results')}</summary>${shown.rows.map(row=>`<article><strong>${esc(row.company_name||row.resolved_company_name||'—')}</strong>${unusableBadgeMarkup(row,{admin:workspaceSession.user?.role!=='MERCHANT'})}${opportunityDimensionsMarkup(row)}</article>`).join('')}</details>`:''}</div>`;
+      resultSection.querySelector('[data-show-unusable-leads]')?.addEventListener('change',event=>renderResults(event.currentTarget.checked));
+      bindRestoreButtons(resultSection,()=>openJobDetail(id,{ replaceState:true }));
+    };
+    renderResults(false);
     host.append(resultSection);
   }
   host.querySelector('[data-close-job]')?.addEventListener('click', () => {
@@ -819,12 +827,12 @@ function renderJobDetail(job, results = null, { scroll = true } = {}) {
 }
 
 const CANCEL_REFUSALS = Object.freeze({
-  RESEARCH_JOB_SHARED:['这个任务还在为其他研究批次查找客户，暂时不能取消。','This job is still serving other research batches and cannot be cancelled now.'],
+  RESEARCH_JOB_SHARED:['这个任务还在为其他搜索批次查找客户，暂时不能取消。','This job is still serving other search batches and cannot be cancelled now.'],
   RESEARCH_JOB_CANCEL_FORBIDDEN:['只能取消自己建立的任务。','Only jobs you created can be cancelled.'],
   RESEARCH_JOB_NOT_CANCELLABLE:['任务已结束，无需取消。','This job has already finished.'],
 });
 async function cancelJob(id,button) {
-  if (!globalThis.confirm?.('确定取消这个研究任务吗？已有结果和记录都会保留。\nCancel this research job? Existing results and records are kept.')) return;
+  if (!globalThis.confirm?.('确定取消这个客户搜索吗？已有结果和记录都会保留。\nCancel this lead search? Existing results and records are kept.')) return;
   const status = $('#research-job [data-cancel-job-status]');
   button.disabled = true; button.setAttribute('aria-busy','true');
   try {
@@ -1001,7 +1009,7 @@ function initializeDialog() {
   });
   document.addEventListener('phase9:research-job-create-failed',()=>{
     const status = $('#research-create-status');
-    if (status) status.innerHTML = bi('研究任务建立失败，请检查连接后重试。','The research job could not be created. Check the connection and retry.');
+    if (status) status.innerHTML = bi('客户搜索建立失败，请检查连接后重试。','The lead search could not be created. Check the connection and retry.');
     setDialogStep(4,{ focus:false });
     $('#start-research')?.focus({ preventScroll:true });
   });
@@ -1127,3 +1135,5 @@ function initialize() {
 
 initialize();
 import { opportunityDimensionsMarkup, opportunityPoolSummaryMarkup } from './v3/opportunity-dimensions.js';
+import { visibleLeads, isUnusableLead, unusableToggleMarkup, unusableBadgeMarkup, hiddenNoteMarkup, bindRestoreButtons } from './v4/unusable-leads.js';
+import { session as workspaceSession } from './v4/session.js';

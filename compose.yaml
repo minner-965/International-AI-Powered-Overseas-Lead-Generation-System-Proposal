@@ -71,6 +71,36 @@ services:
         max-size: "1m"
         max-file: "1"
 
+  # Optional local model (optimization plan E1, Simon 2026-10-27). Ollama, MIT, run UNMODIFIED as a separate
+  # service; SIM only calls its OpenAI-compatible HTTP API at http://ollama:11434/v1. NOT started by default:
+  # it belongs to the `local-llm` profile and runs only with `docker compose --profile local-llm up -d ollama`.
+  # Internal network only (no published port). Models persist in the ollama_models volume.
+  # Pull a model once: docker compose exec ollama ollama pull qwen2.5:7b   (see docs/llm/LOCAL_MODEL_SETUP.md)
+  ollama:
+    image: ollama/ollama:0.40.11
+    profiles:
+      - local-llm
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: 10m
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      TZ: ${TZ}
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
   n8n:
     image: n8nio/n8n:2.36.7
     restart: unless-stopped
@@ -350,6 +380,7 @@ services:
 
 volumes:
   translate_models:
+  ollama_models:
   n8n_data:
   postgres_data:
   phase7_runtime:

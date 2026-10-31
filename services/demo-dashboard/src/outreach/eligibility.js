@@ -8,6 +8,7 @@ import {
 } from './constants.js';
 import { digestCanonical } from './marketingContext.js';
 import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
+import {acceptAllDecision,resolveTtlDays} from '../verification/contactVerificationPolicy.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ID = /^[a-z0-9][a-z0-9_.:-]{0,127}$/i;
@@ -47,25 +48,32 @@ function isMailboxRoute(contact = {}) {
   return Boolean(email) && (explicitRoute || emailTypedRoute);
 }
 
+// ttlDays defaults to the one verification freshness setting (CONTACT_VERIFICATION_TTL_DAYS, 90 days).
+// ACCEPT_ALL (catch-all) follows Hunter's guidance (plan C7): verifier score >= 85 is sendable,
+// 80–84 needs a person to confirm (allowAcceptAllSend = that confirmation), below 80 or no score is not sent.
 export function evaluateContactVerification(contact = {}, {
   now = new Date(),
-  ttlDays = 30,
+  ttlDays = null,
   allowAcceptAllSend = false
 } = {}) {
   const status = upper(contact.verification_status || contact.email_verification_status || 'NOT_VERIFIED');
   const mappedDecision = CONTACT_VERIFICATION_DECISIONS[status] || 'HOLD';
   const lastVerified = contact.last_verified_at ? new Date(contact.last_verified_at) : null;
   const nowDate = now instanceof Date ? now : new Date(now);
-  const ttlMs = Math.max(0, Number(ttlDays) || 0) * 86_400_000;
+  const ttlMs = resolveTtlDays(ttlDays) * 86_400_000;
   const freshnessKnown = lastVerified && !Number.isNaN(lastVerified.getTime()) && !Number.isNaN(nowDate.getTime());
   const fresh = freshnessKnown && nowDate.getTime() - lastVerified.getTime() <= ttlMs && lastVerified <= nowDate;
   const reasonCodes = [];
+  const acceptAll = status === 'ACCEPT_ALL' ? acceptAllDecision(contact.verification_score ?? contact.score) : null;
 
-  if (status === 'ACCEPT_ALL' && !allowAcceptAllSend) reasonCodes.push('CONTACT_ACCEPT_ALL_REQUIRES_MANUAL_RISK_REVIEW');
+  if (status === 'ACCEPT_ALL') {
+    if (acceptAll === 'MANUAL_REVIEW' && !allowAcceptAllSend) reasonCodes.push('CONTACT_ACCEPT_ALL_REQUIRES_MANUAL_RISK_REVIEW');
+    else if (acceptAll === 'BLOCKED_LOW_SCORE' || acceptAll === 'BLOCKED_NO_SCORE') reasonCodes.push('CONTACT_ACCEPT_ALL_SCORE_TOO_LOW');
+  }
   else if (status === 'TEMPORARY_ERROR') reasonCodes.push('CONTACT_VERIFICATION_TEMPORARY_ERROR');
   else if (status === 'INVALID') reasonCodes.push('CONTACT_EMAIL_INVALID');
   else if (['DOMAIN_MX_VERIFIED', 'PUBLICLY_OBSERVED'].includes(status)) reasonCodes.push('MAILBOX_LEVEL_VERIFICATION_REQUIRED');
-  else if (status !== 'VALID' && !(status === 'ACCEPT_ALL' && allowAcceptAllSend)) reasonCodes.push('CONTACT_VERIFICATION_REQUIRED');
+  else if (status !== 'VALID') reasonCodes.push('CONTACT_VERIFICATION_REQUIRED');
 
   if (['VALID', 'ACCEPT_ALL'].includes(status) && !fresh) reasonCodes.push('CONTACT_VERIFICATION_EXPIRED');
 
@@ -73,6 +81,7 @@ export function evaluateContactVerification(contact = {}, {
     status,
     decision: mappedDecision,
     fresh: Boolean(fresh),
+    accept_all_decision: acceptAll,
     eligible_for_send: reasonCodes.length === 0,
     reason_codes: unique(reasonCodes)
   };
@@ -116,7 +125,7 @@ export function evaluateOutreachEligibility(input = {}, options = {}) {
 
   const verification = evaluateContactVerification(contact, {
     now: options.now || input.now || new Date(),
-    ttlDays: options.contactVerificationTtlDays ?? input.contact_verification_ttl_days ?? 30,
+    ttlDays: options.contactVerificationTtlDays ?? input.contact_verification_ttl_days ?? null,
     allowAcceptAllSend: options.allowAcceptAllSend ?? input.allow_accept_all_send ?? false
   });
   reasons.push(...verification.reason_codes);

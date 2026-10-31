@@ -11,7 +11,7 @@ import { toast } from './toast.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const json = (url, body, method = 'POST') => managementRequest(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 export const FILTERS = Object.freeze([['', '全部', 'All'], ['TRIAL', '试用中', 'Trial'], ['ACTIVE', '已开通', 'Active'], ['EXPIRED', '已到期', 'Expired'], ['DISABLED', '已停用', 'Disabled']]);
-export const FEATURES = Object.freeze([['research', '找客户（研究任务）', 'Prospect search'], ['email', '发送邮件', 'Email sending'], ['crm_sync', '同步到飞书表', 'CRM sync']]);
+export const FEATURES = Object.freeze([['research', '客户搜索', 'Lead search'], ['email', '发送邮件', 'Email sending'], ['crm_sync', '同步到飞书表', 'CRM sync']]);
 const DEFAULT_QUOTAS = { monthly_searches: 200, daily_emails: 30 };
 const state = { items: null, error: false, status: '', q: '', dialogFor: null };
 

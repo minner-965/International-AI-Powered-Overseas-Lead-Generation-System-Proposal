@@ -1,4 +1,7 @@
 import {verifyProviderCredentialsMigration} from '../credentials/credentialResolver.js';
+import {LEAD_USABILITY_MIGRATION_KEY,verifyLeadEnrichmentAttemptsMigration} from '../opportunityPool/leadUsability.js';
+import {SCORING_ACCURACY_MIGRATION_KEY,verifyScoringAccuracyMigration} from '../verification/scoringAccuracyMigration.js';
+import {verifyLlmAssistMigration} from '../llm/assistService.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -53,6 +56,10 @@ export const MERCHANT_SENDING_SAFETY_MIGRATION_KEY = '069_merchant_sending_safet
 export const MANUAL_COMPANIES_MIGRATION_KEY = '070_manual_companies_test_sends.sql';
 export const PROVIDER_CREDENTIALS_MIGRATION_KEY = '071_provider_credentials.sql';
 export const FOLLOWUP_SETTINGS_MIGRATION_KEY = '072_followup_settings.sql';
+export const LEAD_ENRICHMENT_ATTEMPTS_MIGRATION_KEY = LEAD_USABILITY_MIGRATION_KEY; // 073_lead_enrichment_attempts.sql
+export {SCORING_ACCURACY_MIGRATION_KEY}; // 074_scoring_accuracy.sql
+export const LLM_ASSIST_MIGRATION_KEY = '075_llm_assist.sql';
+export const REPLY_CORRELATION_ALIASES_MIGRATION_KEY = '076_reply_correlation_aliases.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -102,11 +109,19 @@ const merchantSendingSafetyPath = path.resolve(projectRoot,'database/migrations'
 const manualCompaniesPath = path.resolve(projectRoot,'database/migrations',MANUAL_COMPANIES_MIGRATION_KEY);
 const providerCredentialsPath = path.resolve(projectRoot,'database/migrations',PROVIDER_CREDENTIALS_MIGRATION_KEY);
 const followupSettingsPath = path.resolve(projectRoot,'database/migrations',FOLLOWUP_SETTINGS_MIGRATION_KEY);
+const leadEnrichmentAttemptsPath = path.resolve(projectRoot,'database/migrations',LEAD_ENRICHMENT_ATTEMPTS_MIGRATION_KEY);
+const scoringAccuracyPath = path.resolve(projectRoot,'database/migrations',SCORING_ACCURACY_MIGRATION_KEY);
+const llmAssistPath = path.resolve(projectRoot,'database/migrations',LLM_ASSIST_MIGRATION_KEY);
+const replyCorrelationAliasesPath = path.resolve(projectRoot,'database/migrations',REPLY_CORRELATION_ALIASES_MIGRATION_KEY);
 // Verifications of migrations 070+ (looked up before the older chain below).
 const lateVerifier = key => ({
   [MANUAL_COMPANIES_MIGRATION_KEY]: verifyManualCompaniesMigration,
   [PROVIDER_CREDENTIALS_MIGRATION_KEY]: verifyProviderCredentialsMigration,
-  [FOLLOWUP_SETTINGS_MIGRATION_KEY]: verifyFollowupSettingsMigration
+  [FOLLOWUP_SETTINGS_MIGRATION_KEY]: verifyFollowupSettingsMigration,
+  [LEAD_ENRICHMENT_ATTEMPTS_MIGRATION_KEY]: verifyLeadEnrichmentAttemptsMigration,
+  [SCORING_ACCURACY_MIGRATION_KEY]: verifyScoringAccuracyMigration,
+  [LLM_ASSIST_MIGRATION_KEY]: verifyLlmAssistMigration,
+  [REPLY_CORRELATION_ALIASES_MIGRATION_KEY]: verifyReplyCorrelationAliasesMigration
 })[key] || null;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -855,7 +870,19 @@ export async function applyPhase7Migrations(options = {}) {
   const followupSettings=await applyPhase7Migration({...options,
     migrationPath:options.followupSettingsMigrationPath||followupSettingsPath,
     appliedBy:options.appliedBy||'dpv-followup-settings-migration-runner'});
-  return {followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const leadEnrichmentAttempts=await applyPhase7Migration({...options,
+    migrationPath:options.leadEnrichmentAttemptsMigrationPath||leadEnrichmentAttemptsPath,
+    appliedBy:options.appliedBy||'dpv-lead-usability-migration-runner'});
+  const scoringAccuracy=await applyPhase7Migration({...options,
+    migrationPath:options.scoringAccuracyMigrationPath||scoringAccuracyPath,
+    appliedBy:options.appliedBy||'dpv-scoring-accuracy-migration-runner'});
+  const llmAssist=await applyPhase7Migration({...options,
+    migrationPath:options.llmAssistMigrationPath||llmAssistPath,
+    appliedBy:options.appliedBy||'dpv-llm-assist-migration-runner'});
+  const replyCorrelationAliases=await applyPhase7Migration({...options,
+    migrationPath:options.replyCorrelationAliasesMigrationPath||replyCorrelationAliasesPath,
+    appliedBy:options.appliedBy||'dpv-reply-correlation-migration-runner'});
+  return {replyCorrelationAliases,llmAssist,scoringAccuracy,leadEnrichmentAttempts,followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -931,6 +958,18 @@ export async function verifyManualCompaniesMigration(client){
       AND conrelid='leadgen.decision_maker_contacts'::regclass),'') LIKE '%MANUAL_ENTRY%' manual_origin`)).rows[0]||{};
   if(Number(row.tables)!==5||!row.reservation_guard||!row.manual_origin)throw new Error('Manual companies migration verification failed');
   return{manual_companies:'HUMAN_APPROVED_FIRST_TOUCH',test_sends:'APPEND_ONLY'};
+}
+
+export async function verifyReplyCorrelationAliasesMigration(client){
+  const row=(await client.query(`SELECT to_regclass('leadgen.outbound_message_id_aliases') aliases,
+    to_regclass('leadgen.outbound_sent_lookup_attempts') attempts,to_regclass('leadgen.inbound_correlation_events') events,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='inbound_messages'
+      AND column_name='correlation_confidence') confidence,
+    EXISTS(SELECT 1 FROM pg_constraint WHERE conname='inbound_messages_correlation_method_check'
+      AND pg_get_constraintdef(oid) LIKE '%SUBJECT_FALLBACK%') methods`)).rows[0]||{};
+  if(!row.aliases||!row.attempts||!row.events||!row.confidence||!row.methods)
+    throw new Error('Reply correlation aliases migration verification failed');
+  return{reply_correlation_aliases:true};
 }
 
 export async function verifyFollowupSettingsMigration(client){

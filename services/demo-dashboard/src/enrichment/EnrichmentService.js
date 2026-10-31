@@ -13,6 +13,8 @@ import { HunterProvider } from './HunterProvider.js';
 import { LinkedInDiscoveryAdapter } from './LinkedInDiscoveryAdapter.js';
 import { normalizedIdentity, normalizeDecisionRole, productRoleRelevance, roleRelevance } from './roleNormalizer.js';
 import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
+import {LeadUsabilityService,isAutomaticJob,usableLeadSql} from '../opportunityPool/leadUsability.js';
+import {contactVerificationTtlDays} from '../verification/contactVerificationPolicy.js';
 
 const clean = (value,max=1000) => String(value || '').replace(/\s+/g,' ').trim().slice(0,max);
 const nowIso = () => new Date().toISOString();
@@ -124,7 +126,7 @@ export class EnrichmentService {
     provider = null, checker = null, hunter = null, linkedIn = null, feasibilityEngine = null,
     searchAudit = null, tavilyUsageConfig = {}, searchClient = null,
     maxCompanies = 100, maxQueriesPerCompany = 5, maxPagesPerCompany = 6,
-    providerTemporaryErrorThreshold = 3, audit = () => {}
+    providerTemporaryErrorThreshold = 3, audit = () => {}, leadUsability = null
   } = {}) {
     this.pool = pool;
     this.searchConfig = searchConfig;
@@ -142,6 +144,8 @@ export class EnrichmentService {
     this.maxPagesPerCompany = Math.max(1,Math.min(10,Number(maxPagesPerCompany)||6));
     this.providerTemporaryErrorThreshold = Math.max(1,Math.min(10,Number(providerTemporaryErrorThreshold)||3));
     this.audit = audit;
+    // Migration 073: real automatic contact searches are counted per company; unusable leads are skipped.
+    this.leadUsability = leadUsability === false ? null : leadUsability || (pool ? new LeadUsabilityService({ pool,audit }) : null);
   }
 
   async getJob(jobId) {
@@ -158,6 +162,8 @@ export class EnrichmentService {
     const params = [marketCodes];
     let requestedClause = '';
     if (requestedIds) { params.push(requestedIds); requestedClause=`AND c.id=ANY($${params.length}::uuid[])`; }
+    // Automatic runs (contact research, auto evidence, recovery) never search a lead marked 无用线索.
+    const usabilityClause = isAutomaticJob(job) ? `AND ${usableLeadSql('c')}` : '';
     const requestedLimit = Math.max(1,Math.min(this.maxCompanies,Number(job.max_results) || this.maxCompanies));
     params.push(requestedLimit);
     const result = await this.pool.query(`
@@ -187,7 +193,7 @@ export class EnrichmentService {
         AND coalesce(existing.existing_customer,false)=false
         AND NOT EXISTS (SELECT 1 FROM leadgen.company_suppressions sx
           WHERE sx.company_id=c.id AND sx.lifted_at IS NULL)
-        ${requestedClause}
+        ${requestedClause} ${usabilityClause}
       ORDER BY c.country_code,c.company_name LIMIT $${params.length}`,params);
     const productScope = new Set(job.product_profiles?.length ? job.product_profiles : ['WOMENSWEAR','GENERAL_MERCHANDISE']);
     const requestedSingleProfile=requestedIds&&productScope.size===1?[...productScope][0]:null;
@@ -504,7 +510,7 @@ export class EnrichmentService {
     const domain=domainService.getRegistrableDomain(String(company.official_root_domain||'').replace(/^live:[^:]+:/,''))
       || domainService.getRegistrableDomain(company.website_url);
     if(!domain)return {calls:0,used_units:0};
-    const ttl=Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30));
+    const ttl=contactVerificationTtlDays(process.env);
     const candidates=await this.pool.query(`SELECT dc.*,EXISTS (SELECT 1 FROM leadgen.contact_verification_events v
         WHERE v.decision_maker_contact_id=dc.id AND v.verified_at=dc.last_verified_at) verification_recorded
       FROM leadgen.decision_maker_contacts dc
@@ -646,7 +652,7 @@ export class EnrichmentService {
               VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7::timestamptz,$7::timestamptz,$7::timestamptz+($8::int*interval '1 day'),$9,$9,$10)
               ON CONFLICT (idempotency_key) DO NOTHING`,[
               job.id,company.id,contact.id,usageEventId,verificationStatus,verified?.verification_score ?? found.verification_score ?? null,
-              capturedAt,Math.max(1,Number(process.env.CONTACT_VERIFICATION_TTL_DAYS || 30)),inputDigest,
+              capturedAt,contactVerificationTtlDays(process.env),inputDigest,
               sha(job.id,contact.id,usageEventId,verificationStatus)
             ]);
           if (verificationStatus === 'INVALID') {
@@ -860,6 +866,18 @@ export class EnrichmentService {
     }
   }
 
+  // One attempt row per company that made a real provider call (migration 073). Bookkeeping must not
+  // fail a run whose provider calls are already spent: errors are audited and the run continues.
+  async recordLeadAttempts(job,results,strategy) {
+    if (!this.leadUsability) return null;
+    try {
+      return await this.leadUsability.recordJobAttempts(job,results,{ strategyCode:strategy?.code || null });
+    } catch (error) {
+      this.audit('LEAD_ENRICHMENT_ATTEMPT_RECORD_FAILED',{ job_id:job.id,code:error?.code || 'ERROR',error:clean(error?.message,500) });
+      return { recorded:0,marked_unusable:[],error:error?.code || 'ERROR' };
+    }
+  }
+
   async runJob(jobId,{tavilyEnabled=true,hunterEnabled=true,strategy=null}={}) {
     const claimed = await this.pool.query(`UPDATE leadgen.research_jobs
       SET status='DISCOVERING',started_at=coalesce(started_at,now()),completed_at=NULL,last_error=NULL
@@ -894,6 +912,7 @@ export class EnrichmentService {
         if (stopReason) break;
       }
       await this.pool.query(`UPDATE leadgen.research_jobs SET status='PERSISTING' WHERE id=$1`,[job.id]);
+      const leadAttempts = await this.recordLeadAttempts(job,results,strategy);
       const failed = results.filter(result=>result.status==='FAILED').length;
       const partial = results.filter(result=>result.status==='PARTIAL').length;
       const counters = await this.pool.query(`SELECT
@@ -916,7 +935,7 @@ export class EnrichmentService {
         count.timeouts,failed,stopReason || (failed?`${failed} company enrichment attempts failed`:null),stopReason
       ]);
       this.audit('PHASE6_ENRICHMENT_COMPLETED',{ job_id:job.id,status,companies_attempted:attempted,failed,partial,stop_reason:stopReason });
-      return { job_id:job.id,status,companies_attempted:attempted,failed,partial,stop_reason:stopReason,
+      return { job_id:job.id,status,companies_attempted:attempted,failed,partial,stop_reason:stopReason,lead_attempts:leadAttempts,
         results:results.map(result=>({ company_id:result.company_id,status:result.status })) };
     } catch (error) {
       const message = clean(error.message,500) || 'Enrichment job failed';

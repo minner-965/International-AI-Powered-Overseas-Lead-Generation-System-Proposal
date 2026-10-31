@@ -1,4 +1,5 @@
 import {isCategoryMatchConfirmed} from '../categoryProcurement/categoryMatchStatus.js';
+import {contactVerificationTtlDays as defaultContactVerificationTtlDays} from '../verification/contactVerificationPolicy.js';
 
 const BUYER_ROLES = Object.freeze([
   'BUYER', 'SENIOR_BUYER', 'HEAD_OF_BUYING', 'PURCHASING', 'PROCUREMENT',
@@ -107,7 +108,7 @@ export function createAutoEvidenceExecutors({
   tavilyEnabled = true,
   hunterEnabled = true,
   sourceTtlDays = 90,
-  contactVerificationTtlDays = 30
+  contactVerificationTtlDays = defaultContactVerificationTtlDays()
 } = {}) {
   if (!pool || !categoryEvidenceService || !categoryProcurementService || !enrichmentService || !phase7Repository) {
     throw new TypeError('Auto-evidence executors require the existing evidence, enrichment and decision services');
@@ -234,7 +235,7 @@ export function createAutoEvidenceExecutors({
           technical_blocker: 'EMAIL_VERIFICATION_TEMPORARY_ERROR' };
       }
       if (['ACCEPT_ALL', 'UNKNOWN'].includes(status)) {
-        await phase7Repository.refreshOpportunityDecisions({ ttlDays: Number(contactVerificationTtlDays) || 30 });
+        await phase7Repository.refreshOpportunityDecisions({ ttlDays: Number(contactVerificationTtlDays) || defaultContactVerificationTtlDays() });
         return { outcome_status: 'HUMAN_REVIEW_REQUIRED', research_job_id,
           decision_maker_id: contact.decision_maker_id,
           decision_maker_contact_id: contact.decision_maker_contact_id,
@@ -250,7 +251,7 @@ export function createAutoEvidenceExecutors({
     },
 
     async refresh_business_opportunity_v3({ task, research_job_id }) {
-      await phase7Repository.refreshOpportunityDecisions({ ttlDays: Number(contactVerificationTtlDays) || 30 });
+      await phase7Repository.refreshOpportunityDecisions({ ttlDays: Number(contactVerificationTtlDays) || defaultContactVerificationTtlDays() });
       const [decision, contact] = await Promise.all([latestDecision(pool, task), latestContactEvidence(pool, task)]);
       const result = {
         research_job_id,

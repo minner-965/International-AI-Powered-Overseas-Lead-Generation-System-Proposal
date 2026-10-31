@@ -141,9 +141,11 @@ test('comparison: counts, transition matrix, plain-Chinese reasons and stored mi
   assert.doesNotMatch(markdown,/undefined|NaN/);
 });
 
-test('V2 classifier is not wired into the live opportunity pool service',()=>{
+test('V2 classifier is the live opportunity pool rule; v1 stays importable and the comparison stays read-only',()=>{
   const service=fs.readFileSync(new URL('../src/opportunityPool/OpportunityPoolService.js',import.meta.url),'utf8');
-  assert.doesNotMatch(service,/classifierV2/);
+  assert.match(service,/classifySnapshotV2/);
+  assert.match(service,/OPPORTUNITY_POOL_VERSION=OPPORTUNITY_POOL_V2_VERSION/);
+  assert.match(service,/classifySnapshot\} from '\.\/classifier\.js'/);
   const script=fs.readFileSync(new URL('../scripts/compare-opportunity-pool.mjs',import.meta.url),'utf8');
   assert.match(script,/default_transaction_read_only=on/);
   assert.match(script,/BEGIN READ ONLY/);

@@ -81,7 +81,9 @@ export const MERCHANT_API = Object.freeze([
   ['GET', '^/api/merchant/provider-credentials$'],
   ['PUT', '^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)$'],
   ['POST', '^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)/(test|revoke)$'],
-  ['POST', '^/api/translate$'], ['GET', '^/api/translate/languages$']
+  ['POST', '^/api/translate$'], ['GET', '^/api/translate/languages$'],
+  ['GET', '^/api/merchant/model-assist(/review)?$'], ['PUT', '^/api/merchant/model-assist$'],
+  ['POST', `^/api/merchant/model-assist/review/${UUID}$`]
 ].map(([method, pattern]) => [method, new RegExp(pattern, 'i')]));
 export function merchantApiAllowed(method, url) {
   let path = String(url || '');

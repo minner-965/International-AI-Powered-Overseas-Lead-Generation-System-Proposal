@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto';
+import {MAX_LEAD_ENRICHMENT_ATTEMPTS,usableLeadSql} from '../opportunityPool/leadUsability.js';
+import {contactVerificationTtlDays} from '../verification/contactVerificationPolicy.js';
 
 const AUTOMATION_IDENTITY='phase13-automation';
 const JOB_TYPES=Object.freeze(['DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH']);
@@ -13,10 +15,16 @@ function canonicalDigest(value){
 // opportunities. It runs only while its own control (CONTACT_RESEARCH_EXECUTION) is on and a
 // search provider permitted by the spend policy is available; otherwise it returns PAUSED and
 // creates or queues nothing. queueName is PHASE5_QUEUES.ENRICH_DECISION_MAKERS.
+// Exploratory ("待研究") companies also get this supplementary contact verification (Simon's decision
+// 2026-10-27 #2), after the active opportunities, until a usable business email is found or the company
+// has used MAX_LEAD_ENRICHMENT_ATTEMPTS real attempts and is marked 无用线索 (unusable leads are skipped).
+// Spend still goes through the same switch, spend mode (FREE_ONLY), provider router and Hunter caps.
 export class ContactResearchReconciler{
-  constructor({pool,queue,queueName,automation,selectProvider=null,env=process.env,hunterRunCapUnits=5}={}){
+  constructor({pool,queue,queueName,automation,selectProvider=null,env=process.env,hunterRunCapUnits=5,
+    includeExploratory=String(env?.CONTACT_RESEARCH_EXPLORATORY??'true').toLowerCase()!=='false',maxExploratoryAttempts=MAX_LEAD_ENRICHMENT_ATTEMPTS}={}){
     if(!pool||!queue||!queueName||!automation)throw new Error('ContactResearchReconciler requires pool, queue, queueName and automation');
-    Object.assign(this,{pool,queue,queueName,automation,selectProvider,env,hunterRunCapUnits});
+    Object.assign(this,{pool,queue,queueName,automation,selectProvider,env,hunterRunCapUnits,includeExploratory,
+      maxExploratoryAttempts:Math.max(1,Number(maxExploratoryAttempts)||MAX_LEAD_ENRICHMENT_ATTEMPTS)});
   }
 
   // Queue worker guard: automation-created jobs do not run while the switch is off. The job stays
@@ -55,16 +63,20 @@ export class ContactResearchReconciler{
     for(const job of waiting.rows)await this.queue.enqueue(this.queueName,
       {research_job_id:job.id},{singletonKey:`phase13-contact-research-resume:${job.id}`});
     const recovered=orphaned.rowCount+waiting.rowCount;
-    const selected=await this.pool.query(`SELECT p.company_id,c.country_code,
+    const selected=await this.pool.query(`SELECT p.company_id,c.country_code,p.opportunity_pool_band,
         coalesce((SELECT item->>'product_profile' FROM jsonb_array_elements(coalesce(p.profile_results,'[]'::jsonb)) item
-          WHERE item->>'band' IN('PRECISION','RELEVANT','GENERAL_RELEVANT')
-          ORDER BY CASE item->>'band' WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END LIMIT 1),'WOMENSWEAR') product_profile,
+          WHERE item->>'band' IN('PRECISION','RELEVANT','GENERAL_RELEVANT','EXPLORATORY')
+          ORDER BY CASE item->>'band' WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 WHEN 'GENERAL_RELEVANT' THEN 3 ELSE 4 END,
+            CASE WHEN item->>'category_basis'='NO_CURRENT_CATEGORY_EVIDENCE' THEN 1 ELSE 0 END LIMIT 1),'WOMENSWEAR') product_profile,
         EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
           WHERE dm.company_id=c.id AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')
             AND dc.evidence_origin='OFFICIAL_SITE_OBSERVED') has_official_email_candidate
       FROM leadgen.opportunity_pool_current p JOIN leadgen.companies c ON c.id=p.company_id
-      WHERE p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[])
+      LEFT JOIN leadgen.lead_enrichment_attempt_current a ON a.company_id=c.id
+      WHERE ((p.is_active_business_opportunity=true AND p.opportunity_pool_band=ANY($1::text[]))
+          OR ($4::boolean AND p.opportunity_pool_band='EXPLORATORY' AND coalesce(a.attempts_since_restore,0)<$5::int))
         AND c.verification_status='VERIFIED' AND c.lifecycle_status='ACTIVE'
+        AND ${usableLeadSql('c')}
         AND NOT EXISTS(SELECT 1 FROM leadgen.phase13_first_touch_reservations r WHERE r.company_id=c.id)
         AND NOT EXISTS(SELECT 1 FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
           WHERE dm.company_id=c.id AND dm.lifecycle_status='ACTIVE' AND dc.verification_status='VALID'
@@ -75,15 +87,28 @@ export class ContactResearchReconciler{
           WHERE c.id=ANY(coalesce(j.requested_company_ids,'{}'::uuid[]))
             AND j.job_type IN('DECISION_MAKER_ENRICHMENT','REAL_OPPORTUNITY_RESEARCH')
             AND j.status IN('QUEUED','DISCOVERING','RESOLVING','VERIFYING','PERSISTING'))
-      ORDER BY has_official_email_candidate DESC,
+      ORDER BY (p.opportunity_pool_band='EXPLORATORY'),has_official_email_candidate DESC,
         CASE p.opportunity_pool_band WHEN 'PRECISION' THEN 1 WHEN 'RELEVANT' THEN 2 ELSE 3 END,
         p.observed_at DESC,p.company_id LIMIT $3`,[state.allowed_bands,
-        Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),Math.max(1,Math.min(10,Number(limit)||5))]);
+        contactVerificationTtlDays(this.env),Math.max(1,Math.min(10,Number(limit)||5)),
+        this.includeExploratory,this.maxExploratoryAttempts]);
     if(!selected.rowCount)return{status:'WAITING_CONTACT_RESEARCH_WORK',created:0,company_count:0,recovered};
-    const companyIds=selected.rows.map(row=>row.company_id);
-    const marketCodes=[...new Set(selected.rows.map(row=>String(row.country_code||'').toUpperCase()).filter(Boolean))];
-    const productProfiles=[...new Set(selected.rows.map(row=>String(row.product_profile||'WOMENSWEAR').toUpperCase()))];
-    const requestPayload={market_codes:marketCodes,product_profiles:productProfiles,company_ids:companyIds,max_results:companyIds.length,
+    // One job per product profile, so every requested company is enriched for exactly that profile.
+    const groups=new Map();
+    for(const row of selected.rows){const profile=String(row.product_profile||'WOMENSWEAR').toUpperCase();
+      if(!groups.has(profile))groups.set(profile,[]);groups.get(profile).push(row);}
+    const jobs=[];
+    for(const [profile,rows] of groups)jobs.push(await this.createJob(profile,rows));
+    const exploratory=selected.rows.filter(row=>row.opportunity_pool_band==='EXPLORATORY').length;
+    const created=jobs.filter(job=>job.inserted).length;
+    return{status:created?'QUEUED':'REUSED',created,company_count:selected.rowCount,exploratory_company_count:exploratory,
+      research_job_id:jobs[0].id,research_job_ids:jobs.map(job=>job.id),recovered};
+  }
+
+  async createJob(productProfile,rows){
+    const companyIds=rows.map(row=>row.company_id);
+    const marketCodes=[...new Set(rows.map(row=>String(row.country_code||'').toUpperCase()).filter(Boolean))];
+    const requestPayload={market_codes:marketCodes,product_profiles:[productProfile],company_ids:companyIds,max_results:companyIds.length,
       automation_revision:'MC07_CONTACT_RESEARCH_V1'};
     const digest=canonicalDigest(requestPayload);
     const day=new Date().toISOString().slice(0,10);
@@ -96,12 +121,11 @@ export class ContactResearchReconciler{
         $10,'SYSTEM',$9)
       ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL
       DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,(xmax=0) inserted`,[
-        productProfiles[0]||'WOMENSWEAR',['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],
-        companyIds.length,marketCodes,productProfiles,companyIds,`phase13-contact-research:${day}:${digest}`,digest,
+        productProfile,['Buyer','Procurement','Purchasing','Category','Merchandising','Sourcing'],
+        companyIds.length,marketCodes,[productProfile],companyIds,`phase13-contact-research:${day}:${digest}`,digest,
         this.hunterRunCapUnits,AUTOMATION_IDENTITY]);
     const job=inserted.rows[0];
     if(job.inserted)await this.queue.enqueue(this.queueName,{research_job_id:job.id},{singletonKey:`phase13-contact-research:${job.id}`});
-    return{status:job.inserted?'QUEUED':'REUSED',created:job.inserted?1:0,company_count:companyIds.length,
-      research_job_id:job.id,recovered};
+    return job;
   }
 }

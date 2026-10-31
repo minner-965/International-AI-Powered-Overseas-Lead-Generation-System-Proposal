@@ -10,7 +10,9 @@ const fail=code=>Object.assign(new Error(code),{code});
 export class AutoFirstTouchService {
  // merchantSending (MerchantService): a merchant's first touch is reserved and sent from the
  // merchant's own verified mailbox, signed with its sender name and company, within its daily quota.
- constructor({pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env={},merchantSending=null}){Object.assign(this,{pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env,merchantSending});}
+ // reverify (optional, verification/contactReverification.js): one fresh mailbox check when the only
+ // problem is an expired verification; the gate is then evaluated again from the stored rows.
+ constructor({pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env={},merchantSending=null,reverify=null}){Object.assign(this,{pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env,merchantSending,reverify});}
  async senderContext(merchantId=null){
   if(!merchantId)return{merchantId:null,provider:this.outboundProvider,sender:null,fromName:FIRST_TOUCH_SENDER_NAME};
   if(!this.merchantSending)throw fail('MERCHANT_MAILBOX_NOT_VERIFIED');
@@ -38,7 +40,12 @@ export class AutoFirstTouchService {
  async reserve(companyId,{merchantId=null}={}){
   const ctx=await this.senderContext(merchantId);
   const block=this.merchantSendingBlock(ctx);if(block)throw fail(block);
-  const state=await this.evaluate(companyId,{context:ctx});if(!state.eligibility.eligible)return state;
+  let state=await this.evaluate(companyId,{context:ctx});
+  if(!state.eligibility.eligible&&this.reverify&&state.eligibility.reason_codes?.includes('CONTACT_VERIFICATION_EXPIRED')&&state.facts?.recipient){
+   const fresh=await this.reverify({companyId,recipient:state.facts.recipient});
+   if(fresh?.reverified)state=await this.evaluate(companyId,{context:ctx});
+  }
+  if(!state.eligibility.eligible)return state;
   const {facts,eligibility}=state;
   const draft=renderFirstTouchTemplate({template_key:eligibility.template_key,variables:facts.template_variables,verified_fields:facts.verified_template_fields,sender:ctx.sender});
   const sender=ctx.provider.senderEmail,reply=ctx.provider.replyToEmail;

@@ -43,8 +43,8 @@ function authorityFor(url){const pathname=new URL(url).pathname.toLowerCase();if
 export class CategoryEvidenceService{
   // searchClient (RoutedSearchClient) applies the provider order, spend mode and monthly budget;
   // the single SEARCH_PROVIDER provider is only the fallback for direct callers.
-  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},searchClient=null,maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2,aliasRefresher=null}={}){
-    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.aliasRefresher=aliasRefresher||new ApprovedCategoryAliasRefresher({pool});
+  constructor({pool,searchConfig={},crawlerConfig={},provider=null,checker=null,searchAudit=null,tavilyUsageConfig={},searchClient=null,maxQueriesPerProfile=4,maxQueriesPerCompany=8,maxPagesPerCompany=12,maxDiscoveryDepth=2,aliasRefresher=null,modelAssistHooks=null}={}){
+    if(!pool)throw new Error('CategoryEvidenceService requires a PostgreSQL pool');this.pool=pool;this.modelAssistHooks=modelAssistHooks;this.aliasRefresher=aliasRefresher||new ApprovedCategoryAliasRefresher({pool});
     this.searchClient=searchClient;this.provider=provider||(searchClient?{name:searchClient.name}:createPurposeSearchProvider(searchConfig,'CATEGORY_EVIDENCE'));
     this.searchAudit=searchAudit||searchClient||new TavilyUsageAudit({provider:this.provider,pool,...tavilyUsageConfig});
     this.checker=checker||new WebsiteReachabilityChecker({...crawlerConfig,blockedDomains:['linkedin.com']});this.maxQueriesPerProfile=Math.max(1,Math.min(4,Number(maxQueriesPerProfile)||4));
@@ -65,6 +65,37 @@ export class CategoryEvidenceService{
       (research_job_id,company_id,source_url,source_type,source_authority,page_title,captured_at,published_at,evidence_hash,content_fetched,fetch_status,verification_status)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(research_job_id,company_id,evidence_hash)
       DO UPDATE SET captured_at=GREATEST(leadgen.prospect_category_sources.captured_at,EXCLUDED.captured_at) RETURNING *`,[researchJobId,companyId,normalized,sourceType,authority,pageTitle,capturedAt,publishedAt,evidenceHash,contentFetched,fetchStatus,verificationStatus]);return saved.rows[0];
+  }
+  // Model assist (T1, llm/hooks.js): context is read once per collect, only when hooks are configured.
+  async modelAssistContext(researchJobId,productProfile,root){
+    const job=(await this.pool.query('SELECT merchant_id FROM leadgen.research_jobs WHERE id=$1',[researchJobId])).rows[0];
+    const rows=(await this.pool.query(`SELECT c.normalized_category code,c.product_profile profile,
+        coalesce(array_agg(DISTINCT a.raw_alias) FILTER (WHERE a.raw_alias IS NOT NULL),'{}') names
+      FROM leadgen.dpv_product_category_scope_current c
+      LEFT JOIN leadgen.dpv_product_category_scope_aliases a ON a.scope_id=c.id AND a.scope_revision_id=c.scope_revision_id AND a.status='ACTIVE'
+      WHERE c.product_profile=$1 AND c.scope_status='ACTIVE' AND c.approval_status='APPROVED' AND c.normalized_category IS NOT NULL
+      GROUP BY c.normalized_category,c.product_profile ORDER BY c.normalized_category LIMIT 60`,[upper(productProfile)])).rows;
+    return{merchantId:job?.merchant_id||null,root,approvedCategories:rows.map(row=>({code:row.code,profile:row.profile,names:(row.names||[]).slice(0,12)}))};
+  }
+  // ASSIST-mode items (confidence >= 0.80) are added as extra observations; they never remove or change rule
+  // observations. An approved category code on the company's own page is VERIFIED, "OTHER" stays REVIEW.
+  async persistModelObservations({context,source,company,url,html,productProfile}){
+    const result=await this.modelAssistHooks.afterPageCrawl({merchantId:context.merchantId,companyId:company.id,
+      company:{display_name:company.company_name,official_domain:context.root,market:company.country_code},
+      url,html,pageRoleHint:source.source_authority,approvedCategories:context.approvedCategories});
+    if(!result?.ran||!result.usable?.length)return 0;
+    const profile=['WOMENSWEAR','GENERAL_MERCHANDISE'].includes(upper(productProfile))?upper(productProfile):'UNKNOWN';
+    const roles={RETAIL:'OWN_RETAIL',WHOLESALE:'WHOLESALE',DISTRIBUTION:'DISTRIBUTION',IMPORT:'IMPORT'};
+    let saved=0;
+    for(const item of result.usable){
+      const quote=clean(item.quote,600);const other=upper(item.code)==='OTHER';
+      if(!quote||!item.extraction_version)continue;
+      saved+=await this.persistObservation(source,{observation_type:'PRODUCT_CATEGORY',raw_category:clean(other?item.raw_category:(item.raw_category||item.code),200)||null,
+        raw_product_name:null,raw_brand_or_department:null,normalized_profile:profile,normalized_category:other?null:clean(item.code,80),normalized_subcategory:null,
+        business_activity_role:roles[upper(item.activity)]||'UNKNOWN',evidence_text:quote,verification_status:other?'REVIEW':'VERIFIED',
+        evidence_hash:sha(`${source.id}|MODEL_ASSIST|${item.evidence_id}|${quote}`),extraction_version:item.extraction_version});
+    }
+    return saved;
   }
   async persistObservation(source,item){const verification=source.source_authority==='SEARCH_DISCOVERY'?'REVIEW':item.verification_status||'REVIEW';const saved=await this.pool.query(`INSERT INTO leadgen.prospect_category_observations
       (research_job_id,company_id,source_id,observation_type,raw_category,raw_product_name,raw_brand_or_department,normalized_profile,normalized_category,normalized_subcategory,business_activity_role,evidence_text,source_authority,verification_status,captured_at,published_at,evidence_hash,extraction_version)
@@ -107,10 +138,12 @@ export class CategoryEvidenceService{
         // query pending; the official website pages below are still read (no provider cost).
         if(error?.searchPause===true){searchPaused=error.code;await this.pool.query(`UPDATE leadgen.research_search_queries SET status='PENDING',error_message=$2 WHERE id=$1`,[stored.rows[0].id,clean(error.code,500)]);continue;}
         if(['TAVILY_CREDIT_CAP','PROVIDER_CREDIT_EXHAUSTED','PROVIDER_AUTH_ERROR'].includes(error?.code)||error?.retryable===true)throw error;failures+=1;await this.pool.query(`UPDATE leadgen.research_search_queries SET status='FAILED',error_message=$2,executed_at=now() WHERE id=$1`,[stored.rows[0].id,clean(error.message,500)]);}}
-    const queue=unique(urls,item=>domainService.normalizeUrl(item.url)||item.url);const seen=new Set();let pages_fetched=0,observations=0,timeouts=0,partials=0;
+    const queue=unique(urls,item=>domainService.normalizeUrl(item.url)||item.url);const seen=new Set();let pages_fetched=0,observations=0,timeouts=0,partials=0;let assistContext=null;
     while(queue.length&&pages_fetched<this.maxPagesPerCompany){const next=queue.shift();const normalized=domainService.normalizeUrl(next.url)||next.url;if(seen.has(normalized)||!root||domainService.getRegistrableDomain(normalized)!==root||/linkedin\.com$/i.test(root))continue;seen.add(normalized);
       try{if(!await this.checker.robotsAllows(normalized)){partials+=1;continue;}const page=await this.checker.fetchPage(normalized,{robotsAllowed:true});if(!page.reachable||!page.html){page.fetch_status==='TIMEOUT'?timeouts+=1:partials+=1;continue;}const finalUrl=page.final_url||normalized;if(domainService.getRegistrableDomain(finalUrl)!==root){partials+=1;continue;}const authority=authorityFor(finalUrl);const source=await this.persistSource({researchJobId,companyId,url:finalUrl,sourceType:authority,authority,capturedAt:page.captured_at||new Date(),pageTitle:page.page_title,verificationStatus:'VERIFIED'});pages_fetched+=1;
-        const extracted=extractCategoryBuyerObservations({html:page.html,source_url:finalUrl,source_authority:authority,captured_at:source.captured_at,company_name:company.company_name,product_profile:upper(productProfile)});for(const item of extracted)observations+=await this.persistObservation(source,item);if(next.depth<this.maxDiscoveryDepth)for(const link of discoverLinks(page.html,finalUrl))queue.push({url:link,depth:next.depth+1});}
+        const extracted=extractCategoryBuyerObservations({html:page.html,source_url:finalUrl,source_authority:authority,captured_at:source.captured_at,company_name:company.company_name,product_profile:upper(productProfile)});for(const item of extracted)observations+=await this.persistObservation(source,item);
+        if(this.modelAssistHooks){try{assistContext??=await this.modelAssistContext(researchJobId,productProfile,root);observations+=await this.persistModelObservations({context:assistContext,source,company,url:finalUrl,html:page.html,productProfile});}catch{/* model assist never changes the rule result */}}
+        if(next.depth<this.maxDiscoveryDepth)for(const link of discoverLinks(page.html,finalUrl))queue.push({url:link,depth:next.depth+1});}
       catch(error){error?.code==='TIMEOUT'?timeouts+=1:partials+=1;}}
     const counts=await this.pool.query(`SELECT (SELECT count(*)::int FROM leadgen.prospect_category_sources WHERE research_job_id=$1 AND company_id=$2)sources,(SELECT count(*)::int FROM leadgen.prospect_category_observations WHERE research_job_id=$1 AND company_id=$2)observations`,[researchJobId,companyId]);
     return {...backfill,queries:searchEnabled?queries.length:0,search_skipped:!searchEnabled,...(searchPaused?{search_paused:searchPaused}:{}),search_failures:failures,pages_fetched,observations_inserted:observations,timeouts,partials,...counts.rows[0]};

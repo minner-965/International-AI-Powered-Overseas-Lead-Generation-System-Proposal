@@ -10,15 +10,19 @@ export class ScoringService {
   }
 
   async loadCompanyFacts(companyId) {
-    const [companyResult, verificationResult, evidenceResult, contactResult, sourceResult] = await Promise.all([
+    const [companyResult, verificationResult, evidenceResult, contactResult, sourceResult, routeResult] = await Promise.all([
       this.pool.query('SELECT * FROM leadgen.companies WHERE id=$1', [companyId]),
       this.pool.query(`SELECT * FROM leadgen.research_candidate_verifications
         WHERE company_id=$1 ORDER BY verified_at DESC NULLS LAST, updated_at DESC LIMIT 1`, [companyId]),
       this.pool.query(`SELECT * FROM leadgen.company_verification_evidence
         WHERE company_id=$1 ORDER BY captured_at DESC`, [companyId]),
       this.pool.query(`SELECT id,contact_type,business_email,business_phone,email_verification_status,
-          verification_checked_at,captured_at FROM leadgen.contacts WHERE company_id=$1`, [companyId]),
-      this.pool.query('SELECT * FROM leadgen.sources WHERE company_id=$1 ORDER BY captured_at DESC', [companyId])
+          verification_checked_at,captured_at,contact_verification_status FROM leadgen.contacts WHERE company_id=$1`, [companyId]),
+      this.pool.query('SELECT * FROM leadgen.sources WHERE company_id=$1 ORDER BY captured_at DESC', [companyId]),
+      // C4: Hunter-verified mailboxes live on decision-maker contacts (upper-case VALID).
+      this.pool.query(`SELECT dc.id,dc.contact_type,dc.verification_status,dc.verification_score,dc.last_verified_at,dc.created_at captured_at
+        FROM leadgen.decision_maker_contacts dc JOIN leadgen.decision_makers dm ON dm.id=dc.decision_maker_id
+        WHERE dm.company_id=$1 AND dc.contact_type IN('BUSINESS_EMAIL','GENERIC_BUSINESS_EMAIL','DEPARTMENT_EMAIL')`, [companyId])
     ]);
     if (!companyResult.rowCount) {
       const error = new Error('Company not found');
@@ -29,7 +33,7 @@ export class ScoringService {
       company: companyResult.rows[0],
       verification: verificationResult.rows[0] || {},
       evidence: evidenceResult.rows,
-      contacts: contactResult.rows,
+      contacts: [...contactResult.rows, ...routeResult.rows],
       sources: sourceResult.rows
     });
   }

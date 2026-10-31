@@ -7,7 +7,7 @@ const bi = (zh, en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><sp
 const count = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString() : '—';
 
 const featureRows = [
-  ['search','研究搜索','Research search'],
+  ['search','客户搜索','Lead search'],
   ['opportunity','业务机会入池','Business opportunity pool'],
   ['contactResearch','联系人研究','Contact research'],
   ['firstTouch','自动首封','Auto first-touch'],
@@ -23,7 +23,7 @@ function statePill(on, offLabel = ['未启用','Not enabled']) {
 
 // Three independent switches (each saved on its own by the server) plus the search spending choice.
 const subsystemRows = [
-  ['search','search','研究搜索','Research search','按批准的类目和市场查找新的潜在客户企业','Find new prospect companies for approved categories and markets','开启后按研究任务查找新的客户企业；关闭后任务暂停，开启后接着做|When on, research batches look for new companies; when off they pause and resume later'],
+  ['search','search','客户搜索','Lead search','按批准的类目和市场查找新的潜在客户企业','Find new prospect companies for approved categories and markets','开启后按客户搜索查找新的客户企业；关闭后任务暂停，开启后接着做|When on, search batches look for new companies; when off they pause and resume later'],
   ['email','firstTouch','自动首封','Auto first-touch','在目标市场的工作时间自动发送第一封开发信','Send the first email automatically during business hours in the target market','开启后自动给符合条件的新客户发第一封开发信；人工批准的跟进邮件不受这个开关影响|When on, eligible new prospects receive the first email automatically; approved follow-ups do not depend on this switch'],
   ['contact_research','contactResearch','联系人研究','Contact research','为业务机会查找采购负责人并核验商务邮箱','Find buyer contacts for opportunities and check business emails','开启后为业务机会查找联系人并核验邮箱（会使用邮箱核验额度）；关闭后不再自动查找|When on, buyer contacts are researched and emails checked (uses email-check credits); when off nothing runs automatically']
 ];
@@ -49,7 +49,7 @@ function renderSubsystems(model) {
 }
 
 function renderStrip(model) {
-  return `<div class="v3-automation-strip"><span class="v3-automation-strip-title">${bi('自动获客','Automated acquisition')}</span>${statePill(model.enabled,['人工模式','Manual mode'])}${model.paused ? `<span class="v3-automation-strip-alert" role="status"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${bi('当前流程已暂停','Current workflow paused')}</span>` : ''}<span class="v3-automation-strip-actions"><button class="btn btn-sm ${model.enabled ? '' : 'btn-primary'}" data-tip="一起开启或暂停研究搜索和自动首封；暂停时联系人研究也会暂停，开启需在运营设置单独打开|Turn research search and auto first-touch on or off together; pausing also pauses contact research, which is switched on separately in settings" type="button" data-automation-toggle aria-pressed="${model.enabled}">${model.enabled ? bi('切换为人工处理','Switch to manual review') : bi('启用自动获客','Enable automation')}</button><button class="btn btn-sm btn-ghost-primary" data-tip="打开系统设置查看自动处理详情|Open settings for automation details" type="button" data-automation-view="settings">${bi('运营设置','Operations settings')}</button></span></div>`;
+  return `<div class="v3-automation-strip"><span class="v3-automation-strip-title">${bi('自动获客','Automated acquisition')}</span>${statePill(model.enabled,['人工模式','Manual mode'])}${model.paused ? `<span class="v3-automation-strip-alert" role="status"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${bi('当前流程已暂停','Current workflow paused')}</span>` : ''}<span class="v3-automation-strip-actions"><button class="btn btn-sm ${model.enabled ? '' : 'btn-primary'}" data-tip="一起开启或暂停客户搜索和自动首封；暂停时联系人研究也会暂停，开启需在运营设置单独打开|Turn lead search and auto first-touch on or off together; pausing also pauses contact research, which is switched on separately in settings" type="button" data-automation-toggle aria-pressed="${model.enabled}">${model.enabled ? bi('切换为人工处理','Switch to manual review') : bi('启用自动获客','Enable automation')}</button><button class="btn btn-sm btn-ghost-primary" data-tip="打开系统设置查看自动处理详情|Open settings for automation details" type="button" data-automation-view="settings">${bi('运营设置','Operations settings')}</button></span></div>`;
 }
 
 function renderPanel(model, location) {
@@ -65,7 +65,7 @@ function renderPanel(model, location) {
     ['联系方式就绪','Contact Readiness',model.metrics.contactReady,'address-book'],
     ['邮件资格','Email Eligibility',model.metrics.emailEligible,'mail-check']
   ];
-  return `<header class="v3-automation-head"><div><p class="v3-automation-kicker">${bi('运营控制','OPERATIONS CONTROL')}</p><h3>${bi('自动获客','Automated Acquisition')}</h3><p>${bi('研究、机会、联系人、首封邮件与回复监控','Research, opportunities, contacts, first-touch email and reply monitoring')}</p></div><div class="v3-automation-master">${statePill(model.enabled,['人工模式','Manual mode'])}<button class="btn ${model.enabled ? 'btn-outline-secondary' : 'btn-primary'}" data-tip="一起开启或暂停研究搜索和自动首封；暂停时联系人研究也会暂停，开启需在运营设置单独打开|Turn research search and auto first-touch on or off together; pausing also pauses contact research, which is switched on separately in settings" type="button" data-automation-toggle aria-pressed="${model.enabled}">${model.enabled ? bi('切换为人工处理','Switch to manual review') : bi('启用自动获客','Enable automation')}</button></div></header>
+  return `<header class="v3-automation-head"><div><p class="v3-automation-kicker">${bi('运营控制','OPERATIONS CONTROL')}</p><h3>${bi('自动获客','Automated Acquisition')}</h3><p>${bi('客户搜索、机会、联系人、首封邮件与回复监控','Lead search, opportunities, contacts, first-touch email and reply monitoring')}</p></div><div class="v3-automation-master">${statePill(model.enabled,['人工模式','Manual mode'])}<button class="btn ${model.enabled ? 'btn-outline-secondary' : 'btn-primary'}" data-tip="一起开启或暂停客户搜索和自动首封；暂停时联系人研究也会暂停，开启需在运营设置单独打开|Turn lead search and auto first-touch on or off together; pausing also pauses contact research, which is switched on separately in settings" type="button" data-automation-toggle aria-pressed="${model.enabled}">${model.enabled ? bi('切换为人工处理','Switch to manual review') : bi('启用自动获客','Enable automation')}</button></div></header>
   ${model.paused ? `<div class="v3-automation-alert" role="status"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><strong>${bi('当前流程已暂停','Current workflow paused')}</strong><span>${bi('请检查搜索服务状态','Review search service status')}</span></div></div>` : ''}
   ${location === 'settings' ? renderSubsystems(model) : ''}
   ${isOverview ? `<div class="v3-automation-metrics">${metrics.map(([zh,en,value,icon])=>`<div><i class="ti ti-${icon}" aria-hidden="true"></i><span>${bi(zh,en)}</span><strong>${count(value)}</strong></div>`).join('')}</div>` : ''}

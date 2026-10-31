@@ -2,7 +2,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DpvZenRulesAdapter } from '../scoring/zenRulesAdapter.js';
 
-export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-company-match-v3';
+// v4 (batch 3 C6): score normalized over the covered dimensions, the same category evidence no longer
+// scores three dimensions at once, and one band threshold set shared by the backend filter and display.
+export const CATEGORY_PROCUREMENT_MATCH_VERSION='category-company-match-v4';
+// Versions whose results count as an approved-scope category decision (v3 rows stay valid history).
+export const APPROVED_CATEGORY_MATCH_VERSIONS=Object.freeze(['category-procurement-match-v2','category-company-match-v3','category-company-match-v4']);
+// The one band threshold set (score 0-100). Used by the calculation, the opportunity filter (SQL and
+// in-memory) and the displayed band, so the filter and the label can never disagree.
+export const CATEGORY_MATCH_BAND_THRESHOLDS=Object.freeze([
+  Object.freeze({band:'VERY_HIGH',min:80}),Object.freeze({band:'HIGH',min:65}),Object.freeze({band:'MEDIUM',min:60}),
+  Object.freeze({band:'LOW',min:30}),Object.freeze({band:'VERY_LOW',min:0})]);
 export const CATEGORY_CONFIRMATION_STATUS=Object.freeze({
   MATCH_CONFIRMED:'MATCH_CONFIRMED',
   MATCH_NOT_CONFIRMED:'MATCH_NOT_CONFIRMED',
@@ -21,7 +30,14 @@ const rulesRoot=process.env.DPV_RULES_DIR?path.resolve(process.env.DPV_RULES_DIR
 const rulePath=path.join(rulesRoot,'category-procurement-match/v1/decision.json');
 const observed=(points,maximum,evidence_ids,reason_codes)=>({state:'OBSERVED',points,maximum,evidence_ids:unique(evidence_ids),reason_codes});
 const unknown=(maximum,reason)=>({state:'UNKNOWN',points:null,maximum,evidence_ids:[],reason_codes:[reason]});
-export function resolveCategoryProcurementMatchBand(score){if(score===null||score===undefined||!Number.isFinite(Number(score)))return'UNKNOWN';const value=Number(score);return value>=80?'VERY_HIGH':value>=65?'HIGH':value>=60?'MEDIUM':value>=30?'LOW':'VERY_LOW';}
+export function resolveCategoryProcurementMatchBand(score){if(score===null||score===undefined||score===''||!Number.isFinite(Number(score)))return'UNKNOWN';const value=Number(score);return CATEGORY_MATCH_BAND_THRESHOLDS.find(item=>value>=item.min)?.band||'VERY_LOW';}
+/** SQL condition selecting one band of a score column; '' for an unknown band name. */
+export function categoryBandScoreSql(column,band){
+  const name=upper(band);if(name==='UNKNOWN')return `${column} IS NULL`;
+  const index=CATEGORY_MATCH_BAND_THRESHOLDS.findIndex(item=>item.band===name);if(index<0)return'';
+  const lower=CATEGORY_MATCH_BAND_THRESHOLDS[index].min,upperBound=index>0?CATEGORY_MATCH_BAND_THRESHOLDS[index-1].min:null;
+  return upperBound===null?`${column}>=${lower}`:`${column}>=${lower} AND ${column}<${upperBound}`;
+}
 
 function normalizedCategory(value){return upper(value).replace(/&/g,' AND ').replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 function effectiveRevision(input={}){
@@ -110,7 +126,8 @@ export function buildCategoryProcurementDimensions({observations=[],product_prof
   else if(model==='DISTRIBUTION_BUYER')buyerDimension=observed(upper(buyer_business_model.confidence_band)==='HIGH'?22:18,25,buyer_business_model.evidence_ids||[],['DISTRIBUTION_BUYER_CONFIRMED']);
   else if(model==='EXCLUDED_INTERMEDIARY')buyerDimension=observed(0,25,buyer_business_model.evidence_ids||[],['EXCLUDED_INTERMEDIARY_CONFIRMED']);
   let depthDimension=unknown(15,'ASSORTMENT_DEPTH_UNKNOWN');
-  if(category.length){
+  // C6: assortment depth is about breadth; a single observation is already scored as category evidence.
+  if(category.length>=2){
     const breadth=productNames.length+categories.length+brands.length;
     const points=byType('PRODUCT_CATEGORY').length&&breadth>=6?15:breadth>=4?12:category.length>=3?8:3;
     depthDimension=observed(points,15,category.map(item=>item.id),['ASSORTMENT_DEPTH_OBSERVED']);
@@ -127,10 +144,12 @@ export function buildCategoryProcurementDimensions({observations=[],product_prof
     const published=item.published_at?new Date(item.published_at).getTime():0;
     return published&&Date.now()-published<=730*86400000;
   });
+  // C6: "recent" needs a dated observation; an undated page is category evidence, not recency evidence.
+  const dated=current.filter(item=>item.published_at&&Number.isFinite(new Date(item.published_at).getTime()));
   let recentDimension=unknown(5,'RECENT_CATEGORY_ACTIVITY_UNKNOWN');
-  if(current.length){
-    const withinOneYear=current.some(item=>item.published_at&&Date.now()-new Date(item.published_at).getTime()<=365*86400000);
-    recentDimension=observed(withinOneYear||current.some(item=>!item.published_at)?5:3,5,current.map(item=>item.id),['RECENT_CATEGORY_ACTIVITY_OBSERVED']);
+  if(dated.length){
+    const withinOneYear=dated.some(item=>Date.now()-new Date(item.published_at).getTime()<=365*86400000);
+    recentDimension=observed(withinOneYear?5:3,5,dated.map(item=>item.id),['RECENT_CATEGORY_ACTIVITY_OBSERVED']);
   }
   return {dimensions:{target_category_procurement_evidence:categoryDimension,buyer_business_model_fit:buyerDimension,assortment_depth:depthDimension,external_sourcing_import:sourcingDimension,recent_category_activity:recentDimension},observed_categories:categories,confirmed_unrelated_assortment:Boolean(profile&&category.length&&category.every(item=>upper(item.normalized_profile)!==profile&&upper(item.normalized_profile)!=='UNKNOWN'))};
 }
@@ -170,13 +189,15 @@ export function calculateCategoryProcurementMatch(input={}){
     confirmed_category_mismatch:input.confirmed_category_mismatch,
     confirmed_unrelated_assortment:built.confirmed_unrelated_assortment});
   const categoryObserved=dimensions.target_category_procurement_evidence.state==='OBSERVED';
+  // C6: normalized by the covered weight (missing dimensions are not scored as zero), like the company fit score.
+  const normalized=coverage>0?Math.round(raw*100/coverage):0;
   let score=null,band='UNKNOWN',match_status='CATEGORY_CONFIRMATION_REQUIRED';
   if(scopeMatch.scope_status==='APPROVAL_REQUIRED')match_status='NEEDS_DPV_CATEGORY_SCOPE_APPROVAL';
-  else if(confirmation.category_confirmation_status==='MISMATCH_CONFIRMED'){score=raw;match_status='CATEGORY_MISMATCH';}
-  else if(confirmation.category_confirmation_status==='MATCH_CONFIRMED'){score=raw;match_status='CATEGORY_MATCH_CONFIRMED';}
+  else if(confirmation.category_confirmation_status==='MISMATCH_CONFIRMED'){score=normalized;match_status='CATEGORY_MISMATCH';}
+  else if(confirmation.category_confirmation_status==='MATCH_CONFIRMED'){score=normalized;match_status='CATEGORY_MATCH_CONFIRMED';}
   band=resolveCategoryProcurementMatchBand(score);
   reason_codes.push(match_status);
-  return {score,band,match_status,coverage_percent:coverage,dimensions,observed_categories:built.observed_categories,
+  return {score,raw_points:score===null?null:raw,band,match_status,coverage_percent:coverage,dimensions,observed_categories:built.observed_categories,
     ...scopeMatch,...confirmation,catalog_completeness_non_blocking:true,product_profile_optional:true,reason_codes:unique([...reason_codes,confirmation.category_confirmation_reason]),
     missing_evidence:unique(missing_evidence),calculation_version:CATEGORY_PROCUREMENT_MATCH_VERSION};
 }

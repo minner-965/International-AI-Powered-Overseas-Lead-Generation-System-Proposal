@@ -1,4 +1,5 @@
 import {confirmedCategoryStatusSql} from './categoryAdmission.js';
+import {categoryBandScoreSql,resolveCategoryProcurementMatchBand} from './categoryProcurementMatch.js';
 import {attachContactProgress,firstContactPendingSql} from '../outreach/contactProgress.js';
 import {OpportunityPoolService} from '../opportunityPool/OpportunityPoolService.js';
 import {currentBusinessProjection} from '../opportunityPool/currentBusinessProjection.js';
@@ -35,7 +36,9 @@ async function queryLegacyOpportunityEvidence({
   if(query.product_profile)add(upper(query.product_profile),index=>`cpm.product_profile=$${index}`);
   if(query.buyer_business_model)add(upper(query.buyer_business_model),index=>`bbm.buyer_model=$${index}`);
   if(query.buyer_subtype)add(upper(query.buyer_subtype),index=>`bbm.buyer_subtype=$${index}`);
-  if(query.category_procurement_match_band)add(upper(query.category_procurement_match_band),index=>`cpm.band=$${index}`);
+  // C6: the band filter is derived from the score with the one shared threshold set, so a stored band
+  // written by an older rule version can never disagree with the label shown for the same score.
+  if(query.category_procurement_match_band){const clause=categoryBandScoreSql('cpm.score',query.category_procurement_match_band);if(clause)clauses.push(`(${clause})`);}
   if(query.category_procurement_match_status){
     const requested=upper(query.category_procurement_match_status);
     if(requested==='CATEGORY_MATCH_CONFIRMED')clauses.push("cpm.match_status IN('CATEGORY_MATCH_CONFIRMED','CATEGORY_PROCUREMENT_MATCH','CATEGORY_MATCH_NEEDS_BUYING_EVIDENCE')");
@@ -201,6 +204,7 @@ async function queryLegacyOpportunityEvidence({
       WHERE t.company_id=c.id AND t.product_profile=cpm.product_profile
       ORDER BY t.created_at DESC,t.id DESC LIMIT 1)auto_task ON true
     WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy}${query._poolEnrichment?'':` LIMIT $${params.length}`}`,params);
+  for(const row of result.rows)if(row.category_procurement_match_score!==undefined)row.category_procurement_match_band=resolveCategoryProcurementMatchBand(row.category_procurement_match_score);
   return attachContactProgress(pool,result.rows);
 }
 

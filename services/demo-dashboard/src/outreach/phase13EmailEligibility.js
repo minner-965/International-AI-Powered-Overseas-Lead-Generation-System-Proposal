@@ -1,5 +1,6 @@
 import {evaluateContactVerification} from './eligibility.js';
-import {FIRST_TOUCH_TEMPLATE_SET,selectFirstTouchTemplate} from './firstTouchTemplates.js';
+import {FIRST_TOUCH_TEMPLATE_SET,recipientRouteVerified,selectFirstTouchTemplate} from './firstTouchTemplates.js';
+import {isFreeWebmail} from '../verification/contactVerificationPolicy.js';
 const upper=value=>String(value??'').trim().toUpperCase();
 export const AUTO_FIRST_TOUCH_BANDS=Object.freeze(['PRECISION','RELEVANT','GENERAL_RELEVANT']);
 export const AUTO_FIRST_TOUCH_RECIPIENT_TYPES=Object.freeze(['NAMED_BUYER_EMAIL','OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL']);
@@ -35,9 +36,12 @@ export function evaluatePhase13EmailEligibility(facts={},policy={},now=new Date(
  const email=String(recipient.normalized_recipient||recipient.email||'').trim().toLowerCase();
  add(!email,'NO_VERIFIED_EMAIL_FOUND');
  add(Boolean(email)&&!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email),'RECIPIENT_IDENTITY_INVALID');
- add(Boolean(email)&&(!AUTO_FIRST_TOUCH_RECIPIENT_TYPES.includes(upper(recipient.recipient_type))||recipient.official_source_verified!==true||recipient.domain_verified!==true),'RECIPIENT_ROUTE_NOT_VERIFIED');
+ // C3/C7: any business mailbox of the company is acceptable (named person not required) when it is on the
+ // company's own domain or published on the company's own website; a free webmail address only in the latter case.
+ add(Boolean(email)&&(!AUTO_FIRST_TOUCH_RECIPIENT_TYPES.includes(upper(recipient.recipient_type))||!recipientRouteVerified(recipient)),'RECIPIENT_ROUTE_NOT_VERIFIED');
+ add(Boolean(email)&&isFreeWebmail(email)&&recipient.official_source_verified!==true,'WEBMAIL_NOT_PUBLISHED_ON_COMPANY_SITE');
  add(Boolean(email)&&upper(recipient.lifecycle_status)!=='ACTIVE','RECIPIENT_NOT_ACTIVE');
- if(email){const result=evaluateContactVerification({verification_status:recipient.verification_status,last_verified_at:recipient.verified_at||recipient.last_verified_at},{now,ttlDays:policy.verification_ttl_days||30,allowAcceptAllSend:false});reasons.push(...result.reason_codes);}
+ if(email){const result=evaluateContactVerification({verification_status:recipient.verification_status,verification_score:recipient.verification_score,last_verified_at:recipient.verified_at||recipient.last_verified_at},{now,ttlDays:policy.verification_ttl_days||null,allowAcceptAllSend:false});reasons.push(...result.reason_codes);}
  add(facts.company_suppressed===true||facts.contact_suppressed===true||facts.opted_out===true,'SUPPRESSED');
  add(facts.hard_bounced===true,'HARD_BOUNCED');
  add(facts.has_prior_first_touch===true||facts.has_prior_company_contact===true||stopped.has(upper(facts.contact_progress_status)),'ALREADY_FIRST_CONTACTED');
@@ -63,7 +67,7 @@ export function phase13EmailQueueState({eligibility={},reservation=null,contact_
  if(state==='AMBIGUOUS'||progress==='SEND_AMBIGUOUS')return'SEND_AMBIGUOUS';
  if(reasons.includes('ALREADY_FIRST_CONTACTED'))return'ALREADY_FIRST_CONTACTED';
  if(!has_email||reasons.includes('NO_VERIFIED_EMAIL_FOUND'))return'NO_VERIFIED_EMAIL_FOUND';
- if(reasons.some(r=>r.startsWith('CONTACT_VERIFICATION')||r==='MAILBOX_LEVEL_VERIFICATION_REQUIRED'))return'RECIPIENT_VERIFICATION_PENDING';
+ if(reasons.some(r=>r.startsWith('CONTACT_VERIFICATION')||r.startsWith('CONTACT_ACCEPT_ALL')||r==='MAILBOX_LEVEL_VERIFICATION_REQUIRED'))return'RECIPIENT_VERIFICATION_PENDING';
  if(state==='SENDING')return'SENDING';
  if(['RESERVED','QUEUED'].includes(state))return'AUTO_FIRST_TOUCH_QUEUED';
  if(eligibility.eligible)return'AUTO_FIRST_TOUCH_ELIGIBLE';

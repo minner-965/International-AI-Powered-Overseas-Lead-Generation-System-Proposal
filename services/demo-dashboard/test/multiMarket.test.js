@@ -36,7 +36,7 @@ test('AE, MX, BD and unknown-country GENERIC profiles resolve without core rewri
   assert.deepEqual([bd.profileKey, bd.countryCode, bd.phoneCountryCode], ['BD', 'BD', '+880']);
   assert.deepEqual([generic.profileKey, generic.countryCode, generic.countryName], ['GENERIC', 'XX', 'Example Market']);
   assert.equal(marketProfileForJob({ country: 'Bangladesh' }).profileKey, 'BD');
-  assert.deepEqual(listConfiguredMarkets().map(item => item.country_code), ['AE', 'MX', 'BD']);
+  assert.deepEqual(listConfiguredMarkets().map(item => item.country_code), ['AE', 'MX', 'BD', 'BR', 'AU', 'CA', 'SG']); // C8 adds BR AU CA SG
 });
 
 test('city is optional and provider location/language follow the active market', () => {

@@ -32,5 +32,5 @@ test('scrolling noninteractive records remain reachable by keyboard',()=>{
  const html=read('index.html');
  assert.match(html,/<div[^>]*id="enrichment-job-status"[^>]*tabindex="0"/);
  for(const name of ['Data import progress','Data export progress'])assert.match(html,new RegExp(`<ol[^>]*tabindex="0"[^>]*aria-label="[^"]*${name}"`));
- assert.match(read('ui/v3/overview.js'),/jobList\.tabIndex=0;jobList\.setAttribute\('aria-label','最近研究任务 Recent research jobs'\)/);
+ assert.match(read('ui/v3/overview.js'),/jobList\.tabIndex=0;jobList\.setAttribute\('aria-label','最近客户搜索 Recent lead searches'\)/);
 });

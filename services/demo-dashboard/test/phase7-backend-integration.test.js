@@ -349,8 +349,8 @@ test('provider event replay derives state from all events and explicit opt-out s
 test('isolated outreach worker example includes rate caps, verification TTL and Hunter defaults', async () => {
   const worker=await textFile('.env.phase7-outreach.example');
   for(const setting of ['OUTREACH_MAX_SENDS_PER_MINUTE=1','OUTREACH_MAX_SENDS_PER_DAY=10',
-    'OUTREACH_MAX_SENDS_PER_COMPANY_30D=2','OUTREACH_VERIFICATION_TTL_DAYS=30',
-    'CONTACT_VERIFICATION_TTL_DAYS=30','OUTREACH_PROVIDER_MAX_ATTEMPTS=3','HUNTER_MODE=DISABLED','HUNTER_API_KEY=',
+    'OUTREACH_MAX_SENDS_PER_COMPANY_30D=2',
+    'CONTACT_VERIFICATION_TTL_DAYS=90','OUTREACH_PROVIDER_MAX_ATTEMPTS=3','HUNTER_MODE=DISABLED','HUNTER_API_KEY=',
     'HUNTER_API_ENDPOINT=https://api.hunter.io/v2','HUNTER_REQUEST_TIMEOUT_MS=12000',
     'MAX_HUNTER_CREDITS_PER_RUN_UNITS=20000','MAX_HUNTER_CREDITS_PER_BILLING_PERIOD_UNITS=20000'])assert.match(worker,new RegExp(setting));
   assert.match(worker,/OUTREACH_ENABLED=false/);assert.match(worker,/LIVE_PROSPECT_SEND_APPROVED=false/);

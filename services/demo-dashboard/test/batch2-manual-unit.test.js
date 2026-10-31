@@ -29,7 +29,8 @@ test('website and recipient rules: company domain, published source page, or the
 
 test('manual template choice: any business mailbox works, a named decision maker is not required', () => {
   assert.equal(manualTemplateKey({contact:{email:'info@x.ae',contact_type:'GENERIC_BUSINESS_EMAIL',is_generic:true},companyType:'IMPORTER'}),'C_OFFICIAL_GENERIC_MAILBOX');
-  assert.equal(manualTemplateKey({contact:{email:'buying@x.ae',contact_type:'DEPARTMENT_EMAIL'},companyType:'WHOLESALER'}),'B_IMPORTER_WHOLESALER_DISTRIBUTOR');
+  assert.equal(manualTemplateKey({contact:{email:'wholesale.team@x.ae',contact_type:'DEPARTMENT_EMAIL'},companyType:'WHOLESALER'}),'B_IMPORTER_WHOLESALER_DISTRIBUTOR');
+  assert.equal(manualTemplateKey({contact:{email:'buying@x.ae',contact_type:'DEPARTMENT_EMAIL'},companyType:'WHOLESALER'}),'C_OFFICIAL_GENERIC_MAILBOX'); // C8: buying@ is a shared mailbox
   assert.equal(manualTemplateKey({contact:{email:'buying@x.ae',contact_type:'DEPARTMENT_EMAIL'},companyType:'RETAIL_CHAIN'}),'C_OFFICIAL_GENERIC_MAILBOX');
   assert.equal(manualTemplateKey({contact:{email:'sara@x.ae',contact_type:'BUSINESS_EMAIL',person_name:'Sara Ahmed'},companyType:'RETAILER'}),'A_NAMED_BUYER');
   const {variables,verified_fields}=manualTemplateVariables({company:{company_name:'Gulf LLC',country_name:'United Arab Emirates',normalized_category:'DRESSES'},contact:{person_name:'Sara Ahmed'},replyTo:'s@sim.example'});

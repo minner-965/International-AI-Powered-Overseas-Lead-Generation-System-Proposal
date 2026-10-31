@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import {normalizeLegacyCrmPayload} from '../crm/outboxPayloads.js';
+import {normalizeLegacyCrmPayload,websiteOrigin} from '../crm/outboxPayloads.js';
 import {FeishuBitableAdapter,feishuConfigured} from '../crm/feishuBitableAdapter.js';
 import {
   buildApprovalDigest,
@@ -40,6 +40,8 @@ import {
 import { validateReadOnlyManifest } from '../dataExchange/sharedFolderManifest.js';
 import { Phase7Repository, cleanFilename, notFound, requiredUuid, sha256 } from './repository.js';
 import {OpportunityPoolService} from '../opportunityPool/OpportunityPoolService.js';
+import {ReplyCorrelationService} from './replyCorrelation.js';
+import {contactVerificationTtlDays} from '../verification/contactVerificationPolicy.js';
 
 function bool(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -110,7 +112,13 @@ export function validateCrmPayload(operation,payload){
     const value=payload[key];
     if(value&&typeof value==='object'){const error=new Error('Nested CRM payload values are not accepted');error.code='CRM_PAYLOAD_NESTED_FORBIDDEN';error.status=400;throw error;}
     const cleaned=typeof value==='string'?text(value,key==='summary'||key==='reason'?1000:500):value;
-    if(typeof cleaned==='string'&&(LOCAL_OR_UNC_PATH.test(cleaned)||/\bstaging[\\/]/i.test(cleaned))){
+    // website_url must be an http(s) origin (scheme + host, no path). Only the host part is checked
+    // for paths: the scheme itself ("https:/") looks like a drive letter to the path pattern (bug 2026-10-27).
+    if(key==='website_url'&&(typeof cleaned!=='string'||websiteOrigin(cleaned)!==cleaned.toLowerCase().replace(/\/$/,''))){
+      const error=new Error('CRM website must be an http or https address');error.code='CRM_PAYLOAD_URL_INVALID';error.status=400;throw error;
+    }
+    const checked=key==='website_url'?cleaned.replace(/^https?:\/\//i,''):cleaned;
+    if(typeof checked==='string'&&(LOCAL_OR_UNC_PATH.test(checked)||/\bstaging[\\/]/i.test(checked))){
       const error=new Error('CRM payload may not contain local, staging or shared-folder paths');error.code='CRM_PAYLOAD_PATH_FORBIDDEN';error.status=400;throw error;
     }
     projected[key]=cleaned;
@@ -169,8 +177,9 @@ function exportJobModel(row) {
 }
 
 export class Phase7Service {
-  constructor({ pool, queue = null, hunter = null, opportunityQuery = null, env = process.env, audit = () => {} } = {}) {
+  constructor({ pool, queue = null, hunter = null, opportunityQuery = null, env = process.env, audit = () => {}, modelAssistHooks = null } = {}) {
     this.repository = new Phase7Repository({ pool });
+    this.modelAssistHooks = modelAssistHooks;
     this.pool = pool;
     this.queue = queue;
     this.hunter = hunter;
@@ -398,7 +407,7 @@ export class Phase7Service {
       management_contact_status:mapping[action],actor:user.identity,role:user.role,reason,idempotency_key:idempotencyKey,
       owner_identity:text(body?.owner_identity,160)||null,reason_codes:arrays(body?.reason_codes),
       expected_decision_snapshot_id:current.id,expected_assessment_revision:current.assessment_revision,
-      verification_ttl_days:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS || this.env.OUTREACH_VERIFICATION_TTL_DAYS || 30)});
+      verification_ttl_days:contactVerificationTtlDays(this.env)});
     return {...result,recipients_created:Number(result.recipients_created||0),provider_calls:0,messages_approved:0};
   }
 
@@ -457,7 +466,7 @@ export class Phase7Service {
         VALUES ($1,$2,$3,$4,'HUNTER','email-verifier',$5,$6,$7::timestamptz,$7::timestamptz,$7::timestamptz+($8::int*interval '1 day'),$9,$9,$10)
         ON CONFLICT (idempotency_key) DO NOTHING`,[
         contact.research_job_id,contact.company_id,contact.id,usageEventId,result.verification_status,
-        result.verification_score,capturedAt,Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||30),inputDigest,
+        result.verification_score,capturedAt,contactVerificationTtlDays(this.env),inputDigest,
         sha256(`${contact.research_job_id}|${contact.id}|${usageEventId}|${result.verification_status}`)
       ]);
     }
@@ -470,7 +479,7 @@ export class Phase7Service {
     }
     const recipients = result.verification_status === 'VALID'
       ? await this.repository.createEligibleRecipients({ companyId:contact.company_id, contactId:contact.id,
-        verificationTtlDays:Number(this.env.CONTACT_VERIFICATION_TTL_DAYS || this.env.OUTREACH_VERIFICATION_TTL_DAYS || 30) })
+        verificationTtlDays:contactVerificationTtlDays(this.env) })
       : [];
     return { status:provider.status,contact:updated,recipients_created:recipients.length,
       credits:provider.credits,network_calls:provider.status === 'SKIPPED' ? 0 : 1 };
@@ -515,7 +524,7 @@ export class Phase7Service {
       ...validation.draft,draft_status:validation.draft_status,content_hash:validation.content_hash,
       marketing_context_version:context.version,policy_warnings:[...validation.draft.policy_warnings,...validation.reason_codes],
       created_by:user.identity,products,evidence,
-      verification_ttl_days:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))
+      verification_ttl_days:contactVerificationTtlDays(this.env)
     });
   }
 
@@ -535,7 +544,7 @@ export class Phase7Service {
       approved_claims:claimDefinitions,message_policy:contract?.marketing_context_content?.message_policy || {} });
     return this.repository.reviseDraft(id,{...validation.draft,draft_status:validation.draft_status,
       content_hash:validation.content_hash,policy_warnings:[...validation.draft.policy_warnings,...validation.reason_codes],created_by:user.identity,
-      verification_ttl_days:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))});
+      verification_ttl_days:contactVerificationTtlDays(this.env)});
   }
 
   async #validateStoredDraft(id) {
@@ -572,7 +581,7 @@ export class Phase7Service {
       ||!['NAMED_BUYER_EMAIL','OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(draft.recipient_type)
       ||draft.recipient_domain_verified!==true
       ||!draft.current_recipient_verified_at
-      ||Date.now()-new Date(draft.current_recipient_verified_at).getTime()>Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))*86_400_000
+      ||Date.now()-new Date(draft.current_recipient_verified_at).getTime()>contactVerificationTtlDays(this.env)*86_400_000
       ||draft.current_company_verification_status!=='VERIFIED'||draft.current_company_lifecycle_status!=='ACTIVE'
       ||draft.current_company_suppressed===true||draft.current_contact_suppressed===true
       ||draft.marketing_context_current_decision!=='APPROVED'
@@ -595,7 +604,7 @@ export class Phase7Service {
       error.code='DRAFT_SUBMIT_VALIDATION_FAILED';error.status=409;error.details=validation.reason_codes;throw error;
     }
     return this.repository.submitDraft(id,{contentHash:draft.content_hash,
-      verificationTtlDays:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30))});
+      verificationTtlDays:contactVerificationTtlDays(this.env)});
   }
   async rejectDraft(id, body) { return this.repository.setDraftStatus(id,['PENDING_REVIEW','APPROVED'],'REJECTED'); }
   async supersedeDraft(id) { return this.repository.setDraftStatus(id,['DRAFT','INVALID_DRAFT','NEEDS_CHANGES','PENDING_REVIEW','APPROVED'],'SUPERSEDED'); }
@@ -628,7 +637,7 @@ export class Phase7Service {
     return this.repository.createDraftApproval({draft_id:id,approval_digest:digest.approval_digest,
       evidence_snapshot_hash:evidenceSnapshotHash,from_identity:fromIdentity,reply_to:replyTo,decision:'APPROVED',
       actor:user.identity,role:user.role,reason:text(body?.reason,1000)||null,
-      verification_ttl_days:Math.max(1,Number(this.env.OUTREACH_VERIFICATION_TTL_DAYS||30)),provider_purpose:providerPurpose,opportunity_snapshot_id:draft.current_opportunity_snapshot_id,management_event_id:draft.current_management_event_id,recipient_route_snapshot_hash:recipientRouteSnapshotHash,expires_at:expiresAt});
+      verification_ttl_days:contactVerificationTtlDays(this.env),provider_purpose:providerPurpose,opportunity_snapshot_id:draft.current_opportunity_snapshot_id,management_event_id:draft.current_management_event_id,recipient_route_snapshot_hash:recipientRouteSnapshotHash,expires_at:expiresAt});
   }
 
   async rejectDraftApproval(id, body, user) {
@@ -682,7 +691,7 @@ export class Phase7Service {
     if(approval.provider_purpose&&approval.provider_purpose!==purpose) reasons.push('APPROVAL_PURPOSE_MISMATCH');
     if(approval.opportunity_snapshot_id&&((approval.opportunity_snapshot_id!==approval.current_opportunity_snapshot_id)||(approval.management_event_id!==approval.current_management_event_id))) reasons.push('APPROVAL_CONTEXT_STALE');
     const verifiedAt=approval.verified_at?new Date(approval.verified_at):null;
-    const ttlDays=Math.max(1,Number(this.env.CONTACT_VERIFICATION_TTL_DAYS||this.env.OUTREACH_VERIFICATION_TTL_DAYS||30));
+    const ttlDays=contactVerificationTtlDays(this.env);
     if(!verifiedAt||Number.isNaN(verifiedAt.getTime())||Date.now()-verifiedAt.getTime()>ttlDays*86_400_000)reasons.push('CONTACT_VERIFICATION_EXPIRED');
     if(approval.company_suppressed)reasons.push('COMPANY_SUPPRESSED');
     if(approval.contact_suppressed)reasons.push('CONTACT_SUPPRESSED');
@@ -965,9 +974,23 @@ export class Phase7Service {
     return{status:'COMPLETED',messages:changes.messages.length,matched,queued,network_calls:changes.network_calls};
   }
 
+  // Model assist T5 next to the rule classifier (llm/hooks.js classifyReply). Returns null unless the model
+  // ran in ASSIST mode; then {opt_out, create_task}. The model can only add an opt-out or hold back an
+  // automatic task; it never removes a rule opt-out and never sends anything.
+  async modelReplyAssist({merchantId=null,replyId=null,companyId=null,subject,bodyText,ruleResult}){
+    if(!this.modelAssistHooks?.classifyReply)return null;
+    try{
+      const assisted=await this.modelAssistHooks.classifyReply({merchantId,replyId,companyId,subject,bodyText,ruleResult});
+      if(!assisted?.ran||assisted.mode!=='ASSIST'||!assisted.merged)return null;
+      return{opt_out:assisted.merged.opt_out===true,create_task:assisted.merged.create_task===true,source:assisted.merged.source||'MODEL'};
+    }catch{return null;}
+  }
+
   async processControlledApplicationInboundWork({inbound_message_id}){
     const row=(await this.pool.query(`SELECT * FROM leadgen.controlled_application_inbound_messages WHERE id=$1`,[requiredUuid(inbound_message_id,'controlled_inbound_id')])).rows[0];if(!row)return{status:'MISSING'};
-    const flags=row.classification_input||{};const classified=classifyInboundReply({subject:row.subject_sanitized,body_text:row.body_text_sanitized,automatic:flags.automatic,out_of_office:flags.out_of_office,dsn:flags.dsn});
+    const flags=row.classification_input||{};let classified=classifyInboundReply({subject:row.subject_sanitized,body_text:row.body_text_sanitized,automatic:flags.automatic,out_of_office:flags.out_of_office,dsn:flags.dsn});
+    const assisted=await this.modelReplyAssist({replyId:row.id,subject:row.subject_sanitized,bodyText:row.body_text_sanitized,ruleResult:classified});
+    if(assisted?.opt_out&&classified.reply_category!=='OPT_OUT'&&!['BOUNCE_DSN','AUTO_REPLY','OUT_OF_OFFICE'].includes(classified.reply_category))classified={...classified,intent:'OPT_OUT',reply_category:'OPT_OUT'};
     const activityType=classified.reply_category==='OPT_OUT'?'OPT_OUT':classified.reply_category==='BOUNCE_DSN'?'BOUNCE_DSN':classified.reply_category==='AUTO_REPLY'?'AUTO_REPLY':classified.reply_category==='OUT_OF_OFFICE'?'OUT_OF_OFFICE':classified.reply_category==='UNKNOWN_REVIEW'?'REVIEW':'HUMAN_REPLY';
     const idempotencyKey=digestCanonical({controlled_inbound_id:row.id,classification_revision:1,activity_type:activityType});const applied=await this.repository.applyControlledInbound({inbound_message_id:row.id,reply_category:classified.reply_category,classification_revision:1,activity_type:activityType,idempotency_key:idempotencyKey});
     const crm=await this.replayControlledCrm(row.context_id);
@@ -1030,7 +1053,19 @@ export class Phase7Service {
     return{status:'COMPLETED',mailboxes:results.length,results};
   }
 
+  replyCorrelation(){
+    if(!this.replyCorrelationService)this.replyCorrelationService=new ReplyCorrelationService({pool:this.pool,repository:this.repository,service:this,audit:this.audit});
+    return this.replyCorrelationService;
+  }
+
   async syncImapMailbox({provider,mailbox,folder,merchantId=null}){
+    // Before reading new replies: record the Message-ID the server stored in the Sent folder for recent
+    // sends (some servers rewrite it), so replies quoting that ID correlate. Read-only; failures never block the sync.
+    let sentAliases=null;
+    if(typeof provider?.lookupSentMessageIds==='function'&&typeof this.pool.connect==='function'){
+      try{sentAliases=await this.replyCorrelation().reconcileSentAliases({provider,mailbox,merchantId,backoffMinutes:this.env.SENT_ALIAS_LOOKUP_BACKOFF_MINUTES??undefined});}
+      catch(error){sentAliases={status:'FAILED',code:'SENT_ALIAS_LOOKUP_FAILED'};this.audit('reply_correlation_sent_lookup_failed',{merchant_id:merchantId,error:String(error?.message||error).slice(0,200)});}
+    }
     const checkpoint=await this.repository.getImapCheckpoint(mailbox,folder);
     const changes=await provider.readMailboxChanges({folder,checkpoint,rescanWindow:Number(this.env.IMAP_UIDVALIDITY_RESCAN_WINDOW||100)});
     if(changes.status!=='COMPLETED')return{...changes,messages:0};
@@ -1047,7 +1082,8 @@ export class Phase7Service {
       await this.queue.enqueue('process-inbound-message',{webhook_id:row.id},{singletonKey:`phase11:imap-inbound:${providerEventId}`});queued+=1;
     }
     const saved=await this.repository.saveImapCheckpoint(mailbox,{folder,uidvalidity:changes.uidvalidity,lastProcessedUid:changes.last_processed_uid,highestModseq:changes.highest_modseq,status:'COMPLETED'});
-    return{status:'COMPLETED',messages:changes.messages.length,queued,uidvalidity_changed:saved.uidvalidity_changed,last_processed_uid:saved.last_processed_uid,network_calls:changes.network_calls};
+    return{status:'COMPLETED',messages:changes.messages.length,queued,uidvalidity_changed:saved.uidvalidity_changed,last_processed_uid:saved.last_processed_uid,network_calls:changes.network_calls+(sentAliases?.network_calls||0),
+      ...(sentAliases?{sent_aliases:{status:sentAliases.status,looked_up:sentAliases.looked_up||0,aliases:sentAliases.aliases||0,recorrelated:sentAliases.recorrelated||0}}:{})};
   }
 
   async acceptWebhook(providerName, rawBody, headers) {
@@ -1113,14 +1149,19 @@ export class Phase7Service {
     const senderRaw=String(payload.from||payload.metadata?.from||'').trim().toLowerCase();
     const sender=(senderRaw.match(/<([^<>@\s]+@[^<>\s]+)>/)?.[1]||senderRaw.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+/i)?.[0]||'').toLowerCase();
     const references=[payload.references].filter(Boolean).flatMap(value=>String(value).match(/<[^>]+>|[^\s,]+/g)||[]);
-    const correlated=await this.repository.findInboundThread({inReplyTo:payload.in_reply_to,references,messageKey:payload.message_key,providerThreadId:payload.provider_thread_id,normalizedSender:sender});
+    let correlated=await this.repository.findInboundThread({inReplyTo:payload.in_reply_to,references,messageKey:payload.message_key,providerThreadId:payload.provider_thread_id,normalizedSender:sender});
+    if(correlated)correlated={...correlated,correlation_confidence:'HIGH'};
+    // Last resort for servers that rewrote the Message-ID: exact "Re:" subject from the exact recipient to the same mailbox (migration 076).
+    else if(payload.dsn!==true&&payload.mailbox_identity_hash&&typeof this.pool.connect==='function')
+      correlated=(await this.replyCorrelation().findSubjectFallback({subject:payload.subject,from_address_hash:sha256(sender),mailbox_identity_hash:payload.mailbox_identity_hash,
+        merchant_id:payload.merchant_id||null,received_at:payload.occurred_at||webhook.received_at})).match;
     const inbound=await this.repository.createInboundMessage({provider:webhook.provider,provider_message_id:payload.provider_message_id||webhook.provider_event_id,
       webhook_inbox_id:webhook.id,thread_id:correlated?.id||null,correlation_status:correlated?'MATCHED':'REVIEW',from_address_hash:sha256(sender),
       subject_sanitized:sanitizeInboundText(payload.subject,500),body_text_sanitized:sanitizeInboundText(payload.body_text,20000),
       attachment_status:payload.attachment_status||'NONE',received_at:payload.occurred_at||webhook.received_at,
       mailbox_identity_hash:payload.mailbox_identity_hash,folder_path:payload.folder_path,imap_uidvalidity:payload.imap_uidvalidity,imap_uid:payload.imap_uid,internet_message_id:payload.internet_message_id,
       header_classification:payload.header_classification,correlation_outbound_message_id:correlated?.outbound_message_id,correlation_method:correlated?.correlation_method||'REVIEW',
-      merchant_id:payload.merchant_id||null,
+      correlation_confidence:correlated?.correlation_confidence||null,merchant_id:payload.merchant_id||null,
       correlation_evidence_digest:digestCanonical({in_reply_to:payload.in_reply_to||null,references,message_key:payload.message_key||null,provider_thread_id:payload.provider_thread_id||null,matched:correlated?.outbound_message_id||null})});
     if(payload.dsn===true&&payload.dsn_details?.status){
       const dsnReferences=[...references,payload.dsn_details.original_message_id].filter(Boolean);
@@ -1148,25 +1189,37 @@ export class Phase7Service {
       FROM leadgen.inbound_messages i LEFT JOIN leadgen.email_webhook_inbox w ON w.id=i.webhook_inbox_id
       WHERE i.id=$1`,[requiredUuid(inbound_message_id,'inbound_message_id')]);
     if(!result.rowCount)return{status:'MISSING'};const inbound=result.rows[0];
-    const classified=classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized,
+    let classified=classifyInboundReply({subject:inbound.subject_sanitized,body_text:inbound.body_text_sanitized,
       automatic:inbound.is_automatic,out_of_office:inbound.is_out_of_office,dsn:inbound.is_dsn,headers:inbound.header_classification||{}});
+    const assisted=await this.modelReplyAssist({merchantId:inbound.merchant_id||null,replyId:inbound.id,companyId:inbound.company_id||null,
+      subject:inbound.subject_sanitized,bodyText:inbound.body_text_sanitized,ruleResult:classified});
+    const reasonCodes=[classified.confidence_basis];
+    // opt_out: treated as an unsubscribe at once (suppression below) and still left for a person to review.
+    if(assisted?.opt_out&&classified.intent!=='OPT_OUT'&&!['BOUNCE_DSN','AUTO_REPLY','OUT_OF_OFFICE'].includes(classified.reply_category)){
+      classified={...classified,intent:'OPT_OUT',reply_category:'OPT_OUT',actions:[]};reasonCodes.push('MODEL_ASSIST_OPT_OUT');
+    }
+    // Only a model-confirmed business intent may open an automatic sales task; otherwise a person reviews it.
+    const holdTask=Boolean(assisted)&&!assisted.opt_out&&assisted.create_task!==true&&(classified.actions||[]).length>0;
+    if(holdTask)reasonCodes.push('MODEL_ASSIST_TASK_HELD_FOR_REVIEW');
     const stored=await this.repository.createReplyClassification({inbound_message_id:inbound.id,intent:mapReplyIntent(classified.intent),
-      confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v2',reason_codes:[classified.confidence_basis],reply_category:classified.reply_category,classification_revision:1});
+      confidence:classified.confidence,review_status:'PENDING_REVIEW',classifier_version:'dpv-inbound-rules-v2',reason_codes:reasonCodes,reply_category:classified.reply_category,classification_revision:1});
     if(stored.intent==='OPT_OUT')await this.repository.suppressRecipientForInbound(inbound.id,
       {companyWide:inbound.company_wide_opt_out===true});
-    let queueJobId=null;if(inbound.thread_id||inbound.correlation_outbound_message_id)queueJobId=await this.queue.enqueue('create-sales-followup',{inbound_message_id:inbound.id},{singletonKey:`phase11:crm-effects:${inbound.id}:1`});
+    let queueJobId=null;if(inbound.thread_id||inbound.correlation_outbound_message_id)queueJobId=await this.queue.enqueue('create-sales-followup',holdTask?{inbound_message_id:inbound.id,hold_task:true}:{inbound_message_id:inbound.id},{singletonKey:`phase11:crm-effects:${inbound.id}:1`});
     return{status:'CLASSIFIED',classification_id:stored.id,intent:stored.intent,automatic_send_allowed:false,queue_job_id:queueJobId};
   }
 
-  async createSalesFollowupWork({inbound_message_id}) {
+  async createSalesFollowupWork({inbound_message_id,hold_task=false}) {
     const inbound=await this.repository.getInboundForTask(inbound_message_id);
     if(!inbound)return{status:'MISSING',automatic_send_allowed:false};
     if(!inbound.company_id||(!inbound.thread_id&&!inbound.correlation_outbound_message_id))return{status:'REVIEW_REQUIRED',reason:'UNMATCHED_INBOUND',automatic_send_allowed:false};
-    const built=buildSalesTaskFromReply({
+    const ruleTask=buildSalesTaskFromReply({
       classification:{intent:mapReplyIntent(inbound.intent),confidence:Number(inbound.confidence||0),
         sanitized_subject:inbound.subject_sanitized,sanitized_body_text:inbound.body_text_sanitized},
       company_id:inbound.company_id,thread_id:inbound.thread_id,message_id:inbound.id
     });
+    // hold_task (model assist ASSIST mode did not confirm the intent): the activity is recorded, no automatic task.
+    const built=hold_task===true?{...ruleTask,create_task:false,task:null}:ruleTask;
     const type=built.create_task?({CATALOGUE:'FOLLOW_UP',SAMPLE:'SAMPLE',QUOTATION:'QUOTATION',MEETING:'MEETING',DEFER:'FOLLOW_UP',DECLINE:'REPLY_REVIEW',REVIEW:'REPLY_REVIEW'})[built.task.intent]||'REPLY_REVIEW':null;
     const replyCategory=inbound.reply_category||'UNKNOWN_REVIEW';const activityType=replyCategory==='OPT_OUT'?'OPTED_OUT':replyCategory==='BOUNCE_DSN'?'BOUNCED':['AUTO_REPLY','OUT_OF_OFFICE'].includes(replyCategory)?'AUTO_REPLY':'REPLIED';
     const funnelStatus=activityType==='OPTED_OUT'?'OPTED_OUT':activityType==='BOUNCED'?'BOUNCED':'REPLIED';

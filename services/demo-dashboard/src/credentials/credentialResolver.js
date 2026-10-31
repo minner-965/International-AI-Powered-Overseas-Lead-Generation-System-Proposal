@@ -21,7 +21,7 @@ function merchantId(value){
   return text;
 }
 
-function privateHost(hostname){
+export function privateHost(hostname){
   const host=String(hostname||'').toLowerCase().replace(/^\[|\]$/g,'');
   if(!host.includes('.')&&!host.includes(':'))return true; // single-label names (docker services, localhost)
   if(/(^|\.)localhost$|\.local$|\.internal$/.test(host))return true;
@@ -45,6 +45,8 @@ export function validateValue({provider,field,value,ownerScope}){
       throw fail('CREDENTIAL_URL_NOT_ALLOWED','Use a public https address');
   }
   if(field==='provider'&&!/^[a-z0-9][a-z0-9_.-]{1,39}$/i.test(text))throw fail('CREDENTIAL_VALUE_INVALID','Provider name may use letters, digits, - _ .');
+  // A local model (Ollama on SIM's own machine) is a SIM-level choice only, never a merchant key.
+  if(provider==='llm'&&field==='provider'&&ownerScope==='MERCHANT'&&/^ollama$/i.test(text))throw fail('CREDENTIAL_LOCAL_MODEL_SIM_ONLY','A local model can only be set up by SIM');
   return text;
 }
 

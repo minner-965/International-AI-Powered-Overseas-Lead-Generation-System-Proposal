@@ -45,19 +45,22 @@ test('Category Procurement Match weights and band boundaries are frozen',()=>{
   assert.equal(result.score,100);
   assert.equal(result.coverage_percent,100);
   assert.equal(result.band,'VERY_HIGH');
-  for(const [targetPoints,expectedBand] of [[40,'HIGH'],[35,'MEDIUM'],[34,'LOW'],[4,'VERY_LOW']]){
+  // C6 (v4): the score is normalized over the covered weight (here 70 = category 45 + buyer 25).
+  for(const [targetPoints,buyerPoints,expectedScore,expectedBand] of [[24,25,70,'HIGH'],[18,25,61,'MEDIUM'],[10,25,50,'LOW'],[4,0,6,'VERY_LOW']]){
     const boundary=calculate({dimensions:dimensions({
-      target_category_procurement_evidence:observed(targetPoints,45),buyer_business_model_fit:observed(25,25)
+      target_category_procurement_evidence:observed(targetPoints,45),buyer_business_model_fit:observed(buyerPoints,25)
     })});
+    assert.equal(boundary.score,expectedScore);
     assert.equal(boundary.band,expectedBand);
   }
 });
 
 test('direct retailer with official target-category evidence passes at the 70 coverage and 60 score gates',()=>{
   const result=calculate();
-  assert.equal(result.score,70);
+  assert.equal(result.score,100); // C6: 70 of 70 covered points
+  assert.equal(result.raw_points,70);
   assert.equal(result.coverage_percent,70);
-  assert.equal(result.band,'HIGH');
+  assert.equal(result.band,'VERY_HIGH');
   assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
@@ -71,7 +74,7 @@ test('eligible distribution buyer passes when category, sourcing and operating e
       external_sourcing_import:observed(8,10)
     })
   });
-  assert.equal(result.score,71);
+  assert.equal(result.score,89); // C6: 71 of 80 covered points
   assert.equal(result.coverage_percent,80);
   assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
@@ -92,8 +95,8 @@ test('category confirmation is the only category gate and buyer-model detail is 
       assortment_depth:observed(15,15),external_sourcing_import:observed(10,10),recent_category_activity:observed(5,5)
     })
   });
-  assert.equal(missingBuyer.score,75);
-  assert.equal(missingBuyer.band,'HIGH');
+  assert.equal(missingBuyer.score,100); // C6: unknown buyer model is left out, not scored as 0
+  assert.equal(missingBuyer.band,'VERY_HIGH');
   assert.equal(missingBuyer.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
@@ -101,13 +104,13 @@ test('confirmed company category is retained even when optional scoring coverage
   const atGate=calculate({dimensions:dimensions({
     target_category_procurement_evidence:observed(35,45),buyer_business_model_fit:observed(25,25)
   })});
-  assert.equal(atGate.score,60);
+  assert.equal(atGate.score,86);
   assert.equal(atGate.match_status,'CATEGORY_MATCH_CONFIRMED');
 
   const belowGate=calculate({dimensions:dimensions({
     target_category_procurement_evidence:observed(34,45),buyer_business_model_fit:observed(25,25)
   })});
-  assert.equal(belowGate.score,59);
+  assert.equal(belowGate.score,84);
   assert.equal(belowGate.match_status,'CATEGORY_MATCH_CONFIRMED');
 });
 
@@ -116,7 +119,7 @@ test('sufficient observed unrelated assortment is PRODUCT_MISMATCH; absence of e
     target_category_procurement_evidence:observed(0,45,['synthetic-unrelated-assortment']),
     buyer_business_model_fit:observed(25,25)
   }),confirmed_unrelated_assortment:true});
-  assert.equal(mismatch.score,25);
+  assert.equal(mismatch.score,36);
   assert.equal(mismatch.match_status,'CATEGORY_MISMATCH');
 
   const absent=calculate({dimensions:dimensions({
@@ -131,7 +134,7 @@ test('buyer-model classification does not rewrite company-category confirmation'
     buyer_business_model:{buyer_model:'UNCLEAR_INTERMEDIARY',buyer_subtype:'DISTRIBUTOR',eligibility_status:'NEEDS_EVIDENCE'},
     dimensions:dimensions({target_category_procurement_evidence:observed(45,45),buyer_business_model_fit:unknown(25)})
   });
-  assert.equal(unclear.score,45);
+  assert.equal(unclear.score,100);
   assert.equal(unclear.match_status,'CATEGORY_MATCH_CONFIRMED');
 
   const excluded=calculate({
@@ -144,8 +147,8 @@ test('buyer-model classification does not rewrite company-category confirmation'
 test('internal SKU count and catalog snapshot completeness do not block an approved category scope match',()=>{
   for(const snapshot of [null,{eligible_product_count:0,classified_product_count:0,unknown_product_count:9}]){
     const result=calculate({catalog_snapshot:snapshot});
-    assert.equal(result.score,70);
-    assert.equal(result.band,'HIGH');
+    assert.equal(result.score,100);
+    assert.equal(result.band,'VERY_HIGH');
     assert.equal(result.match_status,'CATEGORY_MATCH_CONFIRMED');
     assert.equal(result.catalog_completeness_non_blocking,true);
   }

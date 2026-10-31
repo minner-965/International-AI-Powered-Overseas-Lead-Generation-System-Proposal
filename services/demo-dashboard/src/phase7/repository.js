@@ -1480,11 +1480,11 @@ export class Phase7Repository {
     return this.transaction(async client => {
       const result = await client.query(`INSERT INTO leadgen.inbound_messages
         (provider,provider_message_id,webhook_inbox_id,thread_id,correlation_status,from_address_hash,
-         subject_sanitized,body_text_sanitized,attachment_status,received_at,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,header_classification,correlation_outbound_message_id,correlation_method,correlation_evidence_digest,merchant_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20)
+         subject_sanitized,body_text_sanitized,attachment_status,received_at,mailbox_identity_hash,folder_path,imap_uidvalidity,imap_uid,internet_message_id,header_classification,correlation_outbound_message_id,correlation_method,correlation_evidence_digest,merchant_id,correlation_confidence)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21)
         ON CONFLICT(provider,provider_message_id) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id RETURNING *`,
       [input.provider,input.provider_message_id,input.webhook_inbox_id,input.thread_id,input.correlation_status,
-        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at,input.mailbox_identity_hash||null,input.folder_path||null,input.imap_uidvalidity||null,input.imap_uid||null,input.internet_message_id||null,JSON.stringify(input.header_classification||{}),input.correlation_outbound_message_id||null,input.correlation_method||null,input.correlation_evidence_digest||null,input.merchant_id||null]);
+        input.from_address_hash,input.subject_sanitized,input.body_text_sanitized,input.attachment_status,input.received_at,input.mailbox_identity_hash||null,input.folder_path||null,input.imap_uidvalidity||null,input.imap_uid||null,input.internet_message_id||null,JSON.stringify(input.header_classification||{}),input.correlation_outbound_message_id||null,input.correlation_method||null,input.correlation_evidence_digest||null,input.merchant_id||null,input.correlation_confidence||null]);
       if (input.thread_id) {
         await client.query(`UPDATE leadgen.outreach_threads SET thread_status='REPLIED',last_message_at=$2,updated_at=now()
           WHERE id=$1 AND thread_status='OPEN'`, [input.thread_id,input.received_at]);
@@ -1658,24 +1658,32 @@ export class Phase7Repository {
       attempt_count=attempt_count+1,last_error=$2,updated_at=now() WHERE id=$1 RETURNING *`,[id,String(error||'QUEUE_DISPATCH_FAILED').slice(0,1000)])).rows[0];
   }
 
+  // Header correlation. The Message-ID SIM set (rfc_message_id) or, when the mail server rewrote it,
+  // the ID found in the sender's Sent folder (outbound_message_id_aliases, migration 076).
   async findInboundThread({ inReplyTo = null, references = [], messageKey = null, providerThreadId = null, normalizedSender = null } = {}) {
     const variants=value=>{const bare=String(value||'').replace(/[<>]/g,'').trim();return bare?[bare,`<${bare}>`]:[];};
     const replyValues=[...new Set(variants(inReplyTo))];const referenceValues=[...new Set((references||[]).flatMap(variants))];
+    const alias=param=>`EXISTS(SELECT 1 FROM leadgen.outbound_message_id_aliases a WHERE a.outbound_message_id=m.id AND a.alias_message_id=ANY(${param}::text[]))`;
     const result = await this.pool.query(`SELECT t.id,t.company_id,t.recipient_id,m.id outbound_message_id,
       CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 'IN_REPLY_TO'
+           WHEN ${alias('$1')} THEN 'IN_REPLY_TO_ALIAS'
            WHEN m.rfc_message_id=ANY($2::text[]) THEN 'REFERENCES'
+           WHEN ${alias('$2')} THEN 'REFERENCES_ALIAS'
            WHEN m.message_key_header=$3 THEN 'MESSAGE_KEY'
            WHEN m.provider_thread_id=$4 THEN 'PROVIDER_THREAD' END correlation_method
       FROM leadgen.outbound_messages m
       JOIN leadgen.outreach_threads t ON t.company_id=m.company_id AND (
         (t.recipient_id IS NOT NULL AND t.recipient_id=m.recipient_id)
-        OR (t.first_touch_reservation_id IS NOT NULL AND t.first_touch_reservation_id=m.first_touch_reservation_id))
+        OR (t.first_touch_reservation_id IS NOT NULL AND t.first_touch_reservation_id=m.first_touch_reservation_id)
+        OR (m.followup_draft_id IS NOT NULL AND t.id=(SELECT f.thread_id FROM leadgen.crm_followup_drafts f WHERE f.id=m.followup_draft_id)))
       LEFT JOIN leadgen.outreach_recipients r ON r.id=t.recipient_id
       LEFT JOIN leadgen.phase13_first_touch_reservations reservation ON reservation.id=t.first_touch_reservation_id
       WHERE t.thread_status IN('OPEN','REPLIED','MANUAL_TAKEOVER')
       AND ($5::text='' OR lower(coalesce(r.normalized_recipient,reservation.normalized_recipient))=lower($5)) AND (
-        m.rfc_message_id=ANY($1::text[]) OR m.rfc_message_id=ANY($2::text[]) OR m.message_key_header=$3 OR m.provider_thread_id=$4)
-      ORDER BY CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 1 WHEN m.rfc_message_id=ANY($2::text[]) THEN 2 WHEN m.message_key_header=$3 THEN 3 ELSE 4 END,t.updated_at DESC LIMIT 1`,[replyValues,referenceValues,messageKey||null,providerThreadId||null,String(normalizedSender||'').trim().toLowerCase()]);
+        m.rfc_message_id=ANY($1::text[]) OR m.rfc_message_id=ANY($2::text[]) OR m.message_key_header=$3 OR m.provider_thread_id=$4
+        OR ${alias('$1')} OR ${alias('$2')})
+      ORDER BY CASE WHEN m.rfc_message_id=ANY($1::text[]) THEN 1 WHEN ${alias('$1')} THEN 2 WHEN m.rfc_message_id=ANY($2::text[]) THEN 3
+        WHEN ${alias('$2')} THEN 4 WHEN m.message_key_header=$3 THEN 5 ELSE 6 END,t.updated_at DESC LIMIT 1`,[replyValues,referenceValues,messageKey||null,providerThreadId||null,String(normalizedSender||'').trim().toLowerCase()]);
     return result.rows[0] || null;
   }
 

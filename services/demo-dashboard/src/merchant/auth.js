@@ -53,7 +53,10 @@ const MERCHANT_ROUTES=[
   ['GET','^/api/merchant/provider-credentials$'],
   ['PUT','^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)$'],
   ['POST','^/api/merchant/provider-credentials/(tavily|exa|brave|dataforseo|hunter|llm)/(test|revoke)$'],
-  ['POST','^/api/translate$'],['GET','^/api/translate/languages$']
+  ['POST','^/api/translate$'],['GET','^/api/translate/languages$'],
+  // Batch 3: the merchant's own model-assist switch and review queue (own work only, enforced in llm/router.js).
+  ['GET','^/api/merchant/model-assist(/review)?$'],['PUT','^/api/merchant/model-assist$'],
+  ['POST',`^/api/merchant/model-assist/review/${UUID}$`]
 ].map(([method,pattern])=>[method,new RegExp(pattern,'i')]);
 export const merchantRouteAllowed=(method,path)=>MERCHANT_ROUTES.some(([m,re])=>(m===method||(m==='GET'&&method==='HEAD'))&&re.test(path));
 

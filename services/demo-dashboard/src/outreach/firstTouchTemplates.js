@@ -1,6 +1,7 @@
 import {buildContentHash} from './approvalDigest.js';
 import {validateOutreachDraft} from './draftValidator.js';
 import {applySenderSignature} from '../crm/followupTemplates.js';
+import {acceptAllDecision} from '../verification/contactVerificationPolicy.js';
 
 export const FIRST_TOUCH_TEMPLATE_SET='DPV_FIRST_TOUCH_V1';
 export const FIRST_TOUCH_SENDER_NAME='Simon';
@@ -56,21 +57,40 @@ Simon
 SIM International
 [Reply-To]`}
 });
-const genericNames=new Set(['info','sales','contact','enquiries','enquiry','inquiries','inquiry','office','hello','support','admin']);
+// Shared company and department mailboxes (en/es/pt). Any business mailbox of the company is an
+// acceptable first-touch route (Simon 2026-10-26); generic ones get the "please forward" template C.
+const genericNames=new Set(['info','sales','contact','enquiries','enquiry','inquiries','inquiry','office','hello','support','admin',
+ 'purchasing','purchase','buying','procurement','sourcing','import','imports','export','trade','orders','order',
+ 'compras','ventas','venta','contacto','comercial','atencion','vendas','contato','atendimento','comercio']);
 const upper=value=>String(value??'').trim().toUpperCase();
 export function isGenericMailbox(recipient={}){
  const local=String(recipient.normalized_recipient||recipient.email||'').trim().toLowerCase().split('@')[0];
  return recipient.generic_mailbox===true||recipient.generic_forward_only===true||genericNames.has(local);
 }
+const OFFICIAL_ROUTE_TYPES=['OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'];
+const DISTRIBUTION_TYPES=['IMPORTER','WHOLESALER','DISTRIBUTOR'];
+const RETAIL_TYPES=['RETAILER','RETAIL_CHAIN','DEPARTMENT_STORE'];
+/** Mailbox-level verification good enough for an automatic first touch (VALID, or catch-all with a Hunter score >= 85). */
+export function mailboxVerifiedForFirstTouch(recipient={}){
+ const status=upper(recipient.verification_status);
+ return status==='VALID'||(status==='ACCEPT_ALL'&&acceptAllDecision(recipient.verification_score)==='AUTO_SEND');
+}
+/** The address is on the company's own domain, or the company publishes it on its own website. */
+export function recipientRouteVerified(recipient={}){
+ return recipient.domain_verified===true||recipient.official_source_verified===true;
+}
 export function selectFirstTouchTemplate({recipient={},company_types=[]}={}){
- const verified=upper(recipient.verification_status)==='VALID';
- const official=recipient.official_source_verified===true&&recipient.domain_verified===true;
- if(!verified||!official)return null;
+ if(!mailboxVerifiedForFirstTouch(recipient)||!recipientRouteVerified(recipient))return null;
+ const types=company_types.map(upper),type=upper(recipient.recipient_type);
  const generic=isGenericMailbox(recipient);
- if(!generic&&recipient.named_person_verified===true&&upper(recipient.recipient_type)==='NAMED_BUYER_EMAIL')return'A_NAMED_BUYER';
- if(!generic&&['OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(upper(recipient.recipient_type))
-   &&company_types.some(type=>['IMPORTER','WHOLESALER','DISTRIBUTOR'].includes(upper(type))))return'B_IMPORTER_WHOLESALER_DISTRIBUTOR';
- if(generic&&['OFFICIAL_COMPANY_EMAIL','OFFICIAL_DEPARTMENT_EMAIL'].includes(upper(recipient.recipient_type)))return'C_OFFICIAL_GENERIC_MAILBOX';
+ const named=!generic&&recipient.named_person_verified===true&&type==='NAMED_BUYER_EMAIL';
+ if(named)return'A_NAMED_BUYER';
+ // Retail chains and department stores: their company / purchasing mailboxes get template C (Simon 2026-10-26);
+ // a verified named buyer keeps the personal template A.
+ const retailChain=types.some(value=>RETAIL_TYPES.includes(value))&&!types.some(value=>DISTRIBUTION_TYPES.includes(value));
+ if(retailChain&&OFFICIAL_ROUTE_TYPES.includes(type))return'C_OFFICIAL_GENERIC_MAILBOX';
+ if(!generic&&OFFICIAL_ROUTE_TYPES.includes(type)&&types.some(value=>DISTRIBUTION_TYPES.includes(value)))return'B_IMPORTER_WHOLESALER_DISTRIBUTOR';
+ if(OFFICIAL_ROUTE_TYPES.includes(type))return'C_OFFICIAL_GENERIC_MAILBOX';
  return null;
 }
 // `sender` ({sender_name,company_name}) signs a merchant's email; SIM's own mail is unchanged.

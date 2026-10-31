@@ -6,8 +6,13 @@ import { ZenEngine } from '@gorules/zen-engine';
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../');
 const rulesRoot = process.env.DPV_RULES_DIR ? path.resolve(process.env.DPV_RULES_DIR) : path.join(projectRoot, 'rules');
 
+// Batch 3 C4: dpv-score-v2 is current. v1 stays installed so old runs can be replayed and compared;
+// stored v1 company_score_runs are never rewritten (new runs are appended with the new version).
+export const CURRENT_SCORE_RULE_VERSION = 'dpv-score-v2';
+export const INSTALLED_SCORE_RULE_VERSIONS = Object.freeze(['dpv-score-v1', 'dpv-score-v2']);
 const RULE_PATHS = Object.freeze({
-  score: path.join(rulesRoot, 'dpv-score/v1/decision.json'),
+  score: path.join(rulesRoot, 'dpv-score/v2/decision.json'),
+  scoreV1: path.join(rulesRoot, 'dpv-score/v1/decision.json'),
   qualification: path.join(rulesRoot, 'qualification/v1/decision.json'),
   customerMatch: path.join(rulesRoot, 'customer-match/baseline-v1/decision.json'),
   cooperationFeasibility: path.join(rulesRoot, 'cooperation-feasibility/v1/decision.json')
@@ -42,12 +47,16 @@ export class DpvZenRulesAdapter {
 }
 
 export class DpvScoringEngine {
-  constructor({ adapter = new DpvZenRulesAdapter() } = {}) {
+  constructor({ adapter = new DpvZenRulesAdapter(), scoreRuleVersion = CURRENT_SCORE_RULE_VERSION } = {}) {
+    if (!INSTALLED_SCORE_RULE_VERSIONS.includes(scoreRuleVersion)) {
+      throw Object.assign(new Error('Requested rule version is not installed'), { code: 'RULE_VERSION_NOT_INSTALLED' });
+    }
     this.adapter = adapter;
+    this.scoreKey = scoreRuleVersion === 'dpv-score-v1' ? 'scoreV1' : 'score';
   }
 
   async evaluate(snapshot) {
-    const score = await this.adapter.evaluate('score', snapshot);
+    const score = await this.adapter.evaluate(this.scoreKey, snapshot);
     const qualification = await this.adapter.evaluate('qualification', {
       final_score: score.final_score,
       evidence_coverage: score.evidence_coverage,

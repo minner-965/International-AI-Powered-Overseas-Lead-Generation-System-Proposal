@@ -5,7 +5,7 @@
 // draft (src/outreach/manualFirstTouch.js). Follow-up work (calls, notes, stage) is recorded as
 // normal CRM activities and queued for the Feishu table through leadgen.crm_sync_outbox.
 import {randomUUID} from 'node:crypto';
-import {activityOutboxPayload,opportunityOutboxPayload} from '../crm/outboxPayloads.js';
+import {activityOutboxPayload,leadOutboxPayload,opportunityOutboxPayload} from '../crm/outboxPayloads.js';
 import {MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES} from '../crm/repository.js';
 import {companyScopeSql,companyVisible} from '../merchant/scope.js';
 import {categoryNames,marketNames} from '../merchant/referenceNames.js';
@@ -110,7 +110,7 @@ export class ManualCompanyService{
         [assignTo,company.id,creator?'MANUAL':'ADMIN',actor]);
       const outbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,operation,payload,idempotency_key,sync_status,next_attempt_at,merchant_id)
         VALUES($1,'CREATE_LEAD',$2::jsonb,$3,'PENDING',now(),$4) RETURNING id,sync_status`,
-        [company.id,JSON.stringify({company_name:name,country_code:market,website_url:site.website_url,owner:actor,source_reference:`manual_company=${company.id}`}),
+        [company.id,JSON.stringify(leadOutboxPayload({company_name:name,country_code:market,website_url:site.website_url,owner:actor,references:{manual_company:company.id}})),
           `manual-company:${company.id}:lead`,assignTo])).rows[0];
       let contact=null;
       if(body.contact&&(body.contact.email||body.contact.address))
