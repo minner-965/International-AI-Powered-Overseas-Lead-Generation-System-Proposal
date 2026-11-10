@@ -39,6 +39,11 @@ export function followupCategoryLabel(productProfile){
 
 // Merchant mail is signed with the merchant's sender name and company; the approved text is
 // otherwise unchanged. SIM's own mail keeps "Simon / SIM International".
+// D1 (batch 4): a visible opt-out line under every introductory and follow-up email, beside the
+// one-click List-Unsubscribe header. The approved texts (here and in outreach/firstTouchTemplates.js) are unchanged; the line follows the
+// signature. A reply saying "unsubscribe" is classified OPT_OUT (outreach/inbound.js).
+export const OPT_OUT_FOOTER='If you would prefer not to receive further emails from us, just reply "unsubscribe" and we will not contact you again.';
+export const withOptOutFooter=body=>`${String(body).trimEnd()}\n\n${OPT_OUT_FOOTER}`;
 export function applySenderSignature(text,sender){
   if(!sender?.sender_name||!sender?.company_name)return text;
   return String(text).split('I’m Simon from SIM International').join(`I’m ${sender.sender_name} from ${sender.company_name}`)
@@ -52,7 +57,7 @@ export function renderFollowupTemplate({sequence_no,company_name,product_profile
   if(!company||!replyTo)throw Object.assign(new Error('Follow-up template variables are incomplete'),{code:'CRM_FOLLOWUP_VARIABLES_MISSING',status:409});
   const values={'[Company]':company,'[Category]':followupCategoryLabel(product_profile),'[Reply-To]':replyTo};
   const fill=text=>Object.entries(values).reduce((out,[token,value])=>out.split(token).join(value),text);
-  const subject=fill(template.subject);const body_text=applySenderSignature(fill(template.body_text),sender);
+  const subject=fill(template.subject);const body_text=withOptOutFooter(applySenderSignature(fill(template.body_text),sender));
   // Keep the first character of a category label upper-case at the start of a subject.
   const normalizedSubject=subject.charAt(0).toUpperCase()+subject.slice(1);
   return{template_key:template.key,template_set_key:FOLLOWUP_TEMPLATE_SET,subject:normalizedSubject,body_text};

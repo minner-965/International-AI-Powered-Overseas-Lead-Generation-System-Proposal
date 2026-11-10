@@ -1,6 +1,7 @@
 import {randomBytes,randomInt} from 'node:crypto';
 import {hash as argonHash,verify as argonVerify} from '@node-rs/argon2';
 import {SmtpImapProviderAdapter} from '../outreach/smtpImapProvider.js';
+import {DELIVERABILITY_HOLD_REASONS} from '../outreach/senderHealth.js';
 import {createSecretBox} from './secretBox.js';
 import {MAILBOX_PRESETS,presetByKey} from './mailboxPresets.js';
 import {categoryNames,marketNames} from './referenceNames.js';
@@ -430,16 +431,17 @@ export class MerchantService{
     const result=await provider.testConnections();
     const at=this.now().toISOString();
     const ok=result.smtp?.ok===true&&result.imap?.ok===true;
-    // A success verifies the mailbox, resets the failure count and lifts a sending hold. A
-    // failure is recorded; only MAILBOX_TEST_FAILURE_LIMIT failures in a row clear verification.
+    // A success verifies the mailbox, resets the failure count and lifts a sending hold (except a
+    // bounce or complaint pause, which only a person lifts: outreach/senderHealth.js). A failure is
+    // recorded; only MAILBOX_TEST_FAILURE_LIMIT failures in a row clear verification.
     const failures=ok?0:Number(row.consecutive_test_failures||0)+1;
     const clear=!ok&&failures>=MAILBOX_TEST_FAILURE_LIMIT;
     const updated=(await this.pool.query(`UPDATE leadgen.merchant_mailboxes SET last_test=$2::jsonb,consecutive_test_failures=$4,
         verified_at=CASE WHEN $3 THEN now() WHEN $5 THEN NULL ELSE verified_at END,
-        sending_hold_reason=CASE WHEN $3 THEN NULL ELSE sending_hold_reason END,
-        sending_hold_at=CASE WHEN $3 THEN NULL ELSE sending_hold_at END,updated_at=now()
+        sending_hold_reason=CASE WHEN $3 AND NOT coalesce(sending_hold_reason=ANY($6::text[]),false) THEN NULL ELSE sending_hold_reason END,
+        sending_hold_at=CASE WHEN $3 AND NOT coalesce(sending_hold_reason=ANY($6::text[]),false) THEN NULL ELSE sending_hold_at END,updated_at=now()
       WHERE merchant_id=$1 RETURNING verified_at`,
-      [id,JSON.stringify({smtp:result.smtp,imap:result.imap,at}),ok,failures,clear])).rows?.[0];
+      [id,JSON.stringify({smtp:result.smtp,imap:result.imap,at}),ok,failures,clear,[...DELIVERABILITY_HOLD_REASONS]])).rows?.[0];
     const verifiedAt=updated?updated.verified_at:(ok?at:clear?null:row.verified_at);
     return{smtp:result.smtp,imap:result.imap,ok,verified:Boolean(verifiedAt),consecutive_failures:failures,
       failures_until_unverified:ok||!verifiedAt?null:MAILBOX_TEST_FAILURE_LIMIT-failures};

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {FIRST_TOUCH_TEMPLATES,selectFirstTouchTemplate,renderFirstTouchTemplate} from '../src/outreach/firstTouchTemplates.js';
+import {OPT_OUT_FOOTER} from '../src/crm/followupTemplates.js';
 import {evaluateBusinessSendWindow,evaluatePhase13EmailEligibility,phase13EmailQueueState} from '../src/outreach/phase13EmailEligibility.js';
 const now=new Date('2026-09-08T08:00:00Z');
 const recipient={normalized_recipient:'buyer@example.test',verification_status:'VALID',verified_at:'2026-09-07T00:00:00Z',recipient_type:'NAMED_BUYER_EMAIL',official_source_verified:true,domain_verified:true,named_person_verified:true,lifecycle_status:'ACTIVE'};
@@ -17,7 +18,7 @@ test('approved A/B/C deterministic precedence and generic identity separation',(
 test('exact approved immutable template renders Simon and verified variables only',()=>{
  const variables={category:'Dresses',target_category:'dresses',company:'Example',matched_category:'dresses',market:'UAE',reply_to:'sender@example.test',first_name:'Alice'},verified_fields=Object.keys(variables);
  const draft=renderFirstTouchTemplate({template_key:'A_NAMED_BUYER',variables,verified_fields});
- assert.equal(draft.sender_display_name,'Simon');assert.equal(draft.subject,'Dresses supply for Example');assert.match(draft.body_text,/Hi Alice,/);assert.match(draft.body_text,/Best regards,\nSimon\nSIM International\nsender@example.test$/);assert.deepEqual(draft.followups,[]);
+ assert.equal(draft.sender_display_name,'Simon');assert.equal(draft.subject,'Dresses supply for Example');assert.match(draft.body_text,/Hi Alice,/);assert.match(draft.body_text,/Best regards,\nSimon\nSIM International\nsender@example.test\n\n/);assert.ok(draft.body_text.endsWith(`\n\n${OPT_OUT_FOOTER}`));assert.deepEqual(draft.followups,[]);
  assert.equal(Object.isFrozen(FIRST_TOUCH_TEMPLATES.A_NAMED_BUYER),true);assert.equal(Object.isFrozen(draft),true);
  assert.throws(()=>renderFirstTouchTemplate({template_key:'E04',variables,verified_fields}),{code:'FIRST_TOUCH_TEMPLATE_NOT_APPROVED'});
  assert.throws(()=>renderFirstTouchTemplate({template_key:'A_NAMED_BUYER',variables,verified_fields:[]}),{code:'FIRST_TOUCH_VERIFIED_VARIABLE_REQUIRED'});

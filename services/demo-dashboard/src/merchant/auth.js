@@ -28,10 +28,10 @@ export function createSessionMiddleware({pool,env=process.env,store=null}={}){
 }
 
 // Requests a merchant may make. Everything else under /api is SIM-only (403 ADMIN_REQUIRED).
-const MERCHANT_ROUTES=[
+export const MERCHANT_ROUTES=[
   ['GET',`^/api/auth/me$`],['POST',`^/api/auth/(login|logout|password)$`],
-  ['GET',`^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|scope)$`],
-  ['PATCH',`^/api/merchant/profile$`],['PUT',`^/api/merchant/(mailbox|scope|auto-first-touch)$`],['POST',`^/api/merchant/mailbox/(test-connection|test-email)$`],
+  ['GET',`^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|mailbox/deliverability|scope)$`],
+  ['PATCH',`^/api/merchant/profile$`],['PUT',`^/api/merchant/(mailbox|scope|auto-first-touch)$`],['POST',`^/api/merchant/mailbox/(test-connection|test-email|resume-sending)$`],
   ['POST',`^/api/feedback$`],
   ['GET',`^/api/(opportunities|opportunity-pool/summary|metrics|leads|export/leads|markets|category-scopes/current)$`],
   ['GET',`^/api/opportunities/${UUID}/decision-history$`],

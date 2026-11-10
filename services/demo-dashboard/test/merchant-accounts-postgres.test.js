@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {readdir,readFile} from 'node:fs/promises';
 import express from 'express';
 import pg from 'pg';
-import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,REPLY_CORRELATION_ALIASES_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,SENDER_HEALTH_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 import {MerchantService} from '../src/merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from '../src/merchant/auth.js';
 import {createMerchantRouter} from '../src/merchant/router.js';
@@ -56,7 +56,7 @@ async function ledger(pool,files,by){
 
 test('migration 066: fresh install baselines once; an installation at 065 upgrades and keeps SIM rows',{skip:!adminUrl},async()=>{
   await withDatabase(async pool=>applyFiles(pool,await migrationFiles()),async(pool,name)=>{
-    assert.equal((await migrationFiles()).at(-1),REPLY_CORRELATION_ALIASES_MIGRATION_KEY);
+    assert.equal((await migrationFiles()).at(-1),SENDER_HEALTH_MIGRATION_KEY);
     const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
     assert.equal(result.merchantAccounts.status,'BASELINED');assert.equal(result.merchantAccounts.merchant_accounts,'OWNER_SCOPED');
     assert.equal(result.loginHardening.status,'BASELINED');assert.equal(result.loginHardening.login_hardening,'DURABLE_ATTEMPT_COUNTERS');
@@ -416,6 +416,6 @@ test('first-touch template signs a merchant email with its sender and company; S
   const sim=renderFirstTouchTemplate({template_key:'C_OFFICIAL_GENERIC_MAILBOX',variables,verified_fields:verified});
   assert.match(sim.body_text,/I’m Simon from SIM International\./);
   const merchant=renderFirstTouchTemplate({template_key:'C_OFFICIAL_GENERIC_MAILBOX',variables,verified_fields:verified,sender:{sender_name:'Anna',company_name:'Alpha Textiles'}});
-  assert.match(merchant.body_text,/I’m Anna from Alpha Textiles\./);assert.match(merchant.body_text,/Best regards,\nAnna\nAlpha Textiles\nanna@alpha\.example$/);
+  assert.match(merchant.body_text,/I’m Anna from Alpha Textiles\./);assert.match(merchant.body_text,/Best regards,\nAnna\nAlpha Textiles\nanna@alpha\.example\n\nIf you would prefer not to receive further emails/);
   assert.doesNotMatch(merchant.body_text,/Simon|SIM International/);assert.notEqual(merchant.content_hash,sim.content_hash);
 });

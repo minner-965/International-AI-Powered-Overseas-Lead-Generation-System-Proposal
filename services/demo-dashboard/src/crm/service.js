@@ -1,6 +1,7 @@
 import {buildSalesTaskFromReply} from '../outreach/inbound.js';
 import {stableSmtpMessageId,stableSmtpMessageKey} from '../outreach/smtpImapProvider.js';
 import {FIRST_TOUCH_SENDER_NAME} from '../outreach/firstTouchTemplates.js';
+import {DELIVERABILITY_HOLD_REASONS} from '../outreach/senderHealth.js';
 import {activityOutboxPayload} from './outboxPayloads.js';
 import {feishuConfigured} from './feishuBitableAdapter.js';
 import {FOLLOWUP_OFFSET_DAYS,MAX_FOLLOWUP_SEQUENCE,renderFollowupTemplate} from './followupTemplates.js';
@@ -53,9 +54,11 @@ export class CrmService{
   // (MerchantService). A merchant's follow-ups go out from the merchant's own mailbox.
   // followupSettings (FollowupSettingsService, migration 072): follow-up drafting switch and SIM's daily
   // limit saved on the settings page; without it CRM_FOLLOWUP_DRAFTS_ENABLED / CRM_FOLLOWUP_DAILY_LIMIT apply.
-  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{},merchantSending=null,followupSettings=null}={}){
+  // senderHealth (optional, outreach/senderHealth.js): a mailbox paused for bounces or a complaint
+  // sends no follow-ups either until a person resumes it.
+  constructor({pool,repository=null,outboundProvider=null,automationControl=null,queue=null,env=process.env,audit=()=>{},merchantSending=null,followupSettings=null,senderHealth=null}={}){
     this.repository=repository||new CrmRepository({pool});
-    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit,merchantSending,followupSettings});
+    Object.assign(this,{pool,outboundProvider,automationControl,queue,env,audit,merchantSending,followupSettings,senderHealth});
   }
 
   async listPipeline(query={},scope=null){
@@ -186,9 +189,11 @@ export class CrmService{
     let provider=this.outboundProvider;let fromName=FIRST_TOUCH_SENDER_NAME;
     if(owner){
       if(!this.merchantSending)return{status:'WAITING',code:'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};
-      try{const context=await this.merchantSending.providerFor(owner);provider=context.provider;fromName=context.fromName;}
+      try{const context=await this.merchantSending.providerFor(owner);provider=context.provider;fromName=context.fromName;
+        if(DELIVERABILITY_HOLD_REASONS.includes(context.mailbox?.sending_hold_reason))return{status:'WAITING',code:'MERCHANT_MAILBOX_PAUSED',draft_id:id};}
       catch(error){return{status:'WAITING',code:error.code||'MERCHANT_MAILBOX_NOT_VERIFIED',draft_id:id};}
     }
+    if(this.senderHealth){const health=await this.senderHealth.healthGate(owner);if(!health.ok)return{status:'WAITING',code:health.code,draft_id:id};}
     if(!provider?.senderEmail)return{status:'WAITING',code:'SENDER_NOT_CONFIGURED',draft_id:id};
     const dailyLimit=await this.followupDailyLimit();
     const prepared=await this.repository.transaction(async client=>{

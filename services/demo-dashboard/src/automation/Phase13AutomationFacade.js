@@ -110,9 +110,11 @@ export class Phase13AutomationFacade {
     if(typeof enabled!=='boolean')throw fail('AUTOMATION_ENABLED_REQUIRED');
     if(contactResearch!==undefined&&typeof contactResearch!=='boolean')throw fail('AUTOMATION_CONTACT_RESEARCH_INVALID');
     const currentSearch=await this.controls.get(SEARCH_KEY);
+    const currentEmail=enabled?await this.controls.get(EMAIL_KEY):null;
     const search=await this.controls.set({controlKey:SEARCH_KEY,enabled,settings:this.searchSettings(currentSearch),actor,reason,idempotencyKey:`${idempotencyKey}:search`});
     const email=await this.controls.set({controlKey:EMAIL_KEY,enabled,settings:this.emailSettings(),actor,reason,idempotencyKey:`${idempotencyKey}:email`});
     await this.pool.query('UPDATE leadgen.phase13_first_touch_controls SET enabled=$2,updated_by=$3,updated_at=now() WHERE policy_revision=$1',[DEFAULT_POLICY,enabled,actor]);
+    if(enabled)await this.recordSenderResume(currentEmail,actor);
     const contactEnabled=enabled?contactResearch===true?true:null:false;
     let contact=null;
     if(contactEnabled!==null&&!(await this.contactControl()).missing)
@@ -139,9 +141,19 @@ export class Phase13AutomationFacade {
     const changeReason=String(reason||'').trim()||`Management ${nextEnabled?'enabled':'paused'} ${SUBSYSTEM_LABELS[name]}`;
     const event=await this.controls.set({controlKey,enabled:nextEnabled,settings,actor,reason:changeReason,idempotencyKey:`${idempotencyKey}:${name}`});
     if(name==='email')await this.pool.query('UPDATE leadgen.phase13_first_touch_controls SET enabled=$2,updated_by=$3,updated_at=now() WHERE policy_revision=$1',[DEFAULT_POLICY,nextEnabled,actor]);
+    if(name==='email'&&nextEnabled)await this.recordSenderResume(current,actor);
     this.audit('PHASE13_AUTOMATION_SUBSYSTEM_CHANGED',{subsystem:name,enabled:nextEnabled,actor,
       ...(name==='search'?{provider_spend_mode:settings.provider_spend_mode,paid_fallback_on_empty:settings.paid_fallback_on_empty}:{})});
     return {subsystem:name,event,state:await this.getState()};
+  }
+
+  // Turning SIM's email back on after a bounce or complaint pause (outreach/senderHealth.js) is the
+  // person's resume: the health window restarts, so the old bounces do not pause it again.
+  async recordSenderResume(current,actor){
+    const paused=String(current?.settings?.paused_reason||'');
+    if(current?.enabled===true||!paused.startsWith('SENDER_'))return;
+    await this.pool.query(`INSERT INTO leadgen.sender_health_events(sender_key,merchant_id,event_type,reason,metrics,actor)
+      VALUES('SIM',NULL,'RESUMED',$1,'{}'::jsonb,$2)`,[`EMAIL_ON_AFTER_${paused}`.slice(0,160),String(actor||'dpv-management').slice(0,160)]);
   }
 
   // Provider-path failure on SIM's own sender: auto first-touch stops and the reason is kept, so

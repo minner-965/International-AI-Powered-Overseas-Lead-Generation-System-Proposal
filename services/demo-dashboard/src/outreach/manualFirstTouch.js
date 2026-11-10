@@ -10,6 +10,7 @@
 import {createHash} from 'node:crypto';
 import {FIRST_TOUCH_SENDER_NAME,FIRST_TOUCH_TEMPLATE_SET,renderFirstTouchTemplate,selectFirstTouchTemplate} from './firstTouchTemplates.js';
 import {stableSmtpMessageId,stableSmtpMessageKey} from './smtpImapProvider.js';
+import {DELIVERABILITY_HOLD_REASONS} from './senderHealth.js';
 import {activityOutboxPayload} from '../crm/outboxPayloads.js';
 import {countColdOutreachToday} from '../crm/service.js';
 import {ManualCompanyService} from '../companies/manualCompanyService.js';
@@ -40,8 +41,10 @@ export function manualTemplateVariables({company,contact,replyTo}){
 
 export class ManualFirstTouchService{
   // merchantSending: MerchantService ({providerFor, emailAllowance, holdMailbox}).
-  constructor({pool,outboundProvider,merchantSending=null,automationControl=null,companies=null,env=process.env,queue=null,audit=()=>{},followupSettings=null}={}){
-    Object.assign(this,{pool,outboundProvider,merchantSending,automationControl,env,queue,audit,followupSettings});
+  // senderHealth (optional, outreach/senderHealth.js): a mailbox paused for bounces or a complaint
+  // does not send until a person resumes it.
+  constructor({pool,outboundProvider,merchantSending=null,automationControl=null,companies=null,env=process.env,queue=null,audit=()=>{},followupSettings=null,senderHealth=null}={}){
+    Object.assign(this,{pool,outboundProvider,merchantSending,automationControl,env,queue,audit,followupSettings,senderHealth});
     this.companies=companies||new ManualCompanyService({pool,env,queue,audit});
   }
 
@@ -175,6 +178,12 @@ export class ManualFirstTouchService{
     if(!owner&&this.automationControl?.getState){
       const state=await this.automationControl.getState();
       if(state?.sim_sender_paused===true)throw fail('FIRST_TOUCH_NOT_ALLOWED','Sending is paused after a mailbox problem',409,{reason_codes:['EMAIL_PAUSED']});
+    }
+    if(DELIVERABILITY_HOLD_REASONS.includes(ctx.mailbox?.sending_hold_reason))
+      throw fail('FIRST_TOUCH_NOT_ALLOWED','This mailbox is paused after bounces or a complaint',409,{reason_codes:['MERCHANT_MAILBOX_PAUSED']});
+    if(this.senderHealth){
+      const health=await this.senderHealth.healthGate(owner);
+      if(!health.ok)throw fail('FIRST_TOUCH_NOT_ALLOWED','This mailbox is paused after bounces or a complaint',409,{reason_codes:[health.code]});
     }
     const prepared=await transaction(this.pool,async client=>{
       const draft=await this.lockDraft(client,id,owner);

@@ -12,7 +12,9 @@ export class AutoFirstTouchService {
  // merchant's own verified mailbox, signed with its sender name and company, within its daily quota.
  // reverify (optional, verification/contactReverification.js): one fresh mailbox check when the only
  // problem is an expired verification; the gate is then evaluated again from the stored rows.
- constructor({pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env={},merchantSending=null,reverify=null}){Object.assign(this,{pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env,merchantSending,reverify});}
+ // senderHealth (optional, outreach/senderHealth.js): pauses a mailbox on bounces or a complaint and
+ // paces a new mailbox (warm-up cap, minimum interval) before each automatic first touch.
+ constructor({pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env={},merchantSending=null,reverify=null,senderHealth=null}){Object.assign(this,{pool,queue,outboundProvider,automationControl,loadEligibilityFacts,env,merchantSending,reverify,senderHealth});}
  async senderContext(merchantId=null){
   if(!merchantId)return{merchantId:null,provider:this.outboundProvider,sender:null,fromName:FIRST_TOUCH_SENDER_NAME};
   if(!this.merchantSending)throw fail('MERCHANT_MAILBOX_NOT_VERIFIED');
@@ -40,6 +42,7 @@ export class AutoFirstTouchService {
  async reserve(companyId,{merchantId=null}={}){
   const ctx=await this.senderContext(merchantId);
   const block=this.merchantSendingBlock(ctx);if(block)throw fail(block);
+  if(this.senderHealth){const gate=await this.senderHealth.firstTouchGate(ctx.merchantId);if(!gate.ok)throw fail(gate.code);}
   let state=await this.evaluate(companyId,{context:ctx});
   if(!state.eligibility.eligible&&this.reverify&&state.eligibility.reason_codes?.includes('CONTACT_VERIFICATION_EXPIRED')&&state.facts?.recipient){
    const fresh=await this.reverify({companyId,recipient:state.facts.recipient});

@@ -66,6 +66,8 @@ import {createAutomationRouter} from './automation/router.js';
 import {ContactResearchReconciler} from './automation/ContactResearchReconciler.js';
 import {RoutedSearchClient} from './search/RoutedSearchClient.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
+import {SenderHealth} from './outreach/senderHealth.js';
+import {checkSendingDomain} from './outreach/sendingDomainCheck.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
 import {simFirstTouchCandidates,merchantFirstTouchCandidates} from './outreach/firstTouchCandidates.js';
 import {MerchantService} from './merchant/MerchantService.js';
@@ -631,19 +633,21 @@ const researchBatchService=new ResearchBatchService({pool,directDispatch:researc
   runBudgetCapUnits:hunterCaps.runCapUnits});
 contactResearchReconciler=new ContactResearchReconciler({pool,queue:phase5Queue,queueName:PHASE5_QUEUES.ENRICH_DECISION_MAKERS,
   automation:phase13Automation,selectProvider:()=>currentCapacityRouter.select(),env:process.env,hunterRunCapUnits:hunterCaps.runCapUnits});
-autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,
+// Batch 4 (D3/D4): bounce/complaint pause and warm-up pacing for SIM's mailbox and each merchant's.
+const senderHealth=new SenderHealth({pool,env:process.env,merchants:merchantService,automationControl:phase13Automation});
+autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,outboundProvider:phase7Service.outboundProvider,senderHealth,
   automationControl:phase13Automation,
   loadEligibilityFacts:createPhase13EmailEligibilityFactLoader({pool,replyToEmail:phase7Service.outboundProvider.replyToEmail}),
   env:process.env,merchantSending:merchantService,
   // C7: an expired mailbox verification gets one fresh Hunter check right before a reservation.
   reverify:createContactReverifier({pool,hunter:enrichmentService.hunter})});
 crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
-  queue:phase7QueueProxy,env:simLiveEnv,audit,merchantSending:merchantService,followupSettings});
+  queue:phase7QueueProxy,env:simLiveEnv,audit,merchantSending:merchantService,followupSettings,senderHealth});
 phase7Service.merchantSending=merchantService;
 // B1/B2: manual companies, human-approved first touch for them, and first-touch test sends.
 const manualCompanies=new ManualCompanyService({pool,env:process.env,queue:phase7QueueProxy,audit});
 const manualFirstTouch=new ManualFirstTouchService({pool,outboundProvider:phase7Service.outboundProvider,merchantSending:merchantService,
-  automationControl:phase13Automation,companies:manualCompanies,env:process.env,queue:phase7QueueProxy,audit,followupSettings});
+  automationControl:phase13Automation,companies:manualCompanies,env:process.env,queue:phase7QueueProxy,audit,followupSettings,senderHealth});
 const firstTouchTestSends=new FirstTouchTestSendService({pool,outboundProvider:phase7Service.outboundProvider,merchantSending:merchantService,env:process.env,audit});
 
 const publicDataOrigins = [
@@ -686,7 +690,8 @@ app.use('/api',createSessionMiddleware({pool,env:process.env}));
 // Cross-site write protection runs after the session cookie is parsed, before the routes.
 app.use(createOriginGuard({env:process.env}));
 app.use(createWorkspaceGate({merchants:merchantService,env:process.env,pool}));
-app.use(createMerchantRouter({merchants:merchantService,env:process.env}));
+app.use(createMerchantRouter({merchants:merchantService,env:process.env,senderHealth,checkDomain:checkSendingDomain,
+  simSenderEmail:()=>phase7Service.outboundProvider?.senderEmail||null}));
 app.use(createCredentialsRouter({credentials:credentialStore,spendPolicy:()=>phase13Automation.spendPolicy()}));
 app.use(createTranslateRouter({client:createTranslateClient({credentials:credentialStore,env:process.env}),authRequired:authRequired(process.env)}));
 app.use(createManualCompanyRouter({companies:manualCompanies,firstTouch:manualFirstTouch,testSends:firstTouchTestSends}));

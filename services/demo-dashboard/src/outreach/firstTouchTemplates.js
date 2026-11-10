@@ -1,6 +1,6 @@
 import {buildContentHash} from './approvalDigest.js';
 import {validateOutreachDraft} from './draftValidator.js';
-import {applySenderSignature} from '../crm/followupTemplates.js';
+import {applySenderSignature,withOptOutFooter} from '../crm/followupTemplates.js';
 import {acceptAllDecision} from '../verification/contactVerificationPolicy.js';
 
 export const FIRST_TOUCH_TEMPLATE_SET='DPV_FIRST_TOUCH_V1';
@@ -106,7 +106,7 @@ export function renderFirstTouchTemplate({template_key,variables={},verified_fie
  if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(values.reply_to))throw Object.assign(new Error('FIRST_TOUCH_REPLY_TO_INVALID'),{code:'FIRST_TOUCH_REPLY_TO_INVALID'});
  const map={'Category':values.category,'Target Category':values.target_category,'Company':values.company,'Matched Category':values.matched_category,'Market':values.market,'Reply-To':values.reply_to,'First Name':values.first_name,'First Name or Team':'Team'};
  const render=value=>value.replace(/\[([^\]]+)\]/g,(_,key)=>map[key]);
- const draft={template_set_key:FIRST_TOUCH_TEMPLATE_SET,template_key,template_version:`${FIRST_TOUCH_TEMPLATE_SET}:${template_key}`,sender_display_name:sender?.sender_name||FIRST_TOUCH_SENDER_NAME,language:'en',subject:render(template.subject),body_text:applySenderSignature(render(template.body_text),sender),followups:[]};
+ const draft={template_set_key:FIRST_TOUCH_TEMPLATE_SET,template_key,template_version:`${FIRST_TOUCH_TEMPLATE_SET}:${template_key}`,sender_display_name:sender?.sender_name||FIRST_TOUCH_SENDER_NAME,language:'en',subject:render(template.subject),body_text:withOptOutFooter(applySenderSignature(render(template.body_text),sender)),followups:[]};
  if(draft.subject.length>240)throw Object.assign(new Error('FIRST_TOUCH_SUBJECT_TOO_LONG'),{code:'FIRST_TOUCH_SUBJECT_TOO_LONG'});
  const validation=validateOutreachDraft(draft,{target_language:'en'});
  if(!validation.valid)throw Object.assign(new Error('FIRST_TOUCH_FORBIDDEN_CLAIM'),{code:'FIRST_TOUCH_FORBIDDEN_CLAIM',reason_codes:validation.reason_codes});
