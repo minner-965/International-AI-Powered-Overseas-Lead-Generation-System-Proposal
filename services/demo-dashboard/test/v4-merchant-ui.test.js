@@ -101,7 +101,7 @@ test('first-login checklist follows the API steps and points the next step at a 
 
 test('mailbox binding: presets, provider help, plain test results and form checks', () => {
   assert.deepEqual(FALLBACK_PRESETS.map(p => p.key), ['gmail', 'microsoft365', 'zoho', 'aliyun', 'tencent', 'netease', 'other']);
-  assert.ok(FALLBACK_PRESETS.every(p => p.key === 'other' || (p.smtp_port === 587 && p.imap_port === 993)));
+  assert.ok(FALLBACK_PRESETS.every(p => p.key === 'other' || ([587, 465].includes(p.smtp_port) && p.imap_port === 993)));
   assert.match(helpFor({ key: 'gmail' })[0], /应用专用密码/);
   assert.match(helpFor({ key: 'tencent_exmail', label: '腾讯企业邮箱' })[0], /客户端专用密码/);
   assert.match(helpFor({ key: 'aliyun_qiye' })[0], /阿里/);

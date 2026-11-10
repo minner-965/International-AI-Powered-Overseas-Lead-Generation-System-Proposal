@@ -5,6 +5,7 @@ import { tip } from './tooltips.js';
 import { sessionReady, session } from './session.js';
 import { managementRequest } from '../../phase7-ui.js';
 import { toast } from './toast.js';
+import { DELIVERABILITY_HOLDS, deliverabilityMarkup } from './sender-health.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const json = (url, body, method = 'POST') => managementRequest(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
@@ -14,9 +15,9 @@ export const FALLBACK_PRESETS = Object.freeze([
   { key: 'gmail', label: 'Gmail / Google Workspace', smtp_host: 'smtp.gmail.com', smtp_port: 587, imap_host: 'imap.gmail.com', imap_port: 993, help_url: 'https://support.google.com/mail/answer/185833' },
   { key: 'microsoft365', label: 'Microsoft 365 / Outlook', smtp_host: 'smtp.office365.com', smtp_port: 587, imap_host: 'outlook.office365.com', imap_port: 993, help_url: 'https://support.microsoft.com/office/pop-imap-and-smtp-settings-8361e398-8af4-4e97-b147-6c6c4ac95353' },
   { key: 'zoho', label: 'Zoho Mail', smtp_host: 'smtp.zoho.com', smtp_port: 587, imap_host: 'imap.zoho.com', imap_port: 993, help_url: 'https://www.zoho.com/mail/help/zoho-smtp.html' },
-  { key: 'aliyun', label: '阿里企业邮箱', smtp_host: 'smtp.qiye.aliyun.com', smtp_port: 587, imap_host: 'imap.qiye.aliyun.com', imap_port: 993, help_url: '' },
-  { key: 'tencent', label: '腾讯企业邮箱', smtp_host: 'smtp.exmail.qq.com', smtp_port: 587, imap_host: 'imap.exmail.qq.com', imap_port: 993, help_url: '' },
-  { key: 'netease', label: '网易企业邮箱', smtp_host: 'smtp.qiye.163.com', smtp_port: 587, imap_host: 'imap.qiye.163.com', imap_port: 993, help_url: '' },
+  { key: 'aliyun', label: '阿里企业邮箱', smtp_host: 'smtp.qiye.aliyun.com', smtp_port: 465, imap_host: 'imap.qiye.aliyun.com', imap_port: 993, help_url: '' },
+  { key: 'tencent', label: '腾讯企业邮箱', smtp_host: 'smtp.exmail.qq.com', smtp_port: 465, imap_host: 'imap.exmail.qq.com', imap_port: 993, help_url: '' },
+  { key: 'netease', label: '网易企业邮箱', smtp_host: 'smtp.qiye.163.com', smtp_port: 465, imap_host: 'imap.qiye.163.com', imap_port: 993, help_url: '' },
   { key: 'other', label: '其他邮箱', smtp_host: '', smtp_port: 587, imap_host: '', imap_port: 993, help_url: '' }
 ]);
 
@@ -47,12 +48,12 @@ export function testResultText(result) {
   const code = String(result.code || '').toUpperCase();
   if (/AUTH|LOGIN|CREDENTIAL|535/.test(code)) return ['用户名或密码不正确（Gmail 等需使用应用专用密码）', 'Username or password rejected (Gmail and others need an app password)'];
   if (/TIMEOUT|TIMEDOUT|ECONN|REFUSED|DNS|NOTFOUND|HOST|CONNECT/.test(code)) return ['连接不上服务器，请检查服务器地址和端口', 'Cannot reach the server; check the host and port'];
-  if (/TLS|SSL|CERT/.test(code)) return ['加密方式不匹配，发信请使用 587 端口、收信使用 993 端口', 'Encryption mismatch; use port 587 for sending and 993 for receiving'];
+  if (/TLS|SSL|CERT/.test(code)) return ['加密方式不匹配，发信请使用 587 或 465 端口、收信使用 993 端口', 'Encryption mismatch; use port 587 or 465 for sending and 993 for receiving'];
   if (/NOT_CONFIGURED|MISSING/.test(code)) return ['请先保存邮箱信息', 'Save the mailbox first'];
   return ['连接未成功', 'Connection failed'];
 }
 
-const state = { presets: null, mailbox: null, error: false, preset: '', dirty: false, test: null, busy: false, autoBusy: false };
+const state = { presets: null, mailbox: null, error: false, preset: '', dirty: false, test: null, busy: false, autoBusy: false, deliverability: null, deliverabilityError: false, resumeBusy: false };
 
 /** Test connection, then always read the stored mailbox again (success, failure or error), so the
  *  status panel shows what the server recorded (verification, failure count, sending pause). */
@@ -76,6 +77,7 @@ export function autoSendModel(mailbox, { readOnly = false } = {}) {
   if (blocked === 'MERCHANT_READ_ONLY') note = ['试用已结束，续期后可以修改', 'The trial has ended; renew to change this'];
   else if (blocked === 'MERCHANT_FEATURE_DISABLED') note = ['您的账号暂未开通发信，请联系 SIM', 'Email sending is not enabled for your account; contact SIM'];
   else if (blocked === 'MERCHANT_MAILBOX_NOT_VERIFIED') note = enabled ? ['邮箱验证未通过，自动发送已暂停；重新测试连接成功后恢复', 'Paused until the mailbox passes Test connection again'] : ['邮箱验证通过后才能开启', 'Available after the mailbox is verified'];
+  else if (enabled && DELIVERABILITY_HOLDS.includes(mailbox?.sending_hold?.reason)) note = ['已暂停：退信偏多或收到投诉。请看下方“发信健康”，处理后点“恢复发信”', 'Paused for bounces or a complaint. See Sending health below and resume when handled'];
   else if (enabled && held) note = ['已暂停：上一封邮件的发送结果未确认。请点“测试连接”，成功后自动恢复', 'Paused: the last send was not confirmed. Run Test connection to resume'];
   else if (enabled) note = ['已开启：在目标市场的工作时间，自动给新客户发送第一封开发信', 'On: first emails go out to new prospects during their business hours'];
   else note = ['已关闭：不会自动发送开发信', 'Off: no first emails are sent automatically'];
@@ -144,7 +146,21 @@ function formMarkup() {
       ${failureNote(m)}
       <p class="meta">${bi('验证通过后，开发信和跟进邮件才会从这个邮箱发出；客户回复也会回到这里。', 'Once verified, your emails go out from this mailbox and replies come back to it.')}</p>
       ${autoSendMarkup(m)}</div></section>
-  </div>`;
+  </div>${m.configured ? deliverabilityCard() : ''}`;
+}
+
+/** Sending health card (bounces, complaints, warm-up pace, SPF/DKIM/DMARC). */
+function deliverabilityCard() {
+  const body = state.deliverabilityError ? stateBlock('error', '发信健康暂未读取', 'Sending health unavailable', { retry: true })
+    : !state.deliverability ? stateBlock('loading', '正在检查', 'Checking')
+    : deliverabilityMarkup(state.deliverability, { resume: session.user?.merchant?.read_only ? null : 'own' });
+  return `<section class="card v4-sender-health" aria-labelledby="mailbox-health-title" data-sender-health><div class="ph"><div><h3 id="mailbox-health-title">${bi('发信健康', 'Sending health')}</h3><p>${bi('退信多或被投诉时会自动暂停，保护您的邮箱信誉', 'Sending pauses on many bounces or a complaint, to protect your mailbox reputation')}</p></div></div><div class="pb">${body}</div></section>`;
+}
+export async function loadDeliverability() {
+  state.deliverabilityError = false;
+  try { state.deliverability = await managementRequest('/api/merchant/mailbox/deliverability'); }
+  catch { state.deliverability = null; state.deliverabilityError = true; }
+  render();
 }
 
 function render() {
@@ -207,7 +223,9 @@ function wire(root) {
     if (await save(form, status)) { render(); toast('邮箱信息已保存，请点“测试连接”完成验证', 'Saved. Use Test connection to verify'); document.dispatchEvent(new CustomEvent('crm:onboarding')); }
   });
   root.addEventListener('click', async event => {
+    if (event.target.closest('[data-sender-health] [data-state-retry]')) { void loadDeliverability(); return; }
     if (event.target.closest('[data-state-retry]')) { void loadMailbox(); return; }
+    if (event.target.closest('[data-sender-resume]')) { void resumeSending(event.target.closest('[data-sender-resume]')); return; }
     const test = event.target.closest('[data-mailbox-test]'); const send = event.target.closest('[data-mailbox-send-test]');
     if (!test && !send) return;
     const form = root.querySelector('form'); const status = form.querySelector('.v4-form-status');
@@ -237,6 +255,18 @@ function wire(root) {
   });
 }
 
+async function resumeSending(button) {
+  if (state.resumeBusy) return;
+  state.resumeBusy = true; button.disabled = true;
+  try {
+    await json('/api/merchant/mailbox/resume-sending', {});
+    toast('已恢复发信，退信率从现在起重新统计', 'Sending resumed; bounces are counted again from now');
+    state.mailbox = await managementRequest('/api/merchant/mailbox').catch(() => state.mailbox);
+  } catch (error) {
+    toast(...(error.code === 'SENDER_NOT_PAUSED' ? ['邮箱当前没有暂停', 'The mailbox is not paused'] : error.code === 'MERCHANT_READ_ONLY' ? ['试用已结束，续期后可以操作', 'The trial has ended; renew to do this'] : ['未能恢复，请重试', 'Could not resume; please retry']), { tone: 'warn' });
+  } finally { state.resumeBusy = false; await loadDeliverability(); }
+}
+
 async function toggleAutoSend(input) {
   if (state.autoBusy) return;
   const enabled = input.checked;
@@ -263,6 +293,7 @@ export async function loadMailbox() {
   state.presets = presets; state.mailbox = mailbox;
   if (!state.preset) state.preset = mailbox.preset_key || presets.find(item => item.smtp_host && item.smtp_host === mailbox.smtp_host)?.key || (mailbox.configured ? 'other' : presets[0]?.key || 'other');
   render();
+  if (mailbox.configured) void loadDeliverability();
 }
 
 if (typeof document !== 'undefined') {

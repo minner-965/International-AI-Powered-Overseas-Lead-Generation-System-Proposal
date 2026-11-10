@@ -189,6 +189,10 @@ services:
       MERCHANT_TRIAL_DAYS: ${MERCHANT_TRIAL_DAYS:-7}
       MERCHANT_DEFAULT_MONTHLY_SEARCHES: ${MERCHANT_DEFAULT_MONTHLY_SEARCHES:-300}
       MERCHANT_DEFAULT_DAILY_EMAILS: ${MERCHANT_DEFAULT_DAILY_EMAILS:-30}
+      SENDER_BOUNCE_PAUSE_RATE: ${SENDER_BOUNCE_PAUSE_RATE:-0.03}
+      SENDER_WARMUP_ENABLED: ${SENDER_WARMUP_ENABLED:-true}
+      SENDER_WARMUP_START_PER_DAY: ${SENDER_WARMUP_START_PER_DAY:-10}
+      SENDER_MIN_INTERVAL_MINUTES: ${SENDER_MIN_INTERVAL_MINUTES:-15}
       OVERVIEW_WEEK_TIMEZONE: ${OVERVIEW_WEEK_TIMEZONE:-Asia/Shanghai}
       # Legacy manual API gate; Phase13 automatic delivery uses its separate policy.
       OUTREACH_MANUAL_SEND_ONLY: "true"
@@ -320,6 +324,10 @@ services:
       RESEND_USE_CASE: "DISABLED"
       MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
       MERCHANT_INBOUND_SYNC_ENABLED: ${MERCHANT_INBOUND_SYNC_ENABLED:-true}
+      SENDER_BOUNCE_PAUSE_RATE: ${SENDER_BOUNCE_PAUSE_RATE:-0.03}
+      SENDER_WARMUP_ENABLED: ${SENDER_WARMUP_ENABLED:-true}
+      SENDER_WARMUP_START_PER_DAY: ${SENDER_WARMUP_START_PER_DAY:-10}
+      SENDER_MIN_INTERVAL_MINUTES: ${SENDER_MIN_INTERVAL_MINUTES:-15}
       OVERVIEW_WEEK_TIMEZONE: ${OVERVIEW_WEEK_TIMEZONE:-Asia/Shanghai}
       PGBOSS_QUEUE_ALLOWLIST: "verify-outreach-contact,send-outreach-email,send-auto-first-touch,send-controlled-application-email,controlled-application-inbound-sync,process-controlled-application-inbound,process-email-provider-event,process-inbound-message,classify-inbound-reply,create-sales-followup,sync-outreach-to-crm,inbound-email-sync,gmail-inbound-sync,reconcile-gmail-ambiguous-send,crm-followup-scan,crm-followup-send,crm-outbox-dispatch"
       DATA_EXCHANGE_STAGING_DIR: /app/runtime/phase7/staging

@@ -1,6 +1,6 @@
 # 上下文记忆 / Context — SIM外贸获客系统
 
-给接手的开发者（本地 Claude Code / Codex）：系统是什么、做到哪、怎么跑、关键文件在哪。写于 2026-10-23，分支 `claude/gifted-hypatia-59rtaf`。
+给接手的开发者（本地 Claude Code / Codex）：系统是什么、做到哪、怎么跑、关键文件在哪。写于 2026-10-23，2026-11-10 更新，分支 `claude/gifted-hypatia-59rtaf`。
 
 ## 1. 系统是什么
 
@@ -18,7 +18,7 @@ Simon 是运营者兼管理员，把系统开成**商家账号**给外贸公司�
 - 邮箱密码：Node 内置 AES-256-GCM 加密，密钥 `MERCHANT_SECRET_KEY` 只在 `.env`。
 - 对外访问（商家外网登录）：Cloudflare Tunnel（cloudflared）。
 
-## 3. 四轮做了什么（到 2026-10-23）
+## 3. 做了什么（到 2026-11-10）
 
 - **前期（Phase 5–13 / MC00–07）**：研究批次与检索计划、类目评分、商务邮箱 Hunter 核验、首封/自动首封、回复桥接、机会池、联系就绪度。大量历史阶段记录在 `AGENTS.md` 和 `docs/` 里。
 - **第 1–2 轮**：把品牌从 DPV 全量改名为 SIM；V4 UI 改版（深色侧栏 + 白顶栏 + 浅灰画布，桌面和手机双端）；首封模板落款改 SIM International。
@@ -28,11 +28,12 @@ Simon 是运营者兼管理员，把系统开成**商家账号**给外贸公司�
   - **SearXNG** 本地搜索，免费优先、失败自动换付费。
   - 4 项优化：de/fr/pt/it/tr 类目检索词用 Shopify 官方译名；总览"本周 x 封 · 上周 y 封"；跟进审批今日额度条；企业详情按设计稿重排。
   - **商家账号**（migration 066）：登录、7 天试用、管理员商家管理（建号/延期/标记付费/停用/重置密码/额度/功能开关/推荐）、商家自助（绑定邮箱 + 测试连接 + 发测试邮件、选类目、选市场、引导清单）、按商家数据隔离与额度、每页悬停说明与意见反馈。
-- **第 5 轮**（进行中，见 `PLAN.md` 和 `DECISIONS.md`）：开放 SMTP 465、登录加固（migration 067）、补测试覆盖、交接文档。
+- **第 5 轮**（10-24）：开放 SMTP 465、登录加固（migration 067）、交接文档。
+- **优化方案第 1–4 批**（10-26 到 11-10，迁移 068–077，Simon 本机会话做了 1–3 批）：见 `PLAN.md`"进度"和 `docs/plan/2026-10_OPTIMIZATION_PLAN.md`。第 4 批（发信送达率）代码在 `src/outreach/senderHealth.js`、`src/outreach/sendingDomainCheck.js`，界面在 `public/ui/v4/sender-health.js`。
 
 ## 4. 迁移（database/migrations/）
 
-- 到 066 为止已应用：`064_crm_followup_pipeline`、`065_global_markets_categories_search_cost`、`066_merchant_accounts`。
+- 最新是 `077_sender_health`（发信健康事件，只追加）。066 商家账号、067 登录限流、068–069 开关与商家发信安全、070–072 手动企业/API 密钥/跟进设置、073–076 无用线索/评分/模型辅助/回复关联。Simon 本机在 10-31 时已执行到 076；`git pull` 后再跑一次 `local-setup.ps1` 会执行 077。
 - 066 建的表（schema `leadgen`）：`merchants`、`workspace_users`、`merchant_mailboxes`、`merchant_scope`、`merchant_feedback`、`workspace_sessions`、`merchant_companies`；业务表加了 `merchant_id`（空 = SIM 自己）。
 - 迁移执行器：`services/demo-dashboard/src/phase7/migrationRunner.js`，支持 `--apply` 和新装用的 `--baseline`。
 - 新装时 PostgreSQL 的 init 脚本已包含全部迁移文件，`--baseline` 只登记账本；已有库则走 `--apply`。
@@ -68,6 +69,6 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 ## 8. 还没验证 / 已知弱点
 
 - 商家首封真实发信、真实收信、真实飞书、真实搜索与 Hunter：云端从未真实调用，须在本机验证。
-- 登录防护第 5 轮加固前较基础（内存限流、无 CSRF、无安全响应头）——第 5 轮解决，见 `DECISIONS.md`。
 - `npm audit --omit=dev` 有 7 条历史告警（非本轮新依赖引入）。
-- 阿里/腾讯/网易企业邮箱常用 465，第 5 轮开放。
+- 真实收发验收：Simon 已回复测试首封，但"回复进系统、同步飞书"的结果还没记录（见 `PLAN.md`）。
+- 第 4 批的真实 DNS 查询和真实退信/投诉：云端只用模拟数据测试过。

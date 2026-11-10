@@ -4119,6 +4119,17 @@ html:not([data-role="MERCHANT"]) [data-merchant-label] { display: none !importan
 .v4-test-results li .v small { flex-basis: 100%; color: var(--text-3); font-size: 12px; word-break: break-word; }
 .v4-test-results li.ok .v { color: var(--ok); } .v4-test-results li.bad .v { color: var(--bad); }
 .v4-test-results li .v .bi > [lang="en"] { color: inherit; opacity: .8; }
+/* 发信健康 / Sending health (batch 4): pause banner, metrics, SPF/DKIM/DMARC list */
+.v4-sender-health { margin-top: 16px; }
+.v4-sender-paused { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 14px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--bad-soft); color: var(--bad); font-size: 13px; line-height: 1.6; }
+.v4-sender-paused p { flex: 1 1 260px; margin: 0; } .v4-sender-paused .bi > [lang="en"] { display: block; color: inherit; opacity: .8; }
+.v4-subhead { margin: 18px 0 8px; font-size: 14px; font-weight: 600; } .v4-subhead small { margin-left: 6px; color: var(--text-3); font-weight: 400; word-break: break-all; }
+.v4-dns-list li .v { display: flex; align-items: flex-start; gap: 6px; } .v4-dns-list li .v .ti { margin-top: 3px; }
+.v4-dns-list li.ok .v { color: var(--ok); } .v4-dns-list li.bad .v { color: var(--warn); }
+.v4-dns-list li .v .bi > [lang="en"] { color: inherit; opacity: .8; }
+.v4-dns-hints { margin: 4px 0 12px; font-size: 13px; } .v4-dns-hints summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--primary); }
+.v4-dns-hints ul { margin: 0; padding-left: 18px; line-height: 1.6; } .v4-dns-hints li { margin-bottom: 8px; } .v4-dns-hints li b { margin-right: 6px; font-weight: 600; }
+.v4-dns-hints .bi > [lang="en"] { display: block; color: var(--text-3); }
 /* ---------- Business scope ---------- */
 .v4-scope-form { display: grid; gap: 16px; }
 .v4-scope-form > .card { scroll-margin-top: 76px; }
