@@ -4,36 +4,92 @@ import {fail,merchantUuid} from './MerchantService.js';
 import {createLoginAttempts} from './loginAttempts.js';
 import {DELIVERABILITY_HOLD_REASONS} from '../outreach/senderHealth.js';
 
+const TWO_FACTOR_PENDING_MS=5*60_000;
 const asyncRoute=handler=>(req,res,next)=>Promise.resolve(handler(req,res,next)).catch(next);
 const actorOf=req=>req.workspaceUser?.email||req.managementUser?.identity||'dpv-workspace';
 
 // senderHealth (outreach/senderHealth.js) and checkDomain (outreach/sendingDomainCheck.js): batch 4
 // mailbox health, warm-up pacing and SPF/DKIM/DMARC; simSenderEmail is SIM's own sending address.
-export function createMerchantRouter({merchants,env=process.env,senderHealth=null,checkDomain=null,simSenderEmail=()=>null}={}){
+// twoFactor (twoFactor.js, migration 078): authenticator-app codes; required for ADMIN, optional for merchants.
+export function createMerchantRouter({merchants,env=process.env,senderHealth=null,checkDomain=null,simSenderEmail=()=>null,twoFactor=null}={}){
   const router=express.Router();
   // Durable sign-in failure limiter (migration 067): 8 failures / 15 min per address and per IP.
   const limiter=createLoginAttempts({pool:merchants.pool});
   const required=authRequired(env);
 
   // ---- auth ----
+  const regenerate=req=>new Promise((resolve,reject)=>req.session.regenerate(error=>error?reject(error):resolve()));
+  const saveSession=req=>new Promise((resolve,reject)=>req.session.save(error=>error?reject(error):resolve()));
+  // The signed-in user as the pages see it, with the two-step sign-in state.
+  const view=async user=>{
+    const base=await merchants.userView(user);
+    if(!twoFactor||!user?.id)return base;
+    const state=await twoFactor.status(user);
+    return{...base,two_factor:state,two_factor_setup_required:state.required&&!state.enabled};
+  };
   router.post('/api/auth/login',asyncRoute(async(req,res)=>{
     const email=String(req.body?.email||'').trim().toLowerCase();
     if(await limiter.blocked(email,req.ip))return res.status(429).json({error:'Too many attempts; try again later',code:'AUTH_RATE_LIMITED'});
     let user;
     try{user=await merchants.authenticate({email,password:req.body?.password});}
     catch(error){if(error.code==='AUTH_INVALID_CREDENTIALS')await limiter.fail(email,req.ip);throw error;}
+    // Two-step sign-in on: the password alone signs nobody in. The session only remembers who
+    // passed it, for five minutes; failed codes keep counting against the same limiter.
+    if(twoFactor&&user.totp_enabled_at){
+      await regenerate(req);
+      req.session.pendingTwoFactor={userId:user.id,email,at:Date.now()};
+      await saveSession(req);
+      return res.json({two_factor_required:true});
+    }
     await limiter.reset(email);
-    await new Promise((resolve,reject)=>req.session.regenerate(error=>error?reject(error):resolve()));
+    await regenerate(req);
     req.session.userId=user.id;
-    await new Promise((resolve,reject)=>req.session.save(error=>error?reject(error):resolve()));
-    res.json({user:await merchants.userView(user)});
+    await saveSession(req);
+    res.json({user:await view(user)});
+  }));
+  router.post('/api/auth/2fa/verify',asyncRoute(async(req,res)=>{
+    const pending=req.session?.pendingTwoFactor;
+    if(!twoFactor||!pending||Date.now()-Number(pending.at)>TWO_FACTOR_PENDING_MS)
+      return res.status(401).json({error:'Sign in again',code:'TWO_FACTOR_SESSION_EXPIRED'});
+    if(await limiter.blocked(pending.email,req.ip))return res.status(429).json({error:'Too many attempts; try again later',code:'AUTH_RATE_LIMITED'});
+    const user=await merchants.findUserById(pending.userId);
+    if(!user||user.disabled_at)return res.status(401).json({error:'Sign in again',code:'TWO_FACTOR_SESSION_EXPIRED'});
+    let result;
+    try{result=await twoFactor.verifySignIn(user,{code:req.body?.code,recovery_code:req.body?.recovery_code});}
+    catch(error){if(error.code==='TWO_FACTOR_CODE_INVALID')await limiter.fail(pending.email,req.ip);throw error;}
+    await limiter.reset(pending.email);
+    await regenerate(req);
+    req.session.userId=user.id;
+    await saveSession(req);
+    res.json({user:await view(user),method:result.method,...(result.recovery_codes_left!==undefined?{recovery_codes_left:result.recovery_codes_left}:{})});
+  }));
+  const signedIn=req=>{
+    if(!req.workspaceUser)throw fail('AUTH_REQUIRED','Sign in required',401);
+    if(!twoFactor)throw fail('TWO_FACTOR_UNAVAILABLE','Two-step sign-in is not available',503);
+    return req.workspaceUser;
+  };
+  const fresh=user=>merchants.findUserById(user.id);
+  router.post('/api/auth/2fa/setup',asyncRoute(async(req,res)=>res.json(await twoFactor.beginSetup(await fresh(signedIn(req))))));
+  router.post('/api/auth/2fa/enable',asyncRoute(async(req,res)=>{
+    const user=await fresh(signedIn(req));
+    const result=await twoFactor.enable(user,req.body?.code,user.email);
+    res.json({...result,user:await view(await fresh(user))});
+  }));
+  router.post('/api/auth/2fa/recovery-codes',asyncRoute(async(req,res)=>{
+    const user=await fresh(signedIn(req));
+    res.json(await twoFactor.renewRecoveryCodes(user,req.body?.code,user.email));
+  }));
+  router.post('/api/auth/2fa/disable',asyncRoute(async(req,res)=>{
+    const user=await fresh(signedIn(req));
+    await twoFactor.disable(user,{password:req.body?.password,code:req.body?.code},user.email);
+    res.json({user:await view(await fresh(user))});
   }));
   router.post('/api/auth/logout',asyncRoute(async(req,res)=>{
     if(req.session)await new Promise(resolve=>req.session.destroy(()=>resolve()));
     res.clearCookie('sim.sid');res.json({ok:true});
   }));
   router.get('/api/auth/me',asyncRoute(async(req,res)=>{
-    if(req.workspaceUser)return res.json({user:await merchants.userView(req.workspaceUser),auth_required:required});
+    if(req.workspaceUser)return res.json({user:await view(req.workspaceUser),auth_required:required});
     if(!required)return res.json({user:{id:null,email:null,display_name:String(env.DPV_WORKSPACE_ACTOR||'dpv-workspace'),role:'ADMIN',
       must_change_password:false,merchant:null},auth_required:false});
     res.status(401).json({error:'Sign in required',code:'AUTH_REQUIRED'});
@@ -41,7 +97,7 @@ export function createMerchantRouter({merchants,env=process.env,senderHealth=nul
   router.post('/api/auth/password',asyncRoute(async(req,res)=>{
     if(!req.workspaceUser)return res.status(401).json({error:'Sign in required',code:'AUTH_REQUIRED'});
     const user=await merchants.changePassword(req.workspaceUser.id,req.body||{});
-    res.json({user:await merchants.userView(user)});
+    res.json({user:await view(user)});
   }));
 
   // ---- admin (SIM) ----
@@ -50,6 +106,13 @@ export function createMerchantRouter({merchants,env=process.env,senderHealth=nul
   router.patch('/api/admin/merchants/:id',requireAdmin,asyncRoute(async(req,res)=>res.json({merchant:await merchants.updateMerchant(req.params.id,req.body||{},actorOf(req))})));
   router.post('/api/admin/merchants/:id/reset-password',requireAdmin,asyncRoute(async(req,res)=>res.json(await merchants.resetPassword(req.params.id))));
   router.post('/api/admin/merchants/:id/companies',requireAdmin,asyncRoute(async(req,res)=>res.json(await merchants.assignCompanies(req.params.id,req.body?.company_ids,actorOf(req)))));
+  // A merchant lost its phone and recovery codes: SIM switches two-step sign-in off for its accounts.
+  router.post('/api/admin/merchants/:id/reset-2fa',requireAdmin,asyncRoute(async(req,res)=>{
+    if(!twoFactor)throw fail('TWO_FACTOR_UNAVAILABLE','Two-step sign-in is not available',503);
+    const users=(await merchants.pool.query(`SELECT id FROM leadgen.workspace_users WHERE merchant_id=$1 AND totp_enabled_at IS NOT NULL`,[merchantUuid(req.params.id)])).rows;
+    for(const user of users)await twoFactor.clear(user.id,'RESET_BY_ADMIN',actorOf(req));
+    res.json({reset:users.length});
+  }));
   router.get('/api/admin/sender-health',requireAdmin,asyncRoute(async(_req,res)=>{
     if(!senderHealth)throw fail('SENDER_HEALTH_UNAVAILABLE','Sending health is not available',503);
     const email=simSenderEmail();

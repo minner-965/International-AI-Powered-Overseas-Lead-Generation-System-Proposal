@@ -338,3 +338,12 @@ Integration boundary: `src/llm/` (adapters, switches, tasks T1-T5, validation, l
 | `tldts` registrable-domain parsing (already used through `domainService.getRegistrableDomain`) | MIT | Company root domain vs. mailbox domain (C3) | Active | **Reused** via `extractRootDomain` |
 | Free-mail provider lists (e.g. `free-email-domains`, `disposable-email-domains`) | MIT / CC0 | Full lists of thousands of providers | Active | **Not adopted**: only the main providers seen in MX, BR, Gulf and Asian SME mail matter; a 40-domain set avoids a new dependency. Revisit if webmail misclassification shows up |
 | `libphonenumber-js` (already a dependency) | MIT | National number lengths for the new BR / AU / CA / SG market profiles | Active | **Reused** through `PhoneService` |
+
+## Two-step sign-in (2026-11-11, migration 078)
+
+| Candidate | Version, license | Fit | Maintenance | Decision |
+|---|---|---|---|---|
+| [`otpauth`](https://github.com/hectorm/otpauth) | `9.5.2` (2026-09-03), MIT; one dependency `@noble/hashes` (audited, MIT) | TOTP (RFC 6238) generate/validate with a ±1 step window, otpauth:// links read by Google / Microsoft / Tencent authenticator apps | Active | **Reuse** (exact pin; 9.6.0 from 2026-11-02 skipped as too new). Alternatives: `otplib` (larger, plugin layout), `speakeasy` (unmaintained since 2017), hand-written HMAC (avoidable) |
+| [`qrcode`](https://github.com/soldair/node-qrcode) | `1.5.4` (2024-08-05), MIT | Setup QR as a PNG data URL generated on the server, so the page loads nothing external | Stable, widely used | **Reuse** (exact pin) |
+| SMS or email one-time codes | Paid providers / own SMTP | Second factor without an app | — | **Not adopted**: costs per message, external calls, and SMS is weaker than an app code |
+| Node `crypto` AES-256-GCM (`src/merchant/secretBox.js`, already used) and `@node-rs/argon2` (already used) | Built-in / MIT | Encrypt the stored TOTP secret; hash the ten one-time recovery codes | — | **Reused** |

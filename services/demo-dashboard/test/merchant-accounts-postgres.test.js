@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {readdir,readFile} from 'node:fs/promises';
 import express from 'express';
 import pg from 'pg';
-import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,SENDER_HEALTH_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,TWO_FACTOR_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 import {MerchantService} from '../src/merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from '../src/merchant/auth.js';
 import {createMerchantRouter} from '../src/merchant/router.js';
@@ -56,7 +56,7 @@ async function ledger(pool,files,by){
 
 test('migration 066: fresh install baselines once; an installation at 065 upgrades and keeps SIM rows',{skip:!adminUrl},async()=>{
   await withDatabase(async pool=>applyFiles(pool,await migrationFiles()),async(pool,name)=>{
-    assert.equal((await migrationFiles()).at(-1),SENDER_HEALTH_MIGRATION_KEY);
+    assert.equal((await migrationFiles()).at(-1),TWO_FACTOR_MIGRATION_KEY);
     const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
     assert.equal(result.merchantAccounts.status,'BASELINED');assert.equal(result.merchantAccounts.merchant_accounts,'OWNER_SCOPED');
     assert.equal(result.loginHardening.status,'BASELINED');assert.equal(result.loginHardening.login_hardening,'DURABLE_ATTEMPT_COUNTERS');
@@ -153,7 +153,8 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
       health:async()=>({ready:true}),testConnections:async()=>({smtp:{ok:true,code:'SMTP_READY',message:'ok'},imap:{ok:true,code:'IMAP_READY',message:'ok'}}),
       send:async(message,key)=>{sent.push({message,key,smtpUser:config.smtpUser,password:config.smtpPassword,controlled:config.controlledTestMode});return{status:'PROVIDER_ACCEPTED',code:'ACCEPTED_BY_SMTP',provider_message_id:`<${key}@x>`};}};
       providers.push(provider);return provider;};
-    const env={AUTH_REQUIRED:'true',SESSION_SECRET:'test-session-secret',MERCHANT_SECRET_KEY:SECRET_KEY,CRM_FOLLOWUP_DRAFTS_ENABLED:'true',DPV_WORKSPACE_ACTOR:'dev'};
+    // Merchant isolation is tested here; the administrator's required two-step sign-in has its own test (two-factor-postgres).
+    const env={AUTH_REQUIRED:'true',SESSION_SECRET:'test-session-secret',MERCHANT_SECRET_KEY:SECRET_KEY,CRM_FOLLOWUP_DRAFTS_ENABLED:'true',DPV_WORKSPACE_ACTOR:'dev',ADMIN_2FA_REQUIRED:'false'};
     const merchants=new MerchantService({pool,env,providerFactory});
     const simProvider={senderEmail:'simon@sim.example',replyToEmail:'simon@sim.example',messageIdDomain:'sim.example',send:async()=>{throw new Error('SIM mailbox must not be used');}};
     const automation={getState:async()=>({auto_first_touch_email:true}),pauseEmail:async()=>{throw new Error('merchant failures must not pause SIM email');}};

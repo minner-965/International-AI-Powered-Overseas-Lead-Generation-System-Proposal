@@ -66,6 +66,7 @@ import {createAutomationRouter} from './automation/router.js';
 import {ContactResearchReconciler} from './automation/ContactResearchReconciler.js';
 import {RoutedSearchClient} from './search/RoutedSearchClient.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
+import {TwoFactorService} from './merchant/twoFactor.js';
 import {SenderHealth} from './outreach/senderHealth.js';
 import {checkSendingDomain} from './outreach/sendingDomainCheck.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
@@ -691,6 +692,7 @@ app.use('/api',createSessionMiddleware({pool,env:process.env}));
 app.use(createOriginGuard({env:process.env}));
 app.use(createWorkspaceGate({merchants:merchantService,env:process.env,pool}));
 app.use(createMerchantRouter({merchants:merchantService,env:process.env,senderHealth,checkDomain:checkSendingDomain,
+  twoFactor:new TwoFactorService({pool,env:process.env}),
   simSenderEmail:()=>phase7Service.outboundProvider?.senderEmail||null}));
 app.use(createCredentialsRouter({credentials:credentialStore,spendPolicy:()=>phase13Automation.spendPolicy()}));
 app.use(createTranslateRouter({client:createTranslateClient({credentials:credentialStore,env:process.env}),authRequired:authRequired(process.env)}));

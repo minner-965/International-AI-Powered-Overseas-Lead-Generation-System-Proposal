@@ -59,7 +59,7 @@ export const REFUSALS = Object.freeze({
 // fall back to their "not available" state without failed requests.
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 export const MERCHANT_API = Object.freeze([
-  ['GET', '^/api/auth/me$'], ['POST', '^/api/auth/(login|logout|password)$'],
+  ['GET', '^/api/auth/me$'], ['POST', '^/api/auth/(login|logout|password)$'], ['POST', '^/api/auth/2fa/(verify|setup|enable|disable|recovery-codes)$'],
   ['GET', '^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|mailbox/deliverability|scope)$'],
   ['PATCH', '^/api/merchant/profile$'], ['PUT', '^/api/merchant/(mailbox|scope|auto-first-touch)$'], ['POST', '^/api/merchant/mailbox/(test-connection|test-email|resume-sending)$'],
   ['POST', '^/api/feedback$'],

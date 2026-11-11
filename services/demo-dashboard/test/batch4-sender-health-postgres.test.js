@@ -54,9 +54,9 @@ async function seedSent(pool,{merchantId=null,count,bounced=0,complained=0,minut
   }finally{await pool.query('RESET session_replication_role');}
 }
 
-test('migration 077 is the latest file and verifies; sender health history is append-only',{skip:!adminUrl},async()=>{
+test('migration 077 verifies; sender health history is append-only',{skip:!adminUrl},async()=>{
   const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
-  assert.equal(files.at(-1),SENDER_HEALTH_MIGRATION_KEY);
+  assert.ok(files.includes(SENDER_HEALTH_MIGRATION_KEY));
   await withDatabase(async pool=>{
     assert.deepEqual(await verifySenderHealthMigration(pool),{sender_health:true});
     const row=(await pool.query(`INSERT INTO leadgen.sender_health_events(sender_key,event_type,reason,actor) VALUES('SIM','PAUSED','BOUNCE_RATE_HIGH','t') RETURNING id`)).rows[0];

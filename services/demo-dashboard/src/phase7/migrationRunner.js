@@ -61,6 +61,7 @@ export {SCORING_ACCURACY_MIGRATION_KEY}; // 074_scoring_accuracy.sql
 export const LLM_ASSIST_MIGRATION_KEY = '075_llm_assist.sql';
 export const REPLY_CORRELATION_ALIASES_MIGRATION_KEY = '076_reply_correlation_aliases.sql';
 export const SENDER_HEALTH_MIGRATION_KEY = '077_sender_health.sql';
+export const TWO_FACTOR_MIGRATION_KEY = '078_two_factor.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -115,6 +116,7 @@ const scoringAccuracyPath = path.resolve(projectRoot,'database/migrations',SCORI
 const llmAssistPath = path.resolve(projectRoot,'database/migrations',LLM_ASSIST_MIGRATION_KEY);
 const replyCorrelationAliasesPath = path.resolve(projectRoot,'database/migrations',REPLY_CORRELATION_ALIASES_MIGRATION_KEY);
 const senderHealthPath = path.resolve(projectRoot,'database/migrations',SENDER_HEALTH_MIGRATION_KEY);
+const twoFactorPath = path.resolve(projectRoot,'database/migrations',TWO_FACTOR_MIGRATION_KEY);
 // Verifications of migrations 070+ (looked up before the older chain below).
 const lateVerifier = key => ({
   [MANUAL_COMPANIES_MIGRATION_KEY]: verifyManualCompaniesMigration,
@@ -124,7 +126,8 @@ const lateVerifier = key => ({
   [SCORING_ACCURACY_MIGRATION_KEY]: verifyScoringAccuracyMigration,
   [LLM_ASSIST_MIGRATION_KEY]: verifyLlmAssistMigration,
   [REPLY_CORRELATION_ALIASES_MIGRATION_KEY]: verifyReplyCorrelationAliasesMigration,
-  [SENDER_HEALTH_MIGRATION_KEY]: verifySenderHealthMigration
+  [SENDER_HEALTH_MIGRATION_KEY]: verifySenderHealthMigration,
+  [TWO_FACTOR_MIGRATION_KEY]: verifyTwoFactorMigration
 })[key] || null;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -888,7 +891,10 @@ export async function applyPhase7Migrations(options = {}) {
   const senderHealth=await applyPhase7Migration({...options,
     migrationPath:options.senderHealthMigrationPath||senderHealthPath,
     appliedBy:options.appliedBy||'dpv-sender-health-migration-runner'});
-  return {senderHealth,replyCorrelationAliases,llmAssist,scoringAccuracy,leadEnrichmentAttempts,followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const twoFactor=await applyPhase7Migration({...options,
+    migrationPath:options.twoFactorMigrationPath||twoFactorPath,
+    appliedBy:options.appliedBy||'dpv-two-factor-migration-runner'});
+  return {twoFactor,senderHealth,replyCorrelationAliases,llmAssist,scoringAccuracy,leadEnrichmentAttempts,followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -964,6 +970,14 @@ export async function verifyManualCompaniesMigration(client){
       AND conrelid='leadgen.decision_maker_contacts'::regclass),'') LIKE '%MANUAL_ENTRY%' manual_origin`)).rows[0]||{};
   if(Number(row.tables)!==5||!row.reservation_guard||!row.manual_origin)throw new Error('Manual companies migration verification failed');
   return{manual_companies:'HUMAN_APPROVED_FIRST_TOUCH',test_sends:'APPEND_ONLY'};
+}
+
+export async function verifyTwoFactorMigration(client){
+  const row=(await client.query(`SELECT to_regclass('leadgen.user_recovery_codes') codes,to_regclass('leadgen.two_factor_events') events,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='workspace_users' AND column_name='totp_last_step') step,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='two_factor_events_history_guard') guard`)).rows[0]||{};
+  if(!row.codes||!row.events||!row.step||!row.guard)throw new Error('Two-factor migration verification failed');
+  return{two_factor:true};
 }
 
 export async function verifySenderHealthMigration(client){

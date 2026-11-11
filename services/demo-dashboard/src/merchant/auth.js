@@ -3,6 +3,7 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import {effectiveMerchantStatus,featuresOf} from './MerchantService.js';
 import {scopeFromUser,companyVisible} from './scope.js';
+import {twoFactorRequired} from './twoFactor.js';
 
 const bool=(value,fallback)=>value===undefined||value===null||value===''?fallback:/^(1|true|yes|on)$/i.test(String(value));
 export const authRequired=(env=process.env)=>bool(env.AUTH_REQUIRED,true);
@@ -29,7 +30,7 @@ export function createSessionMiddleware({pool,env=process.env,store=null}={}){
 
 // Requests a merchant may make. Everything else under /api is SIM-only (403 ADMIN_REQUIRED).
 export const MERCHANT_ROUTES=[
-  ['GET',`^/api/auth/me$`],['POST',`^/api/auth/(login|logout|password)$`],
+  ['GET',`^/api/auth/me$`],['POST',`^/api/auth/(login|logout|password)$`],['POST',`^/api/auth/2fa/(verify|setup|enable|disable|recovery-codes)$`],
   ['GET',`^/api/merchant/(onboarding|profile|mailbox|mailbox/presets|mailbox/deliverability|scope)$`],
   ['PATCH',`^/api/merchant/profile$`],['PUT',`^/api/merchant/(mailbox|scope|auto-first-touch)$`],['POST',`^/api/merchant/mailbox/(test-connection|test-email|resume-sending)$`],
   ['POST',`^/api/feedback$`],
@@ -61,10 +62,13 @@ export const MERCHANT_ROUTES=[
 export const merchantRouteAllowed=(method,path)=>MERCHANT_ROUTES.some(([m,re])=>(m===method||(m==='GET'&&method==='HEAD'))&&re.test(path));
 
 // Paths that never need a session: health, login, provider webhooks and internal-token jobs.
-const PUBLIC=/^\/api\/(health$|auth\/(login|logout|me)$|webhooks\/|internal\/)/;
+// The second sign-in step (2fa/verify) runs before the session has a user (twoFactor.js).
+const PUBLIC=/^\/api\/(health$|auth\/(login|logout|me|2fa\/verify)$|webhooks\/|internal\/)/;
 // Writes an expired (read-only) merchant may still make.
 const READ_ONLY_EXEMPT=/^\/api\/(auth\/(logout|password)|feedback)$/;
 const PASSWORD_CHANGE_EXEMPT=/^\/api\/auth\/(me|logout|password)$/;
+// The administrator sets up two-step sign-in before anything else (after the temporary password).
+const TWO_FACTOR_SETUP_EXEMPT=/^\/api\/auth\/(me|logout|password|2fa\/(setup|enable))$/;
 
 // Gate for /api. Attaches req.workspaceUser / req.workspaceScope / req.managementUser.
 // With AUTH_REQUIRED=false (tests, local development) the previous behaviour stays:
@@ -99,6 +103,8 @@ export function createWorkspaceGate({merchants,env=process.env,pool}){
         return deny(res,401,'AUTH_REQUIRED','Sign in required');
       }
       if(user.must_change_password&&!PASSWORD_CHANGE_EXEMPT.test(req.path))return deny(res,403,'PASSWORD_CHANGE_REQUIRED','Change the temporary password first');
+      if(twoFactorRequired(user,env)&&!user.totp_enabled_at&&!TWO_FACTOR_SETUP_EXEMPT.test(req.path))
+        return deny(res,403,'TWO_FACTOR_SETUP_REQUIRED','Set up two-step sign-in first');
       if(user.role!=='MERCHANT')return next();
       const method=req.method.toUpperCase();
       if(!merchantRouteAllowed(method,req.path))return deny(res,403,'ADMIN_REQUIRED','This function is available to the SIM administrator only');
