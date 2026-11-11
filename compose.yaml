@@ -176,6 +176,7 @@ services:
       PORT: 3000
       PGBOSS_PROCESS_JOBS: "false"
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      ADMIN_2FA_REQUIRED: ${ADMIN_2FA_REQUIRED:-true}
       SESSION_SECRET: ${SESSION_SECRET:-}
       MERCHANT_SECRET_KEY: ${MERCHANT_SECRET_KEY:-}
       # Translation suggestions in the email editors (compose service `translate`).

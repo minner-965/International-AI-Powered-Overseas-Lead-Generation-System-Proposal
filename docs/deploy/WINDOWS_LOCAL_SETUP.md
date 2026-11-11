@@ -26,7 +26,7 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 
 可以重复运行：已有的 `.env*` 会保留（只补上缺少的密钥），数据库不会被清空，已有管理员不会被改。**`SESSION_SECRET` 和 `MERCHANT_SECRET_KEY` 生成后不要改**，改了所有人要重新登录、商家要重新填邮箱密码。
 
-打开网页后用管理员账号登录。忘记密码时：`docker compose exec demo-dashboard node scripts/create-admin.mjs --email 你的邮箱 --password 新密码`（同一邮箱再运行一次就是重置）。更新后再运行时，脚本会执行新增的数据库迁移并重启服务。
+打开网页后用管理员账号登录。**第一次登录会要求设置二步验证**：手机装一个验证器 App（Microsoft Authenticator、Google Authenticator 或腾讯身份验证器），扫页面上的二维码，输入 App 上的 6 位数字，然后把 10 个恢复码下载保存好（手机丢了靠它登录）。以后每次登录：密码 + App 上的 6 位数字。手机丢了、恢复码也没了：`docker compose exec demo-dashboard node scripts/create-admin.mjs --email 你的邮箱 --reset-2fa`，再登录重新扫码。忘记密码时：`docker compose exec demo-dashboard node scripts/create-admin.mjs --email 你的邮箱 --password 新密码`（同一邮箱再运行一次就是重置）。更新后再运行时，脚本会执行新增的数据库迁移并重启服务。
 
 端口由根目录 `.env` 的 `DASHBOARD_PORT` 决定（默认 3100）。端口被其他程序占用时，脚本会停下并提示，改成空闲端口后再运行一次即可。`setup-supply-categories.mjs` 也会自动使用这个端口。
 
@@ -35,13 +35,13 @@ powershell -ExecutionPolicy Bypass -File scripts\local-setup.ps1
 新库没有已批准的供应类目，系统不知道要找哪类客户。先看候选：
 
 ```powershell
-node scripts\setup-supply-categories.mjs --list --email 管理员邮箱 --password 管理员密码
+node scripts\setup-supply-categories.mjs --list --email 管理员邮箱 --password 管理员密码 --code 手机App上的6位数字
 ```
 
 当前决定：**女装全品类 + 百货**，即批准全部候选：
 
 ```powershell
-node scripts\setup-supply-categories.mjs --all --email 管理员邮箱 --password 管理员密码
+node scripts\setup-supply-categories.mjs --all --email 管理员邮箱 --password 管理员密码 --code 手机App上的6位数字
 ```
 
 只做部分类目时用 `--categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS` 这种写法。

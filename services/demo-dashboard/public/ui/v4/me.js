@@ -1,5 +1,6 @@
 // 我的 / Me: account (status, trial or paid period, quota usage, referral code, password, sign out)
 // and every page of the workspace the role may use, as a labelled menu (phones have no sidebar).
+import { twoFactorCardMarkup } from './two-factor-card.js';
 import { bi, esc } from './crm.js';
 import { viewTip, tip } from './tooltips.js';
 import { session, sessionReady, viewAllowed, trialDaysLeft } from './session.js';
@@ -42,7 +43,7 @@ function render(user) {
   const root = document.querySelector('#me-root');
   if (!root) return;
   const menu = groups.map(([zh, en, items]) => [zh, en, items.filter(([view]) => viewAllowed(view, user))]).filter(([, , items]) => items.length);
-  root.innerHTML = `${accountMarkup(user, { authEnabled: session.authEnabled })}${menu.map(([zh, en, items]) => `<h3 class="m-gt">${bi(zh, en)}</h3><ul class="m-list m-group">${items.map(([view, izh, ien, icon, tone]) => `<li><a class="m-menu" href="#${view}" data-open-view="${view}"${viewTip(view)}><span class="m-ico sm ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i></span><span class="t">${esc(izh)}<small>${esc(ien)}</small></span><span class="r"><i class="ti ti-chevron-right" aria-hidden="true"></i></span></a></li>`).join('')}</ul>`).join('')}`;
+  root.innerHTML = `${accountMarkup(user, { authEnabled: session.authEnabled })}${session.authEnabled ? twoFactorCardMarkup(user) : ''}${menu.map(([zh, en, items]) => `<h3 class="m-gt">${bi(zh, en)}</h3><ul class="m-list m-group">${items.map(([view, izh, ien, icon, tone]) => `<li><a class="m-menu" href="#${view}" data-open-view="${view}"${viewTip(view)}><span class="m-ico sm ${tone}"><i class="ti ti-${icon}" aria-hidden="true"></i></span><span class="t">${esc(izh)}<small>${esc(ien)}</small></span><span class="r"><i class="ti ti-chevron-right" aria-hidden="true"></i></span></a></li>`).join('')}</ul>`).join('')}`;
 }
 
 if (typeof document !== 'undefined') {

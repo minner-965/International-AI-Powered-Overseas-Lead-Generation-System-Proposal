@@ -107,10 +107,11 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function' && !wind
       if (isReadOnly(user) && !/^(GET|HEAD)$/i.test(method) && !/\/api\/feedback\b/.test(url)) return new Response(JSON.stringify({ error: REFUSALS.MERCHANT_READ_ONLY[1], code: 'MERCHANT_READ_ONLY' }), { status: 403, headers: { 'content-type': 'application/json' } });
     }
     const response = await nativeFetch(input, init);
-    if (response.status === 401 && !/\/api\/auth\/(login|password|me)\b/.test(url)) goToLogin('expired');
+    if (response.status === 401 && !/\/api\/auth\/(login|password|me|2fa)\b/.test(url)) goToLogin('expired');
     else if ([403, 409].includes(response.status) && (response.headers.get('content-type') || '').includes('json')) {
       response.clone().json().then(body => {
         if (body?.code === 'PASSWORD_CHANGE_REQUIRED') { location.replace(`${LOGIN_PAGE}?change=1&next=${encodeURIComponent(nextTarget())}`); return; }
+        if (body?.code === 'TWO_FACTOR_SETUP_REQUIRED') { location.replace(`${LOGIN_PAGE}?setup2fa=1&required=1&next=${encodeURIComponent(nextTarget())}`); return; }
         const refusal = REFUSALS[body?.code];
         if (refusal) toast(refusal[0], refusal[1], { tone: 'warn', action: refusal[2] });
       }).catch(() => {});
@@ -144,6 +145,8 @@ export async function loadSession() {
   // Sign-in not available yet (development): act as SIM's own workspace.
   if (!user) { session.authEnabled = false; user = { id: null, email: '', display_name: 'SIM', role: 'ADMIN', must_change_password: false, merchant: null }; }
   if (user.must_change_password && session.authEnabled) { location.replace(`${LOGIN_PAGE}?change=1&next=${encodeURIComponent(nextTarget())}`); return null; }
+  // The administrator sets up two-step sign-in before using the workspace (merchants may opt in).
+  if (user.two_factor_setup_required && session.authEnabled) { location.replace(`${LOGIN_PAGE}?setup2fa=1&required=1&next=${encodeURIComponent(nextTarget())}`); return null; }
   session.user = user; session.ready = true;
   applyUser(user);
   resolveReady(user);

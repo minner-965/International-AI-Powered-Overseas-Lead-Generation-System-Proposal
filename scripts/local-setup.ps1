@@ -128,13 +128,13 @@ elseif ($output -match 'ADMIN_MISSING') {
 
 Step 'Supply categories'
 Write-Host 'Approve categories with your administrator sign-in, for example:'
-Write-Host '  node scripts/setup-supply-categories.mjs --list --email <admin email> --password <password>'
+Write-Host '  node scripts/setup-supply-categories.mjs --list --email <admin email> --password <password> --code <6-digit app code>'
 
 Write-Host "`nSIM workspace is running: $baseUrl" -ForegroundColor Green
 Write-Host @'
 Next steps (see docs/deploy/WINDOWS_LOCAL_SETUP.md):
   1. Sign in at the address above with your administrator account, then approve supply
-     categories: node scripts/setup-supply-categories.mjs --all --email <admin email> --password <password>
+     categories: node scripts/setup-supply-categories.mjs --all --email <admin email> --password <password> --code <6-digit app code>
   2. Fill search keys in .env.phase2 (EXA_API_KEY / TAVILY_API_KEY), mail in .env.phase7-outreach
      (SMTP/IMAP 587/993, SMTP_MESSAGE_ID_DOMAIN = your domain), Hunter and Feishu if used.
   3. Apply changes: docker compose up -d --force-recreate searxng translate demo-dashboard category-worker outreach-worker data-worker

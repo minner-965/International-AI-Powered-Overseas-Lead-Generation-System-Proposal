@@ -31,11 +31,20 @@
 3. **安全响应头**（全站，含静态页）：`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`（防点击劫持/被套壳仿冒）、`Referrer-Policy`、最小 `Permissions-Policy`、保守 `Content-Security-Policy`；在 TLS（`TRUST_PROXY`）下加 `Strict-Transport-Security`。
 4. **错误不泄漏**：生产环境 API 不返回堆栈，只返回结构化 `code` + 通用消息。
 
+## 二步验证（2026-11-11，迁移 078）
+
+- 管理员**必须**开启，商家**可选**（在"我的"里开启）。用手机验证器 App（Microsoft / Google / 腾讯身份验证器）的 6 位动态码，不发短信、不发邮件，没有外部调用和费用。
+- 登录分两步：密码正确后会话只记"待验证"（5 分钟），输入正确动态码才真正登录。同一个码不能用第二次；输错码和输错密码共用同一套失败限制（15 分钟内 8 次）。
+- 密钥用 `MERCHANT_SECRET_KEY` 加密存库；10 个一次性恢复码只存 argon2 哈希，只在设置时显示一次。每次开启、关闭、重置、用恢复码都记在 `two_factor_events`（只追加）。
+- 找回：商家丢手机 → 你在"商家管理"点"重置二步验证"；你自己丢手机又没有恢复码 → 在电脑上运行 `docker compose exec demo-dashboard node scripts/create-admin.mjs --email 你的邮箱 --reset-2fa`，下次登录重新扫码。
+- 复用 `otpauth`、`qrcode`（MIT，已登记复用表）；二维码在服务器上生成，页面不加载外部资源。
+
 ## 相关配置（`.env`）
 
 | 变量 | 说明 |
 |---|---|
 | `AUTH_REQUIRED` | `true`（默认）启用全部登录与跨站保护；`false` 仅供测试/本地开发 |
+| `ADMIN_2FA_REQUIRED` | `true`（默认）管理员必须开启二步验证；不要改成 false |
 | `SESSION_SECRET` | 签名会话 Cookie；由安装脚本随机生成，**勿改动**（改了所有人要重新登录） |
 | `MERCHANT_SECRET_KEY` | 邮箱密码加密密钥；**勿改动**（改了商家要重新填邮箱密码） |
 | `ALLOWED_ORIGINS` | 逗号分隔的额外允许来源主机（如你的 Cloudflare 隧道域名）；同源始终允许 |
@@ -45,7 +54,7 @@
 ## 上线前自查清单
 
 - [ ] `AUTH_REQUIRED=true`，且未登录时 `/api/auth/me` 返回 401。
-- [ ] 管理员密码 ≥12 位、不与其他站点相同；考虑尽快加二步验证（见 `docs/handoff/PLAN.md` 待办）。
+- [ ] 管理员密码 ≥12 位、不与其他站点相同；管理员二步验证已开启，恢复码已离线保存。
 - [ ] 经隧道访问时 `.env` 有 `TRUST_PROXY=1`、`ALLOWED_ORIGINS` 含隧道域名；确认响应头里有 HSTS。
 - [ ] 用两个商家账号互查：确认看不到对方的机会、客户、任务、回复、草稿、导出。
 - [ ] 到期商家只能读不能写；额度用完被 409 拒。
@@ -56,7 +65,6 @@
 
 ## 不在本轮范围（见 PLAN 待办）
 
-- 管理员/商家二步验证（TOTP）。
 - 全局请求限流（当前仅登录限流）。
 - CSRF token 双提交（当前靠 SameSite + Origin 校验，足够应对，收费规模扩大后可加）。
 - 依赖告警清理（`npm audit` 7 条历史告警，非本轮新依赖引入）。

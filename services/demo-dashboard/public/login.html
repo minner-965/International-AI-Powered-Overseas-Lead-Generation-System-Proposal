@@ -32,6 +32,39 @@
         <p id="password-error" class="v4-login-error" role="alert" hidden></p>
         <button id="password-submit" class="btn btn-primary v4-login-submit" type="submit" data-tip="保存新密码并进入工作台|Save the new password and open the workspace"><span class="bi"><span lang="zh-CN">保存并进入工作台</span><span lang="en">Save and continue</span></span></button>
       </form>
+      <form id="code-form" class="v4-login-form" novalidate hidden>
+        <h1 id="code-title" class="bi" tabindex="-1"><span lang="zh-CN">输入验证码</span><span lang="en">Enter your code</span></h1>
+        <p class="v4-login-sub bi" id="code-sub"><span lang="zh-CN">打开手机上的验证器 App，输入“SIM Prospecting”下显示的 6 位数字。</span><span lang="en">Open your authenticator app and enter the 6-digit code shown under “SIM Prospecting”.</span></p>
+        <div class="field"><label for="code-input" id="code-label"><span class="bi"><span lang="zh-CN">6 位验证码</span><span lang="en">6-digit code</span></span></label><input id="code-input" name="code" class="v4-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></div>
+        <p id="code-error" class="v4-login-error" role="alert" hidden></p>
+        <button id="code-submit" class="btn btn-primary v4-login-submit" type="submit" data-tip="核对验证码并进入工作台|Check the code and open the workspace"><span class="bi"><span lang="zh-CN">验证并登录</span><span lang="en">Verify and sign in</span></span></button>
+        <div class="v4-login-links"><button class="btn btn-link" type="button" id="code-mode" data-tip="手机不在身边时，用设置时保存的恢复码登录，每个只能用一次|Without your phone, sign in with a saved recovery code; each works once"><span class="bi"><span lang="zh-CN">改用恢复码</span><span lang="en">Use a recovery code</span></span></button><button class="btn btn-link" type="button" data-back-to-login data-tip="回到输入邮箱和密码|Back to email and password"><span class="bi"><span lang="zh-CN">返回</span><span lang="en">Back</span></span></button></div>
+        <p class="v4-login-help bi"><span lang="zh-CN">手机丢了、恢复码也找不到？请联系 SIM 重置。</span><span lang="en">Lost your phone and recovery codes? Contact SIM to reset.</span></p>
+      </form>
+      <form id="setup-form" class="v4-login-form v4-2fa-setup" novalidate hidden>
+        <h1 id="setup-title" class="bi" tabindex="-1"><span lang="zh-CN">设置二步验证</span><span lang="en">Set up two-step sign-in</span></h1>
+        <p class="v4-login-sub bi" id="setup-sub"><span lang="zh-CN">以后登录除了密码，还要输入手机验证器 App 上的 6 位数字。别人拿到密码也登录不了。</span><span lang="en">From now on, sign-in also asks for a 6-digit code from an app on your phone, so a stolen password is not enough.</span></p>
+        <ol class="v4-2fa-steps">
+          <li><span class="bi"><span lang="zh-CN">在手机上安装验证器 App：Microsoft Authenticator、Google Authenticator 或腾讯身份验证器（任选一个）。</span><span lang="en">Install an authenticator app: Microsoft Authenticator, Google Authenticator or Tencent Authenticator.</span></span></li>
+          <li><span class="bi"><span lang="zh-CN">在 App 里点“添加 / 扫描二维码”，扫下面的码。</span><span lang="en">In the app, choose Add / Scan a QR code and scan this code.</span></span>
+            <div class="v4-qr" id="setup-qr" aria-live="polite"></div>
+            <details class="v4-2fa-manual"><summary><span class="bi"><span lang="zh-CN">无法扫码？手动输入密钥</span><span lang="en">Can’t scan? Enter the key</span></span></summary><p><span class="bi"><span lang="zh-CN">账号</span><span lang="en">Account</span></span> <b id="setup-account"></b></p><code id="setup-secret" class="v4-2fa-secret"></code></details></li>
+          <li><span class="bi"><span lang="zh-CN">输入 App 上显示的 6 位数字，确认已添加成功。</span><span lang="en">Enter the 6-digit code the app shows to confirm.</span></span></li>
+        </ol>
+        <div class="field"><label for="setup-code"><span class="bi"><span lang="zh-CN">6 位验证码</span><span lang="en">6-digit code</span></span></label><input id="setup-code" name="code" class="v4-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></div>
+        <p id="setup-error" class="v4-login-error" role="alert" hidden></p>
+        <button id="setup-submit" class="btn btn-primary v4-login-submit" type="submit" data-tip="核对验证码并开启二步验证|Check the code and switch two-step sign-in on"><span class="bi"><span lang="zh-CN">确认开启</span><span lang="en">Turn on</span></span></button>
+        <div class="v4-login-links" id="setup-cancel-row" hidden><a class="btn btn-link" id="setup-cancel" href="/" data-tip="暂不开启，回到工作台|Not now; back to the workspace"><span class="bi"><span lang="zh-CN">暂不开启</span><span lang="en">Not now</span></span></a></div>
+      </form>
+      <form id="recovery-form" class="v4-login-form" novalidate hidden>
+        <h1 id="recovery-title" class="bi" tabindex="-1"><span lang="zh-CN">保存恢复码</span><span lang="en">Save your recovery codes</span></h1>
+        <p class="v4-login-sub bi"><span lang="zh-CN">手机丢了或换手机时，用恢复码登录。每个只能用一次，这些码只显示这一次，请抄下来或下载保存。</span><span lang="en">Use these to sign in if you lose your phone. Each works once and they are shown only now: copy or download them.</span></p>
+        <ul class="v4-recovery-codes" id="recovery-codes"></ul>
+        <div class="btns"><button class="btn" type="button" id="recovery-copy" data-tip="把全部恢复码复制到剪贴板|Copy all recovery codes"><i class="ti ti-copy" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">复制</span><span lang="en">Copy</span></span></button><button class="btn" type="button" id="recovery-download" data-tip="下载为文本文件，保存在安全的地方|Download as a text file to keep somewhere safe"><i class="ti ti-download" aria-hidden="true"></i><span class="bi"><span lang="zh-CN">下载</span><span lang="en">Download</span></span></button></div>
+        <label class="v4-check"><input type="checkbox" id="recovery-saved"><span class="bi"><span lang="zh-CN">我已把恢复码保存在安全的地方</span><span lang="en">I have saved the recovery codes somewhere safe</span></span></label>
+        <p id="recovery-error" class="v4-login-error" role="alert" hidden></p>
+        <button id="recovery-done" class="btn btn-primary v4-login-submit" type="submit" data-tip="确认已保存恢复码，进入工作台|Confirm the codes are saved and open the workspace"><span class="bi"><span lang="zh-CN">进入工作台</span><span lang="en">Open the workspace</span></span></button>
+      </form>
     </section>
   </main>
   <script type="module" src="/ui/v4/tooltips.js"></script>

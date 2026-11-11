@@ -6,7 +6,8 @@
 //   node scripts/setup-supply-categories.mjs --categories WOMENSWEAR:DRESSES,WOMENSWEAR:TOPS
 //   node scripts/setup-supply-categories.mjs --all
 //   option: --base http://127.0.0.1:3100 (default: DASHBOARD_PORT from .env, else 3100; inside the container use http://127.0.0.1:3000)
-//   sign-in (AUTH_REQUIRED=true): --email <admin> --password <password>, or SIM_ADMIN_EMAIL / SIM_ADMIN_PASSWORD
+//   sign-in (AUTH_REQUIRED=true): --email <admin> --password <password>, or SIM_ADMIN_EMAIL / SIM_ADMIN_PASSWORD;
+//   with two-step sign-in on, add --code <6 digits from the authenticator app>
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -21,11 +22,13 @@ const base = (option('--base') || process.env.APP_BASE_URL || `http://127.0.0.1:
 let cookie = '';
 const email = option('--email') || process.env.SIM_ADMIN_EMAIL || '';
 const password = option('--password') || process.env.SIM_ADMIN_PASSWORD || '';
+const code = option('--code') || '';
 const signInHint = 'Sign-in required: pass --email <admin email> --password <password> (or set SIM_ADMIN_EMAIL / SIM_ADMIN_PASSWORD).';
 
 async function request(path, init = {}, { allow401 = false } = {}) {
   const response = await fetch(`${base}${path}`, { ...init,
-    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...(init.headers || {}) } });
+    // Same-origin header, as a browser sends: the workspace refuses signed-in writes without one.
+    headers: { 'content-type': 'application/json', origin: new URL(base).origin, ...(cookie ? { cookie } : {}), ...(init.headers || {}) } });
   const setCookie = response.headers.get('set-cookie');
   if (setCookie) cookie = setCookie.split(';')[0];
   const body = await response.json().catch(() => ({}));
@@ -42,8 +45,16 @@ if (me.status === 401 || me.auth_required === true && !me.user?.id) {
   if (!email || !password) { console.error(signInHint); process.exit(2); }
   const login = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, { allow401: true });
   if (login.status === 401) { console.error(`Sign-in failed for ${email}. ${signInHint}`); process.exit(2); }
-  if (login.user?.role !== 'ADMIN') { console.error('This account is not the SIM administrator.'); process.exit(2); }
-  if (login.user?.must_change_password) { console.error('Change the temporary password in the workspace first.'); process.exit(2); }
+  let user = login.user;
+  if (login.two_factor_required) {
+    if (!/^\d{6}$/.test(code)) { console.error('Two-step sign-in is on: add --code <the 6 digits shown in your authenticator app>.'); process.exit(2); }
+    const verified = await request('/api/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) }, { allow401: true });
+    if (verified.status === 401) { console.error('The code was not accepted. Wait for a new code in the app and run again.'); process.exit(2); }
+    user = verified.user;
+  }
+  if (user?.role !== 'ADMIN') { console.error('This account is not the SIM administrator.'); process.exit(2); }
+  if (user?.two_factor_setup_required) { console.error('Sign in to the workspace in the browser once and set up two-step sign-in first.'); process.exit(2); }
+  if (user?.must_change_password) { console.error('Change the temporary password in the workspace first.'); process.exit(2); }
 }
 
 const candidates = (await request('/api/category-scopes/candidates')).items;

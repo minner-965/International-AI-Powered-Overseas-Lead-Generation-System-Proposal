@@ -33,7 +33,7 @@ Simon 是运营者兼管理员，把系统开成**商家账号**给外贸公司�
 
 ## 4. 迁移（database/migrations/）
 
-- 最新是 `077_sender_health`（发信健康事件，只追加）。066 商家账号、067 登录限流、068–069 开关与商家发信安全、070–072 手动企业/API 密钥/跟进设置、073–076 无用线索/评分/模型辅助/回复关联。Simon 本机在 10-31 时已执行到 076；`git pull` 后再跑一次 `local-setup.ps1` 会执行 077。
+- 最新是 `078_two_factor`（二步验证：加密密钥、恢复码、事件只追加）；`077_sender_health`（发信健康事件，只追加）。066 商家账号、067 登录限流、068–069 开关与商家发信安全、070–072 手动企业/API 密钥/跟进设置、073–076 无用线索/评分/模型辅助/回复关联。Simon 本机在 10-31 时已执行到 076；`git pull` 后再跑一次 `local-setup.ps1` 会执行 077、078。
 - 066 建的表（schema `leadgen`）：`merchants`、`workspace_users`、`merchant_mailboxes`、`merchant_scope`、`merchant_feedback`、`workspace_sessions`、`merchant_companies`；业务表加了 `merchant_id`（空 = SIM 自己）。
 - 迁移执行器：`services/demo-dashboard/src/phase7/migrationRunner.js`，支持 `--apply` 和新装用的 `--baseline`。
 - 新装时 PostgreSQL 的 init 脚本已包含全部迁移文件，`--baseline` 只登记账本；已有库则走 `--apply`。

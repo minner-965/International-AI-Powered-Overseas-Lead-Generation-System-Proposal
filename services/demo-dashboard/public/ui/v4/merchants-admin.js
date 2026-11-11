@@ -64,6 +64,7 @@ function actions(item) {
     <button class="btn btn-sm" type="button" data-merchant-action="paid" data-merchant-id="${id}"${tip('标记为已付费并设置服务到期日', 'Mark as paid and set the end date')}>${bi('标记已付费', 'Mark paid')}</button>
     <button class="btn btn-sm" type="button" data-merchant-action="quotas" data-merchant-id="${id}"${tip('修改每月找客户次数、每日发信数和可用功能', 'Edit monthly searches, daily emails and features')}>${bi('编辑额度与功能', 'Quotas & features')}</button>
     <button class="btn btn-sm" type="button" data-merchant-action="reset" data-merchant-id="${id}"${tip('生成新的临时密码，商家下次登录时需修改', 'Create a new temporary password; the merchant changes it at next sign-in')}>${bi('重置密码', 'Reset password')}</button>
+    <button class="btn btn-sm" type="button" data-merchant-action="reset2fa" data-merchant-id="${id}"${tip('商家手机丢了、恢复码也找不到时使用：关闭他的二步验证，下次只用密码登录', 'For a lost phone and recovery codes: turn the merchant\'s two-step sign-in off; next sign-in needs only the password')}>${bi('重置二步验证', 'Reset two-step')}</button>
     ${disabled ? `<button class="btn btn-sm btn-outline-primary" type="button" data-merchant-action="restore" data-merchant-id="${id}"${tip('恢复这个账号，商家可以重新登录', 'Restore the account so the merchant can sign in')}>${bi('恢复', 'Restore')}</button>` : `<button class="btn btn-sm btn-danger" type="button" data-merchant-action="disable" data-merchant-id="${id}"${tip('停用后商家不能登录，资料保留', 'The merchant cannot sign in; data is kept')}>${bi('停用', 'Disable')}</button>`}
   </div>`;
 }
@@ -137,6 +138,8 @@ function open(kind, item = null) {
     box.innerHTML = sheet(bi(`标记已付费 · ${item.company_name}`, 'Mark as paid'), `${field('merchant-paid', '服务到期日', 'Paid until', `<input id="merchant-paid" name="paid_until" type="date" min="${isoDate(new Date())}" value="${esc(item.paid_until ? String(item.paid_until).slice(0, 10) : isoDate(next))}" required>`)}<p class="meta">${bi('到期后账号自动变为只读，资料保留。', 'After this date the account becomes read-only; data is kept.')}</p>`, bi('标记已付费', 'Mark paid'), ['账号改为已开通，到期日如上', 'Set the account to active until this date']);
   } else if (kind === 'quotas') {
     box.innerHTML = sheet(bi(`编辑额度与功能 · ${item.company_name}`, 'Quotas & features'), `<div class="form-grid">${field('merchant-edit-company', '公司名称', 'Company', `<input id="merchant-edit-company" name="company_name" maxlength="200" value="${name}" required>`)}${field('merchant-edit-contact', '联系人', 'Contact person', `<input id="merchant-edit-contact" name="contact_name" maxlength="120" value="${esc(item.contact_name || '')}">`)}</div>${quotaFields(item.quotas || {}, item.features || {})}`, bi('保存', 'Save'), ['保存额度、功能和公司信息', 'Save quotas, features and company details']);
+  } else if (kind === 'reset2fa') {
+    box.innerHTML = sheet(bi(`重置二步验证 · ${item.company_name}`, 'Reset two-step sign-in'), `<p>${bi('请先确认是商家本人联系您。重置后商家下次登录只需要密码，可以在“我的”里重新开启。', 'Confirm the request really comes from the merchant. Next sign-in needs only the password; they can turn it on again under Me.')}</p>`, bi('确认重置', 'Reset'), ['关闭这个商家的二步验证', 'Turn this merchant\'s two-step sign-in off']);
   } else if (kind === 'reset' || kind === 'disable') {
     const reset = kind === 'reset';
     box.innerHTML = sheet(bi(`${reset ? '重置密码' : '停用账号'} · ${item.company_name}`, reset ? 'Reset password' : 'Disable account'), `<p>${bi(...(reset ? ['将生成新的临时密码，原密码立即失效。', 'A new temporary password replaces the current one immediately.'] : ['停用后商家不能登录，资料全部保留，之后可以恢复。', 'The merchant cannot sign in; data is kept and you can restore later.']))}</p>`, bi(reset ? '重置密码' : '确认停用', reset ? 'Reset' : 'Disable'), reset ? ['生成新的临时密码', 'Create a new temporary password'] : ['停用这个商家账号', 'Disable this merchant account']);
@@ -169,6 +172,12 @@ async function submit(form) {
       const result = await json('/api/admin/merchants', body);
       dialog().innerHTML = sheet(bi('商家账号已开通', 'Merchant account opened'), passwordResultMarkup({ email: result?.user?.email || body.login_email, password: result?.temporary_password || '—', created: true }), '', null);
       void loadMerchants(); return;
+    }
+    if (kind === 'reset2fa') {
+      const result = await json(`/api/admin/merchants/${encodeURIComponent(item.id)}/reset-2fa`);
+      dialog().close();
+      toast(...(result?.reset ? ['已重置二步验证，商家下次只用密码登录', 'Two-step sign-in reset; next sign-in needs only the password'] : ['这个商家没有开启二步验证', 'This merchant has not turned two-step sign-in on']));
+      return;
     }
     if (kind === 'reset') {
       const result = await json(`/api/admin/merchants/${encodeURIComponent(item.id)}/reset-password`);
