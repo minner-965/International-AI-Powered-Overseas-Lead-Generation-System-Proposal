@@ -46,7 +46,7 @@ export const MERCHANT_ROUTES=[
   ['GET',`^/api/research/jobs(/${UUID}(/results)?)?$`],
   ['POST',`^/api/research/(batches|jobs)/${UUID}/cancel$`],
   // B1/B2: manual companies, manual first-touch drafts and first-touch test sends.
-  ['GET',`^/api/manual-companies(/options|/first-touch-drafts|/${UUID})?$`],['POST','^/api/manual-companies$'],
+  ['GET',`^/api/manual-companies(/options|/first-touch-drafts|/${UUID})?$`],['POST','^/api/manual-companies$'],['POST','^/api/manual-companies/import/(preview|check|commit)$'],['GET','^/api/manual-companies/import/runs$'],
   ['POST',`^/api/manual-companies/${UUID}/(contacts|activities|stage|first-touch-drafts)$`],
   ['POST',`^/api/manual-companies/first-touch-drafts/${UUID}/decision$`],
   ['GET','^/api/first-touch/test-sends$'],['POST','^/api/first-touch/test-sends(/preview)?$'],

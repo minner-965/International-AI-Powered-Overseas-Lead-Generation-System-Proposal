@@ -52,9 +52,9 @@ async function seedCompanies(pool,specs){
   return out;
 }
 
-test('migration 079 is the latest file and verifies; deal history is append-only',{skip:!adminUrl},async()=>{
+test('migration 079 verifies; deal history is append-only',{skip:!adminUrl},async()=>{
   const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
-  assert.equal(files.at(-1),CRM_DEAL_HEALTH_MIGRATION_KEY);
+  assert.ok(files.includes(CRM_DEAL_HEALTH_MIGRATION_KEY));
   await withDatabase(async pool=>{
     assert.deepEqual(await verifyCrmDealHealthMigration(pool),{crm_deal_health:true});
     const [{A}]=[await seedCompanies(pool,[['A','AE']])];

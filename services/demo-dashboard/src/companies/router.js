@@ -7,9 +7,16 @@ import {actorOf} from './common.js';
 
 const asyncRoute=handler=>(req,res,next)=>Promise.resolve(handler(req,res,next)).catch(next);
 
-export function createManualCompanyRouter({companies,firstTouch,testSends}){
+// imports (importWizard.js): spreadsheet import of companies through the same create rules.
+export function createManualCompanyRouter({companies,firstTouch,testSends,imports=null}){
   const router=express.Router();
   const scope=req=>requestScope(req);
+  if(imports){
+    router.post('/api/manual-companies/import/preview',asyncRoute(async(req,res)=>res.json(await imports.preview(req.body||{},scope(req)))));
+    router.post('/api/manual-companies/import/check',asyncRoute(async(req,res)=>res.json(await imports.check(req.body||{},scope(req)))));
+    router.post('/api/manual-companies/import/commit',asyncRoute(async(req,res)=>res.json(await imports.commit(req.body||{},actorOf(req),scope(req)))));
+    router.get('/api/manual-companies/import/runs',asyncRoute(async(req,res)=>res.json(await imports.runs(scope(req)))));
+  }
 
   router.get('/api/manual-companies/options',asyncRoute(async(req,res)=>res.json(await companies.options(scope(req)))));
   router.get('/api/manual-companies',asyncRoute(async(req,res)=>res.json(await companies.list(req.query,scope(req)))));

@@ -67,6 +67,7 @@ import {ContactResearchReconciler} from './automation/ContactResearchReconciler.
 import {RoutedSearchClient} from './search/RoutedSearchClient.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {TwoFactorService} from './merchant/twoFactor.js';
+import {CompanyImportService} from './companies/importWizard.js';
 import {DealService} from './crm/deals.js';
 import {SenderHealth} from './outreach/senderHealth.js';
 import {checkSendingDomain} from './outreach/sendingDomainCheck.js';
@@ -701,7 +702,8 @@ app.use(createMerchantRouter({merchants:merchantService,env:process.env,senderHe
   simSenderEmail:()=>phase7Service.outboundProvider?.senderEmail||null}));
 app.use(createCredentialsRouter({credentials:credentialStore,spendPolicy:()=>phase13Automation.spendPolicy()}));
 app.use(createTranslateRouter({client:createTranslateClient({credentials:credentialStore,env:process.env}),authRequired:authRequired(process.env)}));
-app.use(createManualCompanyRouter({companies:manualCompanies,firstTouch:manualFirstTouch,testSends:firstTouchTestSends}));
+app.use(createManualCompanyRouter({companies:manualCompanies,firstTouch:manualFirstTouch,testSends:firstTouchTestSends,
+  imports:new CompanyImportService({pool,companies:manualCompanies})}));
 // Batch 3: unusable leads (admin only; not in MERCHANT_ROUTES) and model assist settings / review queue.
 app.use(createLeadUsabilityRouter({service:opportunityPoolService.leadUsability}));
 app.use(createModelAssistRouter({assist:modelAssist}));
