@@ -5,7 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {dealMeta,keyCustomersMarkup,moneyText,priorityPill,reportMarkup,rulesMarkup} from '../public/ui/v4/sales-reports.js';
 import {dealBody,dealCardMarkup,dealProblem} from '../public/ui/v4/deal-card.js';
 import {importPanelMarkup} from '../public/ui/v4/company-import.js';
-import {stageNeedsReason} from '../public/ui/v4/crm.js';
+import {LOST_REASONS,lostReasonOptions,stageNeedsReason} from '../public/ui/v4/crm.js';
+import {LOST_REASON_CODES} from '../src/crm/stageRules.js';
 import {stageChangeNeedsReason} from '../src/crm/stageRules.js';
 
 const STAGES=['NEW','CONTACTED','REPLIED','QUOTED','SAMPLE','NEGOTIATING','WON','LOST'];
@@ -68,4 +69,23 @@ test('the workbench, reports page, import button and deal card are wired into th
   assert.match(html,/src="\/ui\/v4\/sales-reports\.js"/);assert.match(html,/src="\/ui\/v4\/company-import\.js"/);
   const manual=await readFile(new URL('../public/ui/v4/manual-company.js',import.meta.url),'utf8');assert.match(manual,/data-import-open\$\{tip\(/);
   const followup=await readFile(new URL('../public/ui/v4/followup-card.js',import.meta.url),'utf8');assert.match(followup,/mountDealCard\(/);assert.match(followup,/name="stage_note"/);
+});
+
+test('lost categories match the server; other currencies, monthly win rate and risk list are shown',()=>{
+  assert.deepEqual(Object.keys(LOST_REASONS),[...LOST_REASON_CODES]);
+  assert.match(lostReasonOptions('PRICE'),/value="PRICE" selected/);assert.match(lostReasonOptions('too expensive'),/value="too expensive" selected/,'older free text stays selectable');
+  const html=reportMarkup({currency:'USD',totals:{customers:2,active:2,pipeline_amount:1000,weighted_amount:400,won_amount:0},
+    currencies:[{currency:'USD',deals:1,pipeline_amount:1000,weighted_amount:400,won_amount:0},{currency:'EUR',deals:1,pipeline_amount:2000,weighted_amount:200,won_amount:0}],
+    this_month:{won:1,lost:1,win_rate:50,expected_close:{count:1,amounts:[{currency:'EUR',amount:2000}]}},
+    risks:[{company_id:'c1',company_name:'Gulf Home',country_code:'AE',pipeline_stage:'CONTACTED',deal_amount:null,deal_currency:null,risks:['OVERDUE_TASK','CLOSE_DATE_PASSED']}],
+    funnel:[],lost_reasons:[{reason:'PRICE',count:1}],countries:[],follow_up:{}});
+  assert.match(html,/另有其他币种（不换算）：EUR 2,000 在谈/);assert.match(html,/本月赢单率[\s\S]*50%/);assert.match(html,/本月预计成交[\s\S]*EUR 2,000/);
+  assert.match(html,/需要处理的商机[\s\S]*Gulf Home[\s\S]*任务逾期[\s\S]*已过预计成交日/);assert.match(html,/价格太高/);
+  assert.doesNotMatch(reportMarkup({currency:'USD',totals:{},funnel:[],countries:[],follow_up:{},this_month:{win_rate:null}}),/需要处理的商机|另有其他币种/);
+});
+
+test('deal card suggests a grade from health only while none is chosen',()=>{
+  const base={company_id:'c1',default_win_probability:10,health:{score:72,level:'GOOD',parts:{profile:25,timely:20,moving:10,answered:15}},flags:[],version:0};
+  assert.match(dealCardMarkup({...base,customer_grade:null,suggested_grade:'B'}),/按健康度建议 B 级/);
+  assert.doesNotMatch(dealCardMarkup({...base,customer_grade:'A',suggested_grade:null}),/按健康度建议/);
 });

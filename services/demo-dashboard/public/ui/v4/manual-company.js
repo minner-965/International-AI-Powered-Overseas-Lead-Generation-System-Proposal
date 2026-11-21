@@ -2,7 +2,7 @@
 // business mailbox, write the first email from the approved template, approve and send it, then log
 // calls / notes and move the stage. SIM may mark a test company and assign it to a merchant.
 // API: /api/manual-companies (see src/companies/router.js). Every rule is checked on the server.
-import { bi, esc, stateBlock, skeletonRows } from './crm.js';
+import { bi, esc, lostReasonOptions, stateBlock, skeletonRows, tomorrowInput } from './crm.js';
 import { tip } from './tooltips.js';
 import { sessionReady } from './session.js';
 import { managementRequest } from '../../phase7-ui.js';
@@ -48,7 +48,8 @@ export const REASONS = Object.freeze({
   CATEGORY_OUTSIDE_MERCHANT_SCOPE: ['请选择你业务范围内的类目', 'Choose one of your business categories'],
   DRAFT_ALREADY_OPEN: ['已有一封待批准的开发信', 'A first email is already waiting for approval'],
   TEMPLATE_NEEDS_NAMED_CONTACT: ['模板 A 需要具体联系人姓名', 'Template A needs a named person'],
-  LOST_REASON_REQUIRED: ['标记流失时请填写原因', 'Enter a reason when marking as lost'],
+  LOST_REASON_REQUIRED: ['标记丢单时请选择原因', 'Choose a reason when marking as lost'],
+  REVISIT_DATE_INVALID: ['回访日期要在今天之后、两年之内', 'Revisit date must be after today and within two years'], REVISIT_ONLY_WHEN_LOST: ['只有丢单才需要回访日期', 'A revisit date is only for a lost deal'],
   STAGE_UNCHANGED: ['已经是这个阶段', 'Already at this stage'],
   MERCHANT_SELF_SERVICE_ONLY: ['只有商家本人可以从自己的邮箱发信', 'Only the merchant can send from its own mailbox']
 });
@@ -157,7 +158,7 @@ function open(kind, item = null) {
   } else if (kind === 'activity') {
     box.innerHTML = sheet(bi(`记录跟进 · ${item.company_name}`, 'Log follow-up'), `<div class="form-grid">${field('manual-act-type', '方式', 'Type', `<select id="manual-act-type" name="activity_type">${options(ACTIVITY_TYPES, 'CALL')}</select>`)}${field('manual-act-result', '结果（可选）', 'Result (optional)', '<input id="manual-act-result" name="result" maxlength="200">')}${field('manual-act-summary', '内容', 'Summary', '<textarea id="manual-act-summary" name="summary" maxlength="2000" required></textarea>', 'wide')}${field('manual-act-next', '下次跟进（可选）', 'Next follow-up (optional)', '<input id="manual-act-next" name="next_follow_up_at" type="date">')}</div>`, bi('保存', 'Save'), ['保存这条跟进记录', 'Save this follow-up']);
   } else if (kind === 'stage') {
-    box.innerHTML = sheet(bi(`更改阶段 · ${item.company_name}`, 'Change stage'), `<div class="form-grid">${field('manual-stage', '阶段', 'Stage', `<select id="manual-stage" name="stage">${options(STAGES, item.stage)}</select>`)}${field('manual-stage-lost', '流失原因（选流失时必填）', 'Lost reason (if lost)', '<input id="manual-stage-lost" name="lost_reason" maxlength="500">')}${field('manual-stage-note', '备注（往回改阶段或重新打开时必填）', 'Note (needed to move back or reopen)', '<input id="manual-stage-note" name="note" maxlength="1000">', 'wide')}</div>`, bi('保存', 'Save'), ['保存新的阶段', 'Save the new stage']);
+    box.innerHTML = sheet(bi(`更改阶段 · ${item.company_name}`, 'Change stage'), `<div class="form-grid">${field('manual-stage', '阶段', 'Stage', `<select id="manual-stage" name="stage">${options(STAGES, item.stage)}</select>`)}${field('manual-stage-lost', '丢单原因（选丢单时必填）', 'Lost reason (if lost)', `<select id="manual-stage-lost" name="lost_reason">${lostReasonOptions()}</select>`)}${field('manual-stage-revisit', '回访日期（丢单时可选）', 'Revisit on (if lost, optional)', `<input id="manual-stage-revisit" name="revisit_date" type="date" min="${tomorrowInput()}">`)}${field('manual-stage-note', '备注（往回改阶段或重新打开时必填）', 'Note (needed to move back or reopen)', '<input id="manual-stage-note" name="note" maxlength="1000">', 'wide')}</div>`, bi('保存', 'Save'), ['保存新的阶段', 'Save the new stage']);
   } else if (kind === 'test') {
     box.innerHTML = sheet(bi(`${item.is_test ? '取消测试企业' : '设为测试企业'} · ${item.company_name}`, item.is_test ? 'Unmark test company' : 'Mark as test company'), `<p>${bi(item.is_test ? '取消后，这家公司按正常客户处理：只能发到公司域名邮箱或有出处的邮箱。' : '测试企业的开发信只能发到测试收件名单里的地址。', item.is_test ? 'It becomes a normal company: only company-domain or sourced mailboxes.' : 'First emails for a test company go only to addresses on the test list.')}</p>`, bi('确认', 'Confirm'), ['保存测试企业设置', 'Save the test setting']);
   } else if (kind === 'assign') {
@@ -204,7 +205,7 @@ async function submit(form) {
       await json(`${API}/${encodeURIComponent(item.id)}/activities`, { activity_type: form.activity_type.value, summary: form.summary.value.trim(), result: form.result.value.trim() || undefined, ...(next ? { next_follow_up_at: new Date(`${next}T09:00:00`).toISOString() } : {}) });
       dialog().close(); toast('跟进已记录', 'Follow-up logged');
     } else if (kind === 'stage') {
-      await json(`${API}/${encodeURIComponent(item.id)}/stage`, { stage: form.stage.value, lost_reason: form.lost_reason.value.trim() || undefined, note: form.note.value.trim() || undefined });
+      await json(`${API}/${encodeURIComponent(item.id)}/stage`, { stage: form.stage.value, lost_reason: form.stage.value === 'LOST' ? form.lost_reason.value || undefined : undefined, note: form.note.value.trim() || undefined, revisit_date: form.stage.value === 'LOST' && form.revisit_date.value ? form.revisit_date.value : undefined });
       dialog().close(); toast('阶段已更新', 'Stage updated');
     } else if (kind === 'test') {
       await json(`${API}/${encodeURIComponent(item.id)}/test-flag`, { is_test: !item.is_test }, 'PUT'); dialog().close(); toast('已保存', 'Saved');

@@ -14,6 +14,8 @@ export const CUSTOMER_GRADES=Object.freeze(['A','B','C','D']);
 export const TASK_PRIORITIES=Object.freeze(['LOW','NORMAL','HIGH']);
 // Default chance of winning by stage, used until a person sets one.
 export const STAGE_WIN_PROBABILITY=Object.freeze({NEW:5,CONTACTED:10,REPLIED:20,QUOTED:40,SAMPLE:60,NEGOTIATING:75,WON:100,LOST:0});
+/** Reminder tasks created per owner in one hourly run; the rest wait for the next run. */
+export const MAX_REMINDERS_PER_RUN=100;
 export const DEFAULT_REMINDER_RULES=Object.freeze({enabled:true,no_follow_up_days:7,quoted_no_reply_days:3,sample_no_confirm_days:7});
 
 const days=(from,now)=>from?Math.floor((now.getTime()-new Date(from).getTime())/DAY):null;
@@ -32,6 +34,23 @@ export function customerHealth(item,now=new Date()){
   const answered=item.last_inbound_at?15:item.activity_count>0?8:0;
   const score=profile+timely+moving+answered;
   return{score,level:score>=70?'GOOD':score>=40?'FAIR':'POOR',parts:{profile,timely,moving,answered},days_since_touch:since};
+}
+
+/** Grade suggested from health when a person has not graded the customer: 85+ A, 70+ B, 55+ C, else D. */
+export function suggestedGrade(health){
+  if(!health)return null;
+  return health.score>=85?'A':health.score>=70?'B':health.score>=55?'C':'D';
+}
+
+/** Why an active deal needs attention now (for the report's risk list). */
+export function dealRisks(item,rules=DEFAULT_REMINDER_RULES,now=new Date()){
+  if(!ACTIVE_STAGES.includes(item.pipeline_stage))return[];
+  const risks=[];
+  if(item.overdue)risks.push('OVERDUE_TASK');
+  if(customerHealth(item,now).level==='POOR')risks.push('LOW_HEALTH');
+  if(item.expected_close_date&&new Date(item.expected_close_date).toISOString().slice(0,10)<now.toISOString().slice(0,10))risks.push('CLOSE_DATE_PASSED');
+  for(const flag of keyCustomerFlags(item,rules,now))if(flag!=='HIGH_INTENT')risks.push(flag);
+  return risks;
 }
 
 /** Key-customer flags: very interested, too long without follow-up, quote or samples unanswered. */
@@ -109,7 +128,7 @@ export class DealService{
       expected_close_date:saved?.expected_close_date?new Date(saved.expected_close_date).toISOString().slice(0,10):null,
       win_probability:saved?.win_probability??null,default_win_probability:STAGE_WIN_PROBABILITY[stage],
       effective_win_probability:saved?.win_probability??STAGE_WIN_PROBABILITY[stage],
-      customer_grade:saved?.customer_grade||null,version:saved?.version||0,updated_by:saved?.updated_by||null,updated_at:saved?.updated_at||null,
+      customer_grade:saved?.customer_grade||null,suggested_grade:saved?.customer_grade?null:suggestedGrade(item?customerHealth(item,this.now()):null),version:saved?.version||0,updated_by:saved?.updated_by||null,updated_at:saved?.updated_at||null,
       health:item?customerHealth(item,this.now()):null,flags:item?keyCustomerFlags(item,rules,this.now()):[]};
   }
 
@@ -211,13 +230,17 @@ export class DealService{
     for(const row of(await this.pool.query(`SELECT id FROM leadgen.merchants_current WHERE effective_status IN('TRIAL','ACTIVE')`)).rows)
       owners.push({merchantId:row.id,restrict:true});
     let created=0,checked=0;
+    const skipped={already_open_or_recent:0,over_run_limit:0};
     for(const scope of owners){
       const rules=await this.rules(scope);
       if(!rules.enabled)continue;
       const now=this.now();
+      let createdHere=0;
       for(const item of await this.items(scope)){
         checked++;
+        const poor=customerHealth(item,now).level==='POOR';
         for(const flag of keyCustomerFlags(item,rules,now).filter(flag=>flag!=='HIGH_INTENT')){
+          if(createdHere>=MAX_REMINDERS_PER_RUN){skipped.over_run_limit++;continue;}
           const spec=REMINDER_TASKS[flag];
           const windowDays=flag==='NO_FOLLOW_UP'?rules.no_follow_up_days:flag==='QUOTED_NO_REPLY'?rules.quoted_no_reply_days:rules.sample_no_confirm_days;
           const inserted=await this.pool.query(`INSERT INTO leadgen.sales_tasks(company_id,task_type,task_status,owner,due_at,details,updated_by,merchant_id,priority,source_rule)
@@ -226,12 +249,13 @@ export class DealService{
               AND (t.task_status IN('OPEN','IN_PROGRESS') OR t.closed_at>now()-($8::int*interval '1 day')))
             ON CONFLICT DO NOTHING RETURNING id`,
             [item.company_id,spec.task_type,item.owner_identity||'reminder-rules',JSON.stringify({title:spec.title,title_en:spec.title_en,next_action:spec.next_action,source:'REMINDER_RULE',notes:[]}),
-              scope.merchantId,flag==='NO_FOLLOW_UP'&&item.customer_grade!=='A'?'NORMAL':'HIGH',flag,windowDays]);
-          created+=inserted.rowCount;
+              scope.merchantId,flag==='NO_FOLLOW_UP'&&item.customer_grade!=='A'&&!poor?'NORMAL':'HIGH',flag,windowDays]);
+          created+=inserted.rowCount;createdHere+=inserted.rowCount;
+          if(!inserted.rowCount)skipped.already_open_or_recent++;
         }
       }
     }
-    return{status:'COMPLETED',owners:owners.length,checked,created};
+    return{status:'COMPLETED',owners:owners.length,checked,created,skipped};
   }
 
   // ---- reports ----
@@ -277,7 +301,33 @@ export class DealService{
         FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
         WHERE t.merchant_id IS NOT DISTINCT FROM $1::uuid AND coalesce(i.received_at,i.created_at)>now()-interval '90 days') r WHERE next_at IS NOT NULL`,[owner])).rows[0];
     const rules=await this.rules(scope);const now=this.now();
-    const report={currency:mainCurrency,generated_at:now.toISOString(),
+    // Every currency on its own line: amounts are never converted or silently dropped.
+    const byCurrency=new Map();
+    for(const item of all.filter(item=>item.deal_currency&&item.deal_amount!==null)){
+      const row=byCurrency.get(item.deal_currency)||{currency:item.deal_currency,deals:0,pipeline_amount:0,weighted_amount:0,won_amount:0};
+      row.deals++;
+      if(ACTIVE_STAGES.includes(item.pipeline_stage)){row.pipeline_amount+=item.deal_amount;row.weighted_amount+=item.deal_amount*item.effective_win_probability/100;}
+      if(item.pipeline_stage==='WON')row.won_amount+=item.deal_amount;
+      byCurrency.set(item.deal_currency,row);
+    }
+    const round=value=>Math.round(value*100)/100;
+    const currencies=[...byCurrency.values()].map(row=>({...row,pipeline_amount:round(row.pipeline_amount),weighted_amount:round(row.weighted_amount),won_amount:round(row.won_amount)}))
+      .sort((a,b)=>(a.currency===mainCurrency?-1:b.currency===mainCurrency?1:b.deals-a.deals));
+    // This calendar month (UTC): deals closed won or lost, and deals expected to close.
+    const month=now.toISOString().slice(0,7);
+    const inMonth=value=>value&&new Date(value).toISOString().slice(0,7)===month;
+    const wonMonth=all.filter(item=>item.pipeline_stage==='WON'&&inMonth(item.stage_changed_at)).length;
+    const lostMonth=all.filter(item=>item.pipeline_stage==='LOST'&&inMonth(item.stage_changed_at)).length;
+    const expected=all.filter(item=>ACTIVE_STAGES.includes(item.pipeline_stage)&&inMonth(item.expected_close_date));
+    const risks=all.map(item=>({item,risks:dealRisks(item,rules,now)})).filter(row=>row.risks.length)
+      .sort((a,b)=>b.risks.length-a.risks.length||(b.item.deal_amount||0)-(a.item.deal_amount||0)).slice(0,10)
+      .map(({item,risks})=>({company_id:item.company_id,company_name:item.company_name,country_code:item.country_code,pipeline_stage:item.pipeline_stage,
+        deal_amount:item.deal_amount,deal_currency:item.deal_currency||null,risks}));
+    const report={currency:mainCurrency,generated_at:now.toISOString(),currencies,
+      this_month:{month,won:wonMonth,lost:lostMonth,win_rate:wonMonth+lostMonth?Math.round(wonMonth/(wonMonth+lostMonth)*1000)/10:null,
+        expected_close:{count:expected.length,amounts:[...expected.reduce((map,item)=>{if(item.deal_currency&&item.deal_amount!==null)map.set(item.deal_currency,round((map.get(item.deal_currency)||0)+item.deal_amount));return map;},new Map())]
+          .map(([currency,amount])=>({currency,amount}))}},
+      risks,
       totals:{customers:all.length,active:all.filter(item=>ACTIVE_STAGES.includes(item.pipeline_stage)).length,won:funnel.at(-1).count,lost:lost.length,
         pipeline_amount:sum(all.filter(item=>ACTIVE_STAGES.includes(item.pipeline_stage))),
         weighted_amount:Math.round(all.filter(item=>ACTIVE_STAGES.includes(item.pipeline_stage)&&item.deal_currency===mainCurrency)

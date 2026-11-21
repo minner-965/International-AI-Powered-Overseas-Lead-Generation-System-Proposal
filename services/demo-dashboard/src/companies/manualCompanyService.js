@@ -4,7 +4,7 @@
 // database refuses such a reservation, migration 070); first touch goes through a human-approved
 // draft (src/outreach/manualFirstTouch.js). Follow-up work (calls, notes, stage) is recorded as
 // normal CRM activities and queued for the Feishu table through leadgen.crm_sync_outbox.
-import {stageChangeNeedsReason} from '../crm/stageRules.js';
+import {createRevisitTask,revisitDateOf,stageChangeNeedsReason} from '../crm/stageRules.js';
 import {randomUUID} from 'node:crypto';
 import {activityOutboxPayload,leadOutboxPayload,opportunityOutboxPayload} from '../crm/outboxPayloads.js';
 import {MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES} from '../crm/repository.js';
@@ -230,6 +230,8 @@ export class ManualCompanyService{
     const lostReason=cleanText(body.lost_reason,'lost_reason',{max:500});
     if(stage==='LOST'&&!lostReason)throw fail('LOST_REASON_REQUIRED','A reason is required when an opportunity is lost',422,{field:'lost_reason'});
     const note=cleanText(body.note,'note',{max:1000});
+    let revisitDate;
+    try{revisitDate=revisitDateOf(body.revisit_date,stage);}catch(error){throw fail(error.code,error.message,422,{field:'revisit_date'});}
     const owner=ownerOf(scope);
     const written=await transaction(this.pool,async client=>{
       const company=await this.requireManualCompany(client,companyId,scope,{lock:true});
@@ -237,10 +239,12 @@ export class ManualCompanyService{
       if(current===stage)throw fail('STAGE_UNCHANGED','The opportunity is already at this stage',409);
       if(stageChangeNeedsReason(current,stage)&&!note&&!(stage==='LOST'&&lostReason))
         throw fail('STAGE_REASON_REQUIRED','Write why the stage moves back or the deal is reopened',422,{field:'note'});
-      return this.appendStage(client,{companyId:company.id,owner,stage,lostReason,note,actor});
+      const appended=await this.appendStage(client,{companyId:company.id,owner,stage,lostReason,note,actor});
+      if(revisitDate)appended.revisit_task=await createRevisitTask(client,{companyId:company.id,merchantId:owner,revisitDate,reason:lostReason,actor});
+      return appended;
     });
     await this.dispatch([written.outbox]);
-    return{stage:written.event.stage,event:written.event,crm_outbox_id:written.outbox.id};
+    return{stage:written.event.stage,event:written.event,crm_outbox_id:written.outbox.id,revisit_task:written.revisit_task||null};
   }
 
   // Rows are durable in the outbox; the queue only speeds delivery up (the CRM dispatcher retries).

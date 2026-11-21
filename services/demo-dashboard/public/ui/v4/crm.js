@@ -5,6 +5,16 @@ import { managementRequest } from '../../phase7-ui.js';
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 export const bi = (zh, en) => `<span class="bi"><span lang="zh-CN">${esc(zh)}</span><span lang="en">${esc(en)}</span></span>`;
 
+/** Lost-deal categories, same codes as the server (src/crm/stageRules.js); older free-text reasons show as written. */
+export const LOST_REASONS = Object.freeze({ PRICE: ['价格太高', 'Price'], PRODUCT_MISMATCH: ['产品不合适', 'Product not a fit'], MOQ: ['起订量太大', 'Minimum order too high'],
+  LEAD_TIME: ['交期太长', 'Lead time'], PAYMENT_TERMS: ['付款方式谈不拢', 'Payment terms'], COMPETITOR: ['选了别的供应商', 'Chose another supplier'],
+  PROJECT_CANCELLED: ['项目取消', 'Project cancelled'], NO_RESPONSE: ['一直没回音', 'No response'], OPTED_OUT: ['对方退订', 'Unsubscribed'], OTHER: ['其他', 'Other'] });
+/** <option> list for a lost-reason select; keeps an older free-text reason selectable. */
+export const lostReasonOptions = (current = '') => `<option value="">${esc('请选择 Choose')}</option>` + Object.entries(LOST_REASONS).map(([code, [zh, en]]) => `<option value="${code}"${current === code ? ' selected' : ''}>${esc(`${zh} ${en}`)}</option>`).join('')
+  + (current && !LOST_REASONS[current] ? `<option value="${esc(current)}" selected>${esc(current)}</option>` : '');
+/** Tomorrow as yyyy-mm-dd, the earliest revisit date. */
+export const tomorrowInput = (now = new Date()) => new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+
 export const STAGES = Object.freeze([
   ['NEW', '待联系', 'New', 's-new'], ['CONTACTED', '已联系', 'Contacted', 's-contacted'], ['REPLIED', '已回复', 'Replied', 's-replied'],
   ['QUOTED', '报价', 'Quoted', 's-quoted'], ['SAMPLE', '样品', 'Sample', 's-sample'], ['NEGOTIATING', '洽谈', 'Negotiating', 's-nego'],
@@ -85,6 +95,7 @@ export function stageNeedsReason(from, to) {
   return STAGE_FORWARD.indexOf(to) < STAGE_FORWARD.indexOf(from);
 }
 export const errorText = error => ['CRM_STAGE_REASON_REQUIRED', 'STAGE_REASON_REQUIRED'].includes(error?.code) ? ['往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened']
+  : ['REVISIT_DATE_INVALID', 'REVISIT_ONLY_WHEN_LOST'].includes(error?.code) ? ['回访日期要在今天之后、两年之内', 'Revisit date must be after today and within two years']
   : error?.status === 403 ? ['当前账号没有此操作权限', 'Your role cannot perform this action']
   : error?.status === 409 ? ['记录已被他人更新，请刷新后重试', 'The record changed. Refresh and retry']
   : error?.status === 503 ? ['系统维护中，暂不能保存', 'Saving is paused during maintenance']

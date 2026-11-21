@@ -4317,7 +4317,7 @@ html[data-role="MERCHANT"] .p10-research-grid { grid-template-columns: minmax(0,
 /* ---- end Batch 3 unusable leads ---- */
 
 /* 销售报表、商机卡、重点客户、导入表格 / Reports, deal card, key customers, import (migration 079/080) */
-.v4-report-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+.v4-report-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
 .v4-report-kpi { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .v4-report-kpi .k { display: block; color: var(--text-3); font-size: 12px; } .v4-report-kpi b { display: block; margin: 4px 0 2px; font-size: 20px; font-variant-numeric: tabular-nums; }
 .v4-report-kpi small { color: var(--text-3); font-size: 12px; } .v4-report-kpi .bi > [lang="en"] { display: block; }

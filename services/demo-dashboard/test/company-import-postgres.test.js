@@ -114,5 +114,9 @@ test('check sorts rows into importable, duplicate and error; import creates comp
     // A merchant learns that a company exists, never which owner holds it.
     const again=await imports.check({rows:[['Someone','listed.example','AE','Importer']],mapping:{company_name:0,website:1,market:2,company_type:3},category_scope_id:category},scope);
     assert.deepEqual(again.rows[0].reasons,['ALREADY_IN_DIRECTORY']);assert.equal(again.rows[0].company_id,undefined);
+    // Same name and country under another website: still importable, with a note to check.
+    const similar=await imports.check({rows:[['LISTED CO. LLC','listed-new.example','AE','Importer'],['Listed Co','listed-mx.example','MX','Importer']],
+      mapping:{company_name:0,website:1,market:2,company_type:3},category_scope_id:category},scope);
+    assert.deepEqual(similar.rows.map(row=>[row.status,...row.warnings]),[['WARNING','SIMILAR_NAME_IN_DIRECTORY'],['OK']]);
   });
 });

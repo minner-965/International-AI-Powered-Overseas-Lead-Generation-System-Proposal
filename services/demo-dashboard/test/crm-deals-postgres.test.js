@@ -117,7 +117,14 @@ test('deals, stage reasons, key customers, reminder tasks and reports per owner'
     await assert.rejects(deals.saveRules({no_follow_up_days:0,quoted_no_reply_days:3,sample_no_confirm_days:7},'simon',SIM),{code:'CRM_VALUE_INVALID'});
 
     // ---- reports ----
+    const month=now.toISOString().slice(0,7);
+    await deals.saveDeal(c.B.company,{deal_amount:2000,deal_currency:'EUR',expected_close_date:`${month}-28`},'simon',SIM);
     const report=await deals.reports(SIM);
+    assert.deepEqual(report.currencies.map(row=>[row.currency,row.deals,row.pipeline_amount,row.won_amount]),[['USD',3,15000,5000],['EUR',1,2000,0]],'each currency on its own line, none dropped');
+    assert.deepEqual([report.this_month.won,report.this_month.lost,report.this_month.win_rate],[1,0,100]);
+    assert.deepEqual([report.this_month.expected_close.count,report.this_month.expected_close.amounts],[1,[{currency:'EUR',amount:2000}]]);
+    const risk=Object.fromEntries(report.risks.map(row=>[row.company_id,row.risks]));
+    assert.ok(risk[c.A.company].includes('QUOTED_NO_REPLY'));assert.ok(risk[c.B.company].includes('NO_FOLLOW_UP'));assert.equal(risk[c.C.company],undefined,'won deals are not at risk');
     assert.equal(report.currency,'USD');
     assert.deepEqual([report.totals.customers,report.totals.active,report.totals.won,report.totals.won_amount],[4,3,1,5000]);
     assert.equal(report.totals.pipeline_amount,15000);
@@ -140,5 +147,13 @@ test('deals, stage reasons, key customers, reminder tasks and reports per owner'
     const merchantReport=await deals.reports(merchantScope);
     assert.equal(merchantReport.totals.customers,1);assert.equal(merchantReport.merchants,undefined);
     assert.equal(merchantReport.currency,'EUR');
+
+    // ---- a lost deal with a category and a revisit date opens one revisit task ----
+    const revisit=new Date(now.getTime()+30*86_400_000).toISOString().slice(0,10);
+    const lost=await repository.setStage(c.D.snapshot,{stage:'LOST',lost_reason:'PRICE',revisit_date:revisit},'simon',SIM);
+    assert.equal(lost.lost_reason,'PRICE');
+    const task=(await pool.query(`SELECT task_type,merchant_id,due_at::date::text due,details->>'source' source,details->>'lost_reason' reason FROM leadgen.sales_tasks WHERE id=$1`,[lost.revisit_task.id])).rows[0];
+    assert.deepEqual(task,{task_type:'FOLLOW_UP',merchant_id:null,due:revisit,source:'LOST_REVISIT',reason:'PRICE'});
+    assert.deepEqual((await deals.reports(SIM)).lost_reasons,[{reason:'PRICE',count:1}]);
   });
 });

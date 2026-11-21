@@ -1,4 +1,4 @@
-import {stageChangeNeedsReason} from './stageRules.js';
+import {createRevisitTask,stageChangeNeedsReason} from './stageRules.js';
 import {randomUUID} from 'node:crypto';
 import {activityOutboxPayload,opportunityOutboxPayload} from './outboxPayloads.js';
 import {companyScopeSql,ownerScopeSql,companyVisible} from '../merchant/scope.js';
@@ -137,7 +137,7 @@ export class CrmRepository{
       VALUES($1,$2,'NOT_CONTACTED',$3,$4) RETURNING *`,[opportunity.id,opportunity.company_id,actor,merchantId])).rows[0];
   }
 
-  async setStage(opportunityId,{stage,lost_reason=null,note=null,owner=null,next_action=null,next_action_due_at,expected_version=null},actor,scope=null){
+  async setStage(opportunityId,{stage,lost_reason=null,note=null,owner=null,next_action=null,next_action_due_at,expected_version=null,revisit_date=null},actor,scope=null){
     const merchantId=scope?.merchantId??null;
     return this.transaction(async client=>{
       const opportunity=await this.opportunity(client,opportunityId,scope);
@@ -157,6 +157,8 @@ export class CrmRepository{
           [opportunity.company_id,JSON.stringify(opportunityOutboxPayload({stage:updated.pipeline_stage,status:updated.pipeline_stage==='LOST'?'LOST':updated.pipeline_stage==='WON'?'WON':'OPEN',owner:updated.owner_identity})),
             merchantId?`crm:stage:${updated.opportunity_snapshot_id}:${merchantId}:${updated.version}`:`crm:stage:${updated.opportunity_snapshot_id}:${updated.version}`,merchantId]);
       }
+      if(revisit_date&&updated.pipeline_stage==='LOST')
+        updated.revisit_task=await createRevisitTask(client,{companyId:opportunity.company_id,merchantId,revisitDate:revisit_date,reason:lost_reason,actor});
       return updated;
     });
   }

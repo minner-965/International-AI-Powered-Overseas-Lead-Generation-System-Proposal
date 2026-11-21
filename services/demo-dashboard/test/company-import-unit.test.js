@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import {companyTypeOf,marketOf,readSpreadsheet,suggestMapping,IMPORT_MAX_ROWS} from '../src/companies/importWizard.js';
+import {companyNameKey,companyTypeOf,marketOf,readSpreadsheet,suggestMapping,IMPORT_MAX_ROWS} from '../src/companies/importWizard.js';
 
 const b64=value=>Buffer.from(value).toString('base64');
 const markets=[{code:'AE',name_en:'United Arab Emirates',name_zh:'阿拉伯联合酋长国'},{code:'MX',name_en:'Mexico',name_zh:'墨西哥'}];
@@ -46,4 +46,11 @@ test('wrong type, empty file, too many rows and unreadable Excel are refused wit
   const many='Company,Website\n'+Array.from({length:IMPORT_MAX_ROWS+1},(_,i)=>`C${i},c${i}.example`).join('\n');
   await assert.rejects(readSpreadsheet({file_name:'a.csv',content_base64:b64(many)}),{code:'IMPORT_TOO_MANY_ROWS'});
   await assert.rejects(readSpreadsheet({file_name:'a.xlsx',content_base64:b64('not a workbook')}),{code:'IMPORT_FILE_UNREADABLE'});
+});
+
+test('company names compare without case, punctuation, accents or legal suffixes',()=>{
+  assert.equal(companyNameKey('Al Noor Trading LLC'),companyNameKey('AL-NOOR'));
+  assert.equal(companyNameKey('Café Moda S.A.'),companyNameKey('cafe moda'));
+  assert.equal(companyNameKey('Bella & Co. Ltd'),'bella');
+  assert.notEqual(companyNameKey('Bella Donna'),companyNameKey('Bella'));
 });

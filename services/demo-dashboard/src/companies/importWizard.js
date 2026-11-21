@@ -107,6 +107,14 @@ export function marketOf(value,markets){
   return alias&&markets.some(market=>market.code===alias)?alias:null;
 }
 
+const LEGAL_SUFFIXES=/\b(l\.?l\.?c|ltd|limited|inc|corp|corporation|co|company|gmbh|s\.?a|s\.?a\.?s|s\.?l|s\.?r\.?l|s\.?p\.?a|b\.?v|fze|fzco|fz|llp|plc|pty|pte|trading|est|group)\b\.?/g;
+const namePrefix=name=>String(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g,'').slice(0,3);
+/** Company name compared without case, punctuation or legal suffixes ("Al Noor Trading LLC" = "AL-NOOR"). */
+export function companyNameKey(name){
+  return String(name||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/&/g,' ')
+    .replace(/[^\p{L}\p{N}\s.]/gu,' ').replace(LEGAL_SUFFIXES,' ').replace(/[.\s]+/g,'');
+}
+
 export class CompanyImportService{
   constructor({pool,companies}){Object.assign(this,{pool,companies});}
 
@@ -152,8 +160,15 @@ export class CompanyImportService{
     const domains=checked.filter(row=>row.domain).map(row=>row.domain);
     const listed=new Set(domains.length?(await this.pool.query(`SELECT lower(normalized_domain) domain FROM leadgen.companies WHERE lower(normalized_domain)=ANY($1::text[])`,
       [[...domains,...domains.map(domain=>`www.${domain}`)]])).rows.map(row=>row.domain.replace(/^www\./,'')):[]);
+    // Same company name (legal suffixes and punctuation ignored) in the same country under another website: a warning, not a block.
+    const named=checked.filter(row=>row.company_name&&row.market_code&&companyNameKey(row.company_name).length>=3);
+    const similar=new Set(named.length?(await this.pool.query(`SELECT company_name,country_code FROM leadgen.companies
+        WHERE country_code=ANY($1::text[]) AND left(regexp_replace(lower(company_name),'[^a-z0-9]','','g'),3)=ANY($2::text[]) AND NOT(lower(coalesce(normalized_domain,''))=ANY($3::text[]))`,
+      [[...new Set(named.map(row=>row.market_code))],[...new Set(named.map(row=>namePrefix(row.company_name)))],domains])).rows
+      .map(row=>`${row.country_code}|${companyNameKey(row.company_name)}`):[]);
     for(const row of checked){
       if(row.domain&&listed.has(row.domain))row.reasons.push('ALREADY_IN_DIRECTORY');
+      else if(row.market_code&&similar.has(`${row.market_code}|${companyNameKey(row.company_name)}`))row.warnings.push('SIMILAR_NAME_IN_DIRECTORY');
       row.status=row.reasons.length?(row.reasons.some(reason=>['DUPLICATE_IN_FILE','ALREADY_IN_DIRECTORY'].includes(reason))&&row.reasons.length===1?'DUPLICATE':'ERROR'):row.warnings.length?'WARNING':'OK';
     }
     const count=status=>checked.filter(row=>row.status===status).length;

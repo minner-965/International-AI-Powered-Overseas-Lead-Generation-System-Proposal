@@ -1,4 +1,5 @@
 import {TASK_PRIORITIES} from './deals.js';
+import {revisitDateOf} from './stageRules.js';
 import {buildSalesTaskFromReply} from '../outreach/inbound.js';
 import {stableSmtpMessageId,stableSmtpMessageKey} from '../outreach/smtpImapProvider.js';
 import {FIRST_TOUCH_SENDER_NAME} from '../outreach/firstTouchTemplates.js';
@@ -73,7 +74,7 @@ export class CrmService{
     if(stage==='LOST'&&!lostReason)throw fail('CRM_LOST_REASON_REQUIRED','A reason is required when an opportunity is lost');
     return this.repository.setStage(crmUuid(opportunityId,'opportunity_id'),{stage,lost_reason:lostReason,note:text(body.note,'note'),
       owner:text(body.owner,'owner',{max:200}),next_action:text(body.next_action,'next action',{max:500}),
-      next_action_due_at:timestamp(body.next_action_due_at,'next follow-up'),
+      next_action_due_at:timestamp(body.next_action_due_at,'next follow-up'),revisit_date:revisitDateOf(body.revisit_date,stage),
       expected_version:body.expected_version===undefined||body.expected_version===null?null:Number(body.expected_version)},actorOf(user),scope);
   }
 

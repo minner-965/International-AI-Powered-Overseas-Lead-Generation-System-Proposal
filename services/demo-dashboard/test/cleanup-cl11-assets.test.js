@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../../',import.meta.url));
 test('CL11 all authored selectors are inventoried with runtime or reviewed dynamic ownership',()=>{
- const audit=JSON.parse(execFileSync(process.execPath,['scripts/cleanup-cl11-css-audit.mjs'],{cwd:root,maxBuffer:8*1024*1024}));
+ const audit=JSON.parse(execFileSync(process.execPath,['scripts/cleanup-cl11-css-audit.mjs'],{cwd:root,maxBuffer:32*1024*1024}));
  assert.ok(audit.total>2000);assert.ok(audit.selectors.some(r=>r.file.endsWith('public/ui/v4/app.css')));
  assert.equal(audit.counts.REVIEW_REQUIRED_DYNAMIC||0,0);
  assert.ok(audit.counts.KEEP_CURRENT_DYNAMIC>0);

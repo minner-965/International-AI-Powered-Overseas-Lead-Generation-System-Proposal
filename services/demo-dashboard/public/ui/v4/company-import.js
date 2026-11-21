@@ -15,7 +15,7 @@ export const REASONS = Object.freeze({
   COMPANY_NAME_MISSING: ['缺少公司名称', 'No company name'], WEBSITE_INVALID: ['官网格式不对', 'Website not valid'], MARKET_MISSING: ['缺少国家', 'No country'],
   MARKET_NOT_ACTIVE: ['国家不在已开放市场', 'Country not an active market'], COMPANY_TYPE_MISSING: ['缺少客户类型', 'No company type'], COMPANY_TYPE_UNKNOWN: ['客户类型看不懂', 'Company type not recognised'],
   DUPLICATE_IN_FILE: ['表格里重复', 'Repeated in the file'], ALREADY_IN_DIRECTORY: ['客户名录里已有', 'Already in the directory'],
-  CONTACT_EMAIL_INVALID: ['邮箱格式不对，联系人不导入', 'Email not valid; contact left out'], CONTACT_NOT_ON_COMPANY_DOMAIN: ['邮箱不是公司域名，联系人不导入', 'Email not on the company domain; contact left out'],
+  CONTACT_EMAIL_INVALID: ['邮箱格式不对，联系人不导入', 'Email not valid; contact left out'], CONTACT_NOT_ON_COMPANY_DOMAIN: ['邮箱不是公司域名，联系人不导入', 'Email not on the company domain; contact left out'], SIMILAR_NAME_IN_DIRECTORY: ['客户名录里有同国家同名企业（网址不同），请确认不是同一家', 'A company with the same name and country is already listed under another website; check it is not the same one'],
   EMAIL_REPEATED_IN_FILE: ['邮箱在表格里重复', 'Email repeated in the file'], CONTACT_NOT_ADDED: ['联系人未导入', 'Contact not added']
 });
 const STATUS = Object.freeze({ OK: ['可导入', 'Ready', 'ok'], WARNING: ['可导入（有提示）', 'Ready, with a note', 'warn'], DUPLICATE: ['重复，跳过', 'Duplicate, skipped', ''], ERROR: ['有错，跳过', 'Error, skipped', 'bad'],

@@ -55,3 +55,24 @@ test('tasks accept a priority and can be listed by it',async()=>{
   assert.deepEqual(calls.map(([kind,input])=>`${kind}:${input.priority}`),['create:HIGH','create:NORMAL','list:HIGH','update:LOW']);
   await assert.rejects(service.createTask({company_id:'11111111-1111-4111-8111-111111111111',task_type:'FOLLOW_UP',title:'x',priority:'URGENT'},user),{code:'CRM_VALUE_INVALID'});
 });
+
+test('lost revisit date: only for a lost deal, after today, within two years',async()=>{
+  const {revisitDateOf,LOST_REASON_CODES}=await import('../src/crm/stageRules.js');
+  const today=new Date('2026-11-21T10:00:00Z');
+  assert.equal(revisitDateOf('',  'LOST',today),null);
+  assert.equal(revisitDateOf('2026-12-21','LOST',today),'2026-12-21');
+  assert.throws(()=>revisitDateOf('2026-11-21','LOST',today),{code:'REVISIT_DATE_INVALID'});
+  assert.throws(()=>revisitDateOf('2029-01-01','LOST',today),{code:'REVISIT_DATE_INVALID'});
+  assert.throws(()=>revisitDateOf('2026-12-21','QUOTED',today),{code:'REVISIT_ONLY_WHEN_LOST'});
+  assert.ok(LOST_REASON_CODES.includes('OPTED_OUT'),'the automatic unsubscribe reason stays a category');
+});
+
+test('suggested grade from health and the reasons a deal is at risk',async()=>{
+  const {suggestedGrade,dealRisks}=await import('../src/crm/deals.js');
+  assert.deepEqual([90,85,70,55,54].map(score=>suggestedGrade({score})),['A','A','B','C','D']);
+  assert.equal(suggestedGrade(null),null);
+  const now=new Date('2026-11-21T10:00:00Z');
+  const quiet={pipeline_stage:'CONTACTED',overdue:true,expected_close_date:'2026-11-01',last_touch_at:'2026-10-01T00:00:00Z',stage_changed_at:'2026-10-01T00:00:00Z'};
+  assert.deepEqual(dealRisks(quiet,undefined,now),['OVERDUE_TASK','LOW_HEALTH','CLOSE_DATE_PASSED','NO_FOLLOW_UP']);
+  assert.deepEqual(dealRisks({...quiet,pipeline_stage:'WON'},undefined,now),[],'closed deals are not at risk');
+});

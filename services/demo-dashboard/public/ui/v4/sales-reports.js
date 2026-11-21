@@ -1,7 +1,7 @@
 // 销售报表 / Sales reports page and the 重点客户 / Key customers card on the workbench (migration 079).
 // API: GET /api/crm/reports, GET/PUT /api/crm/reminder-rules, GET /api/crm/key-customers.
 // Each account sees its own customers; the SIM administrator also sees each merchant's last 30 days.
-import { bi, esc, stateBlock } from './crm.js';
+import { LOST_REASONS, bi, esc, stateBlock } from './crm.js';
 import { tip } from './tooltips.js';
 import { sessionReady } from './session.js';
 import { managementRequest } from '../../phase7-ui.js';
@@ -11,7 +11,8 @@ export const STAGE_NAMES = Object.freeze({ NEW: ['新客户', 'New'], CONTACTED:
   SAMPLE: ['寄样', 'Samples'], NEGOTIATING: ['谈判', 'Negotiating'], WON: ['成交', 'Won'], LOST: ['丢单', 'Lost'] });
 export const FLAG_NAMES = Object.freeze({ HIGH_INTENT: ['高意向', 'Interested'], NO_FOLLOW_UP: ['太久没跟进', 'Gone quiet'],
   QUOTED_NO_REPLY: ['报价未回复', 'Quote unanswered'], SAMPLE_NO_CONFIRM: ['寄样未确认', 'Samples unconfirmed'] });
-const LOST_REASONS = Object.freeze({ OPTED_OUT: ['对方退订', 'Unsubscribed'] });
+export const RISK_NAMES = Object.freeze({ OVERDUE_TASK: ['任务逾期', 'Task overdue'], LOW_HEALTH: ['健康度低', 'Low health'], CLOSE_DATE_PASSED: ['已过预计成交日', 'Close date passed'],
+  NO_FOLLOW_UP: ['太久没跟进', 'Gone quiet'], QUOTED_NO_REPLY: ['报价未回复', 'Quote unanswered'], SAMPLE_NO_CONFIRM: ['寄样未确认', 'Samples unconfirmed'] });
 
 /** 12,345.5 USD → "USD 12,346"; no currency → "—". */
 export function moneyText(amount, currency) {
@@ -47,11 +48,19 @@ export function reportMarkup(report) {
   const countries = (report.countries || []).map(row => `<tr><td>${esc(row.country_code)}</td><td>${row.customers}</td><td>${row.active}</td><td>${row.won}</td><td>${esc(row.amount ? moneyText(row.amount, cur) : '—')}</td></tr>`).join('');
   const lost = (report.lost_reasons || []).map(row => `<li><span class="k">${LOST_REASONS[row.reason] ? bi(...LOST_REASONS[row.reason]) : esc(row.reason)}</span><span class="v">${row.count}</span></li>`).join('');
   const f = report.follow_up || {};
+  const m = report.this_month || {};
+  const others = (report.currencies || []).filter(row => row.currency !== cur);
+  const otherLine = others.length ? `<p class="meta">${bi(`另有其他币种（不换算）：${others.map(row => `${moneyText(row.pipeline_amount, row.currency)} 在谈`).join('，')}`, `Other currencies, not converted: ${others.map(row => `${moneyText(row.pipeline_amount, row.currency)} in pipeline`).join(', ')}`)}</p>` : '';
+  const expectedText = (m.expected_close?.amounts || []).map(row => moneyText(row.amount, row.currency)).join(' + ');
+  const risks = (report.risks || []).map(row => `<li><div class="v4-key-row"><span class="t"><b>${esc(row.company_name)}</b><small>${esc(row.country_code || '—')} · ${bi(...(STAGE_NAMES[row.pipeline_stage] || [row.pipeline_stage, row.pipeline_stage]))}${row.deal_amount !== null && row.deal_amount !== undefined && row.deal_currency ? ` · ${esc(moneyText(row.deal_amount, row.deal_currency))}` : ''}</small></span><span class="f">${row.risks.map(risk => `<span class="pill warn">${bi(...(RISK_NAMES[risk] || [risk, risk]))}</span>`).join('')}</span></div></li>`).join('');
   const merchants = Array.isArray(report.merchants) ? `<section class="card" aria-labelledby="report-merchants-title"><div class="ph"><div><h3 id="report-merchants-title">${bi('商家近 30 天', 'Merchants, last 30 days')}</h3></div></div><div class="pb v4-table-wrap"><table class="v4-report-table"><thead><tr><th>${bi('商家', 'Merchant')}</th><th>${bi('新客户', 'New customers')}</th><th>${bi('跟进', 'Follow-ups')}</th><th>${bi('发信', 'Emails')}</th><th>${bi('成交', 'Won')}</th></tr></thead><tbody>${report.merchants.map(row => `<tr><td>${esc(row.company_name)}</td><td>${row.new_customers}</td><td>${row.follow_ups}</td><td>${row.emails_sent}</td><td>${row.won}</td></tr>`).join('') || `<tr><td colspan="5">${bi('还没有商家', 'No merchants yet')}</td></tr>`}</tbody></table></div></section>` : '';
   return `<div class="v4-report-kpis">${kpi('跟进中的客户', 'Active customers', t.active ?? 0, `共 ${t.customers ?? 0} 家`, `${t.customers ?? 0} in total`)}
       ${kpi('在谈金额', 'Pipeline value', esc(moneyText(t.pipeline_amount, cur)), `按赢率估算 ${moneyText(t.weighted_amount, cur)}`, `weighted ${moneyText(t.weighted_amount, cur)}`)}
       ${kpi('已成交', 'Won', t.won ?? 0, moneyText(t.won_amount, cur), moneyText(t.won_amount, cur))}
-      ${kpi('逾期任务', 'Overdue tasks', `${f.overdue_tasks ?? 0} / ${f.open_tasks ?? 0}`, `逾期率 ${pct(f.overdue_rate)}`, `${pct(f.overdue_rate)} overdue`)}</div>
+      ${kpi('逾期任务', 'Overdue tasks', `${f.overdue_tasks ?? 0} / ${f.open_tasks ?? 0}`, `逾期率 ${pct(f.overdue_rate)}`, `${pct(f.overdue_rate)} overdue`)}
+      ${kpi('本月赢单率', 'Win rate this month', m.win_rate === null || m.win_rate === undefined ? '—' : pct(m.win_rate), m.win_rate === null || m.win_rate === undefined ? '本月还没有成交或丢单' : `成交 ${m.won} · 丢单 ${m.lost}`, m.win_rate === null || m.win_rate === undefined ? 'No deals closed this month' : `won ${m.won} · lost ${m.lost}`)}
+      ${kpi('本月预计成交', 'Expected to close this month', m.expected_close?.count ?? 0, expectedText || '按预计成交日', expectedText || 'by expected close date')}</div>${otherLine}
+    ${risks ? `<section class="card" aria-labelledby="report-risk-title"><div class="ph"><div><h3 id="report-risk-title">${bi('需要处理的商机', 'Deals at risk')}</h3><p>${bi('任务逾期、健康度低、过了预计成交日或太久没跟进的商机，问题多的排前面', 'Overdue tasks, low health, a passed close date or no recent contact; most issues first')}</p></div></div><div class="pb"><ul class="v4-key-list">${risks}</ul></div></section>` : ''}
     <div class="v4-report-grid">
       <section class="card" aria-labelledby="report-funnel-title"><div class="ph"><div><h3 id="report-funnel-title">${bi('成交漏斗', 'Sales funnel')}</h3><p>${bi('每个阶段曾经到达的客户数，以及从上一阶段走到这一步的比例', 'Customers that reached each stage, and the share that moved on from the previous one')}</p></div></div><ul class="review-list v4-funnel">${funnel}</ul></section>
       <section class="card" aria-labelledby="report-health-title"><div class="ph"><div><h3 id="report-health-title">${bi('跟进健康度', 'Follow-up health')}</h3></div></div><ul class="review-list">
