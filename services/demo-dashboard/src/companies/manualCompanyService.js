@@ -4,6 +4,7 @@
 // database refuses such a reservation, migration 070); first touch goes through a human-approved
 // draft (src/outreach/manualFirstTouch.js). Follow-up work (calls, notes, stage) is recorded as
 // normal CRM activities and queued for the Feishu table through leadgen.crm_sync_outbox.
+import {stageChangeNeedsReason} from '../crm/stageRules.js';
 import {randomUUID} from 'node:crypto';
 import {activityOutboxPayload,leadOutboxPayload,opportunityOutboxPayload} from '../crm/outboxPayloads.js';
 import {MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES} from '../crm/repository.js';
@@ -232,7 +233,10 @@ export class ManualCompanyService{
     const owner=ownerOf(scope);
     const written=await transaction(this.pool,async client=>{
       const company=await this.requireManualCompany(client,companyId,scope,{lock:true});
-      if(await this.currentStage(client,company.id,owner)===stage)throw fail('STAGE_UNCHANGED','The opportunity is already at this stage',409);
+      const current=await this.currentStage(client,company.id,owner);
+      if(current===stage)throw fail('STAGE_UNCHANGED','The opportunity is already at this stage',409);
+      if(stageChangeNeedsReason(current,stage)&&!note&&!(stage==='LOST'&&lostReason))
+        throw fail('STAGE_REASON_REQUIRED','Write why the stage moves back or the deal is reopened',422,{field:'note'});
       return this.appendStage(client,{companyId:company.id,owner,stage,lostReason,note,actor});
     });
     await this.dispatch([written.outbox]);

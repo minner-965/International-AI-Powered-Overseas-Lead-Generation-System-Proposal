@@ -67,7 +67,7 @@ export const MERCHANT_API = Object.freeze([
   ['GET', `^/api/opportunities/${UUID}/decision-history$`],
   ['GET', `^/api/leads/${UUID}(/(decision-makers|contact-routes))?$`],
   ['GET', `^/api/companies/${UUID}/(score|score-history|customer-match|customer-match-history|lifecycle-history|cooperation-feasibility|category-procurement-matches|buyer-business-model|commercial-product-fit|product-opportunities)$`],
-  ['GET', '^/api/crm/(pipeline|tasks|followup-drafts)$'], ['GET', `^/api/crm/companies/${UUID}/timeline$`],
+  ['GET', '^/api/crm/(pipeline|tasks|followup-drafts|key-customers|reports|reminder-rules)$'], ['PUT', '^/api/crm/reminder-rules$'], ['GET', `^/api/crm/companies/${UUID}/deal$`], ['PUT', `^/api/crm/companies/${UUID}/deal$`], ['GET', `^/api/crm/companies/${UUID}/timeline$`],
   ['POST', `^/api/crm/opportunities/${UUID}/(stage|activities)$`], ['POST', '^/api/crm/tasks$'], ['PATCH', `^/api/crm/tasks/${UUID}$`],
   ['POST', `^/api/crm/replies/${UUID}/review$`], ['POST', `^/api/crm/followup-drafts/${UUID}/decision$`],
   ['GET', '^/api/outreach/(inbox|operations-summary)$'], ['GET', `^/api/outreach/threads/${UUID}$`],

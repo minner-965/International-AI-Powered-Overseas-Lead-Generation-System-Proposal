@@ -67,6 +67,7 @@ import {ContactResearchReconciler} from './automation/ContactResearchReconciler.
 import {RoutedSearchClient} from './search/RoutedSearchClient.js';
 import {AutoFirstTouchService} from './outreach/AutoFirstTouchService.js';
 import {TwoFactorService} from './merchant/twoFactor.js';
+import {DealService} from './crm/deals.js';
 import {SenderHealth} from './outreach/senderHealth.js';
 import {checkSendingDomain} from './outreach/sendingDomainCheck.js';
 import {createPhase13EmailEligibilityFactLoader} from './outreach/Phase13EmailFactLoader.js';
@@ -518,6 +519,7 @@ let researchDirectExecutor;
 let searchPlanService;
 let autoFirstTouchService;
 let crmService;
+let crmDeals;
 let contactResearchReconciler;
 
 const phase5Queue = createPhase5Queue({
@@ -570,7 +572,8 @@ const phase5Queue = createPhase5Queue({
     ...autoEvidenceQueueHandlers,
     ...phase7QueueHandlers,
     [PHASE5_QUEUES.SEND_AUTO_FIRST_TOUCH]:data=>autoFirstTouchService.sendReservation(data.reservation_id),
-    [PHASE5_QUEUES.CRM_FOLLOWUP_SCAN]:()=>crmService.scanFollowups(),
+    // Hourly: follow-up email drafts, then reminder tasks from the reminder rules (migration 079).
+    [PHASE5_QUEUES.CRM_FOLLOWUP_SCAN]:async()=>({followups:await crmService.scanFollowups(),reminders:await crmDeals.scanReminders()}),
     [PHASE5_QUEUES.CRM_FOLLOWUP_SEND]:data=>crmService.sendApprovedFollowup(data),
     [PHASE5_QUEUES.CRM_OUTBOX_DISPATCH]:()=>crmService.dispatchCrmOutbox(),
     [PHASE5_QUEUES.EXECUTE_RESEARCH_JOB]:data=>researchDirectDispatchService.execute(data)
@@ -645,6 +648,8 @@ autoFirstTouchService=new AutoFirstTouchService({pool,queue:phase7QueueProxy,out
 crmService=new CrmService({pool,outboundProvider:phase7Service.outboundProvider,automationControl:phase13Automation,
   queue:phase7QueueProxy,env:simLiveEnv,audit,merchantSending:merchantService,followupSettings,senderHealth});
 phase7Service.merchantSending=merchantService;
+// Deal values, grades, key customers, reminder rules and reports (migration 079).
+crmDeals=new DealService({pool,repository:crmService.repository});
 // B1/B2: manual companies, human-approved first touch for them, and first-touch test sends.
 const manualCompanies=new ManualCompanyService({pool,env:process.env,queue:phase7QueueProxy,audit});
 const manualFirstTouch=new ManualFirstTouchService({pool,outboundProvider:phase7Service.outboundProvider,merchantSending:merchantService,
@@ -716,7 +721,7 @@ function requireInternalToken(req, res, next) {
 }
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
-app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth}));
+app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth,deals:crmDeals}));
 app.use(createFollowupSettingsRouter({settings:followupSettings,managementAuth}));
 // Automation controls: GET control/status, PUT control (all on/off), PUT control/:subsystem
 // (search | email | contact_research), POST reconcile. See src/automation/router.js.

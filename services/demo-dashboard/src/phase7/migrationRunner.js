@@ -62,6 +62,7 @@ export const LLM_ASSIST_MIGRATION_KEY = '075_llm_assist.sql';
 export const REPLY_CORRELATION_ALIASES_MIGRATION_KEY = '076_reply_correlation_aliases.sql';
 export const SENDER_HEALTH_MIGRATION_KEY = '077_sender_health.sql';
 export const TWO_FACTOR_MIGRATION_KEY = '078_two_factor.sql';
+export const CRM_DEAL_HEALTH_MIGRATION_KEY = '079_crm_deal_health.sql';
 const projectRoot = process.env.DPV_PROJECT_ROOT
   || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const defaultPath = path.resolve(projectRoot, 'database/migrations', PHASE7_MIGRATION_KEY);
@@ -117,6 +118,7 @@ const llmAssistPath = path.resolve(projectRoot,'database/migrations',LLM_ASSIST_
 const replyCorrelationAliasesPath = path.resolve(projectRoot,'database/migrations',REPLY_CORRELATION_ALIASES_MIGRATION_KEY);
 const senderHealthPath = path.resolve(projectRoot,'database/migrations',SENDER_HEALTH_MIGRATION_KEY);
 const twoFactorPath = path.resolve(projectRoot,'database/migrations',TWO_FACTOR_MIGRATION_KEY);
+const crmDealHealthPath = path.resolve(projectRoot,'database/migrations',CRM_DEAL_HEALTH_MIGRATION_KEY);
 // Verifications of migrations 070+ (looked up before the older chain below).
 const lateVerifier = key => ({
   [MANUAL_COMPANIES_MIGRATION_KEY]: verifyManualCompaniesMigration,
@@ -127,7 +129,8 @@ const lateVerifier = key => ({
   [LLM_ASSIST_MIGRATION_KEY]: verifyLlmAssistMigration,
   [REPLY_CORRELATION_ALIASES_MIGRATION_KEY]: verifyReplyCorrelationAliasesMigration,
   [SENDER_HEALTH_MIGRATION_KEY]: verifySenderHealthMigration,
-  [TWO_FACTOR_MIGRATION_KEY]: verifyTwoFactorMigration
+  [TWO_FACTOR_MIGRATION_KEY]: verifyTwoFactorMigration,
+  [CRM_DEAL_HEALTH_MIGRATION_KEY]: verifyCrmDealHealthMigration
 })[key] || null;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -894,7 +897,10 @@ export async function applyPhase7Migrations(options = {}) {
   const twoFactor=await applyPhase7Migration({...options,
     migrationPath:options.twoFactorMigrationPath||twoFactorPath,
     appliedBy:options.appliedBy||'dpv-two-factor-migration-runner'});
-  return {twoFactor,senderHealth,replyCorrelationAliases,llmAssist,scoringAccuracy,leadEnrichmentAttempts,followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
+  const crmDealHealth=await applyPhase7Migration({...options,
+    migrationPath:options.crmDealHealthMigrationPath||crmDealHealthPath,
+    appliedBy:options.appliedBy||'dpv-crm-deal-health-migration-runner'});
+  return {crmDealHealth,twoFactor,senderHealth,replyCorrelationAliases,llmAssist,scoringAccuracy,leadEnrichmentAttempts,followupSettings,providerCredentials,manualCompanies,merchantSendingSafety,splitAutomationControls,loginHardening,merchantAccounts,globalMarketsCategoriesSearchCost,crmFollowupPipeline,cleanupOptionalCatalog,base,hardening,roleHardening,contactReady,
     realOpportunity:{...realOpportunity,status:realOpportunity.status},categoryScope,phase10Audit,phase10CategoryOpportunity,
     phase10OrchestratorDiagnostics,phase10ResearchDirectQueue,phase10ProviderUsageProjection,phase10ProviderUsageExport,
     phase10AutoEvidenceStrategy,phase10AutoEvidenceCheckpoint,phase10TavilyFairBudget,phase10CommercialProductFit,
@@ -970,6 +976,15 @@ export async function verifyManualCompaniesMigration(client){
       AND conrelid='leadgen.decision_maker_contacts'::regclass),'') LIKE '%MANUAL_ENTRY%' manual_origin`)).rows[0]||{};
   if(Number(row.tables)!==5||!row.reservation_guard||!row.manual_origin)throw new Error('Manual companies migration verification failed');
   return{manual_companies:'HUMAN_APPROVED_FIRST_TOUCH',test_sends:'APPEND_ONLY'};
+}
+
+export async function verifyCrmDealHealthMigration(client){
+  const row=(await client.query(`SELECT to_regclass('leadgen.crm_deal_profiles') deals,to_regclass('leadgen.crm_deal_profile_events') events,
+    to_regclass('leadgen.crm_reminder_rules') rules,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='leadgen' AND table_name='sales_tasks' AND column_name='priority') priority,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='crm_deal_profile_events_history_guard') guard`)).rows[0]||{};
+  if(!row.deals||!row.events||!row.rules||!row.priority||!row.guard)throw new Error('CRM deal health migration verification failed');
+  return{crm_deal_health:true};
 }
 
 export async function verifyTwoFactorMigration(client){

@@ -1,12 +1,14 @@
 import express from 'express';
 import {createManagementAuth} from '../phase7/managementAuth.js';
 import {requestScope} from '../merchant/scope.js';
+import {crmUuid} from './repository.js';
 
 const SALES_ROLES=Object.freeze(['SALES','MANAGEMENT']);
 const FOLLOWUP_APPROVER_ROLES=Object.freeze(['MANAGEMENT','OUTREACH_APPROVER']);
 const asyncRoute=handler=>(req,res,next)=>Promise.resolve(handler(req,res,next)).catch(next);
 
-export function createCrmRouter({service,env=process.env,managementAuth=null}){
+// deals (deals.js, migration 079): deal values, grade, key customers, reminder rules and reports.
+export function createCrmRouter({service,env=process.env,managementAuth=null,deals=null}){
   const router=express.Router();
   const auth=managementAuth||createManagementAuth(env);
   const read=[auth.authenticate];
@@ -16,6 +18,15 @@ export function createCrmRouter({service,env=process.env,managementAuth=null}){
   router.get('/pipeline',...read,asyncRoute(async(req,res)=>res.json(await service.listPipeline(req.query,requestScope(req)))));
   router.post('/opportunities/:id/stage',...salesWrite,asyncRoute(async(req,res)=>res.json(await service.setStage(req.params.id,req.body,req.managementUser,requestScope(req)))));
   router.post('/opportunities/:id/activities',...salesWrite,asyncRoute(async(req,res)=>res.status(201).json(await service.addActivity(req.params.id,req.body,req.managementUser,requestScope(req)))));
+  if(deals){
+    const actor=req=>req.managementUser?.identity||'workspace';
+    router.get('/companies/:id/deal',...read,asyncRoute(async(req,res)=>res.json(await deals.dealView(crmUuid(req.params.id,'company_id'),requestScope(req)))));
+    router.put('/companies/:id/deal',...salesWrite,asyncRoute(async(req,res)=>res.json(await deals.saveDeal(crmUuid(req.params.id,'company_id'),req.body||{},actor(req),requestScope(req)))));
+    router.get('/key-customers',...read,asyncRoute(async(req,res)=>res.json(await deals.keyCustomers(requestScope(req)))));
+    router.get('/reports',...read,asyncRoute(async(req,res)=>res.json(await deals.reports(requestScope(req)))));
+    router.get('/reminder-rules',...read,asyncRoute(async(req,res)=>res.json(await deals.rules(requestScope(req)))));
+    router.put('/reminder-rules',...salesWrite,asyncRoute(async(req,res)=>res.json(await deals.saveRules(req.body||{},actor(req),requestScope(req)))));
+  }
   router.get('/companies/:id/timeline',...read,asyncRoute(async(req,res)=>res.json({items:await service.timeline(req.params.id,req.query,requestScope(req))})));
 
   router.get('/tasks',...read,asyncRoute(async(req,res)=>res.json(await service.listTasks(req.query,req.managementUser,requestScope(req)))));

@@ -1,3 +1,4 @@
+import {TASK_PRIORITIES} from './deals.js';
 import {buildSalesTaskFromReply} from '../outreach/inbound.js';
 import {stableSmtpMessageId,stableSmtpMessageKey} from '../outreach/smtpImapProvider.js';
 import {FIRST_TOUCH_SENDER_NAME} from '../outreach/firstTouchTemplates.js';
@@ -90,19 +91,21 @@ export class CrmService{
     const due=query.due?oneOf(query.due,['OVERDUE','TODAY','WEEK'],'due').toLowerCase():null;
     const owner=bool(query.mine)?actorOf(user):text(query.owner,'owner',{max:200});
     return this.repository.listTasks({owner,status:oneOf(query.status,TASK_STATUSES,'status',{required:false}),due,
+      priority:oneOf(query.priority,TASK_PRIORITIES,'priority',{required:false}),
       company_id:query.company_id?crmUuid(query.company_id,'company_id'):null,limit:limitOf(query.limit),scope});
   }
 
   async createTask(body={},user,scope=null){
     return this.repository.createTask({company_id:crmUuid(body.company_id,'company_id'),task_type:oneOf(body.task_type,TASK_TYPES,'task type'),
+      priority:oneOf(body.priority,TASK_PRIORITIES,'priority',{required:false})||'NORMAL',
       owner:text(body.owner,'owner',{max:200}),due_at:timestamp(body.due_at,'due date')||null,title:text(body.title,'title',{required:true,max:200}),
       next_action:text(body.next_action,'next action',{max:500})},actorOf(user),scope);
   }
 
   async updateTask(taskId,body={},user,scope=null){
     const input={task_status:oneOf(body.task_status,TASK_STATUSES,'status',{required:false}),owner:text(body.owner,'owner',{max:200}),
-      due_at:timestamp(body.due_at,'due date'),note:text(body.note,'note',{max:1000})};
-    if(!input.task_status&&!input.owner&&input.due_at===undefined&&!input.note)throw fail('CRM_NO_CHANGE','Nothing to update');
+      due_at:timestamp(body.due_at,'due date'),note:text(body.note,'note',{max:1000}),priority:oneOf(body.priority,TASK_PRIORITIES,'priority',{required:false})};
+    if(!input.task_status&&!input.owner&&input.due_at===undefined&&!input.note&&!input.priority)throw fail('CRM_NO_CHANGE','Nothing to update');
     return this.repository.updateTask(crmUuid(taskId,'task_id'),input,actorOf(user),scope);
   }
 

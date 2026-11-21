@@ -48,9 +48,9 @@ function client(base){
 // The code an authenticator app would show for this secret at the test clock.
 const codeAt=(secret,ms)=>new OTPAuth.TOTP({secret:OTPAuth.Secret.fromBase32(secret.replace(/\s/g,'')),digits:6,period:30}).generate({timestamp:ms});
 
-test('migration 078 is the latest file and verifies; two-step history is append-only',{skip:!adminUrl},async()=>{
+test('migration 078 verifies; two-step history is append-only',{skip:!adminUrl},async()=>{
   const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
-  assert.equal(files.at(-1),TWO_FACTOR_MIGRATION_KEY);
+  assert.ok(files.includes(TWO_FACTOR_MIGRATION_KEY));
   await withDatabase(async pool=>{
     assert.deepEqual(await verifyTwoFactorMigration(pool),{two_factor:true});
     const merchants=new MerchantService({pool,env:{}});
