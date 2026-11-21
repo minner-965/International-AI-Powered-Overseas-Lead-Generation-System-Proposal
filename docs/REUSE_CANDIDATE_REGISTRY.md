@@ -347,3 +347,11 @@ Integration boundary: `src/llm/` (adapters, switches, tasks T1-T5, validation, l
 | [`qrcode`](https://github.com/soldair/node-qrcode) | `1.5.4` (2024-08-05), MIT | Setup QR as a PNG data URL generated on the server, so the page loads nothing external | Stable, widely used | **Reuse** (exact pin) |
 | SMS or email one-time codes | Paid providers / own SMTP | Second factor without an app | — | **Not adopted**: costs per message, external calls, and SMS is weaker than an app code |
 | Node `crypto` AES-256-GCM (`src/merchant/secretBox.js`, already used) and `@node-rs/argon2` (already used) | Built-in / MIT | Encrypt the stored TOTP secret; hash the ten one-time recovery codes | — | **Reused** |
+
+## Sales management features (2026-11-21, migrations 079–080)
+
+| Candidate | Version, license | Fit | Maintenance | Decision |
+|---|---|---|---|---|
+| An open-source foreign-trade CRM (TypeScript, MySQL, React + Vite) | Apache-2.0; WhatsApp plug-in GPL-3.0 | Feature reference for deal values, customer grading and health, reminder rules, sales reports and spreadsheet import | Active | **Code not adopted** — different database and frontend stack; features re-implemented in SIM's own modules after reading how they work. No code, text or names copied |
+| [`exceljs`](https://github.com/exceljs/exceljs) (already a dependency) and Node `TextDecoder` (built-in, GBK) | MIT / built-in | Read .xlsx and UTF-8 / GBK .csv for the import wizard | Active | **Reused** |
+| `xlsx` (SheetJS) from npm | 0.18.5, Apache-2.0 | Spreadsheet reading | npm build unmaintained, known advisories | **Not adopted**; exceljs already covers it |

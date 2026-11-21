@@ -30,13 +30,21 @@ export const FOLLOWUP_THREAD_OPEN_SQL=`t.thread_status='OPEN'
   AND NOT EXISTS(SELECT 1 FROM leadgen.opportunity_crm_states cs WHERE cs.company_id=t.company_id
     AND cs.merchant_id IS NOT DISTINCT FROM t.merchant_id AND cs.pipeline_stage NOT IN('NEW','CONTACTED'))`;
 
+// Deal value and grade for the same owner (migration 079); NULLs before that migration is installed.
+const dealColumns=(alias,ownerParam,installed)=>installed
+  ?`(SELECT d.deal_amount FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) deal_amount,
+    (SELECT d.deal_currency FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) deal_currency,
+    (SELECT d.customer_grade FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) customer_grade`
+  :'NULL::numeric deal_amount,NULL::text deal_currency,NULL::text customer_grade';
+
 // Latest CRM state for each current opportunity, across assessment revisions, for one owner
 // ($ownerParam: NULL = SIM, otherwise a merchant). companyClause restricts a merchant's view.
-const currentPipelineSql=(ownerParam,companyClause='TRUE')=>`
+const currentPipelineSql=(ownerParam,companyClause='TRUE',deals=false)=>`
   SELECT o.id opportunity_id,o.company_id,o.product_profile,c.company_name,c.country_code,c.city,c.website_url,
     coalesce(cs.pipeline_stage,'NEW') pipeline_stage,cs.funnel_status,cs.owner_identity,cs.next_action,cs.next_action_due_at,
     cs.lost_reason,cs.stage_changed_at,cs.version crm_version,cs.opportunity_snapshot_id crm_snapshot_id,
-    (cs.next_action_due_at IS NOT NULL AND cs.next_action_due_at<now() AND coalesce(cs.pipeline_stage,'NEW') NOT IN('WON','LOST')) overdue
+    (cs.next_action_due_at IS NOT NULL AND cs.next_action_due_at<now() AND coalesce(cs.pipeline_stage,'NEW') NOT IN('WON','LOST')) overdue,
+    ${dealColumns('o',ownerParam,deals)}
   FROM leadgen.business_opportunity_current o
   JOIN leadgen.companies c ON c.id=o.company_id
   LEFT JOIN LATERAL(
@@ -50,12 +58,13 @@ const currentPipelineSql=(ownerParam,companyClause='TRUE')=>`
 // Manually added companies (migration 070) have no assessment snapshot; their stage lives in
 // manual_company_stage_events per owner. They join the pipeline list with source 'MANUAL' and no
 // opportunity_id (stage changes go through /api/manual-companies/:id/stage).
-const manualPipelineSql=(ownerParam,companyClause='TRUE')=>`
+const manualPipelineSql=(ownerParam,companyClause='TRUE',deals=false)=>`
   SELECT NULL::uuid opportunity_id,c.id company_id,s.product_profile,c.company_name,c.country_code,c.city,c.website_url,
     coalesce(st.stage,'NEW') pipeline_stage,NULL::text funnel_status,coalesce(st.changed_by,e.created_by) owner_identity,
     NULL::text next_action,act.due_at next_action_due_at,st.lost_reason,st.changed_at stage_changed_at,
     NULL::bigint crm_version,NULL::uuid crm_snapshot_id,
     (act.due_at IS NOT NULL AND act.due_at<now() AND coalesce(st.stage,'NEW') NOT IN('WON','LOST')) overdue,
+    ${dealColumns('e',ownerParam,deals)},
     'MANUAL'::text source
   FROM leadgen.manual_company_entries e
   JOIN leadgen.companies c ON c.id=e.company_id
@@ -70,6 +79,12 @@ const manualPipelineSql=(ownerParam,companyClause='TRUE')=>`
 
 export class CrmRepository{
   constructor({pool}){this.pool=pool;this.manualCompaniesInstalled=false;}
+
+  async hasDealProfiles(){
+    if(this.dealProfilesInstalled)return true;
+    this.dealProfilesInstalled=Boolean((await this.pool.query(`SELECT to_regclass('leadgen.crm_deal_profiles') deals`)).rows[0]?.deals);
+    return this.dealProfilesInstalled;
+  }
 
   async hasManualCompanies(){
     if(this.manualCompaniesInstalled)return true;
@@ -87,8 +102,9 @@ export class CrmRepository{
   async listPipeline({stage=null,owner=null,q=null,limit=200,scope=null}={}){
     const params=[scope?.merchantId??null];const where=[];
     const companyClause=companyScopeSql(scope,'o',params,'company_id');
-    let base=`SELECT *,'ASSESSMENT'::text source FROM (${currentPipelineSql('$1',companyClause)}) assessed`;
-    if(await this.hasManualCompanies())base+=` UNION ALL ${manualPipelineSql('$1',companyScopeSql(scope,'c',params))}`;
+    const deals=await this.hasDealProfiles();
+    let base=`SELECT *,'ASSESSMENT'::text source FROM (${currentPipelineSql('$1',companyClause,deals)}) assessed`;
+    if(await this.hasManualCompanies())base+=` UNION ALL ${manualPipelineSql('$1',companyScopeSql(scope,'c',params),deals)}`;
     const baseParams=[...params];
     if(stage){params.push(stage);where.push(`pipeline_stage=$${params.length}`);}
     if(owner){params.push(owner);where.push(`owner_identity=$${params.length}`);}

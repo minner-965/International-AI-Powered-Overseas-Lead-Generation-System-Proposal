@@ -1,4 +1,5 @@
 // 我的任务 / My tasks: today, overdue, this week and all open follow-up tasks (/api/crm/tasks).
+import { PRIORITY, priorityPill } from './sales-reports.js';
 import { overdueText, crm, TASK_TYPES, REPLY_INTENTS, bi, esc, when, toLocalInput, fromLocalInput, taskTypePill, taskDot, stateBlock, skeletonRows,
   notifyCrmChange, errorText, loadPipeline } from './crm.js';
 
@@ -10,6 +11,7 @@ const settle = async promise => { try { return await promise; } catch { return n
 const params = range => ({ due: range === 'all' ? undefined : range, mine: state.mine ? 'true' : undefined });
 
 function sourceText(task) {
+  if (task.source_rule) return bi('自动提醒', 'Reminder');
   if (task.source_intent && REPLY_INTENTS[task.source_intent]) { const [zh, en] = REPLY_INTENTS[task.source_intent]; return bi(`回复：${zh}`, `Reply: ${en}`); }
   return task.next_action ? esc(task.next_action) : '<span class="meta-dash">—</span>';
 }
@@ -20,7 +22,7 @@ function rowMarkup(task) {
   const actions = `<div class="acts"><button class="btn btn-primary btn-sm" data-tip="把这项任务标记为已完成|Mark this task as done" type="button" data-task-complete="${esc(task.id)}">${bi('完成', 'Complete')}</button><button class="btn btn-sm" data-tip="修改这项任务的截止时间|Change this task's due time" type="button" data-task-reschedule="${esc(task.id)}">${bi('改期', 'Reschedule')}</button><button class="btn btn-sm" data-tip="把这项任务交给其他同事|Assign this task to a colleague" type="button" data-task-assign="${esc(task.id)}">${bi('指派', 'Assign')}</button></div>`;
   return `<div class="task-row${task.overdue ? ' is-overdue' : ''}" role="row" data-task-id="${esc(task.id)}">
     <div class="type" role="cell"><i class="m-dot ${taskDot(task.task_type)} v4-phone-only" aria-hidden="true"></i><span class="v4-desktop-pill">${taskTypePill(task.task_type)}</span></div>
-    <div class="who" role="cell"><button type="button" data-tip="打开这家企业的详情|Open this company's details" class="co v4-link-btn" data-task-company="${esc(task.company_id)}">${esc(task.company_name || '—')}</button><span class="meta">${esc(task.title || task.next_action || '')}</span></div>
+    <div class="who" role="cell"><button type="button" data-tip="打开这家企业的详情|Open this company's details" class="co v4-link-btn" data-task-company="${esc(task.company_id)}">${esc(task.company_name || '—')}</button>${priorityPill(task.priority)}<span class="meta">${task.title_en ? bi(task.title, task.title_en) : esc(task.title || task.next_action || '')}</span></div>
     <div class="due${task.overdue ? ' overdue' : ''}" role="cell">${dueHtml}</div>
     <div class="owner" role="cell">${esc(task.owner || '—')}</div>
     <div class="src" role="cell"><span class="v4-phone-only-inline">${esc((TASK_TYPES[task.task_type] || TASK_TYPES.OTHER)[0])} · </span>${sourceText(task)}</div>
@@ -59,6 +61,7 @@ function ensureDialog() {
   dialog.innerHTML = `<form class="v4-task-form" novalidate><div class="sheet-head"><h3 id="v4-task-title"></h3><button class="btn btn-icon" data-tip="关闭，不保存|Close without saving" type="button" data-task-close aria-label="关闭 Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
     <div class="sheet-body">
       <div class="field" data-task-field="company"><label for="v4-task-company">${bi('企业', 'Company')}</label><select id="v4-task-company" name="company_id"></select></div>
+      <div class="field" data-task-field="priority"><label for="v4-task-priority">${bi('优先级', 'Priority')}</label><select id="v4-task-priority" name="priority">${Object.entries(PRIORITY).map(([key, [zh, en]]) => `<option value="${key}"${key === 'NORMAL' ? ' selected' : ''}>${esc(zh)} ${esc(en)}</option>`).join('')}</select></div>
       <div class="field" data-task-field="type"><label for="v4-task-type">${bi('类型', 'Type')}</label><select id="v4-task-type" name="task_type">${Object.entries(TASK_TYPES).map(([key, [zh, en]]) => `<option value="${key}">${esc(zh)} ${esc(en)}</option>`).join('')}</select></div>
       <div class="field" data-task-field="title"><label for="v4-task-name">${bi('任务', 'Task')}</label><input id="v4-task-name" name="title" maxlength="200"></div>
       <div class="form-grid"><div class="field" data-task-field="due"><label for="v4-task-due">${bi('截止时间', 'Due')}</label><input id="v4-task-due" name="due_at" type="datetime-local"></div>
@@ -98,7 +101,7 @@ function openDialog(mode, task = null, opener = document.activeElement) {
       if (mode === 'new') {
         if (!form.company_id.value || !form.title.value.trim()) { status.innerHTML = bi('请选择企业并填写任务', 'Choose a company and enter the task'); return; }
         submit.disabled = true;
-        await crm.createTask({ company_id: form.company_id.value, task_type: form.task_type.value, title: form.title.value.trim(), due_at: fromLocalInput(form.due_at.value) || undefined, owner: form.owner.value.trim() || undefined });
+        await crm.createTask({ company_id: form.company_id.value, task_type: form.task_type.value, priority: form.priority?.value || 'NORMAL', title: form.title.value.trim(), due_at: fromLocalInput(form.due_at.value) || undefined, owner: form.owner.value.trim() || undefined });
       } else if (mode === 'reschedule') {
         if (!form.due_at.value) { status.innerHTML = bi('请选择新的截止时间', 'Choose a new due time'); return; }
         submit.disabled = true;

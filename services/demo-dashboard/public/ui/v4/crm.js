@@ -77,7 +77,15 @@ export const crm = {
 /** Announce a CRM write so lists, counters and the overview refresh. */
 export const notifyCrmChange = detail => document.dispatchEvent(new CustomEvent('crm:changed', { detail }));
 
-export const errorText = error => error?.status === 403 ? ['当前账号没有此操作权限', 'Your role cannot perform this action']
+// Same rule as the server (src/crm/stageRules.js): losing, moving back or reopening a deal needs a reason.
+const STAGE_FORWARD = ['NEW', 'CONTACTED', 'REPLIED', 'QUOTED', 'SAMPLE', 'NEGOTIATING', 'WON'];
+export function stageNeedsReason(from, to) {
+  if (!from || from === to) return false;
+  if (to === 'LOST' || from === 'WON' || from === 'LOST') return true;
+  return STAGE_FORWARD.indexOf(to) < STAGE_FORWARD.indexOf(from);
+}
+export const errorText = error => ['CRM_STAGE_REASON_REQUIRED', 'STAGE_REASON_REQUIRED'].includes(error?.code) ? ['往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened']
+  : error?.status === 403 ? ['当前账号没有此操作权限', 'Your role cannot perform this action']
   : error?.status === 409 ? ['记录已被他人更新，请刷新后重试', 'The record changed. Refresh and retry']
   : error?.status === 503 ? ['系统维护中，暂不能保存', 'Saving is paused during maintenance']
   : ['未能完成，请重试', 'Could not complete. Please retry'];

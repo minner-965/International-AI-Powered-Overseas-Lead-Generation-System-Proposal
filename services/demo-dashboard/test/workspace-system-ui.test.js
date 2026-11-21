@@ -14,7 +14,7 @@ test('V3 workspace assets replace the old global layer and retain every applicat
   assert.doesNotMatch(html, /(?:href|src)="\/ui\/workspace-system\.(?:css|js)/);
   assert.match(html, /href="\/ui\/v4\/app\.css"/);
   for (const section of ['components', 'opportunities', 'shared-components', 'v4-components', 'v4-base', 'shell']) assert.match(css, new RegExp(`/\\* ==== section: ${section} ==== \\*/`));
-  assert.equal((html.match(/data-app-view="/g) || []).length, 24); // batch 2: manual-companies, api-keys
+  assert.equal((html.match(/data-app-view="/g) || []).length, 25); // batch 2: manual-companies, api-keys; 2026-11: sales-reports
   for (const view of ['tasks', 'followups', 'me']) assert.match(html, new RegExp(`data-app-view="${view}"`));
   assert.match(html,/data-app-nav="replies"/);
   assert.match(html,/data-app-nav="contact-ready"/);

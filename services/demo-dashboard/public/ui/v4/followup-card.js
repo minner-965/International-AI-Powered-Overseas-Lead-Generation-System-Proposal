@@ -1,7 +1,8 @@
 // Company Detail follow-up card: stage, owner, next follow-up, quick activity log and timeline.
 // Also owns the shared "log activity" sheet used by the phone workbench grid.
 import { crm, STAGES, ACTIVITY_TYPES, TASK_TYPES, bi, esc, stageLabel, when, toLocalInput, fromLocalInput, stateBlock,
-  notifyCrmChange, errorText, loadPipeline, pipelineItemFor } from './crm.js';
+  notifyCrmChange, errorText, loadPipeline, pipelineItemFor, stageNeedsReason } from './crm.js';
+import { mountDealCard } from './deal-card.js';
 
 const EVENT_LABELS = {
   CALL: ['电话', 'Call', 'k-call'], WHATSAPP: ['WhatsApp', 'WhatsApp', 'k-call'], MEETING: ['会议', 'Meeting', 'k-call'], NOTE: ['备注', 'Note', ''],
@@ -34,7 +35,7 @@ function cardMarkup(item) {
     <div class="ph"><div><h3 id="followup-title">${bi('跟进', 'Follow-up')}</h3><p>${bi(`当前阶段 ${zh}`, `Current stage: ${en}`)}</p></div></div>
     <form class="pb v4-followup-form" novalidate>
       <div class="steps" role="group" aria-label="销售阶段 Pipeline stage">${STAGES.map(([key, szh, sen], i) => `<button type="button" data-tip="把这家客户移到「${szh}」阶段，点保存后系统会记录时间和操作人|Move this prospect to ${sen}; saving records the time and user" data-stage="${key}" aria-pressed="${key === item.pipeline_stage}" class="${i < index && key !== 'LOST' ? 'done' : ''}${key === 'LOST' ? ' lost' : ''}">${esc(szh)}<small>${esc(sen)}</small></button>`).join('')}</div>
-      <div class="field v4-lost-reason" hidden><label for="followup-lost-reason">${bi('流失原因', 'Lost reason')}</label><input id="followup-lost-reason" name="lost_reason" maxlength="500"></div>
+      <div class="field v4-lost-reason" hidden><label for="followup-lost-reason">${bi('流失原因', 'Lost reason')}</label><input id="followup-lost-reason" name="lost_reason" maxlength="500"></div><div class="field v4-stage-reason" hidden><label for="followup-stage-reason">${bi('改动原因（往回改阶段或重新打开时必填）', 'Reason (needed to move back or reopen)')}</label><input id="followup-stage-reason" name="stage_note" maxlength="1000"></div>
       <div class="form-grid" style="margin-top:16px">
         <div class="field"><label for="followup-owner">${bi('负责人', 'Owner')}</label><input id="followup-owner" name="owner" maxlength="200" value="${esc(item.owner_identity || '')}" autocomplete="off"></div>
         <div class="field"><label for="followup-due">${bi('下次跟进', 'Next follow-up')}</label><input id="followup-due" name="next_action_due_at" type="datetime-local" value="${esc(toLocalInput(item.next_action_due_at))}"></div>
@@ -127,15 +128,19 @@ function wireCard(container, item, companyId, detail) {
     selected = button.dataset.stage;
     card.querySelectorAll('[data-stage]').forEach(other => other.setAttribute('aria-pressed', String(other === button)));
     lost.hidden = selected !== 'LOST'; if (selected === 'LOST') lost.querySelector('input').focus();
+    const why = card.querySelector('.v4-stage-reason');
+    if (why) { why.hidden = selected === 'LOST' || !stageNeedsReason(item.pipeline_stage, selected); if (!why.hidden) why.querySelector('input').focus(); }
   }));
   card.querySelectorAll('[data-log-type]').forEach(button => button.addEventListener('click', () => openLogDialog({ type: button.dataset.logType, opportunityId: item.opportunity_id, companyId, opener: button })));
   card.addEventListener('submit', async event => {
     event.preventDefault();
     const reason = card.lost_reason.value.trim();
     if (selected === 'LOST' && !reason) { status.innerHTML = bi('请填写流失原因', 'Enter a lost reason'); card.lost_reason.focus(); return; }
+    const note = card.stage_note?.value.trim() || '';
+    if (selected !== 'LOST' && stageNeedsReason(item.pipeline_stage, selected) && !note) { status.innerHTML = bi('往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened'); card.stage_note.focus(); return; }
     const submit = card.querySelector('[type="submit"]'); submit.disabled = true; status.innerHTML = bi('正在保存', 'Saving');
     try {
-      await crm.setStage(item.opportunity_id, { stage: selected, lost_reason: selected === 'LOST' ? reason : undefined, owner: card.owner.value.trim() || undefined,
+      await crm.setStage(item.opportunity_id, { stage: selected, lost_reason: selected === 'LOST' ? reason : undefined, note: note || undefined, owner: card.owner.value.trim() || undefined,
         next_action: card.next_action.value.trim() || undefined, next_action_due_at: card.next_action_due_at.value ? fromLocalInput(card.next_action_due_at.value) : null,
         expected_version: item.crm_version ?? undefined });
       status.innerHTML = bi('已保存', 'Saved');
@@ -168,6 +173,7 @@ export async function mountFollowupCard(detail, { companyId, productProfile = ''
   block.querySelector('.v4-followup-main').innerHTML = cardMarkup(item);
   if (!item) return;
   wireCard(block, item, companyId, detail);
+  void mountDealCard(block.querySelector('.v4-followup-main'), companyId);
   const bar = document.createElement('div');
   bar.className = 'm-actbar v4-phone-only';
   bar.innerHTML = `<button type="button" data-tip="记录一次电话沟通|Log a phone call" data-bar-log="CALL"><i class="ti ti-phone" aria-hidden="true"></i>记电话</button><button type="button" data-tip="记录一次 WhatsApp 沟通|Log a WhatsApp chat" data-bar-log="WHATSAPP"><i class="ti ti-brand-whatsapp" aria-hidden="true"></i>WhatsApp</button><button type="button" data-tip="写一条跟进备注|Write a follow-up note" data-bar-log="NOTE"><i class="ti ti-pencil" aria-hidden="true"></i>写跟进</button><button type="button" data-tip="把这家客户移到新的跟进阶段，系统会记录时间和操作人|Move this prospect to a new stage; time and user are recorded" class="pri" data-bar-stage><i class="ti ti-flag" aria-hidden="true"></i>改阶段</button>`;

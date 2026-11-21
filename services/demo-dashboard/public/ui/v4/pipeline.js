@@ -1,5 +1,6 @@
 // Sales opportunities by follow-up stage (/api/crm/pipeline). The category-assessment workspace
 // (existing opportunity table, filters and hooks) stays available in the second pane.
+import { dealMeta } from './sales-reports.js';
 import { STAGES, bi, esc, stageLabel, when, stateBlock, skeletonRows, loadPipeline } from './crm.js';
 import { managementRequest } from '../../phase7-ui.js';
 import { poolLabels } from '../v3/opportunity-dimensions.js';
@@ -9,6 +10,7 @@ const PAGE = 20;
 const MARKETS = { AE: ['阿联酋', 'UAE'], MX: ['墨西哥', 'Mexico'], SA: ['沙特阿拉伯', 'Saudi Arabia'], US: ['美国', 'United States'] };
 const state = { items: null, counts: null, stage: '', owner: '', market: '', q: '', shown: PAGE, bands: new Map(), error: false };
 const storage = { get: key => { try { return localStorage.getItem(key); } catch { return null; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
+
 
 function selectPane(name, { focus = false } = {}) {
   const pane = name === 'assessment' ? 'assessment' : 'pipeline';
@@ -75,7 +77,7 @@ function renderList() {
     const open = manual
       ? `<button type="button" data-tip="打开手动添加企业页面，写开发信、记录跟进或更改阶段|Open Add companies to write the first email, log follow-up or change the stage" class="co v4-link-btn" data-pipeline-manual="${esc(item.company_id)}">${esc(item.company_name || '—')}</button> <span class="pill info">${bi('手动添加', 'Added manually')}</span>`
       : `<button type="button" data-tip="打开这家企业的详情和跟进记录|Open company details and activity" class="co v4-link-btn" data-pipeline-company="${esc(item.company_id)}" data-pipeline-profile="${esc(item.product_profile || '')}">${esc(item.company_name || '—')}</button>`;
-    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"${manual ? ' data-pipeline-source="MANUAL"' : ''}><td class="m-main">${open}<span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
+    return `<tr class="has-chev${item.overdue ? ' is-overdue' : ''}"${manual ? ' data-pipeline-source="MANUAL"' : ''}><td class="m-main">${open}<span class="meta">${esc([item.city, marketText(item.country_code)].filter(Boolean).join(' · '))}${dealMeta(item)}<span class="v4-phone-inline"> · ${esc(item.owner_identity || '未指派')}</span></span></td><td class="m-hide">${bandPill(band)}</td><td class="m-side">${stageTag(item.pipeline_stage)}</td><td class="m-hide">${esc(item.owner_identity || '—')}</td><td class="m-sub${item.overdue ? ' overdue' : ''}"><span class="v4-due">${esc(dueText)}</span><span class="meta">${esc(item.next_action || '')}</span><i class="ti ti-chevron-right chev" aria-hidden="true"></i></td></tr>`;
   }).join('')}</tbody></table>`;
   if (count) count.innerHTML = bi(`显示 ${visible.length} / ${rows.length}`, `Showing ${visible.length} of ${rows.length}`);
   if (more) more.hidden = rows.length <= visible.length;

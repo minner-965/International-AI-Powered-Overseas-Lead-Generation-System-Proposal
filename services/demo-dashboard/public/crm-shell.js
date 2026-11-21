@@ -16,6 +16,7 @@ views.merchants=['商家管理','Merchants','管理','Admin'];
 views['feedback-inbox']=['意见反馈','Feedback','管理','Admin'];
 views['manual-companies']=['手动添加企业','Add companies','获客','Prospecting'];
 views['api-keys']=['接口密钥','API keys','我的账户','Account'];
+views['sales-reports']=['销售报表','Sales reports','跟进','Follow-up'];
 const phoneTitles={overview:['工作台','Workbench'],opportunities:['机会','Opportunities'],tasks:['任务','Tasks'],followups:['消息','Messages'],'contact-queue':['消息','Messages'],replies:['消息','Messages']};
 const phone=matchMedia('(max-width: 900px)');
 const storage={get(key,fallback){try{return localStorage.getItem(key)||fallback}catch{return fallback}},set(key,value){try{localStorage.setItem(key,value)}catch{}}};
