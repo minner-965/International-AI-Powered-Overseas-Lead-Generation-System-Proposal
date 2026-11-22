@@ -94,7 +94,25 @@ export function stageNeedsReason(from, to) {
   if (to === 'LOST' || from === 'WON' || from === 'LOST') return true;
   return STAGE_FORWARD.indexOf(to) < STAGE_FORWARD.indexOf(from);
 }
-export const errorText = error => ['CRM_STAGE_REASON_REQUIRED', 'STAGE_REASON_REQUIRED'].includes(error?.code) ? ['往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened']
+/** Same gate as src/crm/stageRules.js stageGateProblem: close date from quoted on, customer confirmation for won. */
+export const WON_CONFIRMATIONS = Object.freeze({ PO: ['客户下了订单（PO）', 'Purchase order'], DEPOSIT: ['已收定金', 'Deposit received'], CONTRACT: ['已签合同', 'Contract signed'],
+  PAYMENT: ['已收全款', 'Paid in full'], OTHER: ['其他（请说明）', 'Other (explain)'] });
+const CLOSE_DATE_STAGES = Object.freeze(['QUOTED', 'SAMPLE', 'NEGOTIATING']);
+export function stageGateProblem(from, to, deal = {}) {
+  if (!to || from === to) return null;
+  if (CLOSE_DATE_STAGES.includes(to) && !deal.expected_close_date) return 'CLOSE_DATE_REQUIRED';
+  if (to === 'WON') {
+    if (!Object.keys(WON_CONFIRMATIONS).includes(deal.won_confirmation)) return 'WON_CONFIRMATION_REQUIRED';
+    if (deal.won_confirmation === 'OTHER' && !String(deal.won_confirmation_note || '').trim()) return 'WON_CONFIRMATION_NOTE_REQUIRED';
+  }
+  return null;
+}
+export const STAGE_GATE_TEXT = Object.freeze({ CLOSE_DATE_REQUIRED: ['报价及之后的阶段请填写预计成交日', 'Enter the expected close date from the quote stage on'],
+  WON_CONFIRMATION_REQUIRED: ['标记成交前请选择客户确认方式', 'Choose how the customer confirmed before marking won'],
+  WON_CONFIRMATION_NOTE_REQUIRED: ['选“其他”时请写明客户如何确认', 'Explain how the customer confirmed'] });
+
+export const errorText = error => STAGE_GATE_TEXT[error?.code] ? STAGE_GATE_TEXT[error.code]
+  : ['CRM_STAGE_REASON_REQUIRED', 'STAGE_REASON_REQUIRED'].includes(error?.code) ? ['往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened']
   : ['REVISIT_DATE_INVALID', 'REVISIT_ONLY_WHEN_LOST'].includes(error?.code) ? ['回访日期要在今天之后、两年之内', 'Revisit date must be after today and within two years']
   : error?.status === 403 ? ['当前账号没有此操作权限', 'Your role cannot perform this action']
   : error?.status === 409 ? ['记录已被他人更新，请刷新后重试', 'The record changed. Refresh and retry']

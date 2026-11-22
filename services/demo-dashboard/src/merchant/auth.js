@@ -38,7 +38,7 @@ export const MERCHANT_ROUTES=[
   ['GET',`^/api/opportunities/${UUID}/decision-history$`],
   ['GET',`^/api/leads/${UUID}(/(decision-makers|contact-routes))?$`],
   ['GET',`^/api/companies/${UUID}/(score|score-history|customer-match|customer-match-history|lifecycle-history|cooperation-feasibility|category-procurement-matches|buyer-business-model|commercial-product-fit|product-opportunities)$`],
-  ['GET',`^/api/crm/(pipeline|tasks|followup-drafts|key-customers|reports|reminder-rules)$`],['PUT',`^/api/crm/reminder-rules$`],['GET',`^/api/crm/companies/${UUID}/deal$`],['PUT',`^/api/crm/companies/${UUID}/deal$`],['GET',`^/api/crm/companies/${UUID}/timeline$`],
+  ['GET',`^/api/crm/(pipeline|tasks|followup-drafts|key-customers|reports|reminder-rules|reminder-rules/preview|email-stats|exchange-rates)$`],['PUT',`^/api/crm/(reminder-rules|exchange-rates)$`],['GET',`^/api/crm/companies/${UUID}/deal$`],['PUT',`^/api/crm/companies/${UUID}/deal$`],['GET',`^/api/crm/companies/${UUID}/timeline$`],
   ['POST',`^/api/crm/opportunities/${UUID}/(stage|activities)$`],['POST',`^/api/crm/tasks$`],['PATCH',`^/api/crm/tasks/${UUID}$`],
   ['POST',`^/api/crm/replies/${UUID}/review$`],['POST',`^/api/crm/followup-drafts/${UUID}/decision$`],
   ['GET',`^/api/outreach/(inbox|operations-summary)$`],['GET',`^/api/outreach/threads/${UUID}$`],
@@ -46,7 +46,7 @@ export const MERCHANT_ROUTES=[
   ['GET',`^/api/research/jobs(/${UUID}(/results)?)?$`],
   ['POST',`^/api/research/(batches|jobs)/${UUID}/cancel$`],
   // B1/B2: manual companies, manual first-touch drafts and first-touch test sends.
-  ['GET',`^/api/manual-companies(/options|/first-touch-drafts|/${UUID})?$`],['POST','^/api/manual-companies$'],['POST','^/api/manual-companies/import/(preview|check|commit)$'],['GET','^/api/manual-companies/import/runs$'],
+  ['GET',`^/api/manual-companies(/options|/first-touch-drafts|/export|/${UUID})?$`],['POST','^/api/manual-companies$'],['POST','^/api/manual-companies/import/(preview|check|commit)$'],['GET','^/api/manual-companies/import/runs$'],
   ['POST',`^/api/manual-companies/${UUID}/(contacts|activities|stage|first-touch-drafts)$`],
   ['POST',`^/api/manual-companies/first-touch-drafts/${UUID}/decision$`],
   ['GET','^/api/first-touch/test-sends$'],['POST','^/api/first-touch/test-sends(/preview)?$'],

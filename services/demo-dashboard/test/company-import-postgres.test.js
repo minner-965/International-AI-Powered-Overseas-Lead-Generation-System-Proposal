@@ -49,9 +49,9 @@ async function approveCategory(pool){
   throw new Error('approved category not current');
 }
 
-test('migration 080 is the latest file and verifies; import history is append-only',{skip:!adminUrl},async()=>{
+test('migration 080 is installed and verifies; import history is append-only',{skip:!adminUrl},async()=>{
   const files=(await readdir(migrations)).filter(file=>/^\d{3}_.*\.sql$/.test(file)).sort();
-  assert.equal(files.at(-1),COMPANY_IMPORT_RUNS_MIGRATION_KEY);
+  assert.ok(files.includes(COMPANY_IMPORT_RUNS_MIGRATION_KEY));
   await withDatabase(async pool=>{
     assert.deepEqual(await verifyCompanyImportRunsMigration(pool),{company_import_runs:true});
     const run=(await pool.query(`INSERT INTO leadgen.company_import_runs(file_name,row_count,created_count,skipped_count,failed_count,mapping,results,created_by)

@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {readdir,readFile} from 'node:fs/promises';
 import express from 'express';
 import pg from 'pg';
-import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,COMPANY_IMPORT_RUNS_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
+import {applyPhase7Migrations,MERCHANT_ACCOUNTS_MIGRATION_KEY,LOGIN_HARDENING_MIGRATION_KEY,FOLLOWUP_SETTINGS_MIGRATION_KEY,MERCHANT_ONBOARDING_MIGRATION_KEY} from '../src/phase7/migrationRunner.js';
 import {MerchantService} from '../src/merchant/MerchantService.js';
 import {createSessionMiddleware,createWorkspaceGate} from '../src/merchant/auth.js';
 import {createMerchantRouter} from '../src/merchant/router.js';
@@ -56,7 +56,7 @@ async function ledger(pool,files,by){
 
 test('migration 066: fresh install baselines once; an installation at 065 upgrades and keeps SIM rows',{skip:!adminUrl},async()=>{
   await withDatabase(async pool=>applyFiles(pool,await migrationFiles()),async(pool,name)=>{
-    assert.equal((await migrationFiles()).at(-1),COMPANY_IMPORT_RUNS_MIGRATION_KEY);
+    assert.equal((await migrationFiles()).at(-1),MERCHANT_ONBOARDING_MIGRATION_KEY);
     const result=await applyPhase7Migrations({pool,expectedDatabase:name,baseline:true});
     assert.equal(result.merchantAccounts.status,'BASELINED');assert.equal(result.merchantAccounts.merchant_accounts,'OWNER_SCOPED');
     assert.equal(result.loginHardening.status,'BASELINED');assert.equal(result.loginHardening.login_hardening,'DURABLE_ATTEMPT_COUNTERS');

@@ -30,3 +30,23 @@ export async function createRevisitTask(queryable,{companyId,merchantId=null,rev
     [companyId,actor,revisitDate,JSON.stringify({title:'回访流失客户',title_en:'Revisit a lost customer',next_action:'Ask whether the situation has changed',
       source:'LOST_REVISIT',lost_reason:reason,notes:[]}),merchantId])).rows[0];
 }
+
+/** How a customer confirmed a won deal (crm_deal_profiles.won_confirmation, migration 081). */
+export const WON_CONFIRMATIONS=Object.freeze(['PO','DEPOSIT','CONTRACT','PAYMENT','OTHER']);
+/** Stages from which the deal needs an expected close date (WON uses today when none is given). */
+export const CLOSE_DATE_STAGES=Object.freeze(['QUOTED','SAMPLE','NEGOTIATING']);
+
+/**
+ * Gate for a person moving a deal to `to` (automatic changes such as a reply are not gated).
+ * `deal` holds what is saved or sent with the change: expected_close_date, won_confirmation, won_confirmation_note.
+ * Returns an error code, or null when the move may be saved.
+ */
+export function stageGateProblem(from,to,deal={}){
+  if(!to||from===to)return null;
+  if(CLOSE_DATE_STAGES.includes(to)&&!deal.expected_close_date)return 'CLOSE_DATE_REQUIRED';
+  if(to==='WON'){
+    if(!WON_CONFIRMATIONS.includes(deal.won_confirmation))return 'WON_CONFIRMATION_REQUIRED';
+    if(deal.won_confirmation==='OTHER'&&!String(deal.won_confirmation_note||'').trim())return 'WON_CONFIRMATION_NOTE_REQUIRED';
+  }
+  return null;
+}
