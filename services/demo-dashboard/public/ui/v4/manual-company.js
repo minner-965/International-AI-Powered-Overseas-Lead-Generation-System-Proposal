@@ -2,7 +2,7 @@
 // business mailbox, write the first email from the approved template, approve and send it, then log
 // calls / notes and move the stage. SIM may mark a test company and assign it to a merchant.
 // API: /api/manual-companies (see src/companies/router.js). Every rule is checked on the server.
-import { bi, esc, lostReasonOptions, stateBlock, skeletonRows, tomorrowInput } from './crm.js';
+import { STAGE_GATE_TEXT, WON_CONFIRMATIONS, bi, esc, lostReasonOptions, stageGateProblem, stateBlock, skeletonRows, tomorrowInput } from './crm.js';
 import { tip } from './tooltips.js';
 import { sessionReady } from './session.js';
 import { managementRequest } from '../../phase7-ui.js';
@@ -51,6 +51,7 @@ export const REASONS = Object.freeze({
   LOST_REASON_REQUIRED: ['标记丢单时请选择原因', 'Choose a reason when marking as lost'],
   REVISIT_DATE_INVALID: ['回访日期要在今天之后、两年之内', 'Revisit date must be after today and within two years'], REVISIT_ONLY_WHEN_LOST: ['只有丢单才需要回访日期', 'A revisit date is only for a lost deal'],
   STAGE_UNCHANGED: ['已经是这个阶段', 'Already at this stage'],
+  ...STAGE_GATE_TEXT, CRM_DATE_INVALID: ['预计成交日格式不对', 'Expected close date is not a valid date'],
   MERCHANT_SELF_SERVICE_ONLY: ['只有商家本人可以从自己的邮箱发信', 'Only the merchant can send from its own mailbox']
 });
 export function reasonText(error) {
@@ -127,6 +128,7 @@ function dialog() {
   document.body.append(box);
   box.addEventListener('click', event => { if (event.target === box || event.target.closest('[data-manual-close]')) box.close(); });
   box.addEventListener('close', () => state.opener?.focus?.({ preventScroll: true }));
+  box.addEventListener('change', event => { if (event.target.name === 'stage' && state.dialog?.kind === 'stage') toggleStageGate(event.target.form, state.dialog.item); });
   return box;
 }
 const field = (id, zh, en, input, cls = '') => `<div class="field${cls ? ` ${cls}` : ''}"><label for="${id}">${bi(zh, en)}</label>${input}</div>`;
@@ -158,7 +160,8 @@ function open(kind, item = null) {
   } else if (kind === 'activity') {
     box.innerHTML = sheet(bi(`记录跟进 · ${item.company_name}`, 'Log follow-up'), `<div class="form-grid">${field('manual-act-type', '方式', 'Type', `<select id="manual-act-type" name="activity_type">${options(ACTIVITY_TYPES, 'CALL')}</select>`)}${field('manual-act-result', '结果（可选）', 'Result (optional)', '<input id="manual-act-result" name="result" maxlength="200">')}${field('manual-act-summary', '内容', 'Summary', '<textarea id="manual-act-summary" name="summary" maxlength="2000" required></textarea>', 'wide')}${field('manual-act-next', '下次跟进（可选）', 'Next follow-up (optional)', '<input id="manual-act-next" name="next_follow_up_at" type="date">')}</div>`, bi('保存', 'Save'), ['保存这条跟进记录', 'Save this follow-up']);
   } else if (kind === 'stage') {
-    box.innerHTML = sheet(bi(`更改阶段 · ${item.company_name}`, 'Change stage'), `<div class="form-grid">${field('manual-stage', '阶段', 'Stage', `<select id="manual-stage" name="stage">${options(STAGES, item.stage)}</select>`)}${field('manual-stage-lost', '丢单原因（选丢单时必填）', 'Lost reason (if lost)', `<select id="manual-stage-lost" name="lost_reason">${lostReasonOptions()}</select>`)}${field('manual-stage-revisit', '回访日期（丢单时可选）', 'Revisit on (if lost, optional)', `<input id="manual-stage-revisit" name="revisit_date" type="date" min="${tomorrowInput()}">`)}${field('manual-stage-note', '备注（往回改阶段或重新打开时必填）', 'Note (needed to move back or reopen)', '<input id="manual-stage-note" name="note" maxlength="1000">', 'wide')}</div>`, bi('保存', 'Save'), ['保存新的阶段', 'Save the new stage']);
+    box.innerHTML = sheet(bi(`更改阶段 · ${item.company_name}`, 'Change stage'), `<div class="form-grid">${field('manual-stage', '阶段', 'Stage', `<select id="manual-stage" name="stage">${options(STAGES, item.stage)}</select>`)}${field('manual-stage-lost', '丢单原因（选丢单时必填）', 'Lost reason (if lost)', `<select id="manual-stage-lost" name="lost_reason">${lostReasonOptions()}</select>`)}${field('manual-stage-revisit', '回访日期（丢单时可选）', 'Revisit on (if lost, optional)', `<input id="manual-stage-revisit" name="revisit_date" type="date" min="${tomorrowInput()}">`)}${field('manual-stage-note', '备注（往回改阶段或重新打开时必填）', 'Note (needed to move back or reopen)', '<input id="manual-stage-note" name="note" maxlength="1000">', 'wide')}</div>${stageGateFields(item)}`, bi('保存', 'Save'), ['保存新的阶段', 'Save the new stage']);
+    toggleStageGate(box.querySelector('form'), item);
   } else if (kind === 'test') {
     box.innerHTML = sheet(bi(`${item.is_test ? '取消测试企业' : '设为测试企业'} · ${item.company_name}`, item.is_test ? 'Unmark test company' : 'Mark as test company'), `<p>${bi(item.is_test ? '取消后，这家公司按正常客户处理：只能发到公司域名邮箱或有出处的邮箱。' : '测试企业的开发信只能发到测试收件名单里的地址。', item.is_test ? 'It becomes a normal company: only company-domain or sourced mailboxes.' : 'First emails for a test company go only to addresses on the test list.')}</p>`, bi('确认', 'Confirm'), ['保存测试企业设置', 'Save the test setting']);
   } else if (kind === 'assign') {
@@ -169,6 +172,44 @@ function open(kind, item = null) {
   if (!box.open) box.showModal();
   box.querySelector('input, select, textarea, button[type="submit"]')?.focus();
 }
+/** Close date (报价及之后) and customer confirmation (成交) shown only for the stage that needs them. */
+export function stageGateFields(item = {}) {
+  const close = item.deal_close_date ? String(item.deal_close_date).slice(0, 10) : '';
+  return `<div class="form-grid" data-stage-gate="close" hidden>${field('manual-stage-close', '预计成交日（报价及之后必填）', 'Expected close date (from the quote stage on)', `<input id="manual-stage-close" name="expected_close_date" type="date" value="${esc(close)}"${tip('客户预计什么时候下单；用于报表的本月预计成交', 'When the customer is expected to order; used for “expected to close this month”')}>`)}</div>
+    <div class="form-grid" data-stage-gate="won" hidden>${field('manual-stage-won', '客户确认方式（成交必选）', 'Customer confirmation (needed for won)', `<select id="manual-stage-won" name="won_confirmation"${tip('客户用什么方式确认了这笔订单', 'How the customer confirmed this order')}><option value="">请选择 / Choose</option>${Object.entries(WON_CONFIRMATIONS).map(([code, [zh, en]]) => `<option value="${code}"${item.won_confirmation === code ? ' selected' : ''}>${esc(zh)} / ${esc(en)}</option>`).join('')}</select>`)}${field('manual-stage-won-note', '确认说明（选“其他”时必填）', 'Confirmation details (needed for other)', '<input id="manual-stage-won-note" name="won_confirmation_note" maxlength="500">')}</div>`;
+}
+/** Shows the gate fields the chosen stage needs (same rule as the server). */
+export function toggleStageGate(form, item = {}) {
+  if (!form?.stage) return;
+  const stage = form.stage.value;
+  const changing = stage !== item.stage;
+  const closeBox = form.querySelector('[data-stage-gate="close"]'); const wonBox = form.querySelector('[data-stage-gate="won"]');
+  if (closeBox) closeBox.hidden = !(changing && ['QUOTED', 'SAMPLE', 'NEGOTIATING', 'WON'].includes(stage));
+  if (wonBox) wonBox.hidden = !(changing && stage === 'WON');
+}
+/** Stage request body including the gate fields; `problem` is the page check (null = may be sent). */
+export function stageRequest(form, item = {}) {
+  const stage = form.stage.value;
+  const body = { stage, lost_reason: stage === 'LOST' ? form.lost_reason.value || undefined : undefined, note: form.note.value.trim() || undefined,
+    revisit_date: stage === 'LOST' && form.revisit_date.value ? form.revisit_date.value : undefined,
+    expected_close_date: form.expected_close_date?.value || undefined,
+    won_confirmation: stage === 'WON' ? form.won_confirmation?.value || undefined : undefined,
+    won_confirmation_note: stage === 'WON' ? form.won_confirmation_note?.value.trim() || undefined : undefined };
+  const problem = stageGateProblem(item.stage, stage, { expected_close_date: body.expected_close_date || item.deal_close_date, won_confirmation: body.won_confirmation, won_confirmation_note: body.won_confirmation_note });
+  return { body, problem };
+}
+/** Download the companies spreadsheet (.xlsx) with the session cookie. */
+async function downloadExport() {
+  const response = await fetch(`${API}/export`, { cache: 'no-store', credentials: 'same-origin' });
+  if (!response.ok) { let code; try { code = (await response.json()).code; } catch {} throw Object.assign(new Error('Export failed'), { status: response.status, code }); }
+  const name = (response.headers.get('content-disposition') || '').match(/filename="?([^";]+)"?/i)?.[1] || 'companies.xlsx';
+  const href = URL.createObjectURL(await response.blob());
+  const anchor = Object.assign(document.createElement('a'), { href, download: name, hidden: true });
+  document.body.append(anchor); anchor.click(); anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 60000);
+  return Number(response.headers.get('x-row-count') || 0);
+}
+
 /** Read-only translation of a draft (subject or body) so the sender can check what the buyer reads. */
 export function attachPreviewTranslation(host, draft) {
   if (!host || !draft) return null;
@@ -205,7 +246,9 @@ async function submit(form) {
       await json(`${API}/${encodeURIComponent(item.id)}/activities`, { activity_type: form.activity_type.value, summary: form.summary.value.trim(), result: form.result.value.trim() || undefined, ...(next ? { next_follow_up_at: new Date(`${next}T09:00:00`).toISOString() } : {}) });
       dialog().close(); toast('跟进已记录', 'Follow-up logged');
     } else if (kind === 'stage') {
-      await json(`${API}/${encodeURIComponent(item.id)}/stage`, { stage: form.stage.value, lost_reason: form.stage.value === 'LOST' ? form.lost_reason.value || undefined : undefined, note: form.note.value.trim() || undefined, revisit_date: form.stage.value === 'LOST' && form.revisit_date.value ? form.revisit_date.value : undefined });
+      const { body, problem } = stageRequest(form, item);
+      if (problem) { show(STAGE_GATE_TEXT[problem]); button.disabled = false; form.querySelector(problem === 'CLOSE_DATE_REQUIRED' ? '[name="expected_close_date"]' : problem === 'WON_CONFIRMATION_NOTE_REQUIRED' ? '[name="won_confirmation_note"]' : '[name="won_confirmation"]')?.focus(); return; }
+      await json(`${API}/${encodeURIComponent(item.id)}/stage`, body);
       dialog().close(); toast('阶段已更新', 'Stage updated');
     } else if (kind === 'test') {
       await json(`${API}/${encodeURIComponent(item.id)}/test-flag`, { is_test: !item.is_test }, 'PUT'); dialog().close(); toast('已保存', 'Saved');
@@ -219,11 +262,18 @@ async function submit(form) {
 function mount() {
   const root = $('#manual-companies-root');
   if (!root) return;
-  root.innerHTML = `<section class="card v4-manual-card"><div class="toolbar"><label class="search inline" for="manual-companies-search"><i class="ti ti-search" aria-hidden="true"></i><span class="sr-only">搜索企业 Search companies</span><input id="manual-companies-search" type="search" autocomplete="off" placeholder="公司或域名 / Company or domain"></label><span class="grow"></span><button class="btn" type="button" data-import-open${tip('把展会名单、老客户表等 Excel / CSV 一次导入', 'Import a fair list or customer sheet from Excel or CSV')}><i class="ti ti-file-spreadsheet" aria-hidden="true"></i>${bi('导入表格', 'Import spreadsheet')}</button><button class="btn" type="button" data-first-touch-test-open${tip('用真实开发信模板给自己的邮箱发一封测试信', 'Send a test of the real first email to your own mailbox')}><i class="ti ti-mail-forward" aria-hidden="true"></i>${bi('发测试首封', 'Send test first email')}</button><button class="btn btn-primary" type="button" data-manual-create${tip('录入展会、老客户介绍等渠道认识的企业和业务邮箱', 'Add a company met at a fair or through a referral')}><i class="ti ti-plus" aria-hidden="true"></i>${bi('添加企业', 'Add company')}</button></div><div id="manual-companies-list" aria-live="polite"></div></section>`;
+  root.innerHTML = `<section class="card v4-manual-card"><div class="toolbar"><label class="search inline" for="manual-companies-search"><i class="ti ti-search" aria-hidden="true"></i><span class="sr-only">搜索企业 Search companies</span><input id="manual-companies-search" type="search" autocomplete="off" placeholder="公司或域名 / Company or domain"></label><span class="grow"></span><button class="btn" type="button" data-import-open${tip('把展会名单、老客户表等 Excel / CSV 一次导入；带“编号”列的表格会补全已有企业的空白信息', 'Import a fair list or customer sheet from Excel or CSV; a sheet with the ID column fills in empty details of existing companies')}><i class="ti ti-file-spreadsheet" aria-hidden="true"></i>${bi('导入表格', 'Import spreadsheet')}</button><button class="btn" type="button" data-manual-export${tip('下载企业表格（含编号）；在 Excel 里补充后可再导入', 'Download the companies sheet (with IDs); fill it in Excel and import it again')}><i class="ti ti-download" aria-hidden="true"></i>${bi('导出表格', 'Export')}</button><button class="btn" type="button" data-first-touch-test-open${tip('用真实开发信模板给自己的邮箱发一封测试信', 'Send a test of the real first email to your own mailbox')}><i class="ti ti-mail-forward" aria-hidden="true"></i>${bi('发测试首封', 'Send test first email')}</button><button class="btn btn-primary" type="button" data-manual-create${tip('录入展会、老客户介绍等渠道认识的企业和业务邮箱', 'Add a company met at a fair or through a referral')}><i class="ti ti-plus" aria-hidden="true"></i>${bi('添加企业', 'Add company')}</button></div><div id="manual-companies-list" aria-live="polite"></div></section>`;
   render();
   root.addEventListener('click', event => {
     if (event.target.closest('[data-state-retry]')) { void loadManualCompanies(); return; }
     if (event.target.closest('[data-manual-create]')) { open('create'); return; }
+    const exportButton = event.target.closest('[data-manual-export]');
+    if (exportButton) {
+      exportButton.disabled = true;
+      void downloadExport().then(count => toast(`已导出 ${count} 家企业`, `Exported ${count} companies`))
+        .catch(error => toast(...reasonText(error), { tone: 'bad' })).finally(() => { exportButton.disabled = false; });
+      return;
+    }
     const action = event.target.closest('[data-manual-action]');
     if (!action) return;
     const item = state.items?.find(row => String(row.id) === action.dataset.companyId);

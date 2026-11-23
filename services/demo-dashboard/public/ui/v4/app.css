@@ -4368,5 +4368,8 @@ html[data-role="MERCHANT"] .p10-research-grid { grid-template-columns: minmax(0,
 .v4-rates-card details > summary::-webkit-details-marker { display: none; }
 @media (max-width: 900px) {
   .v4-email-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v4-email-stats > .ph { flex-wrap: wrap; }
+  .v4-email-stats > .ph > .btns { display: flex; flex: 1 0 100%; gap: 8px; }
+  .v4-email-stats > .ph > .btns > .btn { flex: 1 1 0; }
   .v4-rate-row input[name="rate"] { flex: 1 1 120px; width: auto; }
 }

@@ -78,7 +78,7 @@ test('manual companies appear in the CRM pipeline with their manual stage, per o
     assert.deepEqual((await repository.listPipeline({scope:merchantScope(beta)})).items,[]);
 
     // Stages are kept per owner: Alpha's QUOTED does not move SIM's view of the same company.
-    await companies.setStage(own.company.id,{stage:'QUOTED',note:'Price list sent'},'anna@alpha.example',merchantScope(alpha));
+    await companies.setStage(own.company.id,{stage:'QUOTED',note:'Price list sent',expected_close_date:'2026-12-31'},'anna@alpha.example',merchantScope(alpha));
     await companies.addActivity(own.company.id,{activity_type:'CALL',summary:'Called the buyer',next_follow_up_at:new Date(Date.now()-3600_000).toISOString()},
       'anna@alpha.example',merchantScope(alpha)).catch(error=>{if(error?.code!=='DATE_INVALID')throw error;});
     const quoted=(await repository.listPipeline({scope:merchantScope(alpha)})).items[0];

@@ -16,6 +16,13 @@ export function createManualCompanyRouter({companies,firstTouch,testSends,import
     router.post('/api/manual-companies/import/check',asyncRoute(async(req,res)=>res.json(await imports.check(req.body||{},scope(req)))));
     router.post('/api/manual-companies/import/commit',asyncRoute(async(req,res)=>res.json(await imports.commit(req.body||{},actorOf(req),scope(req)))));
     router.get('/api/manual-companies/import/runs',asyncRoute(async(req,res)=>res.json(await imports.runs(scope(req)))));
+    // Spreadsheet of the companies this account can see; the same column titles import again (fill-in by 编号 / ID).
+    router.get('/api/manual-companies/export',asyncRoute(async(req,res)=>{
+      const file=await imports.exportWorkbook(scope(req));
+      res.set({'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'content-disposition':`attachment; filename="${file.file_name}"`,'cache-control':'no-store','x-row-count':String(file.count)});
+      res.send(file.buffer);
+    }));
   }
 
   router.get('/api/manual-companies/options',asyncRoute(async(req,res)=>res.json(await companies.options(scope(req)))));

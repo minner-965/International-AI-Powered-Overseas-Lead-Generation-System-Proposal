@@ -5,6 +5,7 @@
 // draft (src/outreach/manualFirstTouch.js). Follow-up work (calls, notes, stage) is recorded as
 // normal CRM activities and queued for the Feishu table through leadgen.crm_sync_outbox.
 import {createRevisitTask,revisitDateOf,stageChangeNeedsReason} from '../crm/stageRules.js';
+import {applyStageGate,stageGateInput} from '../crm/stageGate.js';
 import {randomUUID} from 'node:crypto';
 import {activityOutboxPayload,leadOutboxPayload,opportunityOutboxPayload} from '../crm/outboxPayloads.js';
 import {MANUAL_ACTIVITY_TYPES,PIPELINE_STAGES} from '../crm/repository.js';
@@ -232,6 +233,8 @@ export class ManualCompanyService{
     const note=cleanText(body.note,'note',{max:1000});
     let revisitDate;
     try{revisitDate=revisitDateOf(body.revisit_date,stage);}catch(error){throw fail(error.code,error.message,422,{field:'revisit_date'});}
+    let gateInput;
+    try{gateInput=stageGateInput(body);}catch(error){throw fail(error.code,error.message,422,{field:error.field});}
     const owner=ownerOf(scope);
     const written=await transaction(this.pool,async client=>{
       const company=await this.requireManualCompany(client,companyId,scope,{lock:true});
@@ -239,6 +242,9 @@ export class ManualCompanyService{
       if(current===stage)throw fail('STAGE_UNCHANGED','The opportunity is already at this stage',409);
       if(stageChangeNeedsReason(current,stage)&&!note&&!(stage==='LOST'&&lostReason))
         throw fail('STAGE_REASON_REQUIRED','Write why the stage moves back or the deal is reopened',422,{field:'note'});
+      // Close date from the quote stage on, customer confirmation for won (migration 081); saved with the change.
+      try{await applyStageGate(client,{companyId:company.id,merchantId:owner,from:current,to:stage,input:gateInput,actor});}
+      catch(error){throw fail(error.code,error.message,error.status||422,{field:error.field});}
       const appended=await this.appendStage(client,{companyId:company.id,owner,stage,lostReason,note,actor});
       if(revisitDate)appended.revisit_task=await createRevisitTask(client,{companyId:company.id,merchantId:owner,revisitDate,reason:lostReason,actor});
       return appended;
@@ -254,6 +260,101 @@ export class ManualCompanyService{
       try{await this.queue.enqueue(CRM_SYNC_QUEUE,{outbox_id:row.id},{singletonKey:`crm:dispatch:${row.id}:0`});}
       catch(error){this.audit('manual_company_crm_enqueue_pending',{outbox_id:row.id,error:String(error?.message||error).slice(0,200)});}
     }
+  }
+
+  /** Current stage of a company for this owner: a manual stage event, else the CRM pipeline state. */
+  async stageOf(client,companyId,owner){
+    const manual=(await client.query(`SELECT stage FROM leadgen.manual_company_stage_events WHERE company_id=$1 AND merchant_id IS NOT DISTINCT FROM $2::uuid
+      ORDER BY changed_at DESC,id DESC LIMIT 1`,[companyId,owner])).rows[0]?.stage;
+    if(manual)return manual;
+    const states=(await client.query(`SELECT pipeline_stage FROM leadgen.opportunity_crm_states WHERE company_id=$1 AND merchant_id IS NOT DISTINCT FROM $2::uuid`,[companyId,owner])).rows;
+    return states.some(row=>row.pipeline_stage==='WON')?'WON':states[0]?.pipeline_stage||'NEW';
+  }
+
+  /**
+   * Fills only the empty fields of a company this account can see (spreadsheet import): city, company type,
+   * a contact address not yet listed, and this owner's deal amount/currency and grade (not for a won deal).
+   * Never overwrites a value and never changes the stage. Each fill is noted on the timeline.
+   * fields: {city?, company_type?, contact?:{email,contact_kind,person_name,job_title}, deal_amount?, deal_currency?, customer_grade?}
+   * Returns {filled:[field…], skipped:[{field,reason}]}.
+   */
+  async fillMissing(companyId,fields={},actor,scope){
+    const id=uuidOf(companyId,'company_id');
+    const owner=ownerOf(scope);
+    const written=await transaction(this.pool,async client=>{
+      if(!await companyVisible(client,scope,id))throw fail('COMPANY_NOT_FOUND','Company not found',404);
+      const company=(await client.query(`SELECT c.id,c.city,c.company_type,c.normalized_domain,c.country_code,
+          coalesce((SELECT f.is_test FROM leadgen.company_test_flags f WHERE f.company_id=c.id ORDER BY f.set_at DESC,f.id DESC LIMIT 1),false) is_test
+        FROM leadgen.companies c WHERE c.id=$1 FOR UPDATE`,[id])).rows[0];
+      if(!company)throw fail('COMPANY_NOT_FOUND','Company not found',404);
+      const filled=[],skipped=[];
+      const city=cleanText(fields.city,'city',{max:120});
+      if(city&&!company.city){await client.query('UPDATE leadgen.companies SET city=$2,updated_at=now() WHERE id=$1',[id,city]);filled.push('city');}
+      const type=String(fields.company_type||'').trim().toUpperCase();
+      if(COMPANY_TYPES[type]&&!company.company_type){await client.query('UPDATE leadgen.companies SET company_type=$2,updated_at=now() WHERE id=$1',[id,COMPANY_TYPES[type]]);filled.push('company_type');}
+      if(fields.contact?.email){
+        await client.query('SAVEPOINT fill_contact');
+        try{
+          await this.insertContact(client,{id,normalized_domain:company.normalized_domain,market_code:company.country_code,is_test:company.is_test},fields.contact,actor);
+          await client.query('RELEASE SAVEPOINT fill_contact');filled.push('contact');
+        }catch(error){await client.query('ROLLBACK TO SAVEPOINT fill_contact');skipped.push({field:'contact',reason:String(error.code||'CONTACT_NOT_ADDED')});}
+      }
+      const wantsDeal=fields.deal_amount!==undefined&&fields.deal_amount!==null||fields.customer_grade;
+      if(wantsDeal){
+        if(await this.stageOf(client,id,owner)==='WON')skipped.push({field:'deal',reason:'DEAL_WON'});
+        else{
+          const current=(await client.query(`SELECT * FROM leadgen.crm_deal_profiles WHERE company_id=$1 AND merchant_id IS NOT DISTINCT FROM $2::uuid FOR UPDATE`,[id,owner])).rows[0]||null;
+          const changes={};
+          const amount=fields.deal_amount===undefined||fields.deal_amount===null?null:Number(fields.deal_amount);
+          const currency=String(fields.deal_currency||'').trim().toUpperCase();
+          if(amount!==null&&Number.isFinite(amount)&&amount>=0&&amount<1e12&&/^[A-Z]{3}$/.test(currency)&&(current?.deal_amount===null||current?.deal_amount===undefined)){
+            changes.deal_amount=Math.round(amount*100)/100;changes.deal_currency=currency;
+          }
+          const grade=String(fields.customer_grade||'').trim().toUpperCase();
+          if(['A','B','C','D'].includes(grade)&&!current?.customer_grade)changes.customer_grade=grade;
+          const columns=Object.keys(changes);
+          if(columns.length){
+            const row=current
+              ?(await client.query(`UPDATE leadgen.crm_deal_profiles SET ${columns.map((column,index)=>`${column}=$${index+2}`).join(',')},version=version+1,updated_by=$${columns.length+2},updated_at=now()
+                  WHERE id=$1 RETURNING id`,[current.id,...columns.map(column=>changes[column]),actor])).rows[0]
+              :(await client.query(`INSERT INTO leadgen.crm_deal_profiles(company_id,merchant_id,${columns.join(',')},updated_by)
+                  VALUES($1,$2,${columns.map((_,index)=>`$${index+3}`).join(',')},$${columns.length+3}) RETURNING id`,[id,owner,...columns.map(column=>changes[column]),actor])).rows[0];
+            await client.query(`INSERT INTO leadgen.crm_deal_profile_events(deal_profile_id,company_id,merchant_id,changes,changed_by) VALUES($1,$2,$3,$4::jsonb,$5)`,
+              [row.id,id,owner,JSON.stringify({...changes,source:'IMPORT_FILL'}),actor]);
+            if(changes.deal_amount!==undefined)filled.push('deal_amount');
+            if(changes.customer_grade)filled.push('customer_grade');
+          }
+        }
+      }
+      if(!filled.length)return{filled,skipped,outbox:null};
+      const summary=`表格导入补全 / Filled from a spreadsheet: ${filled.join(', ')}`;
+      const activity=(await client.query(`INSERT INTO leadgen.opportunity_activities
+          (company_id,opportunity_snapshot_id,activity_type,owner_identity,details,idempotency_key,occurred_at,recorded_by,merchant_id)
+        VALUES($1,NULL,'NOTE',$2,$3::jsonb,$4,now(),$2,$5) RETURNING id,occurred_at`,
+        [id,actor,JSON.stringify({summary,result:null,channel:'NOTE',source:'IMPORT_FILL',fields:filled}),`manual-company:fill:${randomUUID()}`,owner])).rows[0];
+      const outbox=(await client.query(`INSERT INTO leadgen.crm_sync_outbox(company_id,operation,payload,idempotency_key,sync_status,next_attempt_at,merchant_id)
+        VALUES($1,'UPDATE_ACTIVITY',$2::jsonb,$3,'PENDING',now(),$4) RETURNING id,sync_status`,
+        [id,JSON.stringify(activityOutboxPayload({activity_type:'NOTE',occurred_at:activity.occurred_at,summary,owner:actor,references:{activity:activity.id}})),`crm:activity:${activity.id}`,owner])).rows[0];
+      return{filled,skipped,outbox};
+    });
+    if(written.outbox)await this.dispatch([written.outbox]);
+    return{company_id:id,filled:written.filled,skipped:written.skipped};
+  }
+
+  /** Rows for the spreadsheet export: every manual company this account can see, with this owner's deal values. */
+  async exportRows(scope){
+    const params=[];
+    const sql=this.listSql(scope,params);
+    params.push(ownerOf(scope));
+    const rows=(await this.pool.query(`SELECT x.*,c.city,d.deal_amount,d.deal_currency,d.customer_grade FROM (${sql}) x
+      JOIN leadgen.companies c ON c.id=x.id
+      LEFT JOIN leadgen.crm_deal_profiles d ON d.company_id=x.id AND d.merchant_id IS NOT DISTINCT FROM $${params.length}::uuid
+      ORDER BY x.created_at DESC LIMIT 5000`,params)).rows;
+    return rows.map(row=>{const contact=(row.contacts||[])[0]||{};
+      return{company_id:row.id,company_name:row.company_name,website:row.website_url||row.normalized_domain,country:row.market_code,company_type:row.company_type,city:row.city||'',
+        contact_email:contact.email||'',contact_name:contact.person_name||'',job_title:contact.job_title||'',stage:row.stage,
+        deal_amount:row.deal_amount===null||row.deal_amount===undefined?'':Number(row.deal_amount),deal_currency:row.deal_currency?String(row.deal_currency).trim():'',
+        customer_grade:row.customer_grade||'',notes:row.notes||''};});
   }
 
   listSql(scope,params,where='TRUE'){
@@ -272,7 +373,9 @@ export class ManualCompanyService{
           WHERE dc.company_id=c.id AND dc.evidence_origin='MANUAL_ENTRY') contacts,
         (SELECT to_jsonb(d) FROM (SELECT id,draft_status,template_key,normalized_recipient,subject,body_text,reason_codes,created_by,created_at,decided_by,decided_at,outbound_message_id
           FROM leadgen.manual_first_touch_drafts WHERE company_id=c.id AND merchant_id IS NOT DISTINCT FROM ${owner} ORDER BY created_at DESC LIMIT 1) d) latest_draft,
-        (SELECT max(coalesce(a.occurred_at,a.created_at)) FROM leadgen.opportunity_activities a WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM ${owner}) last_activity_at
+        (SELECT max(coalesce(a.occurred_at,a.created_at)) FROM leadgen.opportunity_activities a WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM ${owner}) last_activity_at,
+        (SELECT d.expected_close_date::text FROM leadgen.crm_deal_profiles d WHERE d.company_id=c.id AND d.merchant_id IS NOT DISTINCT FROM ${owner}) deal_close_date,
+        (SELECT d.won_confirmation FROM leadgen.crm_deal_profiles d WHERE d.company_id=c.id AND d.merchant_id IS NOT DISTINCT FROM ${owner}) won_confirmation
       FROM leadgen.companies c JOIN leadgen.manual_company_entries e ON e.company_id=c.id
       JOIN leadgen.research_market_registry m ON m.market_code=e.market_code
       JOIN leadgen.dpv_product_category_scopes s ON s.id=e.category_scope_id

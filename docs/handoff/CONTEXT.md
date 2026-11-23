@@ -31,11 +31,11 @@ Simon 是运营者兼管理员，把系统开成**商家账号**给外贸公司�
 - **第 5 轮**（10-24）：开放 SMTP 465、登录加固（migration 067）、交接文档。
 - **优化方案第 1–4 批**（10-26 到 11-10，迁移 068–077，Simon 本机会话做了 1–3 批）：见 `PLAN.md`"进度"和 `docs/plan/2026-10_OPTIMIZATION_PLAN.md`。第 4 批（发信送达率）代码在 `src/outreach/senderHealth.js`、`src/outreach/sendingDomainCheck.js`，界面在 `public/ui/v4/sender-health.js`。
 
-- **销售管理补强**（11-21，079–080）：后端 `src/crm/deals.js`（商机、健康度、重点客户、提醒扫描、报表）、`src/crm/stageRules.js`（哪些改阶段要写原因）、`src/companies/importWizard.js`（表格导入）；界面 `public/ui/v4/sales-reports.js`、`deal-card.js`、`company-import.js`。每小时的跟进扫描同时生成提醒待办。
+- **销售管理补强**（11-21，079–080）：后端 `src/crm/deals.js`（商机、健康度、重点客户、提醒扫描、报表）、`src/crm/stageRules.js`（哪些改阶段要写原因）、`src/companies/importWizard.js`（表格导入）；界面 `public/ui/v4/sales-reports.js`、`deal-card.js`、`company-import.js`。每小时的跟进扫描同时生成提醒待办。第二轮：`src/crm/stageGate.js`（阶段关卡）、`src/crm/emailStats.js`、`src/crm/exchangeRates.js`、`src/crm/statsRouter.js`、`src/merchant/applications.js`、`src/merchant/payments/`；页面 `apply.html`、`email-stats.js`、`exchange-rates.js`。
 
 ## 4. 迁移（database/migrations/）
 
-- 最新是 `080_company_import_runs`（表格导入记录，只追加）；`079_crm_deal_health`（商机金额与分级 `crm_deal_profiles`、变更记录只追加、提醒规则 `crm_reminder_rules`、待办优先级与提醒来源）；`078_two_factor`（二步验证：加密密钥、恢复码、事件只追加）；`077_sender_health`（发信健康事件，只追加）。066 商家账号、067 登录限流、068–069 开关与商家发信安全、070–072 手动企业/API 密钥/跟进设置、073–076 无用线索/评分/模型辅助/回复关联。Simon 本机在 10-31 时已执行到 076；`git pull` 后再跑一次 `local-setup.ps1` 会执行 077–080。
+- 最新是 `082_merchant_onboarding`（申请试用、付款记录，只追加）；`081_crm_followup_rules`（手动汇率、成交确认、提醒触发时间）；`080_company_import_runs`（表格导入记录，只追加）；`079_crm_deal_health`（商机金额与分级 `crm_deal_profiles`、变更记录只追加、提醒规则 `crm_reminder_rules`、待办优先级与提醒来源）；`078_two_factor`（二步验证：加密密钥、恢复码、事件只追加）；`077_sender_health`（发信健康事件，只追加）。066 商家账号、067 登录限流、068–069 开关与商家发信安全、070–072 手动企业/API 密钥/跟进设置、073–076 无用线索/评分/模型辅助/回复关联。Simon 本机在 10-31 时已执行到 076；`git pull` 后再跑一次 `local-setup.ps1` 会执行 077–082。
 - 066 建的表（schema `leadgen`）：`merchants`、`workspace_users`、`merchant_mailboxes`、`merchant_scope`、`merchant_feedback`、`workspace_sessions`、`merchant_companies`；业务表加了 `merchant_id`（空 = SIM 自己）。
 - 迁移执行器：`services/demo-dashboard/src/phase7/migrationRunner.js`，支持 `--apply` 和新装用的 `--baseline`。
 - 新装时 PostgreSQL 的 init 脚本已包含全部迁移文件，`--baseline` 只登记账本；已有库则走 `--apply`。

@@ -84,11 +84,11 @@ test('check sorts rows into importable, duplicate and error; import creates comp
     const status=Object.fromEntries(checked.rows.map(row=>[row.row,[row.status,...row.reasons,...row.warnings]]));
     assert.deepEqual(status,{2:['OK'],3:['WARNING','CONTACT_NOT_ON_COMPANY_DOMAIN'],4:['DUPLICATE','DUPLICATE_IN_FILE'],5:['DUPLICATE','ALREADY_IN_DIRECTORY'],
       6:['ERROR','COMPANY_NAME_MISSING','WEBSITE_INVALID'],7:['ERROR','MARKET_NOT_ACTIVE'],8:['OK']});
-    assert.deepEqual(checked.summary,{total:7,ok:2,warning:1,duplicate:2,error:2,importable:3});
+    assert.deepEqual(checked.summary,{total:7,ok:2,warning:1,duplicate:2,error:2,update:0,importable:3});
     assert.equal(Number((await pool.query(`SELECT count(*) FROM leadgen.companies WHERE data_origin='manual'`)).rows[0].count),1,'check writes nothing');
 
     const result=await imports.commit(body,'simon',ADMIN);
-    assert.deepEqual(result.summary,{total:7,created:3,skipped:4,failed:0});
+    assert.deepEqual(result.summary,{total:7,created:3,updated:0,skipped:4,failed:0});
     const created=(await pool.query(`SELECT c.company_name,c.normalized_domain,c.country_code,e.company_type,e.notes FROM leadgen.companies c
       JOIN leadgen.manual_company_entries e ON e.company_id=c.id WHERE c.company_name<>'Listed Co' ORDER BY c.company_name`)).rows;
     assert.deepEqual(created.map(row=>[row.company_name,row.normalized_domain,row.country_code,row.company_type]),

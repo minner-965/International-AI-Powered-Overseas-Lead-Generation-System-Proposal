@@ -191,7 +191,7 @@ test('B1: approved manual first touch is a normal outbound/thread; a reply corre
     const row=(await pool.query('SELECT operation,sync_status,payload FROM leadgen.crm_sync_outbox WHERE id=$1',[call.crm_outbox_id])).rows[0];
     assert.equal(row.operation,'UPDATE_ACTIVITY');assert.equal(row.sync_status,'PENDING');assert.equal(row.payload.activity_type,'CALL');
     assert.ok(s.queued.some(job=>job.name==='sync-outreach-to-crm'&&job.data.outbox_id===call.crm_outbox_id));
-    const stage=await s.companies.setStage(created.id,{stage:'QUOTED',note:'Price list sent'},'simon',ADMIN);assert.equal(stage.stage,'QUOTED');
+    const stage=await s.companies.setStage(created.id,{stage:'QUOTED',note:'Price list sent',expected_close_date:'2026-12-31'},'simon',ADMIN);assert.equal(stage.stage,'QUOTED');
     await assert.rejects(s.companies.setStage(created.id,{stage:'LOST'},'simon',ADMIN),{code:'LOST_REASON_REQUIRED'});
     // A second first touch for the company is refused (already contacted).
     await assert.rejects(s.firstTouch.createDraft(created.id,{contact_id:contactId},'simon',ADMIN),error=>error.details.reason_codes.includes('ALREADY_FIRST_CONTACTED'));
