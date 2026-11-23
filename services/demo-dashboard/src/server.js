@@ -35,6 +35,7 @@ import { createPhase7QueueHandlers } from './phase7/queueHandlers.js';
 import { createPhase7Router, registerPhase7RawWebhookRoutes } from './phase7/router.js';
 import {CrmService} from './crm/service.js';
 import {createCrmRouter} from './crm/router.js';
+import {createCrmStatsRouter} from './crm/statsRouter.js';
 import {FollowupSettingsService,createFollowupSettingsRouter} from './crm/followupSettings.js';
 import { createManagementAuth } from './phase7/managementAuth.js';
 import { ResearchWorkbenchService } from './research/ResearchWorkbenchService.js';
@@ -723,6 +724,7 @@ function requireInternalToken(req, res, next) {
 }
 
 app.use(createPhase7Router({service:phase7Service,queue:phase7QueueProxy,requireInternalToken,env:process.env,managementAuth}));
+app.use('/api/crm',createCrmStatsRouter({pool,deals:crmDeals,env:process.env,managementAuth}));
 app.use('/api/crm',createCrmRouter({service:crmService,env:process.env,managementAuth,deals:crmDeals}));
 app.use(createFollowupSettingsRouter({settings:followupSettings,managementAuth}));
 // Automation controls: GET control/status, PUT control (all on/off), PUT control/:subsystem

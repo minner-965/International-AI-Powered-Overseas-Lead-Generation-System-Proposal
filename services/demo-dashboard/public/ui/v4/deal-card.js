@@ -10,6 +10,20 @@ import { FLAG_NAMES } from './sales-reports.js';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'AED', 'SAR', 'MXN', 'BRL', 'AUD', 'CAD', 'SGD', 'CNY']);
 const GRADES = Object.freeze({ A: ['重点', 'Key'], B: ['良好', 'Good'], C: ['一般', 'Normal'], D: ['较低', 'Low'] });
 const HEALTH = Object.freeze({ GOOD: ['健康', 'Healthy', 'ok'], FAIR: ['一般', 'Fair', 'warn'], POOR: ['需关注', 'Needs attention', 'bad'] });
+const ESTIMATE_PARTS = Object.freeze({ stage: ['当前阶段', 'Stage'], history: ['这家客户以往成交率', 'Past win rate with this customer'], follow_ups: ['近 7 天跟进次数', 'Follow-ups in the last 7 days'],
+  amount: ['金额与以往成交单相比', 'Amount against past won deals'], dwell: ['在当前阶段停留天数', 'Days in the current stage'] });
+const ESTIMATE_ADVICE = Object.freeze({ STALLED_IN_STAGE: ['在当前阶段停了 14 天以上，建议推进或确认客户意向', 'More than 14 days in this stage; move it on or check the customer’s intent'],
+  NO_RECENT_FOLLOW_UP: ['近 7 天没有跟进记录，联系一次能提高赢率', 'No follow-up in 7 days; one contact raises the chance'],
+  LOW_PAST_WIN_RATE: ['这家客户以往成交率偏低', 'Few past deals with this customer were won'],
+  AMOUNT_UNUSUAL: ['金额和以往成交单差别较大，请确认报价', 'The amount is far from past won deals; check the quote'] });
+/** "建议赢率" block: the estimate, each weighted part and what pulls it down (exported for tests). */
+export function estimateMarkup(deal) {
+  const e = deal.estimate;
+  if (!e || !e.parts?.length) return '';
+  const parts = e.parts.map(part => `<li><span class="k">${bi(...(ESTIMATE_PARTS[part.key] || [part.key, part.key]))}</span><span class="v">${part.points} × ${Math.round(part.weight * 100)}%</span></li>`).join('');
+  const advice = (e.advice || []).map(code => `<li>${bi(...(ESTIMATE_ADVICE[code] || [code, code]))}</li>`).join('');
+  return `<details class="v4-health-parts" data-win-estimate><summary>${bi(`建议赢率 ${e.score}%，怎么算`, `Suggested ${e.score}%: how it is counted`)}</summary><ul class="review-list">${parts}</ul>${advice ? `<ul class="v4-mini-list">${advice}</ul>` : ''}</details>`;
+}
 const PARTS = Object.freeze([['profile', '资料完整', 'Profile', 25], ['timely', '跟进及时', 'On time', 35], ['moving', '商机推进', 'Deal moving', 25], ['answered', '客户互动', 'Customer answers', 15]]);
 
 /** Card markup (exported for tests). */
@@ -26,8 +40,9 @@ export function dealCardMarkup(deal, { busy = false } = {}) {
         <div class="field"><label for="deal-amount">${bi('预计金额', 'Deal amount')}</label><input id="deal-amount" name="deal_amount" type="number" inputmode="decimal" min="0" step="0.01" value="${deal.deal_amount ?? ''}"${busy ? ' disabled' : ''}${tip('这单预计能成交的金额，用于报表的在谈金额', 'Expected value of this deal; used for the pipeline value in reports')}></div>
         <div class="field"><label for="deal-currency">${bi('币种', 'Currency')}</label><select id="deal-currency" name="deal_currency"${busy ? ' disabled' : ''}><option value="">—</option>${currencies.map(code => `<option value="${code}"${deal.deal_currency === code ? ' selected' : ''}>${code}</option>`).join('')}</select></div>
         <div class="field"><label for="deal-close">${bi('预计成交日', 'Expected close')}</label><input id="deal-close" name="expected_close_date" type="date" value="${esc(deal.expected_close_date || '')}"${busy ? ' disabled' : ''}></div>
-        <div class="field"><label for="deal-probability">${bi('赢率 %', 'Win probability %')}</label><input id="deal-probability" name="win_probability" type="number" inputmode="numeric" min="0" max="100" step="1" value="${deal.win_probability ?? ''}" placeholder="${deal.default_win_probability}"${busy ? ' disabled' : ''}${tip(`留空时按当前阶段默认 ${deal.default_win_probability}%`, `Empty uses the stage default, ${deal.default_win_probability}%`)}></div>
+        <div class="field"><label for="deal-probability">${bi('赢率 %', 'Win probability %')}</label><input id="deal-probability" name="win_probability" type="number" inputmode="numeric" min="0" max="100" step="1" value="${deal.win_probability ?? ''}" placeholder="${deal.estimated_win_probability ?? deal.default_win_probability}"${busy ? ' disabled' : ''}${tip(`留空时用建议赢率 ${deal.estimated_win_probability ?? deal.default_win_probability}%（按阶段、以往成交、近期跟进、金额和停留天数估算）`, `Empty uses the suggested ${deal.estimated_win_probability ?? deal.default_win_probability}% (stage, past wins, recent follow-ups, amount, days in stage)`)}></div>
       </div>
+      ${estimateMarkup(deal)}
       ${parts ? `<details class="v4-health-parts"><summary>${bi('健康度怎么算', 'How health is counted')}</summary><ul class="review-list">${parts}</ul></details>` : ''}
       <p class="v4-form-status" role="status" aria-live="polite" data-deal-status></p>
       <div class="btns"><button class="btn btn-primary" type="submit"${busy ? ' disabled' : ''}${tip('保存金额、成交日、赢率和分级；每次修改都会留下记录', 'Save the amount, close date, probability and grade; every change is recorded')}>${bi('保存', 'Save')}</button></div>

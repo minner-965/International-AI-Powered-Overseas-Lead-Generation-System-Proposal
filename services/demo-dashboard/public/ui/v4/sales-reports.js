@@ -74,7 +74,20 @@ export function reportMarkup(report) {
 }
 
 /** Reminder rules form (exported for tests). */
-export function rulesMarkup(rules, { busy = false } = {}) {
+export const REMINDER_RULE_NAMES = Object.freeze({ NO_FOLLOW_UP: ['太久没联系', 'Gone quiet'], QUOTED_NO_REPLY: ['报价后未回复', 'Quote unanswered'],
+  SAMPLE_NO_CONFIRM: ['寄样后未确认', 'Samples unconfirmed'], NEXT_ACTION_DUE: ['下次联系日已过', 'Next contact date passed'] });
+/** 试运行 / Preview result under the rules form (exported for tests). */
+export function previewMarkup(preview) {
+  if (!preview) return '';
+  const rows = Object.entries(preview.rules || {}).map(([rule, row]) => {
+    const skipped = [row.skipped.open ? `已有未完成 ${row.skipped.open}` : '', row.skipped.same_event ? `同一事件已提醒 ${row.skipped.same_event}` : '', row.skipped.recently_closed ? `刚处理过 ${row.skipped.recently_closed}` : '', row.skipped.over_limit ? `超出本轮上限 ${row.skipped.over_limit}` : ''].filter(Boolean).join('，');
+    const skippedEn = [row.skipped.open ? `${row.skipped.open} already open` : '', row.skipped.same_event ? `${row.skipped.same_event} already reminded for this event` : '', row.skipped.recently_closed ? `${row.skipped.recently_closed} recently closed` : '', row.skipped.over_limit ? `${row.skipped.over_limit} over this run's limit` : ''].filter(Boolean).join(', ');
+    return `<li><span class="k">${bi(...(REMINDER_RULE_NAMES[rule] || [rule, rule]))}</span><span class="v">${bi(`符合 ${row.matched} · 会新建 ${row.creatable}`, `matched ${row.matched} · would create ${row.creatable}`)}${skipped ? `<small>${bi(`跳过：${skipped}`, `Skipped: ${skippedEn}`)}</small>` : ''}${row.examples?.length ? `<small>${bi(`例如：${row.examples.join('、')}`, `e.g. ${row.examples.join(', ')}`)}</small>` : ''}</span></li>`;
+  }).join('');
+  return `<div class="v4-rules-preview" data-rules-preview-result><h4 class="sub-title">${bi(`试运行结果（按已保存的规则，检查了 ${preview.checked} 家）`, `Preview with the saved rules (${preview.checked} customers checked)`)}</h4>${preview.enabled ? '' : `<p class="meta">${bi('自动提醒目前是关闭的，正式运行时不会新建', 'Automatic reminders are off; a real run creates nothing')}</p>`}<ul class="review-list">${rows}</ul></div>`;
+}
+
+export function rulesMarkup(rules, { busy = false, preview = null } = {}) {
   const field = (name, zh, en, tipZh, tipEn) => `<div class="field"><label for="rules-${name}">${bi(zh, en)}</label><input id="rules-${name}" name="${name}" type="number" inputmode="numeric" min="1" max="90" step="1" value="${esc(rules[name])}"${busy ? ' disabled' : ''}${tip(tipZh, tipEn)}></div>`;
   return `<section class="card" aria-labelledby="rules-title"><div class="ph"><div><h3 id="rules-title">${bi('跟进提醒规则', 'Reminder rules')}</h3><p>${bi('到了天数，系统每小时自动在“我的任务”里加一条提醒；同一家客户同一种提醒只会有一条', 'When the days pass, a reminder task is added to My tasks (checked hourly); one per customer and kind')}</p></div></div>
     <form class="pb" data-rules-form novalidate><ul class="review-list v3-automation-switches"><li><span class="k">${bi('自动提醒', 'Automatic reminders')}</span><span class="v"><label class="v4-switch"${tip('关闭后不再自动生成提醒任务，已有任务不受影响', 'When off, no new reminder tasks are added; existing ones stay')}><input type="checkbox" role="switch" name="enabled"${rules.enabled ? ' checked' : ''}${busy ? ' disabled' : ''} aria-label="自动提醒 Automatic reminders"><span aria-hidden="true"></span></label></span></li></ul>
@@ -82,16 +95,16 @@ export function rulesMarkup(rules, { busy = false } = {}) {
       ${field('quoted_no_reply_days', '报价后几天没回复提醒', 'Days after a quote', '报价后客户这么多天没有回复就提醒，优先级为高', 'Remind (high priority) when a quote gets no reply for this many days')}
       ${field('sample_no_confirm_days', '寄样后几天没确认提醒', 'Days after samples', '寄样后客户这么多天没有回复确认就提醒，优先级为高', 'Remind (high priority) when samples get no confirmation for this many days')}</div>
       <p class="v4-form-status" role="status" aria-live="polite" data-rules-status></p>
-      <div class="btns"><button class="btn btn-primary" type="submit"${busy ? ' disabled' : ''}${tip('保存提醒规则，只影响您自己的客户', 'Save the reminder rules for your own customers')}>${bi('保存规则', 'Save rules')}</button></div></form></section>`;
+      <div class="btns"><button class="btn btn-primary" type="submit"${busy ? ' disabled' : ''}${tip('保存提醒规则，只影响您自己的客户', 'Save the reminder rules for your own customers')}>${bi('保存规则', 'Save rules')}</button><button class="btn" type="button" data-rules-preview${busy ? ' disabled' : ''}${tip('不新建任何任务，先看下一次每小时检查会生成哪些提醒', 'See which reminders the next hourly check would create, without creating any')}>${bi('试运行', 'Preview')}</button></div>${previewMarkup(preview)}</form></section>`;
 }
 
-const state = { report: null, rules: null, error: false, busy: false };
+const state = { report: null, rules: null, error: false, busy: false, preview: null };
 function render() {
   const root = document.getElementById('sales-reports-root');
   if (!root) return;
   if (state.error) { root.innerHTML = `<section class="card">${stateBlock('error', '报表暂未读取', 'Reports unavailable', { retry: true })}</section>`; return; }
   if (!state.report || !state.rules) { root.innerHTML = `<section class="card">${stateBlock('loading', '正在统计', 'Counting')}</section>`; return; }
-  root.innerHTML = `${reportMarkup(state.report)}${rulesMarkup(state.rules, { busy: state.busy })}`;
+  root.innerHTML = `${reportMarkup(state.report)}${rulesMarkup(state.rules, { busy: state.busy, preview: state.preview })}`;
 }
 export async function loadReports() {
   state.error = false; render();
@@ -104,8 +117,15 @@ async function saveRules(form) {
   const body = { enabled: form.enabled.checked, no_follow_up_days: Number(form.no_follow_up_days.value), quoted_no_reply_days: Number(form.quoted_no_reply_days.value), sample_no_confirm_days: Number(form.sample_no_confirm_days.value) };
   if (Object.entries(body).some(([key, value]) => key !== 'enabled' && !(Number.isInteger(value) && value >= 1 && value <= 90))) { status.innerHTML = bi('天数请填 1 到 90 的整数', 'Use whole days from 1 to 90'); return; }
   state.busy = true; status.innerHTML = bi('正在保存', 'Saving');
-  try { state.rules = await managementRequest('/api/crm/reminder-rules', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); state.busy = false; render(); toast('提醒规则已保存', 'Reminder rules saved'); }
+  try { state.rules = await managementRequest('/api/crm/reminder-rules', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); state.busy = false; state.preview = null; render(); toast('提醒规则已保存', 'Reminder rules saved'); }
   catch { state.busy = false; render(); const again = document.querySelector('[data-rules-status]'); if (again) again.innerHTML = bi('未能保存，请重试', 'Could not save; please retry'); }
+}
+
+async function previewRules() {
+  const status = document.querySelector('[data-rules-status]');
+  if (status) status.innerHTML = bi('正在试运行', 'Running the preview');
+  try { state.preview = await managementRequest('/api/crm/reminder-rules/preview'); render(); }
+  catch { const again = document.querySelector('[data-rules-status]'); if (again) again.innerHTML = bi('试运行未完成，请重试', 'Preview did not finish; please retry'); }
 }
 
 // ---- 重点客户 on the workbench ----
@@ -136,7 +156,7 @@ if (typeof document !== 'undefined') {
   const root = document.getElementById('sales-reports-root');
   if (root) {
     root.addEventListener('submit', event => { if (event.target.matches('[data-rules-form]')) { event.preventDefault(); void saveRules(event.target); } });
-    root.addEventListener('click', event => { if (event.target.closest('[data-state-retry]')) void loadReports(); });
+    root.addEventListener('click', event => { if (event.target.closest('[data-state-retry]')) void loadReports(); if (event.target.closest('[data-rules-preview]')) void previewRules(); });
   }
   document.addEventListener('crm:viewchange', event => {
     if (event.detail?.view === 'sales-reports') void loadReports();

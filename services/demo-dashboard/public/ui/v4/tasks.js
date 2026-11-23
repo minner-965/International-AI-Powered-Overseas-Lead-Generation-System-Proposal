@@ -77,6 +77,10 @@ function ensureDialog() {
   return dialog;
 }
 
+const RESCHEDULE_REASON_TEXT = ['任务已逾期，改期请写明原因', 'This task is overdue; write why it is moved'];
+/** Open and past its due time (same rule as the server). Exported for tests. */
+export const taskOverdue = (task, now = Date.now()) => Boolean(task && ['OPEN', 'IN_PROGRESS'].includes(task.task_status) && task.due_at && new Date(task.due_at).getTime() < now);
+
 function openDialog(mode, task = null, opener = document.activeElement) {
   const dialog = ensureDialog(); const form = dialog.querySelector('form');
   form.reset(); dialog.opener = opener; dialog.dataset.mode = mode; dialog.dataset.taskId = task?.id || '';
@@ -85,6 +89,10 @@ function openDialog(mode, task = null, opener = document.activeElement) {
   dialog.querySelector('#v4-task-title').innerHTML = mode === 'new' ? bi('新建任务', 'New task') : mode === 'reschedule' ? bi('改期', 'Reschedule') : bi('指派', 'Assign');
   form.querySelector('.v4-form-status').textContent = '';
   if (task) { form.due_at.value = toLocalInput(task.due_at); form.owner.value = task.owner || ''; }
+  // An overdue task can only be moved with a reason (the server checks the same).
+  const needsReason = mode === 'reschedule' && taskOverdue(task);
+  dialog.querySelector('label[for="v4-task-note"]').innerHTML = needsReason ? bi('改期原因（已逾期，必填）', 'Reason (overdue, required)') : bi('备注', 'Note');
+  form.note.required = needsReason;
   if (mode === 'new') {
     form.company_id.innerHTML = '<option value="">正在读取企业 Loading companies</option>';
     loadPipeline().then(payload => {
@@ -104,6 +112,7 @@ function openDialog(mode, task = null, opener = document.activeElement) {
         await crm.createTask({ company_id: form.company_id.value, task_type: form.task_type.value, priority: form.priority?.value || 'NORMAL', title: form.title.value.trim(), due_at: fromLocalInput(form.due_at.value) || undefined, owner: form.owner.value.trim() || undefined });
       } else if (mode === 'reschedule') {
         if (!form.due_at.value) { status.innerHTML = bi('请选择新的截止时间', 'Choose a new due time'); return; }
+        if (needsReason && !form.note.value.trim()) { status.innerHTML = bi(...RESCHEDULE_REASON_TEXT); form.note.focus(); return; }
         submit.disabled = true;
         await crm.updateTask(task.id, { due_at: fromLocalInput(form.due_at.value), note: form.note.value.trim() || undefined });
       } else {
@@ -112,7 +121,7 @@ function openDialog(mode, task = null, opener = document.activeElement) {
         await crm.updateTask(task.id, { owner: form.owner.value.trim(), note: form.note.value.trim() || undefined });
       }
       dialog.close(); notifyCrmChange({ type: 'task' });
-    } catch (error) { status.innerHTML = bi(...errorText(error)); }
+    } catch (error) { status.innerHTML = bi(...(error?.code === 'CRM_RESCHEDULE_REASON_REQUIRED' ? RESCHEDULE_REASON_TEXT : errorText(error))); }
     finally { submit.disabled = false; }
   };
 }

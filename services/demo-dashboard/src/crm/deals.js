@@ -36,6 +36,86 @@ export function customerHealth(item,now=new Date()){
   return{score,level:score>=70?'GOOD':score>=40?'FAIR':'POOR',parts:{profile,timely,moving,answered},days_since_touch:since};
 }
 
+/**
+ * Suggested win probability (1-99; WON 100, LOST 0) from five weighted parts, each scored 0-100:
+ * stage default 35% · this customer's past win rate 20% (50 without history) · follow-ups in the last
+ * 7 days 20% (20 each, max 100) · amount against the average won deal in the same currency 10%
+ * (80 within 0.5-2x, 60 within 0.3-3x, else 30; 50 without data) · days in the current stage 15%
+ * (100 minus 5 a day, at least 10). Advice codes say what pulls it down.
+ */
+export const WIN_ESTIMATE_WEIGHTS=Object.freeze({stage:0.35,history:0.2,follow_ups:0.2,amount:0.1,dwell:0.15});
+export function estimateWinProbability(item,history={},now=new Date()){
+  const stage=item.pipeline_stage||'NEW';
+  if(stage==='WON'||stage==='LOST'){const score=stage==='WON'?100:0;return{score,parts:[],advice:[]};}
+  const past=history.companies?.get?.(item.company_id)||history.companies?.[item.company_id]||null;
+  const closed=past?(past.won||0)+(past.lost||0):0;
+  const historyPoints=closed?Math.round((past.won||0)/closed*100):50;
+  const recent=Number(item.recent_activity_7d||0);
+  const followPoints=Math.min(100,recent*20);
+  const average=item.deal_currency?(history.averageWon?.get?.(item.deal_currency)??history.averageWon?.[item.deal_currency]??null):null;
+  let amountPoints=50;
+  if(item.deal_amount!==null&&item.deal_amount!==undefined&&average){
+    const ratio=item.deal_amount/average;
+    amountPoints=ratio>=0.5&&ratio<=2?80:ratio>=0.3&&ratio<=3?60:30;
+  }
+  const inStage=Math.max(0,days(item.stage_changed_at,now)??0);
+  const dwellPoints=Math.max(10,100-5*inStage);
+  const points={stage:STAGE_WIN_PROBABILITY[stage]??0,history:historyPoints,follow_ups:followPoints,amount:amountPoints,dwell:dwellPoints};
+  const parts=Object.entries(WIN_ESTIMATE_WEIGHTS).map(([key,weight])=>({key,points:points[key],weight}));
+  const raw=parts.reduce((total,part)=>total+part.points*part.weight,0);
+  const advice=[];
+  if(inStage>=14)advice.push('STALLED_IN_STAGE');
+  if(!recent)advice.push('NO_RECENT_FOLLOW_UP');
+  if(closed&&historyPoints<30)advice.push('LOW_PAST_WIN_RATE');
+  if(amountPoints===30)advice.push('AMOUNT_UNUSUAL');
+  return{score:Math.min(99,Math.max(1,Math.round(raw))),parts,advice};
+}
+
+/**
+ * Reminder plan for one owner, without writing anything. Each reminder counts from an event:
+ * a quote or samples from the stage change, "gone quiet" from the last contact, a missed next contact
+ * from its planned date. Per rule and company: never while one is open, never twice for the same event,
+ * not within the rule's days after a person closed one, and at most `limit` new ones per run.
+ */
+export function planReminders(items,rules,existing=[],now=new Date(),{limit=MAX_REMINDERS_PER_RUN}={}){
+  const toTime=value=>value?new Date(value).getTime():null;
+  const tasks=new Map();
+  for(const task of existing){const key=`${task.company_id}|${task.source_rule}`;if(!tasks.has(key))tasks.set(key,[]);tasks.get(key).push(task);}
+  const windowDays=rule=>({NO_FOLLOW_UP:rules.no_follow_up_days,QUOTED_NO_REPLY:rules.quoted_no_reply_days,SAMPLE_NO_CONFIRM:rules.sample_no_confirm_days,NEXT_ACTION_DUE:1})[rule];
+  const create=[],skipped=[];
+  for(const item of items){
+    const candidates=keyCustomerFlags(item,rules,now).filter(flag=>flag!=='HIGH_INTENT')
+      .map(rule=>({rule,event_at:rule==='NO_FOLLOW_UP'?item.last_touch_at:item.stage_changed_at}));
+    if(ACTIVE_STAGES.includes(item.pipeline_stage)&&item.next_action_due_at&&toTime(item.next_action_due_at)<now.getTime())
+      candidates.push({rule:'NEXT_ACTION_DUE',event_at:item.next_action_due_at});
+    for(const {rule,event_at} of candidates){
+      const prior=tasks.get(`${item.company_id}|${rule}`)||[];
+      const eventTime=toTime(event_at);
+      let reason=null;
+      if(prior.some(task=>['OPEN','IN_PROGRESS'].includes(task.task_status)))reason='open';
+      else if(eventTime!==null&&prior.some(task=>toTime(task.source_event_at)===eventTime))reason='same_event';
+      else if(prior.some(task=>task.closed_at&&toTime(task.closed_at)>now.getTime()-windowDays(rule)*DAY))reason='recently_closed';
+      else if(create.length>=limit)reason='over_limit';
+      const entry={company_id:item.company_id,company_name:item.company_name,rule,event_at:event_at?new Date(event_at).toISOString():null,item};
+      if(reason)skipped.push({...entry,reason});else create.push(entry);
+    }
+  }
+  return{create,skipped};
+}
+
+/** Per-rule summary of a plan for the preview: matched, creatable, skipped by reason, up to 3 examples. */
+export function summarizeReminderPlan(plan){
+  const out={};
+  for(const rule of REMINDER_RULES){
+    const made=plan.create.filter(row=>row.rule===rule),left=plan.skipped.filter(row=>row.rule===rule);
+    const count=reason=>left.filter(row=>row.reason===reason).length;
+    out[rule]={matched:made.length+left.length,creatable:made.length,
+      skipped:{open:count('open'),same_event:count('same_event'),recently_closed:count('recently_closed'),over_limit:count('over_limit')},
+      examples:made.slice(0,3).map(row=>row.company_name)};
+  }
+  return out;
+}
+
 /** Grade suggested from health when a person has not graded the customer: 85+ A, 70+ B, 55+ C, else D. */
 export function suggestedGrade(health){
   if(!health)return null;
@@ -127,7 +207,9 @@ export class DealService{
       deal_amount:saved?.deal_amount===null||saved?.deal_amount===undefined?null:Number(saved.deal_amount),deal_currency:saved?.deal_currency||null,
       expected_close_date:saved?.expected_close_date?new Date(saved.expected_close_date).toISOString().slice(0,10):null,
       win_probability:saved?.win_probability??null,default_win_probability:STAGE_WIN_PROBABILITY[stage],
-      effective_win_probability:saved?.win_probability??STAGE_WIN_PROBABILITY[stage],
+      estimated_win_probability:item?.estimate?.score??STAGE_WIN_PROBABILITY[stage],estimate:item?.estimate||null,
+      effective_win_probability:saved?.win_probability??item?.estimate?.score??STAGE_WIN_PROBABILITY[stage],
+      won_confirmation:saved?.won_confirmation||null,won_confirmation_note:saved?.won_confirmation_note||null,won_confirmed_at:saved?.won_confirmed_at||null,
       customer_grade:saved?.customer_grade||null,suggested_grade:saved?.customer_grade?null:suggestedGrade(item?customerHealth(item,this.now()):null),version:saved?.version||0,updated_by:saved?.updated_by||null,updated_at:saved?.updated_at||null,
       health:item?customerHealth(item,this.now()):null,flags:item?keyCustomerFlags(item,rules,this.now()):[]};
   }
@@ -176,6 +258,8 @@ export class DealService{
     const signals=(await this.pool.query(`SELECT c.id company_id,
         (SELECT max(coalesce(a.occurred_at,a.created_at)) FROM leadgen.opportunity_activities a WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM $2::uuid) last_activity_at,
         (SELECT count(*)::int FROM leadgen.opportunity_activities a WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM $2::uuid) activity_count,
+        (SELECT count(*)::int FROM leadgen.opportunity_activities a WHERE a.company_id=c.id AND a.merchant_id IS NOT DISTINCT FROM $2::uuid
+          AND coalesce(a.occurred_at,a.created_at)>$3::timestamptz-interval '7 days') recent_activity_7d,
         (SELECT max(m.sent_at) FROM leadgen.outbound_messages m WHERE m.company_id=c.id AND m.merchant_id IS NOT DISTINCT FROM $2::uuid AND m.sent_at IS NOT NULL) last_sent_at,
         (SELECT max(coalesce(i.received_at,i.created_at)) FROM leadgen.inbound_messages i JOIN leadgen.outreach_threads t ON t.id=i.thread_id
           WHERE t.company_id=c.id AND t.merchant_id IS NOT DISTINCT FROM $2::uuid) last_inbound_at,
@@ -183,14 +267,33 @@ export class DealService{
         d.deal_amount,d.deal_currency,d.expected_close_date,d.win_probability,d.customer_grade
       FROM leadgen.companies c
       LEFT JOIN leadgen.crm_deal_profiles d ON d.company_id=c.id AND d.merchant_id IS NOT DISTINCT FROM $2::uuid
-      WHERE c.id=ANY($1::uuid[])`,[rows.map(row=>row.company_id),this.owner(scope)])).rows;
+      WHERE c.id=ANY($1::uuid[])`,[rows.map(row=>row.company_id),this.owner(scope),this.now().toISOString()])).rows;
     const byId=new Map(signals.map(row=>[row.company_id,row]));
+    const history=await this.winHistory(scope);
+    const now=this.now();
     return rows.map(row=>{
       const s=byId.get(row.company_id)||{};
-      return{...row,...s,deal_amount:s.deal_amount===null||s.deal_amount===undefined?null:Number(s.deal_amount),
-        last_touch_at:latest(s.last_activity_at,s.last_sent_at,s.last_inbound_at,row.stage_changed_at)?.toISOString()||null,
-        effective_win_probability:s.win_probability??STAGE_WIN_PROBABILITY[row.pipeline_stage]??0};
+      const item={...row,...s,deal_amount:s.deal_amount===null||s.deal_amount===undefined?null:Number(s.deal_amount),
+        last_touch_at:latest(s.last_activity_at,s.last_sent_at,s.last_inbound_at,row.stage_changed_at)?.toISOString()||null};
+      item.estimate=estimateWinProbability(item,history,now);
+      item.effective_win_probability=s.win_probability??item.estimate.score;
+      return item;
     });
+  }
+
+  /** Won/lost per company (from both stage histories) and the average won amount per currency, for this owner. */
+  async winHistory(scope=null){
+    const owner=this.owner(scope);
+    const rows=(await this.pool.query(`SELECT company_id,count(*) FILTER(WHERE stage='WON')::int won,count(*) FILTER(WHERE stage='LOST')::int lost FROM(
+        SELECT h.company_id,h.to_stage stage FROM leadgen.opportunity_stage_history h WHERE h.merchant_id IS NOT DISTINCT FROM $1::uuid AND h.to_stage IN('WON','LOST')
+        UNION ALL SELECT e.company_id,e.stage FROM leadgen.manual_company_stage_events e WHERE e.merchant_id IS NOT DISTINCT FROM $1::uuid AND e.stage IN('WON','LOST')) x
+      GROUP BY company_id`,[owner])).rows;
+    const averages=(await this.pool.query(`SELECT d.deal_currency currency,avg(d.deal_amount)::float8 average FROM leadgen.crm_deal_profiles d
+      WHERE d.merchant_id IS NOT DISTINCT FROM $1::uuid AND d.deal_amount IS NOT NULL AND d.deal_currency IS NOT NULL AND EXISTS(
+        SELECT 1 FROM leadgen.opportunity_stage_history h WHERE h.company_id=d.company_id AND h.merchant_id IS NOT DISTINCT FROM $1::uuid AND h.to_stage='WON'
+        UNION ALL SELECT 1 FROM leadgen.manual_company_stage_events e WHERE e.company_id=d.company_id AND e.merchant_id IS NOT DISTINCT FROM $1::uuid AND e.stage='WON')
+      GROUP BY d.deal_currency`,[owner])).rows;
+    return{companies:new Map(rows.map(row=>[row.company_id,{won:row.won,lost:row.lost}])),averageWon:new Map(averages.map(row=>[row.currency.trim(),row.average]))};
   }
 
   /** 重点客户 for the workbench: very interested, too long without follow-up, quote or samples unanswered. */
@@ -230,32 +333,44 @@ export class DealService{
     for(const row of(await this.pool.query(`SELECT id FROM leadgen.merchants_current WHERE effective_status IN('TRIAL','ACTIVE')`)).rows)
       owners.push({merchantId:row.id,restrict:true});
     let created=0,checked=0;
-    const skipped={already_open_or_recent:0,over_run_limit:0};
+    const skipped={open:0,same_event:0,recently_closed:0,over_limit:0};
     for(const scope of owners){
       const rules=await this.rules(scope);
       if(!rules.enabled)continue;
+      const {items,plan}=await this.reminderPlan(scope,rules);
+      checked+=items.length;
+      for(const row of plan.skipped)skipped[row.reason]++;
       const now=this.now();
-      let createdHere=0;
-      for(const item of await this.items(scope)){
-        checked++;
-        const poor=customerHealth(item,now).level==='POOR';
-        for(const flag of keyCustomerFlags(item,rules,now).filter(flag=>flag!=='HIGH_INTENT')){
-          if(createdHere>=MAX_REMINDERS_PER_RUN){skipped.over_run_limit++;continue;}
-          const spec=REMINDER_TASKS[flag];
-          const windowDays=flag==='NO_FOLLOW_UP'?rules.no_follow_up_days:flag==='QUOTED_NO_REPLY'?rules.quoted_no_reply_days:rules.sample_no_confirm_days;
-          const inserted=await this.pool.query(`INSERT INTO leadgen.sales_tasks(company_id,task_type,task_status,owner,due_at,details,updated_by,merchant_id,priority,source_rule)
-            SELECT $1,$2,'OPEN',$3,now(),$4::jsonb,'reminder-rules',$5,$6,$7
-            WHERE NOT EXISTS(SELECT 1 FROM leadgen.sales_tasks t WHERE t.company_id=$1 AND t.merchant_id IS NOT DISTINCT FROM $5::uuid AND t.source_rule=$7
-              AND (t.task_status IN('OPEN','IN_PROGRESS') OR t.closed_at>now()-($8::int*interval '1 day')))
-            ON CONFLICT DO NOTHING RETURNING id`,
-            [item.company_id,spec.task_type,item.owner_identity||'reminder-rules',JSON.stringify({title:spec.title,title_en:spec.title_en,next_action:spec.next_action,source:'REMINDER_RULE',notes:[]}),
-              scope.merchantId,flag==='NO_FOLLOW_UP'&&item.customer_grade!=='A'&&!poor?'NORMAL':'HIGH',flag,windowDays]);
-          created+=inserted.rowCount;createdHere+=inserted.rowCount;
-          if(!inserted.rowCount)skipped.already_open_or_recent++;
-        }
+      for(const entry of plan.create){
+        const spec=REMINDER_TASKS[entry.rule];
+        const item=entry.item;
+        const high=['QUOTED_NO_REPLY','SAMPLE_NO_CONFIRM'].includes(entry.rule)||item.customer_grade==='A'||customerHealth(item,now).level==='POOR';
+        // The 079 partial unique index keeps one open task per company, owner and rule even under a race.
+        const inserted=await this.pool.query(`INSERT INTO leadgen.sales_tasks(company_id,task_type,task_status,owner,due_at,details,updated_by,merchant_id,priority,source_rule,source_event_at)
+            VALUES($1,$2,'OPEN',$3,now(),$4::jsonb,'reminder-rules',$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING id`,
+          [item.company_id,spec.task_type,item.owner_identity||'reminder-rules',JSON.stringify({title:spec.title,title_en:spec.title_en,next_action:spec.next_action,source:'REMINDER_RULE',notes:[]}),
+            scope.merchantId,high?'HIGH':'NORMAL',entry.rule,entry.event_at]);
+        created+=inserted.rowCount;
+        if(!inserted.rowCount)skipped.open++;
       }
     }
     return{status:'COMPLETED',owners:owners.length,checked,created,skipped};
+  }
+
+  /** Items and the reminder plan for one owner (no writes). */
+  async reminderPlan(scope,rules=null){
+    rules=rules||await this.rules(scope);
+    const items=await this.items(scope);
+    const existing=items.length?(await this.pool.query(`SELECT company_id,source_rule,task_status,closed_at,source_event_at FROM leadgen.sales_tasks
+      WHERE source_rule IS NOT NULL AND merchant_id IS NOT DISTINCT FROM $1::uuid AND company_id=ANY($2::uuid[])`,[this.owner(scope),items.map(item=>item.company_id)])).rows:[];
+    return{items,plan:planReminders(items,rules,existing,this.now())};
+  }
+
+  /** 试运行 / Preview: what the next hourly run would create for this owner, with the current rules. */
+  async previewReminders(scope=null){
+    const rules=await this.rules(scope);
+    const {items,plan}=await this.reminderPlan(scope,rules);
+    return{enabled:rules.enabled,checked:items.length,rules:summarizeReminderPlan(plan),limit:MAX_REMINDERS_PER_RUN};
   }
 
   // ---- reports ----
@@ -357,7 +472,9 @@ export class DealService{
   }
 }
 
+const REMINDER_RULES=Object.freeze(['NO_FOLLOW_UP','QUOTED_NO_REPLY','SAMPLE_NO_CONFIRM','NEXT_ACTION_DUE']);
 const REMINDER_TASKS=Object.freeze({
+  NEXT_ACTION_DUE:{task_type:'FOLLOW_UP',title:'计划的下次联系日已过，请跟进',title_en:'The planned next contact date has passed; follow up',next_action:'Contact the customer as planned'},
   NO_FOLLOW_UP:{task_type:'FOLLOW_UP',title:'跟进提醒：已经很久没有联系这家客户',title_en:'Follow-up reminder: no contact for a while',next_action:'Call, message or email the customer'},
   QUOTED_NO_REPLY:{task_type:'QUOTATION',title:'报价后客户还没回复，请跟进',title_en:'No reply after the quote; follow up',next_action:'Ask whether the quote works and what is missing'},
   SAMPLE_NO_CONFIRM:{task_type:'SAMPLE',title:'寄样后客户还没确认，请跟进',title_en:'No confirmation after samples; follow up',next_action:'Check the samples arrived and ask for feedback'}

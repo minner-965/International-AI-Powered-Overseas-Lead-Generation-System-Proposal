@@ -87,7 +87,7 @@ test('CRM pipeline migration, APIs and approved follow-ups work end to end',{ski
     assert.equal(pipeline.items.find(row=>row.company_id===ids.companyA).pipeline_stage,'REPLIED');
     assert.equal(pipeline.items.find(row=>row.company_id===ids.companyB).pipeline_stage,'NEW');
     assert.ok(pipeline.stage_counts.REPLIED>=1&&pipeline.stage_counts.NEW>=2);
-    const quoted=await crm.setStage(ids.snapshotA,{stage:'QUOTED',note:'FOB quote sent',next_action:'Await quote feedback',next_action_due_at:new Date(Date.now()-DAY).toISOString()},sales);
+    const quoted=await crm.setStage(ids.snapshotA,{stage:'QUOTED',expected_close_date:'2026-12-31',note:'FOB quote sent',next_action:'Await quote feedback',next_action_due_at:new Date(Date.now()-DAY).toISOString()},sales);
     assert.equal(quoted.pipeline_stage,'QUOTED');
     await assert.rejects(()=>crm.setStage(ids.snapshotA,{stage:'SAMPLE',expected_version:quoted.version-1},sales),{code:'CRM_VERSION_CONFLICT',status:409});
     // An email event later must not pull a person's stage backwards.

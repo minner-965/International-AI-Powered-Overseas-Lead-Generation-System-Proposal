@@ -1,7 +1,7 @@
 // Company Detail follow-up card: stage, owner, next follow-up, quick activity log and timeline.
 // Also owns the shared "log activity" sheet used by the phone workbench grid.
 import { crm, STAGES, lostReasonOptions, tomorrowInput, ACTIVITY_TYPES, TASK_TYPES, bi, esc, stageLabel, when, toLocalInput, fromLocalInput, stateBlock,
-  notifyCrmChange, errorText, loadPipeline, pipelineItemFor, stageNeedsReason } from './crm.js';
+  notifyCrmChange, errorText, loadPipeline, pipelineItemFor, stageNeedsReason, stageGateProblem, STAGE_GATE_TEXT, WON_CONFIRMATIONS } from './crm.js';
 import { mountDealCard } from './deal-card.js';
 import { tip } from './tooltips.js';
 
@@ -37,6 +37,7 @@ function cardMarkup(item) {
     <form class="pb v4-followup-form" novalidate>
       <div class="steps" role="group" aria-label="销售阶段 Pipeline stage">${STAGES.map(([key, szh, sen], i) => `<button type="button" data-tip="把这家客户移到「${szh}」阶段，点保存后系统会记录时间和操作人|Move this prospect to ${sen}; saving records the time and user" data-stage="${key}" aria-pressed="${key === item.pipeline_stage}" class="${i < index && key !== 'LOST' ? 'done' : ''}${key === 'LOST' ? ' lost' : ''}">${esc(szh)}<small>${esc(sen)}</small></button>`).join('')}</div>
       <div class="v4-lost-reason" hidden><div class="field"><label for="followup-lost-reason">${bi('丢单原因', 'Lost reason')}</label><select id="followup-lost-reason" name="lost_reason"${tip('选一个主要原因，报表按原因统计丢单', 'Pick the main reason; the report counts lost deals by reason')}>${lostReasonOptions(item.lost_reason || '')}</select></div><div class="field"><label for="followup-lost-detail">${bi('说明（可选）', 'Details (optional)')}</label><input id="followup-lost-detail" name="lost_detail" maxlength="1000"></div><div class="field"><label for="followup-revisit">${bi('回访日期（可选）', 'Revisit on (optional)')}</label><input id="followup-revisit" name="revisit_date" type="date" min="${tomorrowInput()}"${tip('到这一天会在“我的任务”里出现一条回访提醒', 'A revisit task appears in My tasks on this day')}></div></div><div class="field v4-stage-reason" hidden><label for="followup-stage-reason">${bi('改动原因（往回改阶段或重新打开时必填）', 'Reason (needed to move back or reopen)')}</label><input id="followup-stage-reason" name="stage_note" maxlength="1000"></div>
+      ${gateMarkup(item)}
       <div class="form-grid" style="margin-top:16px">
         <div class="field"><label for="followup-owner">${bi('负责人', 'Owner')}</label><input id="followup-owner" name="owner" maxlength="200" value="${esc(item.owner_identity || '')}" autocomplete="off"></div>
         <div class="field"><label for="followup-due">${bi('下次跟进', 'Next follow-up')}</label><input id="followup-due" name="next_action_due_at" type="datetime-local" value="${esc(toLocalInput(item.next_action_due_at))}"></div>
@@ -119,6 +120,17 @@ async function loadTimeline(host, companyId) {
   catch { host.innerHTML = stateBlock('error', '跟进记录暂未读取', 'Activity unavailable', { retry: true }); }
 }
 
+const CLOSE_DATE_STAGES = ['QUOTED', 'SAMPLE', 'NEGOTIATING'];
+/** Fields the stage gate asks for (close date from the quote stage on, customer confirmation for won). Exported for tests. */
+export function gateMarkup(item) {
+  const options = Object.entries(WON_CONFIRMATIONS).map(([code, [zh, en]]) => `<option value="${code}">${esc(`${zh} ${en}`)}</option>`).join('');
+  return `<div class="v4-stage-gate" data-stage-gate hidden>
+    <div class="field" data-gate-close hidden><label for="followup-close">${bi('预计成交日（报价及之后必填）', 'Expected close date (needed from the quote stage on)')}</label><input id="followup-close" name="expected_close_date" type="date" value="${esc(item.expected_close_date || '')}"${tip('客户大概哪天能下单；报表的“本月预计成交”和风险提醒都按这个日期', 'When the customer is likely to order; used for “expected this month” and risk alerts')}></div>
+    <div data-gate-won hidden><div class="field"><label for="followup-won">${bi('客户确认方式（成交必填）', 'How the customer confirmed (needed to mark won)')}</label><select id="followup-won" name="won_confirmation"${tip('选客户确认成交的凭据，例如订单或定金', 'Pick the proof the customer confirmed, such as a PO or deposit')}><option value="">${esc('请选择 Choose')}</option>${options}</select></div>
+      <div class="field"><label for="followup-won-note">${bi('确认说明（选“其他”时必填）', 'Confirmation details (needed for “Other”)')}</label><input id="followup-won-note" name="won_confirmation_note" maxlength="500"></div></div>
+  </div>`;
+}
+
 function wireCard(container, item, companyId, detail) {
   const card = container.querySelector('.v4-followup-card form');
   if (!card) return;
@@ -131,6 +143,12 @@ function wireCard(container, item, companyId, detail) {
     lost.hidden = selected !== 'LOST'; if (selected === 'LOST') lost.querySelector('select').focus();
     const why = card.querySelector('.v4-stage-reason');
     if (why) { why.hidden = selected === 'LOST' || !stageNeedsReason(item.pipeline_stage, selected); if (!why.hidden) why.querySelector('input').focus(); }
+    const changed = selected !== item.pipeline_stage;
+    const gate = card.querySelector('[data-stage-gate]');
+    if (gate) {
+      const close = changed && CLOSE_DATE_STAGES.includes(selected), won = changed && selected === 'WON';
+      gate.querySelector('[data-gate-close]').hidden = !close; gate.querySelector('[data-gate-won]').hidden = !won; gate.hidden = !close && !won;
+    }
   }));
   card.querySelectorAll('[data-log-type]').forEach(button => button.addEventListener('click', () => openLogDialog({ type: button.dataset.logType, opportunityId: item.opportunity_id, companyId, opener: button })));
   card.addEventListener('submit', async event => {
@@ -140,9 +158,15 @@ function wireCard(container, item, companyId, detail) {
     const note = selected === 'LOST' ? card.lost_detail.value.trim() : card.stage_note?.value.trim() || '';
     const revisit = selected === 'LOST' ? card.revisit_date.value : '';
     if (selected !== 'LOST' && stageNeedsReason(item.pipeline_stage, selected) && !note) { status.innerHTML = bi('往回改阶段或重新打开商机时，请写明原因', 'Write why the stage moves back or the deal is reopened'); card.stage_note.focus(); return; }
+    const gateInput = { expected_close_date: card.expected_close_date?.value || item.expected_close_date || '', won_confirmation: card.won_confirmation?.value || '', won_confirmation_note: card.won_confirmation_note?.value.trim() || '' };
+    const gateProblem = stageGateProblem(item.pipeline_stage, selected, gateInput);
+    if (gateProblem) { status.innerHTML = bi(...STAGE_GATE_TEXT[gateProblem]); (gateProblem === 'CLOSE_DATE_REQUIRED' ? card.expected_close_date : gateProblem === 'WON_CONFIRMATION_REQUIRED' ? card.won_confirmation : card.won_confirmation_note)?.focus(); return; }
+    const gateBody = selected === item.pipeline_stage ? {} : {
+      ...(CLOSE_DATE_STAGES.includes(selected) && card.expected_close_date?.value && card.expected_close_date.value !== item.expected_close_date ? { expected_close_date: card.expected_close_date.value } : {}),
+      ...(selected === 'WON' ? { won_confirmation: gateInput.won_confirmation, won_confirmation_note: gateInput.won_confirmation_note || undefined } : {}) };
     const submit = card.querySelector('[type="submit"]'); submit.disabled = true; status.innerHTML = bi('正在保存', 'Saving');
     try {
-      await crm.setStage(item.opportunity_id, { stage: selected, lost_reason: selected === 'LOST' ? reason : undefined, note: note || undefined, revisit_date: revisit || undefined, owner: card.owner.value.trim() || undefined,
+      await crm.setStage(item.opportunity_id, { stage: selected, lost_reason: selected === 'LOST' ? reason : undefined, note: note || undefined, revisit_date: revisit || undefined, ...gateBody, owner: card.owner.value.trim() || undefined,
         next_action: card.next_action.value.trim() || undefined, next_action_due_at: card.next_action_due_at.value ? fromLocalInput(card.next_action_due_at.value) : null,
         expected_version: item.crm_version ?? undefined });
       status.innerHTML = bi('已保存', 'Saved');

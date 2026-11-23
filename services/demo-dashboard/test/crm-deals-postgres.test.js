@@ -72,7 +72,8 @@ test('deals, stage reasons, key customers, reminder tasks and reports per owner'
     const deals=new DealService({pool,repository,now:()=>now});
     const c=await seedCompanies(pool,[['A','AE'],['B','AE'],['C','MX'],['D','MX']]);
     const stage=async(key,to,daysAgo,extra={})=>{
-      await repository.setStage(c[key].snapshot,{stage:to,...extra},'simon',SIM);
+      // The stage gate (migration 081): a close date from the quote stage on, a customer confirmation for won.
+      await repository.setStage(c[key].snapshot,{stage:to,...(['QUOTED','SAMPLE','NEGOTIATING','WON'].includes(to)?{gate:{expected_close_date:'2026-12-31',...(to==='WON'?{won_confirmation:'PO'}:{})}}:{}),...extra},'simon',SIM);
       await pool.query(`UPDATE leadgen.opportunity_crm_states SET stage_changed_at=now()-($2::int*interval '1 day') WHERE company_id=$1`,[c[key].company,daysAgo]);
     };
     await stage('A','QUOTED',5);await stage('B','CONTACTED',10);await stage('C','WON',2);await stage('D','NEGOTIATING',1);
@@ -81,14 +82,16 @@ test('deals, stage reasons, key customers, reminder tasks and reports per owner'
     await assert.rejects(deals.saveDeal(c.A.company,{deal_amount:12000},'simon',SIM),{code:'CRM_CURRENCY_REQUIRED'});
     await assert.rejects(deals.saveDeal(c.A.company,{customer_grade:'E'},'simon',SIM),{code:'CRM_VALUE_INVALID'});
     let view=await deals.saveDeal(c.A.company,{deal_amount:'12000',deal_currency:'usd',expected_close_date:'2026-12-31',customer_grade:'a'},'simon',SIM);
-    assert.deepEqual([view.deal_amount,view.deal_currency,view.expected_close_date,view.customer_grade,view.win_probability,view.effective_win_probability,view.version],
-      [12000,'USD','2026-12-31','A',null,40,1]);
+    assert.deepEqual([view.deal_amount,view.deal_currency,view.expected_close_date,view.customer_grade,view.win_probability,view.version],
+      [12000,'USD','2026-12-31','A',null,2],'version 1 came from the stage gate saving the close date');
+    assert.equal(view.effective_win_probability,view.estimated_win_probability,'no probability entered: the estimate is used');
+    assert.ok(view.estimate.parts.length===5&&view.estimated_win_probability>=1&&view.estimated_win_probability<=99);
     assert.ok(view.flags.includes('QUOTED_NO_REPLY'));assert.ok(view.health.score>0);
     await assert.rejects(deals.saveDeal(c.A.company,{win_probability:30,expected_version:0},'simon',SIM),{code:'CRM_VERSION_CONFLICT'});
     await deals.saveDeal(c.C.company,{deal_amount:5000,deal_currency:'USD'},'simon',SIM);
     view=await deals.saveDeal(c.D.company,{deal_amount:3000,deal_currency:'USD',win_probability:50},'simon',SIM);
     assert.equal(view.effective_win_probability,50);
-    assert.equal(Number((await pool.query('SELECT count(*) FROM leadgen.crm_deal_profile_events')).rows[0].count),3);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM leadgen.crm_deal_profile_events')).rows[0].count),6,'3 from the stage gate, 3 saves');
 
     // ---- stage reasons ----
     await assert.rejects(repository.setStage(c.C.snapshot,{stage:'NEGOTIATING'},'simon',SIM),{code:'CRM_STAGE_REASON_REQUIRED'});
@@ -128,7 +131,8 @@ test('deals, stage reasons, key customers, reminder tasks and reports per owner'
     assert.equal(report.currency,'USD');
     assert.deepEqual([report.totals.customers,report.totals.active,report.totals.won,report.totals.won_amount],[4,3,1,5000]);
     assert.equal(report.totals.pipeline_amount,15000);
-    assert.equal(report.totals.weighted_amount,12000*0.4+3000*0.5);
+    const estimateA=(await deals.dealView(c.A.company,SIM)).effective_win_probability;
+    assert.equal(report.totals.weighted_amount,Math.round((12000*estimateA/100+3000*0.5)*100)/100,'A uses its estimate, D the entered 50%');
     const funnel=Object.fromEntries(report.funnel.map(row=>[row.stage,row]));
     assert.equal(funnel.WON.count,1);assert.equal(funnel.QUOTED.reached,3,'A quoted, D went past quote, C won');
     assert.equal(funnel.SAMPLE.conversion,Math.round(2/3*1000)/10,'2 of the 3 quoted went on to samples');assert.equal(funnel.NEGOTIATING.conversion,100);

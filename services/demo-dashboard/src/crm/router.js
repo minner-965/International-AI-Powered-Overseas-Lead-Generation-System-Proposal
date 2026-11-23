@@ -25,6 +25,7 @@ export function createCrmRouter({service,env=process.env,managementAuth=null,dea
     router.get('/key-customers',...read,asyncRoute(async(req,res)=>res.json(await deals.keyCustomers(requestScope(req)))));
     router.get('/reports',...read,asyncRoute(async(req,res)=>res.json(await deals.reports(requestScope(req)))));
     router.get('/reminder-rules',...read,asyncRoute(async(req,res)=>res.json(await deals.rules(requestScope(req)))));
+    router.get('/reminder-rules/preview',...read,asyncRoute(async(req,res)=>res.json(await deals.previewReminders(requestScope(req)))));
     router.put('/reminder-rules',...salesWrite,asyncRoute(async(req,res)=>res.json(await deals.saveRules(req.body||{},actor(req),requestScope(req)))));
   }
   router.get('/companies/:id/timeline',...read,asyncRoute(async(req,res)=>res.json({items:await service.timeline(req.params.id,req.query,requestScope(req))})));

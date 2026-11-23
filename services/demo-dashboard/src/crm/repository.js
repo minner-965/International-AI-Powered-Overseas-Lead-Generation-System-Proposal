@@ -1,4 +1,5 @@
 import {createRevisitTask,stageChangeNeedsReason} from './stageRules.js';
+import {applyStageGate} from './stageGate.js';
 import {randomUUID} from 'node:crypto';
 import {activityOutboxPayload,opportunityOutboxPayload} from './outboxPayloads.js';
 import {companyScopeSql,ownerScopeSql,companyVisible} from '../merchant/scope.js';
@@ -34,8 +35,9 @@ export const FOLLOWUP_THREAD_OPEN_SQL=`t.thread_status='OPEN'
 const dealColumns=(alias,ownerParam,installed)=>installed
   ?`(SELECT d.deal_amount FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) deal_amount,
     (SELECT d.deal_currency FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) deal_currency,
-    (SELECT d.customer_grade FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) customer_grade`
-  :'NULL::numeric deal_amount,NULL::text deal_currency,NULL::text customer_grade';
+    (SELECT d.customer_grade FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) customer_grade,
+    (SELECT to_char(d.expected_close_date,'YYYY-MM-DD') FROM leadgen.crm_deal_profiles d WHERE d.company_id=${alias}.company_id AND d.merchant_id IS NOT DISTINCT FROM ${ownerParam}::uuid) expected_close_date`
+  :'NULL::numeric deal_amount,NULL::text deal_currency,NULL::text customer_grade,NULL::text expected_close_date';
 
 // Latest CRM state for each current opportunity, across assessment revisions, for one owner
 // ($ownerParam: NULL = SIM, otherwise a merchant). companyClause restricts a merchant's view.
@@ -137,7 +139,7 @@ export class CrmRepository{
       VALUES($1,$2,'NOT_CONTACTED',$3,$4) RETURNING *`,[opportunity.id,opportunity.company_id,actor,merchantId])).rows[0];
   }
 
-  async setStage(opportunityId,{stage,lost_reason=null,note=null,owner=null,next_action=null,next_action_due_at,expected_version=null,revisit_date=null},actor,scope=null){
+  async setStage(opportunityId,{stage,lost_reason=null,note=null,owner=null,next_action=null,next_action_due_at,expected_version=null,revisit_date=null,gate=null},actor,scope=null){
     const merchantId=scope?.merchantId??null;
     return this.transaction(async client=>{
       const opportunity=await this.opportunity(client,opportunityId,scope);
@@ -145,6 +147,7 @@ export class CrmRepository{
       if(expected_version!==null&&Number(expected_version)!==Number(state.version))throw fail('CRM_VERSION_CONFLICT','The opportunity was changed by someone else',409);
       if(stageChangeNeedsReason(state.pipeline_stage,stage)&&!note&&!(stage==='LOST'&&lost_reason))
         throw fail('CRM_STAGE_REASON_REQUIRED','Write why the stage moves back or the deal is reopened',400);
+      await applyStageGate(client,{companyId:opportunity.company_id,merchantId,from:state.pipeline_stage,to:stage,input:gate||{},actor});
       const updated=(await client.query(`UPDATE leadgen.opportunity_crm_states SET pipeline_stage=$2,lost_reason=$3,stage_note=$4,
           owner_identity=coalesce($5,owner_identity),next_action=coalesce($6,next_action),
           next_action_due_at=CASE WHEN $8 THEN $7::timestamptz ELSE next_action_due_at END,
@@ -246,7 +249,13 @@ export class CrmRepository{
       if(['COMPLETED','CANCELLED'].includes(task.task_status)&&task_status&&task_status!==task.task_status)
         throw fail('CRM_TASK_CLOSED','A closed task cannot be reopened',409);
       const notes=Array.isArray(task.details?.notes)?task.details.notes:[];
-      const nextNotes=note?[...notes,{at:new Date().toISOString(),by:actor,text:note}].slice(-50):notes;
+      // Moving the due date of an overdue open task needs a reason; the note keeps the old and new dates.
+      const open=['OPEN','IN_PROGRESS'].includes(task.task_status);
+      const moved=due_at!==undefined&&(due_at===null?task.due_at!==null:!task.due_at||new Date(due_at).getTime()!==new Date(task.due_at).getTime());
+      const overdue=open&&task.due_at&&new Date(task.due_at).getTime()<Date.now();
+      if(moved&&overdue&&!note)throw fail('CRM_RESCHEDULE_REASON_REQUIRED','Write why an overdue task is moved',422);
+      const entry=note?{at:new Date().toISOString(),by:actor,text:note,...(moved&&overdue?{rescheduled_from:new Date(task.due_at).toISOString(),rescheduled_to:due_at?new Date(due_at).toISOString():null}:{})}:null;
+      const nextNotes=entry?[...notes,entry].slice(-50):notes;
       const closing=task_status&&['COMPLETED','CANCELLED'].includes(task_status)&&task_status!==task.task_status;
       return(await client.query(`UPDATE leadgen.sales_tasks SET task_status=coalesce($2,task_status),owner=coalesce($3,owner),
           due_at=CASE WHEN $5 THEN $4::timestamptz ELSE due_at END,details=jsonb_set(details,'{notes}',$6::jsonb,true),

@@ -4353,3 +4353,20 @@ html[data-role="MERCHANT"] .p10-research-grid { grid-template-columns: minmax(0,
   .v4-funnel li { grid-template-columns: 80px minmax(40px, 1fr); } .v4-funnel li .v { grid-column: 1 / -1; }
   .v4-import-rows li { grid-template-columns: minmax(0, 1fr) auto; } .v4-import-rows .r { grid-column: 1 / -1; }
 }
+
+/* 发信效果 and 汇率 (plan items 6 and 7) */
+.v4-email-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.v4-email-bars li .k { min-width: 48px; }
+.v4-mailbox-row .v4-mini-list { margin: 4px 0 8px; padding-left: 18px; color: var(--text-2); font-size: 12px; }
+.v4-converted { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.v4-rate-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+.v4-rate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.v4-rate-row input[name="currency"] { width: 80px; text-transform: uppercase; }
+.v4-rate-row input[name="rate"] { width: 140px; }
+.v4-rate-eq, .v4-rate-base { color: var(--text-2); font-size: 13px; }
+.v4-rates-card details > summary { cursor: pointer; list-style: none; }
+.v4-rates-card details > summary::-webkit-details-marker { display: none; }
+@media (max-width: 900px) {
+  .v4-email-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v4-rate-row input[name="rate"] { flex: 1 1 120px; width: auto; }
+}
