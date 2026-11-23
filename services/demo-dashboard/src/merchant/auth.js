@@ -61,9 +61,10 @@ export const MERCHANT_ROUTES=[
 ].map(([method,pattern])=>[method,new RegExp(pattern,'i')]);
 export const merchantRouteAllowed=(method,path)=>MERCHANT_ROUTES.some(([m,re])=>(m===method||(m==='GET'&&method==='HEAD'))&&re.test(path));
 
-// Paths that never need a session: health, login, provider webhooks and internal-token jobs.
+// Paths that never need a session: health, login, the public trial application (migration 082),
+// provider webhooks and internal-token jobs.
 // The second sign-in step (2fa/verify) runs before the session has a user (twoFactor.js).
-const PUBLIC=/^\/api\/(health$|auth\/(login|logout|me|2fa\/verify)$|webhooks\/|internal\/)/;
+const PUBLIC=/^\/api\/(health$|auth\/(login|logout|me|2fa\/verify)$|merchant-applications$|webhooks\/|internal\/)/;
 // Writes an expired (read-only) merchant may still make.
 const READ_ONLY_EXEMPT=/^\/api\/(auth\/(logout|password)|feedback)$/;
 const PASSWORD_CHANGE_EXEMPT=/^\/api\/auth\/(me|logout|password)$/;

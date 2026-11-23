@@ -21,6 +21,8 @@ const SENDING_STATUSES=['TRIAL','ACTIVE'];
 export const fail=(code,message,status=400,extra={})=>Object.assign(new Error(message),{code,status,...extra});
 const clean=(value,max=200)=>{const text=String(value??'').replace(/[\u0000-\u001f\u007f]/g,' ').trim();return text?text.slice(0,max):null;};
 const email=value=>{const text=String(value??'').trim().toLowerCase();if(!EMAIL.test(text)||text.length>320)throw fail('EMAIL_INVALID','A valid email address is required',422);return text;};
+/** The sign-in email check, shared with the public trial application (applications.js). */
+export const normalizeLoginEmail=value=>email(value);
 const nonNegativeInt=(value,label)=>{const n=Number(value);if(!Number.isInteger(n)||n<0||n>1_000_000)throw fail('MERCHANT_QUOTA_INVALID',`${label} must be a whole number`,422);return n;};
 const timestamp=(value,label)=>{if(value===null)return null;const d=new Date(value);if(Number.isNaN(d.getTime()))throw fail('MERCHANT_DATE_INVALID',`${label} must be a valid date`,422);return d.toISOString();};
 export const merchantUuid=(value,label='merchant_id')=>{const text=String(value||'').trim();if(!UUID.test(text))throw fail('MERCHANT_INVALID_ID',`${label} must be a UUID`,400);return text;};

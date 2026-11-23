@@ -355,3 +355,9 @@ Integration boundary: `src/llm/` (adapters, switches, tasks T1-T5, validation, l
 | An open-source foreign-trade CRM (TypeScript, MySQL, React + Vite) | Apache-2.0; WhatsApp plug-in GPL-3.0 | Feature reference for deal values, customer grading and health, reminder rules, sales reports and spreadsheet import | Active | **Code not adopted** — different database and frontend stack; features re-implemented in SIM's own modules after reading how they work. No code, text or names copied |
 | [`exceljs`](https://github.com/exceljs/exceljs) (already a dependency) and Node `TextDecoder` (built-in, GBK) | MIT / built-in | Read .xlsx and UTF-8 / GBK .csv for the import wizard | Active | **Reused** |
 | `xlsx` (SheetJS) from npm | 0.18.5, Apache-2.0 | Spreadsheet reading | npm build unmaintained, known advisories | **Not adopted**; exceljs already covers it |
+
+## Online payment (2026-11-23, migration 082)
+
+| Candidate | Version, license | Fit | Maintenance | Decision |
+|---|---|---|---|---|
+| [`stripe`](https://github.com/stripe/stripe-node) Node SDK / Alipay open-platform SDK [`alipay-sdk`](https://github.com/alipay/alipay-sdk-nodejs-all) | MIT / MIT | Checkout links and signed payment callbacks | Active | **Evaluated, not installed**. Online payment needs a real merchant account and callback signing keys; the provider interface in `src/merchant/payments/` is ready and the SDK goes in only after Simon picks a provider. Until then payments are recorded by the administrator |

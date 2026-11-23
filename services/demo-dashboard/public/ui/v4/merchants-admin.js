@@ -1,6 +1,8 @@
 // 商家管理 / Merchants (role ADMIN): list with status, trial / paid period, usage and referral;
 // open a merchant account (temporary password shown once), extend trial, mark paid, disable,
 // restore, reset password, edit quotas and features. GET/POST/PATCH /api/admin/merchants.
+// Migration 082: trial applications from /apply.html (approve opens the account, reject needs a reason)
+// and payment records (recording one marks the merchant paid until the covered date).
 import { bi, esc, stateBlock, skeletonRows } from './crm.js';
 import { tip } from './tooltips.js';
 import { session, sessionReady } from './session.js';
@@ -13,7 +15,33 @@ const json = (url, body, method = 'POST') => managementRequest(url, { method, he
 export const FILTERS = Object.freeze([['', '全部', 'All'], ['TRIAL', '试用中', 'Trial'], ['ACTIVE', '已开通', 'Active'], ['EXPIRED', '已到期', 'Expired'], ['DISABLED', '已停用', 'Disabled']]);
 export const FEATURES = Object.freeze([['research', '客户搜索', 'Lead search'], ['email', '发送邮件', 'Email sending'], ['crm_sync', '同步到飞书表', 'CRM sync']]);
 const DEFAULT_QUOTAS = { monthly_searches: 200, daily_emails: 30 };
-const state = { items: null, error: false, status: '', q: '', dialogFor: null };
+const state = { items: null, error: false, status: '', q: '', dialogFor: null, applications: null, applicationsError: false };
+export const PAYMENT_METHODS = Object.freeze([['BANK', '银行转账', 'Bank transfer'], ['ALIPAY', '支付宝', 'Alipay'], ['WECHAT', '微信支付', 'WeChat Pay'], ['MANUAL', '现金 / 其他线下', 'Cash / offline'], ['STRIPE', 'Stripe', 'Stripe'], ['OTHER', '其他', 'Other']]);
+const PAYMENT_CURRENCIES = Object.freeze(['CNY', 'USD', 'EUR', 'HKD']);
+const methodName = code => PAYMENT_METHODS.find(([key]) => key === code) || [code, code, code];
+
+/** Pending trial applications (exported for tests). Decided ones are not listed here. */
+export function applicationsMarkup(items, { error = false } = {}) {
+  if (error) return stateBlock('error', '申请列表暂未读取', 'Applications unavailable', { retry: true });
+  if (!items) return skeletonRows(2);
+  const pending = items.filter(item => item.status === 'PENDING');
+  if (!pending.length) return `<p class="meta">${bi('没有待审核的试用申请', 'No applications waiting for review')}</p>`;
+  return `<ul class="v4-key-list">${pending.map(item => `<li><div class="v4-key-row" data-application-row="${esc(item.id)}"><span class="t"><b>${esc(item.company_name)}</b><small>${esc(item.contact_name)} · ${esc(item.email)}${item.phone ? ` · ${esc(item.phone)}` : ''}${item.country ? ` · ${esc(item.country)}` : ''}${item.referrer ? ` · ${bi('推荐人', 'Referred by')} ${esc(item.referrer)}` : ''} · ${esc(dateText(item.created_at))}</small>${item.message ? `<small>${esc(item.message)}</small>` : ''}${item.email_in_use ? `<small><span class="pill warn">${bi('这个邮箱已有账号', 'This email already has an account')}</span></small>` : ''}</span>
+    <span class="f"><button class="btn btn-sm btn-primary" type="button" data-application-action="approve" data-application-id="${esc(item.id)}"${tip('通过申请：开通 7 天试用账号并显示临时密码', 'Approve: open a 7-day trial account and show the temporary password')}>${bi('通过并开通', 'Approve')}</button><button class="btn btn-sm" type="button" data-application-action="reject" data-application-id="${esc(item.id)}"${tip('不通过，需要写明原因', 'Reject; a reason is required')}>${bi('不通过', 'Reject')}</button></span></div></li>`).join('')}</ul>`;
+}
+/** Payment form → problem before sending (exported for tests). */
+export function paymentProblem(body, today = new Date()) {
+  if (!(body.amount > 0)) return ['请填写收款金额', 'Enter the amount received'];
+  if (!/^[A-Z]{3}$/.test(body.currency || '')) return ['请选择币种', 'Choose the currency'];
+  if (!body.paid_until || body.paid_until < today.toISOString().slice(0, 10)) return ['服务到期日不能早于今天', 'The covered date cannot be before today'];
+  return null;
+}
+/** Payment history list in the record-payment sheet (exported for tests). */
+export function paymentHistoryMarkup(items) {
+  if (!items) return `<p class="meta">${bi('正在读取付款记录', 'Loading payments')}</p>`;
+  if (!items.length) return `<p class="meta">${bi('还没有付款记录', 'No payments recorded yet')}</p>`;
+  return `<ul class="review-list">${items.map(item => `<li><span class="k">${esc(dateText(item.paid_at))} · ${bi(...methodName(item.method).slice(1))}${item.external_reference ? ` · ${esc(item.external_reference)}` : ''}</span><span class="v"><b>${esc(item.currency)} ${esc(Number(item.amount).toLocaleString('en-US', { maximumFractionDigits: 2 }))}</b> · ${bi(`到 ${dateText(item.paid_until)}`, `until ${dateText(item.paid_until)}`)}</span></li>`).join('')}</ul>`;
+}
 
 /** Referral tree: who referred whom, by merchant id. */
 export function referralIndex(items) {
@@ -61,6 +89,7 @@ function actions(item) {
   const disabled = item.status === 'DISABLED';
   return `<div class="v4-row-actions">
     <button class="btn btn-sm" type="button" data-merchant-action="extend" data-merchant-id="${id}"${tip('把试用期往后延长几天', 'Extend the trial by some days')}>${bi('延长试用', 'Extend trial')}</button>
+    <button class="btn btn-sm" type="button" data-merchant-action="payment" data-merchant-id="${id}"${tip('记下这笔收款（金额、方式、单号），账号自动改为已开通并延长到期日；可查看历史付款', 'Record a payment (amount, method, reference); the account becomes active until the covered date. Shows past payments')}>${bi('记录付款', 'Record payment')}</button>
     <button class="btn btn-sm" type="button" data-merchant-action="paid" data-merchant-id="${id}"${tip('标记为已付费并设置服务到期日', 'Mark as paid and set the end date')}>${bi('标记已付费', 'Mark paid')}</button>
     <button class="btn btn-sm" type="button" data-merchant-action="quotas" data-merchant-id="${id}"${tip('修改每月找客户次数、每日发信数和可用功能', 'Edit monthly searches, daily emails and features')}>${bi('编辑额度与功能', 'Quotas & features')}</button>
     <button class="btn btn-sm" type="button" data-merchant-action="reset" data-merchant-id="${id}"${tip('生成新的临时密码，商家下次登录时需修改', 'Create a new temporary password; the merchant changes it at next sign-in')}>${bi('重置密码', 'Reset password')}</button>
@@ -93,7 +122,21 @@ function render() {
   document.querySelectorAll('[data-merchant-filter]').forEach(tab => { const on = tab.dataset.merchantFilter === state.status; tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1; });
 }
 
+function renderApplications() {
+  const host = $('#merchant-applications-list');
+  if (host) host.innerHTML = applicationsMarkup(state.applications, { error: state.applicationsError });
+  const count = $('#merchant-applications-count');
+  if (count) { const n = (state.applications || []).filter(item => item.status === 'PENDING').length; count.innerHTML = n ? `<span class="pill warn">${bi(`待审核 ${n}`, `${n} waiting`)}</span>` : ''; }
+}
+export async function loadApplications() {
+  state.applicationsError = false;
+  try { state.applications = (await managementRequest('/api/admin/merchant-applications?status=PENDING'))?.items || []; }
+  catch { state.applicationsError = true; state.applications = null; }
+  renderApplications();
+}
+
 export async function loadMerchants() {
+  void loadApplications();
   state.error = false;
   try { state.items = (await managementRequest('/api/admin/merchants'))?.items || []; }
   catch { state.error = true; state.items = null; }
@@ -125,6 +168,13 @@ export function passwordResultMarkup({ email, password, created = false }) {
     <p class="meta">${bi('商家首次登录后需要修改密码。', 'The merchant must change it at first sign-in.')}</p></div>`;
 }
 
+async function loadPaymentHistory(item) {
+  const host = document.getElementById('merchant-payment-history');
+  if (!host) return;
+  try { host.innerHTML = paymentHistoryMarkup((await managementRequest(`/api/admin/merchants/${encodeURIComponent(item.id)}/payments`))?.items || []); }
+  catch { host.innerHTML = `<p class="meta">${bi('付款记录暂未读取', 'Payments unavailable')}</p>`; }
+}
+
 function open(kind, item = null) {
   const box = dialog(); state.dialogFor = { kind, item }; state.opener = document.activeElement;
   const name = item ? esc(item.company_name) : '';
@@ -136,6 +186,14 @@ function open(kind, item = null) {
   } else if (kind === 'paid') {
     const next = new Date(); next.setFullYear(next.getFullYear() + 1);
     box.innerHTML = sheet(bi(`标记已付费 · ${item.company_name}`, 'Mark as paid'), `${field('merchant-paid', '服务到期日', 'Paid until', `<input id="merchant-paid" name="paid_until" type="date" min="${isoDate(new Date())}" value="${esc(item.paid_until ? String(item.paid_until).slice(0, 10) : isoDate(next))}" required>`)}<p class="meta">${bi('到期后账号自动变为只读，资料保留。', 'After this date the account becomes read-only; data is kept.')}</p>`, bi('标记已付费', 'Mark paid'), ['账号改为已开通，到期日如上', 'Set the account to active until this date']);
+  } else if (kind === 'payment') {
+    const base = item.paid_until && new Date(item.paid_until) > new Date() ? new Date(item.paid_until) : new Date(); base.setFullYear(base.getFullYear() + 1);
+    box.innerHTML = sheet(bi(`记录付款 · ${item.company_name}`, 'Record payment'), `<div class="form-grid">${field('merchant-pay-amount', '收款金额', 'Amount received', '<input id="merchant-pay-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required>')}${field('merchant-pay-currency', '币种', 'Currency', `<select id="merchant-pay-currency" name="currency">${PAYMENT_CURRENCIES.map(code => `<option value="${code}">${code}</option>`).join('')}</select>`)}${field('merchant-pay-method', '付款方式', 'Method', `<select id="merchant-pay-method" name="method">${PAYMENT_METHODS.map(([key, zh, en]) => `<option value="${key}">${esc(`${zh} ${en}`)}</option>`).join('')}</select>`)}${field('merchant-pay-ref', '单号（可选）', 'Reference (optional)', '<input id="merchant-pay-ref" name="external_reference" maxlength="200">')}${field('merchant-pay-until', '服务到期日', 'Paid until', `<input id="merchant-pay-until" name="paid_until" type="date" min="${isoDate(new Date())}" value="${isoDate(base)}" required>`)}${field('merchant-pay-note', '备注（可选）', 'Note (optional)', '<input id="merchant-pay-note" name="note" maxlength="500">')}</div><p class="meta">${bi('保存后账号改为已开通，到期日取这里和原到期日中较晚的一个。付款记录不能修改或删除。', 'Saving sets the account active until the later of this date and the current end date. Payments cannot be edited or deleted.')}</p><h4>${bi('历史付款', 'Past payments')}</h4><div id="merchant-payment-history">${paymentHistoryMarkup(null)}</div>`, bi('保存付款', 'Save payment'), ['保存这笔付款并延长服务期', 'Save the payment and extend the paid period']);
+    void loadPaymentHistory(item);
+  } else if (kind === 'approve') {
+    box.innerHTML = sheet(bi(`通过申请 · ${item.company_name}`, 'Approve application'), `<dl class="facts"><div><dt>${bi('联系人', 'Contact')}</dt><dd>${esc(item.contact_name)}</dd></div><div><dt>${bi('登录邮箱', 'Sign-in email')}</dt><dd>${esc(item.email)}</dd></div></dl>${field('merchant-approve-trial', '试用天数', 'Trial days', '<input id="merchant-approve-trial" name="trial_days" type="number" inputmode="numeric" min="1" max="365" value="7" required>')}<p class="meta">${bi('通过后会生成临时密码，请转告申请人。', 'A temporary password is created; pass it on to the applicant.')}</p>`, bi('通过并开通', 'Approve and open'), ['开通试用账号并显示临时密码', 'Open the trial account and show the temporary password']);
+  } else if (kind === 'reject') {
+    box.innerHTML = sheet(bi(`不通过 · ${item.company_name}`, 'Reject application'), field('merchant-reject-reason', '原因', 'Reason', '<input id="merchant-reject-reason" name="reason" maxlength="500" required>'), bi('确认不通过', 'Reject'), ['保存不通过的原因；申请记录会保留', 'Save the reason; the application is kept']);
   } else if (kind === 'quotas') {
     box.innerHTML = sheet(bi(`编辑额度与功能 · ${item.company_name}`, 'Quotas & features'), `<div class="form-grid">${field('merchant-edit-company', '公司名称', 'Company', `<input id="merchant-edit-company" name="company_name" maxlength="200" value="${name}" required>`)}${field('merchant-edit-contact', '联系人', 'Contact person', `<input id="merchant-edit-contact" name="contact_name" maxlength="120" value="${esc(item.contact_name || '')}">`)}</div>${quotaFields(item.quotas || {}, item.features || {})}`, bi('保存', 'Save'), ['保存额度、功能和公司信息', 'Save quotas, features and company details']);
   } else if (kind === 'reset2fa') {
@@ -163,7 +221,7 @@ async function submit(form) {
   const { kind, item } = state.dialogFor || {};
   const status = form.querySelector('.v4-form-status');
   const button = form.querySelector('[type="submit"]');
-  const fail = error => { status.innerHTML = bi(...(error?.status === 409 ? ['这个登录邮箱已被使用', 'This sign-in email is already used'] : [400, 422].includes(error?.status) ? ['填写的信息有误，请检查', 'Some details are invalid'] : error?.status === 404 ? ['商家管理服务暂未开放', 'Merchant admin is not available yet'] : ['保存未完成，请重试', 'Could not save; please retry'])); button.disabled = false; };
+  const fail = error => { status.innerHTML = bi(...(error?.code === 'APPLICATION_EMAIL_TAKEN' ? ['这个邮箱已有账号，请在商家列表里处理', 'This email already has an account; handle it in the merchant list'] : error?.code === 'APPLICATION_DECIDED' ? ['这个申请已经处理过了', 'This application was already decided'] : error?.code === 'PAYMENT_DUPLICATE' ? ['这个单号已经记录过', 'This reference is already recorded'] : error?.status === 409 ? ['这个登录邮箱已被使用', 'This sign-in email is already used'] : [400, 422].includes(error?.status) ? ['填写的信息有误，请检查', 'Some details are invalid'] : error?.status === 404 ? ['商家管理服务暂未开放', 'Merchant admin is not available yet'] : ['保存未完成，请重试', 'Could not save; please retry'])); button.disabled = false; };
   button.disabled = true; status.innerHTML = bi('正在保存', 'Saving');
   try {
     if (kind === 'create') {
@@ -172,6 +230,26 @@ async function submit(form) {
       const result = await json('/api/admin/merchants', body);
       dialog().innerHTML = sheet(bi('商家账号已开通', 'Merchant account opened'), passwordResultMarkup({ email: result?.user?.email || body.login_email, password: result?.temporary_password || '—', created: true }), '', null);
       void loadMerchants(); return;
+    }
+    if (kind === 'payment') {
+      const body = { amount: Number(form.amount.value), currency: form.currency.value, method: form.method.value, paid_until: form.paid_until.value,
+        external_reference: form.external_reference.value.trim() || undefined, note: form.note.value.trim() || undefined };
+      const problem = paymentProblem(body); if (problem) { status.innerHTML = bi(...problem); button.disabled = false; return; }
+      await json(`/api/admin/merchants/${encodeURIComponent(item.id)}/payments`, body);
+      dialog().close(); toast('付款已记录，服务期已更新', 'Payment recorded; paid period updated'); void loadMerchants(); return;
+    }
+    if (kind === 'approve') {
+      const days = Number(form.trial_days.value);
+      if (!(days >= 1 && days <= 365)) { status.innerHTML = bi('试用天数应为 1–365', 'Trial days must be 1–365'); button.disabled = false; return; }
+      const result = await json(`/api/admin/merchant-applications/${encodeURIComponent(item.id)}/approve`, { trial_days: days });
+      dialog().innerHTML = sheet(bi('申请已通过，账号已开通', 'Approved; account opened'), passwordResultMarkup({ email: result?.user?.email || item.email, password: result?.temporary_password || '—', created: true }), '', null);
+      void loadMerchants(); return;
+    }
+    if (kind === 'reject') {
+      const reason = form.reason.value.trim();
+      if (!reason) { status.innerHTML = bi('请写明不通过的原因', 'Write the reason'); button.disabled = false; return; }
+      await json(`/api/admin/merchant-applications/${encodeURIComponent(item.id)}/reject`, { reason });
+      dialog().close(); toast('已标记为不通过', 'Application rejected'); void loadApplications(); return;
     }
     if (kind === 'reset2fa') {
       const result = await json(`/api/admin/merchants/${encodeURIComponent(item.id)}/reset-2fa`);
@@ -198,10 +276,12 @@ async function submit(form) {
 function mount() {
   const root = $('#merchants-root');
   if (!root) return;
-  root.innerHTML = `<section class="card v4-merchants-card"><div class="toolbar v4-merchants-toolbar"><div class="tabs" role="tablist" aria-label="按状态筛选 Filter by status">${FILTERS.map(([key, zh, en]) => `<button type="button" role="tab" data-merchant-filter="${key}" aria-selected="${key === ''}"${tip(key ? `只看${zh}的商家` : '显示全部商家', key ? `Show ${en.toLowerCase()} merchants` : 'Show every merchant')}>${bi(zh, en)}</button>`).join('')}</div><span class="grow"></span><label class="search inline" for="merchants-search"><i class="ti ti-search" aria-hidden="true"></i><span class="sr-only">搜索商家 Search merchants</span><input id="merchants-search" type="search" autocomplete="off" placeholder="公司、联系人或邮箱 / Company, contact, email"></label><button class="btn btn-primary" type="button" data-merchant-create${tip('为新的供应商或外贸公司开通试用账号', 'Open a trial account for a new supplier')}><i class="ti ti-plus" aria-hidden="true"></i>${bi('新建商家账号', 'New merchant')}</button></div><div id="merchants-list" aria-live="polite"></div></section>`;
-  render();
+  root.innerHTML = `<section class="card" aria-labelledby="merchant-applications-title" id="merchant-applications"><div class="ph"><div><h3 id="merchant-applications-title">${bi('待审核申请', 'Applications')}</h3><p>${bi('来自“申请试用”页面；通过后开通试用账号', 'From the Apply for a trial page; approving opens a trial account')}</p></div><span id="merchant-applications-count"></span></div><div class="pb" id="merchant-applications-list" aria-live="polite"></div></section><section class="card v4-merchants-card"><div class="toolbar v4-merchants-toolbar"><div class="tabs" role="tablist" aria-label="按状态筛选 Filter by status">${FILTERS.map(([key, zh, en]) => `<button type="button" role="tab" data-merchant-filter="${key}" aria-selected="${key === ''}"${tip(key ? `只看${zh}的商家` : '显示全部商家', key ? `Show ${en.toLowerCase()} merchants` : 'Show every merchant')}>${bi(zh, en)}</button>`).join('')}</div><span class="grow"></span><label class="search inline" for="merchants-search"><i class="ti ti-search" aria-hidden="true"></i><span class="sr-only">搜索商家 Search merchants</span><input id="merchants-search" type="search" autocomplete="off" placeholder="公司、联系人或邮箱 / Company, contact, email"></label><button class="btn btn-primary" type="button" data-merchant-create${tip('为新的供应商或外贸公司开通试用账号', 'Open a trial account for a new supplier')}><i class="ti ti-plus" aria-hidden="true"></i>${bi('新建商家账号', 'New merchant')}</button></div><div id="merchants-list" aria-live="polite"></div></section>`;
+  render(); renderApplications();
   root.addEventListener('click', event => {
     if (event.target.closest('[data-state-retry]')) { void loadMerchants(); return; }
+    const decide = event.target.closest('[data-application-action]');
+    if (decide) { const application = state.applications?.find(row => String(row.id) === decide.dataset.applicationId); if (application) open(decide.dataset.applicationAction, application); return; }
     const filter = event.target.closest('[data-merchant-filter]');
     if (filter) { state.status = filter.dataset.merchantFilter; render(); return; }
     if (event.target.closest('[data-merchant-create]')) { open('create'); return; }

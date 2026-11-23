@@ -3,6 +3,8 @@ import {authRequired,requireAdmin} from './auth.js';
 import {fail,merchantUuid} from './MerchantService.js';
 import {createLoginAttempts} from './loginAttempts.js';
 import {DELIVERABILITY_HOLD_REASONS} from '../outreach/senderHealth.js';
+import {MerchantApplicationService} from './applications.js';
+import {MerchantPaymentService,paymentProviderFrom} from './payments/index.js';
 
 const TWO_FACTOR_PENDING_MS=5*60_000;
 const asyncRoute=handler=>(req,res,next)=>Promise.resolve(handler(req,res,next)).catch(next);
@@ -16,6 +18,11 @@ export function createMerchantRouter({merchants,env=process.env,senderHealth=nul
   // Durable sign-in failure limiter (migration 067): 8 failures / 15 min per address and per IP.
   const limiter=createLoginAttempts({pool:merchants.pool});
   const required=authRequired(env);
+  // Migration 082: trial applications from the public page and payment records kept by SIM.
+  const applications=new MerchantApplicationService({pool:merchants.pool,merchants,salt:env.SESSION_SECRET||'sim-applications'});
+  const payments=new MerchantPaymentService({pool:merchants.pool});
+  // Applications get their own counters (5 per hour per address and per IP), separate from sign-in failures.
+  const applyLimiter=createLoginAttempts({pool:merchants.pool,max:5,windowMs:60*60_000});
 
   // ---- auth ----
   const regenerate=req=>new Promise((resolve,reject)=>req.session.regenerate(error=>error?reject(error):resolve()));
@@ -101,6 +108,30 @@ export function createMerchantRouter({merchants,env=process.env,senderHealth=nul
   }));
 
   // ---- admin (SIM) ----
+  // ---- public trial application (no session; the origin guard still applies) ----
+  router.post('/api/merchant-applications',asyncRoute(async(req,res)=>{
+    const key=`apply:${String(req.body?.email||'').trim().toLowerCase()}`,ip=`apply:${req.ip||''}`;
+    if(await applyLimiter.blocked(key,ip))return res.status(429).json({error:'Too many applications; try again later',code:'APPLICATION_RATE_LIMITED'});
+    await applyLimiter.fail(key,ip);
+    await applications.submit(req.body||{},{ip:req.ip});
+    // The same answer whether stored now or already open for this email.
+    res.status(202).json({status:'RECEIVED'});
+  }));
+  router.get('/api/admin/merchant-applications',requireAdmin,asyncRoute(async(req,res)=>res.json(await applications.list({status:req.query.status}))));
+  router.post('/api/admin/merchant-applications/:id/approve',requireAdmin,asyncRoute(async(req,res)=>res.status(201).json(await applications.approve(req.params.id,req.body||{},actorOf(req)))));
+  router.post('/api/admin/merchant-applications/:id/reject',requireAdmin,asyncRoute(async(req,res)=>res.json(await applications.reject(req.params.id,req.body||{},actorOf(req)))));
+  router.get('/api/admin/merchants/:id/payments',requireAdmin,asyncRoute(async(req,res)=>res.json(await payments.list(req.params.id))));
+  router.post('/api/admin/merchants/:id/payments',requireAdmin,asyncRoute(async(req,res)=>res.status(201).json(await payments.record(req.params.id,req.body||{},actorOf(req)))));
+  // Online payment callback: 404 until a provider is configured (PAYMENT_PROVIDER) and implemented.
+  router.post('/api/webhooks/payments/:provider',asyncRoute(async(req,res)=>{
+    const provider=paymentProviderFrom(env);
+    if(!provider||provider.name!==String(req.params.provider).toLowerCase())return res.status(404).json({error:'Not found',code:'NOT_FOUND'});
+    const event=await provider.verifyWebhook({headers:req.headers,rawBody:req.rawBody??null,body:req.body});
+    if(!event)return res.status(202).json({status:'IGNORED'});
+    const recorded=await payments.record(event.merchant_id,{...event,method:provider.name.toUpperCase()},`payment:${provider.name}`,{provider:provider.name.toUpperCase()});
+    res.json({status:'RECORDED',payment_id:recorded.payment.id});
+  }));
+
   router.get('/api/admin/merchants',requireAdmin,asyncRoute(async(_req,res)=>res.json(await merchants.listMerchants())));
   router.post('/api/admin/merchants',requireAdmin,asyncRoute(async(req,res)=>res.status(201).json(await merchants.createMerchant(req.body||{},actorOf(req)))));
   router.patch('/api/admin/merchants/:id',requireAdmin,asyncRoute(async(req,res)=>res.json({merchant:await merchants.updateMerchant(req.params.id,req.body||{},actorOf(req))})));

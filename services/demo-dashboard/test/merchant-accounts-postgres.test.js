@@ -229,7 +229,7 @@ test('merchant accounts: sign-in, admin, isolation, read-only expiry, quotas and
       assert.equal((await anna('GET',`/api/leads/${cA.company}`)).status,200);
       // Per-merchant CRM stage on the shared company.
       assert.equal((await anna('POST',`/api/crm/opportunities/${cB.snapshot}/stage`,{stage:'QUOTED'})).status,404);
-      assert.equal((await anna('POST',`/api/crm/opportunities/${cShared.snapshot}/stage`,{stage:'QUOTED',note:'Alpha quote'})).body.pipeline_stage,'QUOTED');
+      assert.equal((await anna('POST',`/api/crm/opportunities/${cShared.snapshot}/stage`,{stage:'QUOTED',note:'Alpha quote',expected_close_date:'2026-12-31'})).body.pipeline_stage,'QUOTED');
       assert.equal((await ben('GET','/api/crm/pipeline')).body.items.find(row=>row.company_id===cShared.company).pipeline_stage,'NEW');
       assert.equal((await simon('GET','/api/crm/pipeline')).body.items.find(row=>row.company_id===cShared.company).pipeline_stage,'NEW');
       await anna('POST',`/api/crm/opportunities/${cShared.snapshot}/activities`,{activity_type:'CALL',summary:'Alpha called the buyer'});
